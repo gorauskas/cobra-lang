@@ -1,0 +1,509 @@
+"""
+Tokenizer.py
+
+
+Requirements of a nice tokenizer:
+
+	- Produce tokens on demand instead of all at once.
+
+	- Consume text in lines so that text can be streamed in.
+
+	- Accurately and automatically report for each token:
+		which kind, text, line number, column number, character index and length
+
+	- Allow methods to intercept when a token is encountered in order to:
+		- modify it
+		- skip it
+		- replace it by a list of tokens
+
+	- Execute unit tests even on importation to ensure quality.
+
+
+from Common import *
+from cStringIO import StringIO
+from Stack import Stack
+import re
+
+
+class Token:
+
+				def construct(self, which, text, value, **values):
+					self.which = which
+					self.text = text
+					self.value = value
+					self.fileName = ''
+					self.lineNum = 0
+					self.__dict__.update(values)
+
+				@property
+				def length(self):
+					return len(self.text)
+
+			def __str__(self):
+				s = self.text
+				if '\t' in s or '\n' in s or '\r' in s:
+					s = repr(s)[1:-1]
+				if s:
+					if s.lower()==self.which.lower():  # if keyword...
+						return '"%s"' % s
+					else:
+						return '"%s" (%s)' % (s, self.which)
+				else:
+					return '"%s"' % self.which  # INDENT, DEDENT, etc.
+
+	def __repr__(self):
+		s = '%s(%r, %r, %r' % (self.__class__.__name__, self.which, self.text, self.value)
+		if hasattr(self, 'lineNum'):
+			s += ', %r' % self.lineNum
+		s += ')'
+		return s
+
+	def copy(self):
+		c = self.__class__(self.which, self.text, self.value)  # TODO: different way to do this?
+		c.__dict__.update(self.__dict__)
+		return c
+
+
+			class TokenizerError(ValueError):
+				```
+				Raised by nextToken() when there are errors in the source trying to be tokenized.
+				```
+				def construct(self, lineNum, msg):
+					ValueError.construct(self, msg)
+					self.msg = msg
+					self.lineNum = lineNum
+
+
+class Tokenizer:
+
+	verbosity = 0
+	willAlwaysEndWithNewLine = true
+
+	def construct(self, **args):
+		self.didReset = false
+		self.__dict__.update(args)
+		self._reset()
+		self._tokenDefsStack = Stack(TokenDefSet)
+
+	def _reset(self):
+		self.file = nil
+		self.readLine = nil
+		self.sourceLine = nil
+		self.lastToken = nil
+
+		self.lineNum = 0
+		self.colNum  = 0
+		self.charNum = 0
+
+		self._tokenQueue = []  # needed when token methods return lists of tokens
+		self._tokenMethods = {}
+		self._keywordToWhichToken = {}
+
+		self.didReset = true
+
+	def startFileNamed(self, filename):
+		self.file = open(filename, 'rt')
+		self.afterStart()
+		return self
+
+	def startSource(self, source):
+		self.file = StringIO(source)
+		self.afterStart()
+		return self
+
+	def nextToken(self):
+		```
+		Consumes a token and returns it, making it the self.lastToken.
+		Returns nil when there are no tokens left.
+		```
+		assert self.readLine, 'Not started.'
+		self.lastToken = self._nextToken()
+		if self.verbosity>=1:
+			print '<> nextToken() returning %r' % self.lastToken
+		return self.lastToken
+
+	def allTokens(self):
+		```
+		Returns all remaining tokens as a list.
+		```
+		tokens = []
+		while true:
+			t = self.nextToken()
+			if t is nil:
+				break
+			tokens.append(t)
+		return tokens
+
+	def restart(self):
+		```
+		After calling this, you can use the tokenizer anew.
+		Normally you would call this after completing the tokenization of a source file.
+		```
+		self.readLine = nil
+		if self.file:
+			self.file.close()
+			self.file = nil
+		self._reset()
+
+
+	def keywordOrWhich(self, tok, which='ID'):
+		```
+		Changes the token to a keyword if it is one, otherwise sets its which to identifier.
+		Returns the token.
+		This self utility method is typically called by a subclass from the method for the "identifier" token.
+		```
+		tok.which = self._keywordToWhichToken.get(tok.text, which)
+		return tok
+
+	# the following three attributes can be conveniently filled out in order to provide the
+	# tokenizer with its needed TokenDefs. See CobraTokenizer for an example.
+	orderedTokenSpecs = nil
+	unorderedTokenSpecs = nil
+	keywords = nil
+
+	def afterStart(self):
+		```
+		Sets up self attrs:
+			readLine as callable
+			tokenDefs as list
+		```
+		assert self.didReset, 'Never reset. Probably the subclass overrides _reset() but forgets to invoke base.'
+		assert not self.readLine, 'Already started.'
+		self.readLine = self.file.readline
+		# create a single list of all token defs in the correct order
+		self.tokenDefs = []
+		if self.orderedTokenSpecs:
+			for spec in self.orderedTokenSpecs:
+				self.addTokenSpec(spec)
+		others = []
+		if self.unorderedTokenSpecs:
+			for spec in self.unorderedTokenSpecs:
+				others.append(self.tokenDefForSpec(spec))
+		if self.keywords:
+			keywords = self.keywords
+			if inherits(keywords, str):
+				t = []
+				for line in keywords.split('\n'):
+					line = line.strip()
+					if not line or line.startswith('#'):
+						continue
+					t.extend(line.split())
+				keywords = t
+			for word in keywords:
+				self._keywordToWhichToken[word] = word.upper()
+		others.sort(lambda a, b: cmp(a.length, b.length))
+		others.reverse()  # longest tokens need to be matched first
+		self.tokenDefs.extend(others)
+		self.pushTokenDefs(self.tokenDefs)
+		if 0:
+			i = 0
+			print '<> tokenDefs:'
+			for tokenDef in self.tokenDefs:
+				print '    [%i] %r' % (i, tokenDef)
+				i += 1
+
+	def addTokenSpec(self, spec):
+		self.tokenDefs.append(self.tokenDefForSpec(spec))
+
+	def tokenDefForSpec(self, spec):
+		```
+		Returns a TokenDef object for a spec such as:
+			r'ID			[A-Za-z_][A-Za-z0-9_]*'
+		```
+		spec = spec.strip().replace('\t', ' ')
+		which, re = spec.split(' ', 1)
+		re = re.strip()
+		assert which
+		assert re
+		return TokenDef(which=which, regExSource=re)
+
+	def _nextToken(self):
+		if self._tokenQueue:
+			# eat up queue first
+			tok = self._tokenQueue[0]
+			del self._tokenQueue[0]
+			return tok
+		if not self.sourceLine or self.sourceLineIndex==len(self.sourceLine):
+			if not self._obtainSource():
+				return nil
+		try:
+			for tokenDef in self.tokenDefs:
+				if tokenDef.ignore:  # TODO: rename to ignoreCount
+					tokenDef.ignore -= 1
+					continue
+				if not tokenDef.isActive:
+					continue
+				if tokenDef.isActiveCall:
+					if not tokenDef.isActiveCall(self):
+						continue
+				self.curTokDef = tokenDef  # this enables onTOKENWHICH() methods to access the current tokenDef
+				#print '<> Trying to match %r' % tokenDef
+				match = tokenDef.match(self.sourceLine, self.sourceLineIndex)
+				if match is nil:
+					#print '<> No match on %r for %r' % (tokenDef, self.sourceLine[self.sourceLineIndex])
+					continue
+				text = match.group()
+				assert inherits(text, str)
+				#print '<> Match! %r - %r' % (text, tokenDef)
+				tok = Token(tokenDef.which, text, text, lineNum=self.lineNum, colNum=self.colNum, charNum=self.charNum)
+				self.sourceLineIndex += len(text)
+				self.colNum += len(text)
+				self.charNum += len(text)
+
+				# enable methods to customize handling of tokens
+				reinvoke = false
+				tokenMethod = self._tokenMethods.get(tok.which, NotFound)
+				if tokenMethod is NotFound:
+					tokenMethod = self._tokenMethods[tok.which] = getattr(self, 'on'+tok.which, nil)
+				if tokenMethod:
+					stuff = tokenMethod(tok)
+					if stuff is nil:
+						# skip token, so go to the next one
+						reinvoke = true
+					elif inherits(stuff, Token):
+						tok = stuff
+					elif inherits(stuff, list):
+						# handle inserting tokens into the stream of tokens
+						self._tokenQueue.extend(stuff)
+						reinvoke = true
+
+				# finished with current line?
+				if self.sourceLineIndex==len(self.sourceLine):
+					self.lastSourceLine = self.sourceLine
+					self.sourceLine = nil
+					self.sourceLineIndex = -1
+
+				# handle token skipping
+				if reinvoke:
+					tok = self._nextToken()
+
+				# yay!
+				return tok
+		finally:
+			self.curTokenDef = nil
+
+		# no match
+		self.error('Lexical error at %r' % self.sourceLine[self.sourceLineIndex:])
+
+	def _obtainSource(self):
+		self.sourceLine = self.readLine()
+		if self.sourceLine in (nil, ''):
+			# end of source
+			return false
+		numLines = self.sourceLine.count('\n')
+		if numLines==0:
+			if self.willAlwaysEndWithNewLine:
+				self.sourceLine += '\n'
+		#print '<> sourceLine = %r' % self.sourceLine
+		if numLines:
+			if numLines==1:
+				assert self.sourceLine.endswith('\n'), self.sourceLine
+			else:
+				assert false, 'Expecting readline() to return one line instead of many.'
+		self.sourceLineIndex = 0
+		self.lineNum += 1
+		self.colNum = 1
+		return true
+
+	def error(self, msg):
+		raise TokenizerError(self.lineNum, msg)
+
+	def pushTokenDefs(self, defs):
+		assert inherits(defs, list, TokenDef), defs
+		defsByWhich = {}
+		for tokenDef in defs:
+			assert not defsByWhich.has_key(tokenDef.which), tokenDef
+			defsByWhich[tokenDef.which] = tokenDef
+		self._tokenDefsStack.push(TokenDefSet(defs, defsByWhich))
+		self.tokenDefs = defs
+		self.tokenDefsByWhich = defsByWhich
+
+	def popTokenDefs(self):
+		self._tokenDefsStack.pop()
+		if self._tokenDefsStack:
+			tokenDefSet = self._tokenDefsStack.peek()
+			defs = tokenDefSet.defs
+			defsByWhich = tokenDefSet.defsByWhich
+		else:
+			defs = defsByWhich = nil
+		self.tokenDefs = defs
+		self.tokenDefsByWhich = defsByWhich
+
+
+class TokenDefSet:
+
+	def construct(self, defs, defsByWhich):
+		self.defs = defs
+		self.defsByWhich = defsByWhich
+
+
+class TokenDef:
+	```
+	Attrs/properties:
+		which
+		regExSource
+		re
+		length
+		ignore
+		isActiveCall
+	```
+
+	def construct(self, which, regExSource):
+		assert inherits(which, str)
+		assert inherits(regExSource, str)
+		self.which = which
+		self.regExSource = regExSource
+		self.re = re.compile(regExSource)
+		self.length = len(regExSource)
+		self.ignore = 0
+		self.isActive = true
+		self.isActiveCall = nil
+
+	def match(self, *args):
+		return self.re.match(*args)
+
+	def __repr__(self):
+		return '%s(%s, %r, %s)' % (
+			self.__class__.__name__, self.which, self.regExSource, self.re)
+
+
+class TestTokenizer(Tokenizer):
+
+	orderedTokenSpecs = [
+		r'OPEN_IF		ifx\(',
+		r'ID			[A-Za-z_][A-Za-z0-9_]*',
+		r'SPACE			[ ]+',
+		r'NEWLINE		\n',
+	]
+
+	unorderedTokenSpecs = [
+		r'DOT			\.',
+		r'COLON			:',
+		r'PLUS			\+',
+		r'ASSIGN		=',
+		r'EQUALS		==',
+	]
+
+	keywords = '''
+		# quality control
+		assert
+
+		# conditionals
+		if else
+	'''
+
+	def _reset(self):
+		Tokenizer._reset(self)
+		self.idCount = 0
+
+	def onID(self, tok):
+		assert tok
+		self.idCount += 1
+		return tok
+
+	def onSPACE(self, tok):
+		return nil
+
+	def onNEWLINE(self, tok):
+		return tok
+
+	def onDOT(self, tok):
+		return [tok, tok.copy()]
+
+
+def test():
+	# basics
+	t = TestTokenizer()
+	t.startSource('hello there')
+	tokens = t.allTokens()
+	assert join(each(tokens,'which'))=='ID ID NEWLINE', tokens
+	assert t.idCount==2
+
+	# the tokenizer lets methods insert tokens
+	t.restart()
+	t.startSource('hello.there')
+	tokens = t.allTokens()
+	assert join(each(tokens,'which'))=='ID DOT DOT ID NEWLINE', tokens
+
+	# tokens know their line numbers and columns and lengths
+	t.restart()
+	t.startSource('''hello
+there
+ you
+ ''')
+ 	tokens = [tok for tok in t.allTokens() if tok.which!='NEWLINE']
+ 	assert len(tokens)==3, tokens
+ 	hello, there, you = tokens
+ 	assert hello.lineNum==1
+ 	assert hello.colNum==1
+ 	assert hello.length==5
+ 	assert there.lineNum==2
+ 	assert there.colNum==1
+ 	assert there.length==5
+ 	assert you.lineNum==3
+ 	assert you.colNum==2
+ 	assert you.length==3
+
+
+def each(stuff, name):
+	for x in stuff:
+		value = getattr(x, name)
+		if iscallable(value):
+			value = value()
+		yield value
+
+def join(stuff, sep=' '):
+	return sep.join([str(x) for x in stuff])
+
+"""
+
+
+class Token
+
+	var _fileName as String
+	var _lineNum as int
+	var _which as String
+	var _text as String
+	var _value as Object?  # TODO: I think it would make more sense for this to be dynamic
+
+	def construct(fileName as String, lineNum as int, which as String, text as String, value as Object?)
+		_fileName = fileName
+		_lineNum = 0
+		_which = which
+		_text = text
+		_value = value
+
+	get length as int
+		return _text.length
+
+	def toString as String is override
+		test
+			t = Token('', 1, 'ID', 'foo', nil)
+			assert t.toString()=='"foo" (ID)'
+		code
+			sb = StringBuilder()
+			for c in _text
+				# TODO: handle \t \c \r
+				sb.append(c)
+			s = sb.toString()
+			if s
+				if s.toLower()==_which.toLower()  # if keyword...
+					return '"[s]"'
+				else
+					return '"[s]" ([_which])'
+			else
+				return '"[_which]"'  # INDENT, DEDENT, etc.
+
+
+class TokenizerError
+	inherits SystemException
+	"""
+	Raised by nextToken() when there are errors in the source trying to be tokenized.
+	"""
+#	def construct(lineNum, msg):
+#		ValueError.construct(self, msg)
+#		self.msg = msg
+#		self.lineNum = lineNum
+	pass
+
+
