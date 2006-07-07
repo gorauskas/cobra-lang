@@ -79,81 +79,81 @@ class Tokenizer
 	verbosity = 0
 	willAlwaysEndWithNewLine = true
 
-	def construct(**args)
-		.didReset = false
-		__dict__.update(args)
-		_reset()
-		_tokenDefsStack = Stack(TokenDefSet)
+				def construct(**args)
+					.didReset = false
+					__dict__.update(args)
+					_reset()
+					_tokenDefsStack = Stack(TokenDefSet)
 
-	def _reset
-		.file = nil
-		.readLine = nil
-		.sourceLine = nil
-		.lastToken = nil
+				def _reset
+					.file = nil
+					.readLine = nil
+					.sourceLine = nil
+					.lastToken = nil
 
-		.lineNum = 0
-		.colNum  = 0
-		.charNum = 0
+					.lineNum = 0
+					.colNum  = 0
+					.charNum = 0
 
-		_tokenQueue = []  # needed when token methods return lists of tokens
-		_tokenMethods = {}
-		_keywordToWhichToken = {}
+					_tokenQueue = []  # needed when token methods return lists of tokens
+					_tokenMethods = {}
+					_keywordToWhichToken = {}
 
-		.didReset = true
+					.didReset = true
 
-	def startFileNamed(filename)
-		.file = open(filename, 'rt')
-		.afterStart()
-		return self
+				def startFileNamed(filename)
+					.file = open(filename, 'rt')
+					.afterStart()
+					return self
 
-	def startSource(source)
-		.file = StringIO(source)
-		.afterStart()
-		return self
+				def startSource(source)
+					.file = StringIO(source)
+					.afterStart()
+					return self
 
-	def nextToken
-		```
-		Consumes a token and returns it, making it the .lastToken.
-		Returns nil when there are no tokens left.
-		```
-		assert .readLine, 'Not started.'
-		.lastToken = _nextToken()
-		if .verbosity>=1
-			print '<> nextToken() returning %r' % .lastToken
-		return .lastToken
+				def nextToken
+					```
+					Consumes a token and returns it, making it the .lastToken.
+					Returns nil when there are no tokens left.
+					```
+					assert .readLine, 'Not started.'
+					.lastToken = _nextToken()
+					if .verbosity>=1
+						print '<> nextToken() returning %r' % .lastToken
+					return .lastToken
 
-	def allTokens
-		```
-		Returns all remaining tokens as a list.
-		```
-		tokens = []
-		while true
-			t = .nextToken()
-			if t is nil
-				break
-			tokens.append(t)
-		return tokens
+				def allTokens
+					```
+					Returns all remaining tokens as a list.
+					```
+					tokens = []
+					while true
+						t = .nextToken()
+						if t is nil
+							break
+						tokens.append(t)
+					return tokens
 
-	def restart
-		```
-		After calling this, you can use the tokenizer anew.
-		Normally you would call this after completing the tokenization of a source file.
-		```
-		.readLine = nil
-		if .file
-			.file.close()
-			.file = nil
-		_reset()
+				def restart
+					```
+					After calling this, you can use the tokenizer anew.
+					Normally you would call this after completing the tokenization of a source file.
+					```
+					.readLine = nil
+					if .file
+						.file.close()
+						.file = nil
+					_reset()
 
 
-	def keywordOrWhich(tok, which='ID')
-		```
-		Changes the token to a keyword if it is one, otherwise sets its which to identifier.
-		Returns the token.
-		This self utility method is typically called by a subclass from the method for the "identifier" token.
-		```
-		tok.which = _keywordToWhichToken.get(tok.text, which)
-		return tok
+				def keywordOrWhich(tok, which='ID')
+					```
+					Changes the token to a keyword if it is one, otherwise sets its which to identifier.
+					Returns the token.
+					This self utility method is typically called by a subclass from the method for the "identifier" token.
+					```
+					tok.which = _keywordToWhichToken.get(tok.text, which)
+					return tok
 
 	# the following three attributes can be conveniently filled out in order to provide the
 	# tokenizer with its needed TokenDefs. See CobraTokenizer for an example.
@@ -458,7 +458,17 @@ def join(stuff, sep=' ')
 """
 
 
+interface IToken
+
+	pro which as String
+	pro text as String
+
+	get fileName as String
+	get lineNum as int
+
+
 class Token
+	implements IToken
 
 	var _fileName as String
 	var _lineNum as int
@@ -473,8 +483,16 @@ class Token
 		_text = text
 		_value = value
 
+	pro which from var
+
+	pro text from var
+
 	get length as int
 		return _text.length
+
+	get fileName from var
+
+	get lineNum from var
 
 	def toString as String is override
 		test
@@ -507,27 +525,50 @@ class TokenizerError
 	pass
 
 
-interface IToken
-
-	get fileName as String
-
 
 class Tokenizer
+	"""
+	Subclasses often:
+		- Override:
+			- orderedTokenSpecs
+			- unorderedTokenSpecs
+			- keywords
+	"""
 
 	var _verbosity as int
 	var _willAlwaysEndWithNewLine = true
 	var _didReset = false
 
+	var _fileName as String
+	var _stream as TextReader?
+
 	var _lineNum as int
 	var _colNum as int
 	var _charNum as int
 
+	var _lastToken as IToken
 	var _tokenDefsStack = Stack<of TokenDefSet>()
 	var _tokenQueue as Queue<of IToken>  # needed when token methods return lists of tokens
+
+	var _keywordToWhichToken as Dictionary<of String, String>
 
 	def construct
 		_didReset = false
 		_reset()
+
+	get orderedTokenSpecs as List<of String>
+		return List<of String>()
+
+	get unorderedTokenSpecs as List<of String>
+		return List<of String>()
+
+	get keywords as String
+		"""
+		Returns a string containing all keywords separated by spaces.
+		Comments starting with a # can be put on individual lines.
+		Subclasses often override this to specify keywords.
+		"""
+		return ''
 
 	def _reset
 #		.file = nil
@@ -541,10 +582,93 @@ class Tokenizer
 
 		_tokenQueue = Queue<of IToken>()
 		# _tokenMethods = {}
-		# _keywordToWhichToken = {}
+		_keywordToWhichToken = Dictionary<of String, String>()
 
 		_didReset = true
 
+	def startFileNamed(fileName as String) as Tokenizer  # TODO: change to this
+		_fileName = fileName
+		_stream = File.openText(fileName)
+		.afterStart()
+		return this
+
+	def startSource(source as String) as Tokenizer
+		_fileName = 'noname'
+		_stream = StringReader(source)
+		.afterStart()
+		return this
+
+	get nextToken as IToken
+		"""
+		Consumes a token and returns it, making it the .lastToken.
+		Returns nil when there are no tokens left.
+		"""
+		#assert .readLine, 'Not started.'
+		_lastToken = _nextToken
+		if _verbosity>=1
+			print '<> nextToken() returning [_lastToken]'
+		return _lastToken
+
+	get _nextToken as IToken
+		return nil to passthrough # TODO
+
+	def allTokens as List<of IToken>
+		"""
+		Returns all remaining tokens as a list.
+		"""
+		tokens = List<of IToken>()
+		while true
+			t = .nextToken
+			if t is nil
+				break
+			tokens.add(t)
+		return tokens
+
+	def restart
+		"""
+		After calling this, you can use the tokenizer anew.
+		Normally you would call this after completing the tokenization of a source file.
+		"""
+		if _stream
+			_stream.close()
+			_stream = nil
+		_reset()
+
+	def keywordOrWhich(tok as Token)
+		.keywordOrWhich(tok, 'ID')
+
+	def keywordOrWhich(tok as IToken, which as String) as IToken
+		"""
+		Changes the token to a keyword if it is one, otherwise sets its which to identifier.
+		Returns the token.
+		This self utility method is typically called by a subclass from the method for the "identifier" token.
+		"""
+		if _keywordToWhichToken.containsKey(tok.text)
+			tok.which = _keywordToWhichToken[which]
+		# CC: should be
+		# tok.which = _keywordToWhichToken.getOrRet(tok.text, which)
+		return tok
+
+	def afterStart
+		pass
 
 class TokenDefSet
 	pass
+
+
+namespace System
+
+	namespace IO
+
+		class StringReader
+			is fake
+			inherits TextReader
+			pass
+
+		class Stream
+			is fake
+			pass
+
+		class MemoryStream
+			is fake
+			pass
