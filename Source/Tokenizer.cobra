@@ -27,17 +27,17 @@ import re
 
 class Token
 
-				def construct(which, text, value, **values)
-					.which = which
-					.text = text
-					.value = value
-					.fileName = ''
-					.lineNum = 0
-					__dict__.update(values)
+			def construct(which, text, value, **values)
+				.which = which
+				.text = text
+				.value = value
+				.fileName = ''
+				.lineNum = 0
+				__dict__.update(values)
 
-				@property
-				def length
-					return len(.text)
+			@property
+			def length
+				return len(.text)
 
 			def __str__
 				s = .text
@@ -155,67 +155,67 @@ class Tokenizer
 					tok.which = _keywordToWhichToken.get(tok.text, which)
 					return tok
 
-	# the following three attributes can be conveniently filled out in order to provide the
-	# tokenizer with its needed TokenDefs. See CobraTokenizer for an example.
-	orderedTokenSpecs = nil
-	unorderedTokenSpecs = nil
-	keywords = nil
+		# the following three attributes can be conveniently filled out in order to provide the
+		# tokenizer with its needed TokenDefs. See CobraTokenizer for an example.
+		orderedTokenSpecs = nil
+		unorderedTokenSpecs = nil
+		keywords = nil
 
-	def afterStart
-		```
-		Sets up self attrs
-			readLine as callable
-			tokenDefs as list
-		```
-		assert .didReset, 'Never reset. Probably the subclass overrides _reset() but forgets to invoke base.'
-		assert not .readLine, 'Already started.'
-		.readLine = .file.readline
-		# create a single list of all token defs in the correct order
-		.tokenDefs = []
-		if .orderedTokenSpecs
-			for spec in .orderedTokenSpecs
-				.addTokenSpec(spec)
-		others = []
-		if .unorderedTokenSpecs
-			for spec in .unorderedTokenSpecs
-				others.append(.tokenDefForSpec(spec))
-		if .keywords
-			keywords = .keywords
-			if inherits(keywords, str)
-				t = []
-				for line in keywords.split('\n')
-					line = line.strip()
-					if not line or line.startswith('#')
-						continue
-					t.extend(line.split())
-				keywords = t
-			for word in keywords
-				_keywordToWhichToken[word] = word.upper()
-		others.sort(lambda a, b cmp(a.length, b.length))
-		others.reverse()  # longest tokens need to be matched first
-		.tokenDefs.extend(others)
-		.pushTokenDefs(.tokenDefs)
-		if 0
-			i = 0
-			print '<> tokenDefs'
-			for tokenDef in .tokenDefs
-				print '    [%i] %r' % (i, tokenDef)
-				i += 1
+		def afterStart
+			```
+			Sets up self attrs
+				readLine as callable
+				tokenDefs as list
+			```
+			assert .didReset, 'Never reset. Probably the subclass overrides _reset() but forgets to invoke base.'
+			assert not .readLine, 'Already started.'
+			.readLine = .file.readline
+			# create a single list of all token defs in the correct order
+			.tokenDefs = []
+			if .orderedTokenSpecs
+				for spec in .orderedTokenSpecs
+					.addTokenSpec(spec)
+			others = []
+			if .unorderedTokenSpecs
+				for spec in .unorderedTokenSpecs
+					others.append(.tokenDefForSpec(spec))
+			if .keywords
+				keywords = .keywords
+				if inherits(keywords, str)
+					t = []
+					for line in keywords.split('\n')
+						line = line.strip()
+						if not line or line.startswith('#')
+							continue
+						t.extend(line.split())
+					keywords = t
+				for word in keywords
+					_keywordToWhichToken[word] = word.upper()
+			others.sort(lambda a, b cmp(a.length, b.length))
+			others.reverse()  # longest tokens need to be matched first
+			.tokenDefs.extend(others)
+			.pushTokenDefs(.tokenDefs)
+			if 0
+				i = 0
+				print '<> tokenDefs'
+				for tokenDef in .tokenDefs
+					print '    [%i] %r' % (i, tokenDef)
+					i += 1
 
-				def addTokenSpec(spec)
-					.tokenDefs.append(.tokenDefForSpec(spec))
+					def addTokenSpec(spec)
+						.tokenDefs.append(.tokenDefForSpec(spec))
 
-				def tokenDefForSpec(spec)
-					```
-					Returns a TokenDef object for a spec such as
-						r'ID			[A-Za-z_][A-Za-z0-9_]*'
-					```
-					spec = spec.strip().replace('\t', ' ')
-					which, re = spec.split(' ', 1)
-					re = re.strip()
-					assert which
-					assert re
-					return TokenDef(which=which, regExSource=re)
+					def tokenDefForSpec(spec)
+						```
+						Returns a TokenDef object for a spec such as
+							r'ID			[A-Za-z_][A-Za-z0-9_]*'
+						```
+						spec = spec.strip().replace('\t', ' ')
+						which, re = spec.split(' ', 1)
+						re = re.strip()
+						assert which
+						assert re
+						return TokenDef(which=which, regExSource=re)
 
 	def _nextToken
 		if _tokenQueue
@@ -679,8 +679,48 @@ class Tokenizer
 		return TokenDef(which, re)
 
 	def afterStart
-		pass
+		"""
+		Sets up self attrs
+			readLine as callable
+			tokenDefs as list
+		"""
+		assert _didReset, 'Never reset. Probably the subclass overrides _reset() but forgets to invoke base.'
+		# create a single list of all token defs in the correct order
+		_tokenDefs = List<of TokenDef>()
+		if .orderedTokenSpecs
+			for spec in .orderedTokenSpecs
+				.addTokenSpec(spec)
+		others = List<of TokenDef>()
+		if .unorderedTokenSpecs
+			for spec in .unorderedTokenSpecs
+				others.add(.tokenDefForSpec(spec))
+		if .keywords
+			t = List<of String>()
+			for line as String in .keywords.split(c'\n')
+				line = line.trim()
+				if not line or line.startsWith('#')
+					continue
+				t.addRange(line.split(nil))
+			for word in t
+				_keywordToWhichToken[word] = word.toUpper()
+		# longest tokens need to be matched first
+		# TODO: @@@@@@@@@ others.sort(lambda a, b cmp(a.length, b.length))
+		didSort = false
+		post while didSort
+			didSort = false
+			for i = 0 .. others.count-1
+				a = others[i]
+				b = others[i+1]
+				if a.length<b.length
+					swap = others[i]
+					others[i] = others[i+1]
+					others[i+1] = swap
+					didSort = true
+		_tokenDefs.addRange(others)
+		.pushTokenDefs(_tokenDefs)
 
+	def pushTokenDefs(defs as List<of TokenDef>)
+		pass
 
 class TokenDef
 
