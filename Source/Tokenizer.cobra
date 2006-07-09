@@ -167,179 +167,179 @@ class Tokenizer
 					tok.which = _keywordToWhichToken.get(tok.text, which)
 					return tok
 
-		# the following three attributes can be conveniently filled out in order to provide the
-		# tokenizer with its needed TokenDefs. See CobraTokenizer for an example.
-		orderedTokenSpecs = nil
-		unorderedTokenSpecs = nil
-		keywords = nil
+			# the following three attributes can be conveniently filled out in order to provide the
+			# tokenizer with its needed TokenDefs. See CobraTokenizer for an example.
+			orderedTokenSpecs = nil
+			unorderedTokenSpecs = nil
+			keywords = nil
 
-		def afterStart
-			```
-			Sets up self attrs
-				readLine as callable
-				tokenDefs as list
-			```
-			assert .didReset, 'Never reset. Probably the subclass overrides _reset() but forgets to invoke base.'
-			assert not .readLine, 'Already started.'
-			.readLine = .file.readline
-			# create a single list of all token defs in the correct order
-			.tokenDefs = []
-			if .orderedTokenSpecs
-				for spec in .orderedTokenSpecs
-					.addTokenSpec(spec)
-			others = []
-			if .unorderedTokenSpecs
-				for spec in .unorderedTokenSpecs
-					others.append(.tokenDefForSpec(spec))
-			if .keywords
-				keywords = .keywords
-				if inherits(keywords, str)
-					t = []
-					for line in keywords.split('\n')
-						line = line.strip()
-						if not line or line.startswith('#')
-							continue
-						t.extend(line.split())
-					keywords = t
-				for word in keywords
-					_keywordToWhichToken[word] = word.upper()
-			others.sort(lambda a, b cmp(a.length, b.length))
-			others.reverse()  # longest tokens need to be matched first
-			.tokenDefs.extend(others)
-			.pushTokenDefs(.tokenDefs)
-			if 0
-				i = 0
-				print '<> tokenDefs'
-				for tokenDef in .tokenDefs
-					print '    [%i] %r' % (i, tokenDef)
-					i += 1
-
-					def addTokenSpec(spec)
-						.tokenDefs.append(.tokenDefForSpec(spec))
-
-					def tokenDefForSpec(spec)
-						```
-						Returns a TokenDef object for a spec such as
-							r'ID			[A-Za-z_][A-Za-z0-9_]*'
-						```
-						spec = spec.strip().replace('\t', ' ')
-						which, re = spec.split(' ', 1)
-						re = re.strip()
-						assert which
-						assert re
-						return TokenDef(which=which, regExSource=re)
-
-				def _nextToken
-					if _tokenQueue
-						# eat up queue first
-						tok = _tokenQueue[0]
-						del _tokenQueue[0]
-						return tok
-					if not .sourceLine or .sourceLineIndex==len(.sourceLine)
-						if not _obtainSource()
-							return nil
-					try
-						for tokenDef in .tokenDefs
-							if tokenDef.ignore  # TODO rename to ignoreCount
-								tokenDef.ignore -= 1
+			def afterStart
+				```
+				Sets up self attrs
+					readLine as callable
+					tokenDefs as list
+				```
+				assert .didReset, 'Never reset. Probably the subclass overrides _reset() but forgets to invoke base.'
+				assert not .readLine, 'Already started.'
+				.readLine = .file.readline
+				# create a single list of all token defs in the correct order
+				.tokenDefs = []
+				if .orderedTokenSpecs
+					for spec in .orderedTokenSpecs
+						.addTokenSpec(spec)
+				others = []
+				if .unorderedTokenSpecs
+					for spec in .unorderedTokenSpecs
+						others.append(.tokenDefForSpec(spec))
+				if .keywords
+					keywords = .keywords
+					if inherits(keywords, str)
+						t = []
+						for line in keywords.split('\n')
+							line = line.strip()
+							if not line or line.startswith('#')
 								continue
-							if not tokenDef.isActive
-								continue
-							if tokenDef.isActiveCall
-								if not tokenDef.isActiveCall
-									continue
-							.curTokDef = tokenDef  # this enables onTOKENWHICH() methods to access the current tokenDef
-							#print '<> Trying to match %r' % tokenDef
-							match = tokenDef.match(.sourceLine, .sourceLineIndex)
-							if match is nil
-								#print '<> No match on %r for %r' % (tokenDef, .sourceLine[.sourceLineIndex])
-								continue
-							text = match.group()
-							assert inherits(text, str)
-							#print '<> Match! %r - %r' % (text, tokenDef)
-							tok = Token(tokenDef.which, text, text, lineNum=.lineNum, colNum=.colNum, charNum=.charNum)
-							.sourceLineIndex += len(text)
-							.colNum += len(text)
-							.charNum += len(text)
+							t.extend(line.split())
+						keywords = t
+					for word in keywords
+						_keywordToWhichToken[word] = word.upper()
+				others.sort(lambda a, b cmp(a.length, b.length))
+				others.reverse()  # longest tokens need to be matched first
+				.tokenDefs.extend(others)
+				.pushTokenDefs(.tokenDefs)
+				if 0
+					i = 0
+					print '<> tokenDefs'
+					for tokenDef in .tokenDefs
+						print '    [%i] %r' % (i, tokenDef)
+						i += 1
 
-							# enable methods to customize handling of tokens
-							reinvoke = false
-							tokenMethod = _tokenMethods.get(tok.which, NotFound)
-							if tokenMethod is NotFound
-								tokenMethod = _tokenMethods[tok.which] = getattr('on'+tok.which, nil)
-							if tokenMethod
-								stuff = tokenMethod(tok)
-								if stuff is nil
-									# skip token, so go to the next one
-									reinvoke = true
-								elif inherits(stuff, Token)
-									tok = stuff
-								elif inherits(stuff, list)
-									# handle inserting tokens into the stream of tokens
-									_tokenQueue.extend(stuff)
-									reinvoke = true
+						def addTokenSpec(spec)
+							.tokenDefs.append(.tokenDefForSpec(spec))
 
-							# finished with current line?
-							if .sourceLineIndex==len(.sourceLine)
-								.lastSourceLine = .sourceLine
-								.sourceLine = nil
-								.sourceLineIndex = -1
+						def tokenDefForSpec(spec)
+							```
+							Returns a TokenDef object for a spec such as
+								r'ID			[A-Za-z_][A-Za-z0-9_]*'
+							```
+							spec = spec.strip().replace('\t', ' ')
+							which, re = spec.split(' ', 1)
+							re = re.strip()
+							assert which
+							assert re
+							return TokenDef(which=which, regExSource=re)
 
-							# handle token skipping
-							if reinvoke
-								tok = _nextToken()
-
-							# yay!
+					def _nextToken
+						if _tokenQueue
+							# eat up queue first
+							tok = _tokenQueue[0]
+							del _tokenQueue[0]
 							return tok
-					finally
-						.curTokenDef = nil
+						if not .sourceLine or .sourceLineIndex==len(.sourceLine)
+							if not _obtainSource()
+								return nil
+						try
+							for tokenDef in .tokenDefs
+								if tokenDef.ignore  # TODO rename to ignoreCount
+									tokenDef.ignore -= 1
+									continue
+								if not tokenDef.isActive
+									continue
+								if tokenDef.isActiveCall
+									if not tokenDef.isActiveCall
+										continue
+								.curTokDef = tokenDef  # this enables onTOKENWHICH() methods to access the current tokenDef
+								#print '<> Trying to match %r' % tokenDef
+								match = tokenDef.match(.sourceLine, .sourceLineIndex)
+								if match is nil
+									#print '<> No match on %r for %r' % (tokenDef, .sourceLine[.sourceLineIndex])
+									continue
+								text = match.group()
+								assert inherits(text, str)
+								#print '<> Match! %r - %r' % (text, tokenDef)
+								tok = Token(tokenDef.which, text, text, lineNum=.lineNum, colNum=.colNum, charNum=.charNum)
+								.sourceLineIndex += len(text)
+								.colNum += len(text)
+								.charNum += len(text)
 
-					# no match
-					.error('Lexical error at %r' % .sourceLine[.sourceLineIndex])
+								# enable methods to customize handling of tokens
+								reinvoke = false
+								tokenMethod = _tokenMethods.get(tok.which, NotFound)
+								if tokenMethod is NotFound
+									tokenMethod = _tokenMethods[tok.which] = getattr('on'+tok.which, nil)
+								if tokenMethod
+									stuff = tokenMethod(tok)
+									if stuff is nil
+										# skip token, so go to the next one
+										reinvoke = true
+									elif inherits(stuff, Token)
+										tok = stuff
+									elif inherits(stuff, list)
+										# handle inserting tokens into the stream of tokens
+										_tokenQueue.extend(stuff)
+										reinvoke = true
 
-	def _obtainSource
-		.sourceLine = .readLine()
-		if .sourceLine in (nil, '')
-			# end of source
-			return false
-		numLines = .sourceLine.count('\n')
-		if numLines==0
-			if .willAlwaysEndWithNewLine
-				.sourceLine += '\n'
-		#print '<> sourceLine = %r' % .sourceLine
-		if numLines
-			if numLines==1
-				assert .sourceLine.endswith('\n'), .sourceLine
-			else
-				assert false, 'Expecting readline() to return one line instead of many.'
-		.sourceLineIndex = 0
-		.lineNum += 1
-		.colNum = 1
-		return true
+								# finished with current line?
+								if .sourceLineIndex==len(.sourceLine)
+									.lastSourceLine = .sourceLine
+									.sourceLine = nil
+									.sourceLineIndex = -1
 
-	def error(msg)
-		raise TokenizerError(.lineNum, msg)
+								# handle token skipping
+								if reinvoke
+									tok = _nextToken()
 
-	def pushTokenDefs(defs)
-		assert inherits(defs, list, TokenDef), defs
-		defsByWhich = {}
-		for tokenDef in defs
-			assert not defsByWhich.has_key(tokenDef.which), tokenDef
-			defsByWhich[tokenDef.which] = tokenDef
-		_tokenDefsStack.push(TokenDefSet(defs, defsByWhich))
-		.tokenDefs = defs
-		.tokenDefsByWhich = defsByWhich
+								# yay!
+								return tok
+						finally
+							.curTokenDef = nil
 
-	def popTokenDefs
-		_tokenDefsStack.pop()
-		if _tokenDefsStack
-			tokenDefSet = _tokenDefsStack.peek()
-			defs = tokenDefSet.defs
-			defsByWhich = tokenDefSet.defsByWhich
-		else
-			defs = defsByWhich = nil
-		.tokenDefs = defs
-		.tokenDefsByWhich = defsByWhich
+						# no match
+						.error('Lexical error at %r' % .sourceLine[.sourceLineIndex])
+
+				def _obtainSource
+					.sourceLine = .readLine()
+					if .sourceLine in (nil, '')
+						# end of source
+						return false
+					numLines = .sourceLine.count('\n')
+					if numLines==0
+						if .willAlwaysEndWithNewLine
+							.sourceLine += '\n'
+					#print '<> sourceLine = %r' % .sourceLine
+					if numLines
+						if numLines==1
+							assert .sourceLine.endswith('\n'), .sourceLine
+						else
+							assert false, 'Expecting readline() to return one line instead of many.'
+					.sourceLineIndex = 0
+					.lineNum += 1
+					.colNum = 1
+					return true
+
+				def error(msg)
+					raise TokenizerError(.lineNum, msg)
+
+				def pushTokenDefs(defs)
+					assert inherits(defs, list, TokenDef), defs
+					defsByWhich = {}
+					for tokenDef in defs
+						assert not defsByWhich.has_key(tokenDef.which), tokenDef
+						defsByWhich[tokenDef.which] = tokenDef
+					_tokenDefsStack.push(TokenDefSet(defs, defsByWhich))
+					.tokenDefs = defs
+					.tokenDefsByWhich = defsByWhich
+
+				def popTokenDefs
+					_tokenDefsStack.pop()
+					if _tokenDefsStack
+						tokenDefSet = _tokenDefsStack.peek()
+						defs = tokenDefSet.defs
+						defsByWhich = tokenDefSet.defsByWhich
+					else
+						defs = defsByWhich = nil
+					.tokenDefs = defs
+					.tokenDefsByWhich = defsByWhich
 
 
 			class TokenDefSet
@@ -566,6 +566,7 @@ class Tokenizer
 	var _keywordToWhichToken as Dictionary<of String, String>
 
 	var _tokenDefs as List<of TokenDef>
+	var _tokenDefsByWhich as Dictionary<of String, TokenDef>
 	var _curTokenDef as TokenDef?
 	var _lastTokenDef as TokenDef?
 
@@ -822,7 +823,7 @@ class Tokenizer
 
 				# enable methods to customize handling of tokens
 				reinvoke = false
-				# TODO: get takenMethods working
+				# TODO: get tokenMethods working
 #				tokenMethod = _tokenMethods.get(tok.which, NotFound)
 #				if tokenMethod is NotFound
 #					tokenMethod = _tokenMethods[tok.which] = getattr('on'+tok.which, nil)
@@ -858,7 +859,14 @@ class Tokenizer
 		return nil
 
 	def pushTokenDefs(defs as List<of TokenDef>)
-		pass
+		defsByWhich = Dictionary<of String, TokenDef>()
+		for tokenDef in defs
+			assert not defsByWhich.containsKey(tokenDef.which), tokenDef
+			defsByWhich[tokenDef.which] = tokenDef
+		_tokenDefsStack.push(TokenDefSet(defs, defsByWhich))
+		_tokenDefs = defs
+		_tokenDefsByWhich = defsByWhich
+
 
 	def _error(msg as String)
 		throw TokenizerError(this, msg)
