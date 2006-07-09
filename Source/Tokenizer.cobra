@@ -513,7 +513,7 @@ class Token
 
 	def toString as String is override
 		test
-			t = Token('', 1, 'ID', 'foo', nil)
+			t = Token('', 1, 1, 1, 'ID', 'foo', nil)
 			assert t.toString()=='"foo" (ID)'
 		code
 			sb = StringBuilder()
@@ -535,12 +535,12 @@ class TokenizerError
 	"""
 	Raised by nextToken() when there are errors in the source trying to be tokenized.
 	"""
-#	def construct(lineNum, msg)
-#		ValueError.construct(msg)
-#		.msg = msg
-#		.lineNum = lineNum
-	pass
 
+	var _tokenizer as Tokenizer
+
+	def construct(tokenizer as Tokenizer, msg as String)
+#		base.construct(msg)  @@@@@ TODO
+		_tokenizer = tokenizer
 
 
 class Tokenizer
@@ -566,8 +566,8 @@ class Tokenizer
 	var _keywordToWhichToken as Dictionary<of String, String>
 
 	var _tokenDefs as List<of TokenDef>
-	var _curTokenDef as TokenDef
-	var _lastTokenDef as TokenDef
+	var _curTokenDef as TokenDef?
+	var _lastTokenDef as TokenDef?
 
 	# Source line and location
 	var _sourceLine as String?
@@ -807,11 +807,13 @@ class Tokenizer
 				#print '<> Trying to match %r' % tokenDef
 				sourceLine = _sourceLine to String  # CC: to !
 				match = tokenDef.match(sourceLine, _sourceLineIndex)
-				if match is nil or not match.getType().getProperty('success').invoke(match, nil)  # TODO: if match is nil or not match.`success`
+				if match is nil or not match.getType().getProperty('success').GetValue(match, nil)  # TODO: if match is nil or not match.`success`
 					#print '<> No match on %r for %r' % (tokenDef, .sourceLine[.sourceLineIndex])
 					continue
 				text = match.toString()
 				#print '<> Match! [text] - [tokenDef]'
+				# tok = Token(_fileName, _lineNum, _colNum, _charNum, tokenDef.which, text, text) to ? # CC
+				tok as IToken?
 				tok = Token(_fileName, _lineNum, _colNum, _charNum, tokenDef.which, text, text)
 				len = text.length
 				_sourceLineIndex += len
@@ -844,7 +846,7 @@ class Tokenizer
 
 				# handle token skipping
 				if reinvoke
-					tok = _nextToken()
+					tok = _nextToken
 
 				# yay!
 				return tok
@@ -853,9 +855,14 @@ class Tokenizer
 
 		# no match
 		_error('Lexical error at [_sourceLine[_sourceLineIndex]]')
+		return nil
 
 	def pushTokenDefs(defs as List<of TokenDef>)
 		pass
+
+	def _error(msg as String)
+		throw TokenizerError(this, msg)
+
 
 class TokenDef
 
