@@ -479,6 +479,13 @@ interface IToken
 	get fileName as String
 	get lineNum as int
 
+	get copy as IToken
+
+	pro nextToken as IToken
+		"""
+		Use this to "insert" extra tokens into the token stream from an onWHICH() method.
+		"""
+
 
 class Token
 	implements IToken
@@ -490,6 +497,7 @@ class Token
 	var _which as String
 	var _text as String
 	var _value as Object?  # TODO I think it would make more sense for this to be dynamic
+	var _nextToken as IToken
 
 	def construct(fileName as String, lineNum as int, colNum as int, charNum as int, which as String, text as String, value as Object?)
 		_fileName = fileName
@@ -510,6 +518,18 @@ class Token
 	get fileName from var
 
 	get lineNum from var
+
+	pro nextToken from var
+
+	get copy as IToken
+		# TODO: should this:
+		t = Token(_fileName, _lineNum, _colNum, _charNum, _which, _text, _value)
+		# be this:
+		# t = .getType()(_fileName, _lineNum, _colNum, _charNum, _which, _text, _value)
+		# and if so, how does performance change?
+		if _nextToken
+			t.nextToken = _nextToken.copy
+		return t
 
 	def toString as String is override
 		test
@@ -537,10 +557,15 @@ class TokenizerError
 	"""
 
 	var _tokenizer as Tokenizer
+	var _msg as String
 
 	def construct(tokenizer as Tokenizer, msg as String)
-#		base.construct(msg)  @@@@@ TODO
+		# base.construct(msg) CC: re-enable this after fixing and axe next line
+		_msg = msg
 		_tokenizer = tokenizer
+
+	get message as String is override
+		return _msg
 
 
 class Tokenizer
@@ -556,7 +581,7 @@ class Tokenizer
 	var _willAlwaysEndWithNewLine = true
 	var _didReset = false
 
-	var _fileName as String
+	var _fileName as String?
 	var _stream as TextReader?
 
 	var _lastToken as IToken?
@@ -608,11 +633,13 @@ class Tokenizer
 	## Other
 
 	def _reset
-#		.file = nil
-#		.readLine = nil
-#		.sourceLine = nil
-#		.lastToken = nil
+		_fileName = nil
+		_stream = nil
+		_lastToken = nil
 
+		_sourceLine = nil
+		_lastSourceLine = nil
+		_lineNum = 0
 		_lineNum = 0
 		_colNum  = 0
 		_charNum = 0
@@ -673,9 +700,10 @@ class Tokenizer
 
 	def keywordOrWhich(tok as IToken, which as String) as IToken
 		"""
-		Changes the token to a keyword if it is one, otherwise sets its which to identifier.
+		Changes the token to a keyword if it is one, otherwise sets its which.
 		Returns the token.
-		This self utility method is typically called by a subclass from the method for the "identifier" token.
+		This self utility method is typically called by a subclass from the method for the
+		"identifier" token.
 		"""
 		if _keywordToWhichToken.containsKey(tok.text)
 			tok.which = _keywordToWhichToken[which]
@@ -735,7 +763,7 @@ class Tokenizer
 			for word in t
 				_keywordToWhichToken[word] = word.toUpper()
 		# longest tokens need to be matched first
-		# TODO: @@@@@@@@@ others.sort(lambda a, b cmp(a.length, b.length))
+		# CC: others.sort(lambda a, b cmp(a.length, b.length))
 		didSort = false
 		post while didSort
 			didSort = false
@@ -929,6 +957,52 @@ class TokenDefSet
 	get defs from var
 
 	get defsByWhich from var
+
+
+class TestTokenizer
+	inherits Tokenizer
+
+	var _idCount as int
+
+	get orderedTokenSpecs as List<of String> is override
+		return [
+			'OPEN_IF		ifx\\(',
+			ns'ID			[A-Za-z_][A-Za-z0-9_]*',
+			ns'SPACE			[ ]+',
+			'NEWLINE		\\n',
+			]
+
+	get unorderedTokenSpecs as List<of String> is override
+		return [
+			'DOT			\\.',
+			'COLON			',
+			'PLUS			\\+',
+			'ASSIGN		=',
+			'EQUALS		==',
+			]
+
+	get keywords as String is override
+		return 'assert if else'
+
+	def _reset is override
+		_reset()
+		_idCount = 0
+
+	def onID(tok as IToken) as IToken?
+		assert tok
+		_idCount += 1
+		return tok
+
+	def onSPACE(tok as IToken) as IToken?
+		return nil
+
+	def onNEWLINE(tok as IToken) as IToken?
+		return tok
+
+	def onDOT(tok as IToken) as IToken?
+		tok.nextToken = tok.copy
+		return tok
+
 
 
 namespace System
