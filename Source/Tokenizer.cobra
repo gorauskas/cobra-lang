@@ -605,7 +605,9 @@ class Tokenizer
 
 	def construct
 		_didReset = false
+		print 7
 		_reset()
+		print 9
 
 
 	## Subclasses often override
@@ -633,6 +635,7 @@ class Tokenizer
 	## Other
 
 	def _reset
+		print 50
 		_fileName = nil
 		_stream = nil
 		_lastToken = nil
@@ -649,6 +652,7 @@ class Tokenizer
 		_keywordToWhichToken = Dictionary<of String, String>()
 
 		_didReset = true
+		print 59
 
 	def startFileNamed(fileName as String) as Tokenizer  # TODO: change to this
 		_fileName = fileName
@@ -659,7 +663,9 @@ class Tokenizer
 	def startSource(source as String) as Tokenizer
 		_fileName = 'noname'
 		_stream = StringReader(source)
+		print 1000
 		.afterStart()
+		print 2000
 		return this
 
 	get nextToken as IToken?
@@ -731,6 +737,7 @@ class Tokenizer
 			else
 				re = part
 			partNum += 1
+		assert partNum==2, 'Got [partNum] part(s) for spec "[spec]" instead of 2'
 
 		re = re.trim()
 		assert which
@@ -815,12 +822,17 @@ class Tokenizer
 		return true
 
 	get _nextToken as IToken?
+		print '>> _nextToken'
 		if _tokenQueue
 			# eat up queue first
+			print 100
 			return _tokenQueue.dequeue()
+		print 200
 		if not _sourceLine or _sourceLineIndex==_sourceLine.length
 			if not _obtainSource()
+				print 300
 				return nil
+		print 400
 		try
 			for tokenDef in _tokenDefs
 				if tokenDef.ignoreCount
@@ -975,7 +987,7 @@ class TestTokenizer
 	get unorderedTokenSpecs as List<of String> is override
 		return [
 			'DOT			\\.',
-			'COLON			',
+			'COLON			:',
 			'PLUS			\\+',
 			'ASSIGN		=',
 			'EQUALS		==',
@@ -985,7 +997,7 @@ class TestTokenizer
 		return 'assert if else'
 
 	def _reset is override
-		_reset()
+		base._reset()
 		_idCount = 0
 
 	def onID(tok as IToken) as IToken?
@@ -1003,6 +1015,50 @@ class TestTokenizer
 		tok.nextToken = tok.copy
 		return tok
 
+
+	test
+		# basics
+		t = TestTokenizer()
+		t.startSource('hello there')
+		tokens = t.allTokens()
+#		assert join(each(tokens,'which'))=='ID ID NEWLINE', tokens
+#		assert t.idCount==2
+
+		# the tokenizer lets methods insert tokens
+#		t.restart()
+#		t.startSource('hello.there')
+#		tokens = t.allTokens()
+#		assert join(each(tokens,'which'))=='ID DOT DOT ID NEWLINE', tokens
+
+		# tokens know their line numbers and columns and lengths
+#		t.restart()
+#		t.startSource('''hello
+#	there
+#	 you
+#	 ''')
+#	 	tokens = [tok for tok in t.allTokens() if tok.which!='NEWLINE']
+#	 	assert len(tokens)==3, tokens
+#	 	hello, there, you = tokens
+#	 	assert hello.lineNum==1
+#	 	assert hello.colNum==1
+#	 	assert hello.length==5
+#	 	assert there.lineNum==2
+#	 	assert there.colNum==1
+#	 	assert there.length==5
+#	 	assert you.lineNum==3
+#	 	assert you.colNum==2
+#	 	assert you.length==3
+
+
+#	def each(stuff, name)
+#		for x in stuff
+#			value = getattr(x, name)
+#			if iscallable(value)
+#				value = value()
+#			yield value
+
+#	def join(stuff, sep=' ')
+#		return sep.join([str(x) for x in stuff])
 
 
 namespace System
