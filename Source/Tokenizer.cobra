@@ -819,7 +819,6 @@ class Tokenizer
 	get _nextToken as IToken?
 		if _tokenQueue
 			# eat up queue first
-			print 100
 			return _tokenQueue.dequeue()
 		if not _sourceLine or _sourceLineIndex==_sourceLine.length
 			if not _obtainSource()
@@ -859,21 +858,21 @@ class Tokenizer
 
 				# enable methods to customize handling of tokens
 				reinvoke = false
-				# TODO: get tokenMethods working
-#				tokenMethod = _tokenMethods.get(tok.which, NotFound)
-#				if tokenMethod is NotFound
-#					tokenMethod = _tokenMethods[tok.which] = getattr('on'+tok.which, nil)
-#				if tokenMethod
-#					stuff = tokenMethod(tok)
-#					if stuff is nil
-#						# skip token, so go to the next one
-#						reinvoke = true
-#					elif inherits(stuff, Token)
-#						tok = stuff
-#					elif inherits(stuff, list)
-#						# handle inserting tokens into the stream of tokens
-#						_tokenQueue.extend(stuff)
-#						reinvoke = true
+
+				# TODO: test if caching the methods is faster
+				methName = 'On' + tok.which
+				meth = .getType().getMethod(methName) # , [IToken].toArray())
+				if meth is not nil
+					tok = meth.invoke(this, [tok].toArray()) to IToken
+					if tok is nil
+						# skip token, so go to the next one
+						reinvoke = true
+					else
+						# TODO: could probably make this more efficient by axing the queue and just checking for nextToken in this method
+						while tok
+							_tokenQueue.enqueue(tok)
+							tok = tok.nextToken
+						reinvoke = true  # to pick up the queue
 
 				# finished with current line?
 				if _sourceLineIndex==_sourceLine.length
@@ -972,6 +971,8 @@ class TestTokenizer
 
 	var _idCount as int
 
+	get idCount from var
+
 	get orderedTokenSpecs as List<of String> is override
 		return [
 			'OPEN_IF		ifx\\(',
@@ -1013,10 +1014,11 @@ class TestTokenizer
 
 	test
 		# basics
-		t = TestTokenizer()
-		t.startSource('hello there')
-		tokens = t.allTokens()
-		.checkTokens(tokens, 'ID SPACE ID NEWLINE')
+		tt = TestTokenizer()
+		tt.startSource('hello there')
+		tokens = tt.allTokens()
+		.checkTokens(tokens, 'ID ID NEWLINE')
+		assert tt.idCount==2
 #		assert join(each(tokens,'which'))=='ID ID NEWLINE', tokens
 #		assert t.idCount==2
 
