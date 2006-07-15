@@ -467,6 +467,7 @@ def each(stuff, name)
 def join(stuff, sep=' ')
 	return sep.join([str(x) for x in stuff])
 
+"
 """
 
 use System.Text.RegularExpressions
@@ -841,6 +842,11 @@ class Tokenizer
 				if match is nil or not match.getType().getProperty('Success').getValue(match, nil)  # TODO: if match is nil or not match.`success`
 					#print '<> No match on [tokenDef] for [_sourceLine[_sourceLineIndex]]'
 					continue
+				if match.index>_sourceLineIndex
+					# TODO: there's no option I can see to get the regex to fail to match if it can't
+					# match the first character! wtf? This will kill performance and probably dictate
+					# that Cobra go to a non-regex solution, if it wasn't already
+					continue
 				text = match.toString()
 				#print '<> Match! [text] - [tokenDef]'
 				# tok = Token(_fileName, _lineNum, _colNum, _charNum, tokenDef.which, text, text) to ? # CC
@@ -970,7 +976,7 @@ class TestTokenizer
 		return [
 			'OPEN_IF		ifx\\(',
 			ns'ID			[A-Za-z_][A-Za-z0-9_]*',
-			ns'SPACE			[ ]+',
+			ns'SPACE		[ ]+',
 			'NEWLINE		\\n',
 			]
 
@@ -1005,12 +1011,12 @@ class TestTokenizer
 		tok.nextToken = tok.copy
 		return tok
 
-
 	test
 		# basics
 		t = TestTokenizer()
 		t.startSource('hello there')
 		tokens = t.allTokens()
+		.checkTokens(tokens, 'ID SPACE ID NEWLINE')
 #		assert join(each(tokens,'which'))=='ID ID NEWLINE', tokens
 #		assert t.idCount==2
 
@@ -1050,6 +1056,18 @@ class TestTokenizer
 #	def join(stuff, sep=' ')
 #		return sep.join([str(x) for x in stuff])
 
+	def checkTokens(tokens as List<of IToken>, s as String)
+		is shared
+		sb = StringBuilder()
+		sep = ''
+		for t in tokens
+			sb.append(sep)
+			sb.append(t.which)
+			sep = ' '
+		tokensStr = sb.toString()
+		assert tokensStr==s, 'tokensStr=[tokensStr], s=[s]'
+
+
 
 namespace System
 
@@ -1078,4 +1096,5 @@ namespace System
 
 			class Match
 				is fake
-				pass
+				get index as int
+					return 0
