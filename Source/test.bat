@@ -1,1 +1,1 @@
-cobra --test Compiler.cobra Tokenizer.cobra
+cobra --test --sst Compiler.cobra Tokenizer.cobra
