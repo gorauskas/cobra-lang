@@ -22,8 +22,6 @@ TODO:
 
 	- Reorder in top down fashion
 
-	- Go back and add test, require and ensure whereever possible
-
 	- Check for TODO
 
 """
@@ -422,6 +420,10 @@ class Tokenizer
 			return true
 
 	get _nextToken as IToken?
+		"""
+		This is the core brain of the tokenizer.
+		The primary logic for matching tokens is here.
+		"""
 		if _tokenQueue
 			# eat up queue first
 			return _tokenQueue.dequeue()
@@ -443,13 +445,13 @@ class Tokenizer
 				#print '<> Trying to match %r' % tokenDef
 				sourceLine = _sourceLine to String  # CC: to !
 				match = tokenDef.match(sourceLine, _sourceLineIndex)
-				if match is nil or not match.getType().getProperty('Success').getValue(match, nil)  # TODO: if match is nil or not match.`success`
+				if match is nil or not match.getType().getProperty('Success').getValue(match, nil)  # CC: if match is nil or not match.`success`
 					#print '<> No match on [tokenDef] for [_sourceLine[_sourceLineIndex]]'
 					continue
 				if match.index>_sourceLineIndex
 					# TODO: there's no option I can see to get the regex to fail to match if it can't
 					# match the first character! wtf? This will kill performance and probably dictate
-					# that Cobra go to a non-regex solution, if it wasn't already
+					# that Cobra go to a non-regex solution, if it wasn't already going to.
 					continue
 				text = match.toString()
 				#print '<> Match! [text] - [tokenDef]'
@@ -468,7 +470,7 @@ class Tokenizer
 				methName = 'On' + tok.which
 				meth = .getType().getMethod(methName) # , [IToken].toArray())
 				if meth is not nil
-					tok = meth.invoke(this, [tok].toArray()) to IToken
+					tok = meth.invoke(this, [tok].toArray()) to IToken  # CC: to IToken?
 					if tok is nil
 						# skip token, so go to the next one
 						reinvoke = true
@@ -499,25 +501,32 @@ class Tokenizer
 		return nil
 
 	def pushTokenDefs(defs as List<of TokenDef>)
-		defsByWhich = Dictionary<of String, TokenDef>()
-		for tokenDef in defs
-			assert not defsByWhich.containsKey(tokenDef.which), tokenDef
-			defsByWhich[tokenDef.which] = tokenDef
-		_tokenDefsStack.push(TokenDefSet(defs, defsByWhich))
-		_tokenDefs = defs
-		_tokenDefsByWhich = defsByWhich
+		ensure
+			_tokenDefs is defs
+			_tokenDefsByWhich.count is defs.count
+		code
+			defsByWhich = Dictionary<of String, TokenDef>()
+			for tokenDef in defs
+				assert not defsByWhich.containsKey(tokenDef.which), tokenDef
+				defsByWhich[tokenDef.which] = tokenDef
+			_tokenDefsStack.push(TokenDefSet(defs, defsByWhich))
+			_tokenDefs = defs
+			_tokenDefsByWhich = defsByWhich
 
 	def popTokenDefs
-		_tokenDefsStack.pop()
-		if _tokenDefsStack
-			tokenDefSet as TokenDefSet = _tokenDefsStack.peek() to TokenDefSet # CC: shouldn't need the 'as' or the 'to'
-			defs = tokenDefSet.defs # CC: add: to ?
-			defsByWhich = tokenDefSet.defsByWhich # CC: add: to ?
-		else
-			defs = nil to passthrough  # CC: axe cast after fixing CCs above
-			defsByWhich = nil to passthrough  # CC: axe cast after fixing CCs above
-		_tokenDefs = defs
-		_tokenDefsByWhich = defsByWhich
+		require
+			_tokenDefsStack.count > 0
+		code
+			_tokenDefsStack.pop()
+			if _tokenDefsStack
+				tokenDefSet as TokenDefSet = _tokenDefsStack.peek() to TokenDefSet # CC: shouldn't need the 'as' or the 'to'
+				defs = tokenDefSet.defs # CC: add: to ?
+				defsByWhich = tokenDefSet.defsByWhich # CC: add: to ?
+			else
+				defs = nil to passthrough  # CC: axe cast after fixing CCs above
+				defsByWhich = nil to passthrough  # CC: axe cast after fixing CCs above
+			_tokenDefs = defs
+			_tokenDefsByWhich = defsByWhich
 
 	def _error(msg as String)
 		throw TokenizerError(this, msg)
@@ -533,9 +542,15 @@ class TokenDef
 	var _isActiveCall as Object # @@@@??
 
 	def construct(which as String, regExSource as String)
-		_which = which
-		_regExSource = regExSource
-		_re = Regex(_regExSource)
+		require
+			which
+			regExSource
+		ensure
+			.re
+		code
+			_which = which
+			_regExSource = regExSource
+			_re = Regex(_regExSource)
 
 	pro which from var
 
@@ -551,7 +566,11 @@ class TokenDef
 	pro isActive from var
 
 	def match(input as String, startAt as int) as Match
-		return _re.match(input, startAt)
+		require
+			input
+			startAt >= 0
+		code
+			return _re.match(input, startAt)
 
 	def toString as String is override
 		return '[.getType().name]([_which], [_regExSource], [_re])'
@@ -563,8 +582,12 @@ class TokenDefSet
 	var _defsByWhich as Dictionary<of String, TokenDef>
 
 	def construct(defs as List<of TokenDef>, defsByWhich as Dictionary<of String, TokenDef>)
-		_defs = defs
-		_defsByWhich = defsByWhich
+		require
+			defs
+			defsByWhich
+		code
+			_defs = defs
+			_defsByWhich = defsByWhich
 
 	get defs from var
 
