@@ -1,1 +1,1 @@
-cobra CommandLine.cobra Compiler.cobra Tokenizer.cobra
+cobra --compile --sst CommandLine.cobra Compiler.cobra Tokenizer.cobra CobraTokenizer.cobra
