@@ -2,11 +2,18 @@ class CobraTokenizer
 	inherits Tokenizer
 
 	test
+		# There are plenty of external Cobra source code tests that will exercise the lexer.
+		# But here are a few basic tests to make sure the tokenizer can handle some of the basics.
 		t = CobraTokenizer()
+		# TODO:
+		#t.startSource('foo bar')
+		#tokens = t.allTokens()
+		#Tokenizer.checkTokens(tokens, 'ID ID EOL')
 
 	var _indentCount as int
 	var _substLBracketCount as int
 	var _inSubstStringSingle = false
+	var _inSubstStringDouble = false
 
 	# Note: The Tokenizer class handles it's input one line at a time,
 	#       and retains the \n at the end of the line. This affects
@@ -129,7 +136,57 @@ class CobraTokenizer
 		for which as String in 'RBRACKET_SPECIAL STRING_PART_SINGLE STRING_STOP_SINGLE STRING_PART_DOUBLE STRING_STOP_DOUBLE'.split(c' ')  # CC: remove "as String"
 			_tokenDefsByWhich[which].isActive = false
 
+	# TODO: get the base class calling isActive
 	def isActiveCall(tok as IToken) as bool
 		if tok.which=='STRING_PART_SINGLE' or tok.which=='STRING_STOP_SINGLE'
 			return _inSubstStringSingle
 		return true
+
+	get _nextToken as IToken? is override
+		# overridden to deliver the final DEDENTS to close out indentation
+		print 100
+		tok = base._nextToken
+		print 200, tok
+		if tok is nil
+			print 300
+			while _indentCount > 0
+				t = Token(.lastToken.fileName, .lastToken.lineNum, 0, .lastToken.charNum, 'DEDENT', '', '')
+				_tokenQueue.enqueue(t)
+				_indentCount -= 1
+			print 400
+			if _tokenQueue
+				print 500
+				return _nextToken
+			else
+				print 600
+				return nil
+		else
+			print 700
+			return tok
+		print 800
+
+	def onBLANK_TABS_LINE_1(tok as IToken) as IToken?
+		# Eat these.
+		# Don't muck with perceived indentation level as
+		# these kinds of lines are irrelevant.
+		#print '<> onBLANK_TABS_LINE_1'
+		return nil
+
+	def onBLANK_TABS_LINE_2(tok as IToken) as IToken?
+		#print '<> onBLANK_TABS_LINE_2'
+		return nil
+
+	def onINDENT_MIXED_1(tok as IToken) as IToken?
+		sb = StringBuilder()
+		for c in tok.text
+			if c==c' '
+				sb.append(r'[SPACE]')
+			else if c==c'\t'
+				sb.append(r'[TAB]')
+			else
+				sb.append(c)
+		_error('Cannot mix tabs and spaces in indentation. [sb]...')
+		return nil  # make compiler happy.  CC?: new "never" statement. meaning execution should never get here (and therefore no return is needed). Throws NeverException tab.
+
+	def onINDENT_MIXED_2(tok as IToken) as IToken?
+		return .onINDENT_MIXED_1(tok)
