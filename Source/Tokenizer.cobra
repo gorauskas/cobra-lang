@@ -155,6 +155,7 @@ class TokenizerError
 	var _msg as String
 
 	def construct(tokenizer as Tokenizer, msg as String)
+		require msg
 		# base.construct(msg) CC: re-enable this after fixing and axe next line
 		_msg = msg
 		_tokenizer = tokenizer
@@ -224,6 +225,8 @@ class Tokenizer
 
 	get curTokenDef from var
 
+	get lastToken from var
+
 
 	## Other
 
@@ -261,6 +264,7 @@ class Tokenizer
 		Consumes a token and returns it, making it the .lastToken.
 		Returns nil when there are no tokens left.
 		"""
+		ensure .lastToken == result
 		#assert .readLine, 'Not started.'
 		_lastToken = _nextToken
 		if _verbosity>=1
@@ -299,6 +303,7 @@ class Tokenizer
 		This self utility method is typically called by a subclass from the method for the
 		"identifier" token.
 		"""
+		ensure result is tok
 		if _keywordToWhichToken.containsKey(tok.text)
 			tok.which = _keywordToWhichToken[which]
 		# CC: should be
@@ -338,40 +343,43 @@ class Tokenizer
 			readLine as callable
 			tokenDefs as list
 		"""
-		assert _didReset, 'Never reset. Probably the subclass overrides _reset() but forgets to invoke base.'
-		# create a single list of all token defs in the correct order
-		_tokenDefs = List<of TokenDef>()
-		if .orderedTokenSpecs
-			for spec in .orderedTokenSpecs
-				.addTokenSpec(spec)
-		others = List<of TokenDef>()
-		if .unorderedTokenSpecs
-			for spec in .unorderedTokenSpecs
-				others.add(.tokenDefForSpec(spec))
-		if .keywords
-			t = List<of String>()
-			for line as String in .keywords.split(c'\n')
-				line = line.trim()
-				if not line or line.startsWith('#')
-					continue
-				t.addRange(line.split(nil))
-			for word in t
-				_keywordToWhichToken[word] = word.toUpper()
-		# longest tokens need to be matched first
-		# CC: others.sort(lambda a, b cmp(a.length, b.length))
-		didSort = false
-		post while didSort
+		ensure
+			_tokenDefs is not nil
+		code
+			assert _didReset, 'Have not reset. Probably the subclass overrides _reset() but forgets to invoke base.'
+			# create a single list of all token defs in the correct order
+			_tokenDefs = List<of TokenDef>()
+			if .orderedTokenSpecs
+				for spec in .orderedTokenSpecs
+					.addTokenSpec(spec)
+			others = List<of TokenDef>()
+			if .unorderedTokenSpecs
+				for spec in .unorderedTokenSpecs
+					others.add(.tokenDefForSpec(spec))
+			if .keywords
+				t = List<of String>()
+				for line as String in .keywords.split(c'\n')
+					line = line.trim()
+					if not line or line.startsWith('#')
+						continue
+					t.addRange(line.split(nil))
+				for word in t
+					_keywordToWhichToken[word] = word.toUpper()
+			# longest tokens need to be matched first
+			# CC: others.sort(lambda a, b cmp(a.length, b.length))
 			didSort = false
-			for i = 0 .. others.count-1
-				a = others[i]
-				b = others[i+1]
-				if a.length<b.length
-					swap = others[i]
-					others[i] = others[i+1]
-					others[i+1] = swap
-					didSort = true
-		_tokenDefs.addRange(others)
-		.pushTokenDefs(_tokenDefs)
+			post while didSort
+				didSort = false
+				for i = 0 .. others.count-1
+					a = others[i]
+					b = others[i+1]
+					if a.length<b.length
+						swap = others[i]
+						others[i] = others[i+1]
+						others[i+1] = swap
+						didSort = true
+			_tokenDefs.addRange(others)
+			.pushTokenDefs(_tokenDefs)
 
 	# TODO: count should be a CobraCore util method
 	# TODO: count should be an extension method of String
@@ -390,24 +398,28 @@ class Tokenizer
 			return count
 
 	def _obtainSource as bool
-		_sourceLine = _stream.readLine()
-		if _sourceLine is nil
-			# end of source
-			return false
-		numLines = _countChars(_sourceLine to String, c'\n')  # CC: to !
-		if numLines==0
-			if _willAlwaysEndWithNewLine
-				_sourceLine += '\n'
-		#print '<> sourceLine = %r' % .sourceLine
-		if numLines
-			if numLines==1
-				assert _sourceLine.endsWith('\n'), _sourceLine
-			else
-				assert false, 'Expecting readline() to return one line instead of many.'
-		_sourceLineIndex = 0
-		_lineNum += 1
-		_colNum = 1
-		return true
+		ensure
+			result implies _sourceLine is not nil
+			result implies _lineNum == old _lineNum + 1
+		code
+			_sourceLine = _stream.readLine()
+			if _sourceLine is nil
+				# end of source
+				return false
+			numLines = _countChars(_sourceLine to String, c'\n')  # CC: to !
+			if numLines==0
+				if _willAlwaysEndWithNewLine
+					_sourceLine += '\n'
+			#print '<> sourceLine = %r' % .sourceLine
+			if numLines
+				if numLines==1
+					assert _sourceLine.endsWith('\n'), _sourceLine
+				else
+					assert false, 'Expecting readline() to return one line instead of many.'
+			_sourceLineIndex = 0
+			_lineNum += 1
+			_colNum = 1
+			return true
 
 	get _nextToken as IToken?
 		if _tokenQueue
