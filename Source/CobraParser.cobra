@@ -158,14 +158,61 @@ class Parser
 		else
 			return nil
 
+	def oneOrMore(which as String)
+		"""
+		Consumes the expected token and any other additional contiguous ones.
+		Returns nothing.
+		Example:  .oneOrMore('EOL')
+		"""
+		.expect(which)
+		while .peek().which == which
+			t = .grab
+
 
 	## Parsing
 
+	var _module as Module
+
 	def parseTokens as Node
-		return Node()
+		"""
+		Parses and then returns an instance of Module.
+		"""
+		_module = CobraModule(_fileName, _verbosity)  # TODO: does module really need verbosity?
+		if not _fileName.endsWith('SystemInterfaces.cobra')
+			# default use directives
+			_module.addDecl(UseDirective(nil, ['System']))
+			_module.addDecl(UseDirective(nil, ['System', 'Collections', 'Generic']))
+			_module.addDecl(UseDirective(nil, ['System', 'IO']))
+			_module.addDecl(UseDirective(nil, ['System', 'Text']))
+			_module.addDecl(UseDirective(nil, ['Cobra', 'Lang']))
+		return _module
 
 	def _error(msg as String)
 		throw Exception()
 
 class Node
 	pass
+
+
+class Module
+	inherits Node
+
+	var _declsInOrder as List<of Node>
+
+	def construct(fileName as String, verbosity as int)
+		_declsInOrder = List<of Node>()
+
+	def addDecl(decl as Node)
+		_declsInOrder.add(decl)
+
+class CobraModule
+	inherits Module
+
+	def construct(fileName as String, verbosity as int)
+		base.construct(fileName, verbosity)
+
+class UseDirective
+	inherits Node
+
+	def construct(obj as Object?, nameParts as List<of String>)
+		pass
