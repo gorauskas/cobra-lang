@@ -1,1 +1,2 @@
-rm -rf *.cobra.cs test-*.cs r
+rm -rf *.cobra.cs test-*.cs r *.exe
+dir
