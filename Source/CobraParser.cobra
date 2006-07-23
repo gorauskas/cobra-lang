@@ -45,6 +45,8 @@ class Parser
 		"""
 		Parses module source code and returns resulting module.
 		"""
+		if not _fileName
+			_fileName = '(no file name)'
 		tokVerbosity = _verbosity - 4  # in order words, tokenizer does not spew unless our verbosity is 5 or greater
 		if tokVerbosity<0
 			tokVerbosity = 0
@@ -185,10 +187,60 @@ class Parser
 			_module.addDecl(UseDirective(nil, ['System', 'IO']))
 			_module.addDecl(UseDirective(nil, ['System', 'Text']))
 			_module.addDecl(UseDirective(nil, ['Cobra', 'Lang']))
+		# TODO: _module.docString = .docString()
+		what as Node?
+		while true
+			what = nil
+			addToNS = true
+			tok = .peek()
+			if tok is nil
+				break
+			branch tok.which
+				on 'USE':       what = .useDirective()
+				on 'IMPORT':    what = .importDirective()
+				on 'CLASS':     what = .classDecl()
+				on 'INTERFACE': what = .interfaceDecl()
+				on 'STRUCT':    what = .structDecl()
+				on 'ENUM':      what = .enumDecl()
+				on 'EOL':       t = .grab
+				on 'NAMESPACE'
+					.nameSpaceDecl()
+					addToNS = false
+				else
+					_error('Expecting use, import, namespace, class, interface or enum, but got [tok]')
+					break
+			if what
+				_module.addDecl(what to Node)  # CC: axe typecast
+# TODO:
+#				if addToNS
+#					_globalNS.addDecl(what)
+
 		return _module
+
+	def useDirective as Node
+		return Node()
+
+	def importDirective as Node
+		return Node()
+
+	def classDecl as Node
+		return Node()
+
+	def interfaceDecl as Node
+		return Node()
+
+	def structDecl as Node
+		return Node()
+
+	def enumDecl as Node
+		return Node()
+
+	def nameSpaceDecl as Node
+		return Node()
 
 	def _error(msg as String)
 		throw Exception()
+
 
 class Node
 	pass
