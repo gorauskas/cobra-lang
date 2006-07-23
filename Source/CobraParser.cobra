@@ -29,23 +29,37 @@ class Parser
 	var _willShowTokens = false
 	var _verbosity = 0
 
+	var _tokens as List<of IToken>?
+	var _curTokenIndex as int
+
+
 	def construct
-		_init(nil, 0)
+		pass
 
-	def construct(fileName as String)
-		_init(fileName, 0)
-
-	def _init(fileName as String?, verbosity as int)
+	def parseFileNamed(fileName as String) as Node
 		_fileName = fileName
-		_verbosity = verbosity
+		source = File.readAllText(_fileName to String)  # CC: axe "to String" when "if" gets smart about non-nil
+		return .parseSource(source)
 
-	def parse
+	def parseSource(source as String) as Node
 		"""
 		Parses module source code and returns resulting module.
 		"""
-		if _fileName
-			source = File.readAllText(_fileName to String)  # CC: axe "to String" when "if" gets smart about non-nil
-
 		tokVerbosity = _verbosity - 4  # in order words, tokenizer does not spew unless our verbosity is 5 or greater
 		if tokVerbosity<0
 			tokVerbosity = 0
+
+		_tokens = nil
+		try
+			_tokens = CobraTokenizer(tokVerbosity).startSource(source).allTokens()
+		catch te as TokenizerError
+			print '<> Caught TokenizerError'
+			print te
+			assert false
+		_curTokenIndex = 0
+
+		return Node()
+
+
+class Node
+	pass
