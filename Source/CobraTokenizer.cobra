@@ -20,6 +20,21 @@ class CobraTokenizer
 		tokens = t.allTokens()
 		Tokenizer.checkTokens(tokens, 'CLASS ID EOL INDENT DEF OPEN_CALL RPAREN EOL INDENT RETURN INTEGER_LIT EOL DEDENT DEDENT')
 
+		t.restart()
+		t.startSource('class Foo\n\tpass\n\nclass Bar\n\tpass')
+#		t.startSource(
+#	'''class Foo
+#		pass
+#
+#	class Bar
+#		pass
+#	''')
+		tokens = t.allTokens()
+		for x in tokens
+			print x.which, ' ' stop
+		print
+		Tokenizer.checkTokens(tokens, 'CLASS ID EOL INDENT PASS EOL DEDENT EOL CLASS ID EOL INDENT PASS EOL DEDENT')
+
 	var _indentCount as int
 	var _substLBracketCount as int
 	var _inSubstStringSingle = false
@@ -37,7 +52,7 @@ class CobraTokenizer
 			r'INDENT_MIXED_1		^[\t]+[ ]+',
 			r'INDENT_MIXED_2		^[ ]+[\t]+',
 			r'INDENT_ALL_TABS		^[\t]+',
-			r'NO_INDENT				^(?!\t|\n|#)',
+			r'NO_INDENT				^(?=(!\t|\n|#))',
 			r'EOL					\n',
 			r'SINGLE_LINE_COMMENT	\#.*',
 			r'SPACE					[ \t]+',
@@ -134,6 +149,7 @@ class CobraTokenizer
 		return 'use import namespace enum class inherits implements interface struct where must be callable cue def as get set pro var from code test shared virtual override ref vari require ensure old this base is assert branch on expect if else using while post for down to step break continue try catch success finally throw except event listen ignore raise and or not implies every all to to\\? pass print stop return in bool char int decimal float of passthrough true false nil dynamic same instance'
 
 	def _reset is override
+		print '-------------------------------------'
 		base._reset()
 		_indentCount = 0
 		_substLBracketCount = 0
@@ -206,7 +222,7 @@ class CobraTokenizer
 		return _processNumTabs(numTabs)
 
 	def onNO_INDENT(tok as IToken) as IToken?
-		#print '<> NO_INDENT'
+		print '<> NO_INDENT'
 		_curTokenDef.ignoreCount = 1
 		return _processNumTabs(0)
 
@@ -216,7 +232,7 @@ class CobraTokenizer
 		while numTabs>_indentCount
 			_indentCount += 1
 			newt = Token(_fileName, _lineNum, 1, _charNum, 'INDENT', '', '')
-			if firstTok
+			if lastTok
 				lastTok.nextToken = newt
 				lastTok = newt
 			else
@@ -227,7 +243,7 @@ class CobraTokenizer
 		while numTabs<_indentCount
 			_indentCount -= 1
 			newt = Token(_fileName, _lineNum, 1, _charNum, 'DEDENT', '', '')
-			if firstTok
+			if lastTok
 				lastTok.nextToken = newt
 				lastTok = newt
 			else
