@@ -14,7 +14,7 @@ class Parser
 
 	test
 		p = Parser()
-#		p.parseSource('class Test\n\tpass\n')
+		p.parseSource('class Test\n\tpass\n')
 
 	enum WhenError
 		exit
@@ -33,9 +33,11 @@ class Parser
 	var _tokens as List<of IToken>?
 	var _curTokenIndex as int
 
+	var _boxStack as Stack<of Box>
+
 
 	def construct
-		pass
+		_boxStack = Stack<of Box>()
 
 	def parseFileNamed(fileName as String) as Node
 		_fileName = fileName
@@ -124,9 +126,8 @@ class Parser
 		t = .grab()
 		if _willShowTokens
 			print 'expect([whatTypes]) --> [t]'
-		# TODO: join whatTypes by ' or ' in 2 following errors to make them more readable
 		if t is nil
-			_error('Expecting [whatTypes], but source ended suddenly.')
+			_error('Expecting [.join(" or ",whatTypes)], but source ended suddenly.')
 		# CC: support "not in" on vari type
 		#if t.which not in whatTypes
 		#	_error('Expecting [whatTypes], but got [t] instead.')
@@ -136,8 +137,18 @@ class Parser
 				found = true
 				break
 		if not found
-			_error('Expecting [whatTypes], but got [t] instead.')
+			_error('Expecting [.join(" or ",whatTypes)], but got [t] instead.')
 		return t
+
+	def join(sep as String, stuff as vari String) as String
+		# CC: have a join() method for vari, List, IEnumerable, array, etc.; use that and axe this helper method
+		sb = StringBuilder()
+		sep2 = ''
+		for x in stuff
+			sb.append(sep2)
+			sb.append(x)
+			sep2 = sep
+		return sb.toString()
 
 	def optional(whatTypes as vari String) as IToken?
 		"""
@@ -212,7 +223,6 @@ class Parser
 					break
 			if what
 				_module.addDecl(what to Node)  # CC: axe typecast
-			print '<> at end, tok=[tok] and what=[what]'
 # TODO:
 #				if addToNS
 #					_globalNS.addDecl(what)
@@ -226,7 +236,107 @@ class Parser
 		return Node()
 
 	def classDecl as Node
-		return Node()
+		.expect('CLASS')
+		peek = .peek().which
+		if peek == 'ID'
+			token = .expect('ID')
+			name = token.value to String
+		else if peek == 'OPEN_GENERIC'
+			token = .expect('OPEN_GENERIC')
+			name = token.value to String
+		else
+			_error('Expecting a class name.')
+		if name[0] not in _uppercaseLetters
+			_error('Class names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
+
+#		params = []
+#		if token.which=='OPEN_GENERIC'
+#			expectComma = false
+#			while 1
+#				if .peek().which=='GT'
+#					.get()
+#					break
+#				if expectComma
+#					.expect('COMMA')
+#				ident = .expect('ID').value
+#				params.append(GenericParam(ident))
+#				expectComma = true
+
+		.indent()
+
+		isNames = .isDeclNames()
+
+#		while .optional('WHERE')
+#			if token.which!='OPEN_GENERIC'
+#				_error('Unexpected where clause for non-generic class.')
+#			paramName = .expect('ID').value
+#			found = false
+#			for param in params
+#				if param.name==paramName
+#					found = true
+#					break
+#			if not found
+#				_error('Unknown generic parameter "%s".' % name)
+#			if param.constraints
+#				_error('Already specified constraints for "%s".' % name)
+#			.expect('MUST')
+#			.expect('BE')
+#			expectComma = false
+#			while 1
+#				if expectComma
+#					.expect('COMMA')
+#				param.constraints.append(.genericConstraint())
+#				if .optional('EOL')
+#					break
+#				expectComma = true
+		paramList = List<of Node>() # TODO: axe
+
+		baseName as String?
+		if .optional('INHERITS')
+			baseName = .expect('ID').text
+			.expect('EOL')
+		else
+			baseName = nil
+
+#		interfaceNames = []
+#		if .optional('IMPLEMENTS')
+#			expectComma = false
+#			while 1
+#				if .peek().which=='EOL'
+#					.get()
+#					break
+#				if expectComma
+#					.expect('COMMA')
+#				interfaceName = .type()  # using .type since interface could be a generic like IEnumerable(of T)
+#				interfaceNames.append(interfaceName)
+#				expectComma = true
+		interfaceNames = List<of String>()  # TODO: axe
+
+		docString = .docString()
+
+		theClass = Class(name, paramList, isNames, baseName, interfaceNames, docString)
+
+		# TODO when supporting nested classes, look at the clintDeclStack and set a back pointer here
+		_boxStack.push(theClass)
+#		.isNamesStack = Stack(str)
+		.classMemberDecls(theClass)
+		_boxStack.pop()
+
+		return theClass
+
+	def docString as String?
+		return nil  # TODO
+
+	def indent
+		if .optional('COLON')
+			_warning('Colons are not used to start indented blocks.')
+		.expect('EOL')
+		while .optional('EOL')
+			pass
+		.expect('INDENT')
+
+	def isDeclNames as List<of String>
+		return List<of String>()  # TODO
 
 	def interfaceDecl as Node
 		return Node()
@@ -240,8 +350,16 @@ class Parser
 	def nameSpaceDecl as Node
 		return Node()
 
+	def classMemberDecls(theClass as Class)
+		.expect('PASS')
+		.expect('EOL')
+		.expect('DEDENT')
+
 	def _error(msg as String)
-		throw Exception()
+		assert false, 'to do'
+
+	def _warning(msg as String)
+		assert false, 'to do'
 
 
 class Node
@@ -269,4 +387,17 @@ class UseDirective
 	inherits Node
 
 	def construct(obj as Object?, nameParts as List<of String>)
+		pass
+
+class Box
+	inherits Node
+
+	get name as String
+		return '(missing name override)'
+
+
+class Class
+	inherits Box
+
+	def construct(name as String, paramList as List<of Node>, isNames as List<of String>, baseName as String?, interfaceNames as List<of String>, docString as String?)
 		pass
