@@ -14,7 +14,14 @@ class Parser
 
 	test
 		p = Parser()
-		p.parseSource('class Test\n\tpass\n')
+		module = p.parseSource('class Test\n\tpass\n')
+		assert module
+		decls = module.declsInOrder
+		decl = decls[decls.count-1]
+		if decl inherits Class
+			assert decl.name == 'Test'
+		else
+			assert false, decl
 
 	enum WhenError
 		exit
@@ -39,12 +46,12 @@ class Parser
 	def construct
 		_boxStack = Stack<of Box>()
 
-	def parseFileNamed(fileName as String) as Node
+	def parseFileNamed(fileName as String) as Module
 		_fileName = fileName
 		source = File.readAllText(_fileName to String)  # CC: axe "to String" when "if" gets smart about non-nil
 		return .parseSource(source)
 
-	def parseSource(source as String) as Node
+	def parseSource(source as String) as Module
 		"""
 		Parses module source code and returns resulting module.
 		"""
@@ -187,7 +194,7 @@ class Parser
 
 	var _module as Module
 
-	def parseTokens as Node
+	def parseTokens as Module
 		"""
 		Parses and then returns an instance of Module.
 		"""
@@ -374,6 +381,9 @@ class Module
 	def construct(fileName as String, verbosity as int)
 		_declsInOrder = List<of Node>()
 
+	get declsInOrder as List<of Node>
+		return _declsInOrder
+
 	def addDecl(decl as Node)
 		_declsInOrder.add(decl)
 
@@ -392,12 +402,16 @@ class UseDirective
 class Box
 	inherits Node
 
-	get name as String
-		return '(missing name override)'
+	var _name as String
+
+	def construct(name as String)
+		_name = name
+
+	get name from var
 
 
 class Class
 	inherits Box
 
 	def construct(name as String, paramList as List<of Node>, isNames as List<of String>, baseName as String?, interfaceNames as List<of String>, docString as String?)
-		pass
+		base.construct(name)
