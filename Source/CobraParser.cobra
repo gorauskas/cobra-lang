@@ -23,6 +23,8 @@ class Parser
 		else
 			assert false, decl
 
+		module = Parser().parseSource('class Test\n\tdef main is shared\n\t\treturn\n')
+
 	enum WhenError
 		exit
 
@@ -40,7 +42,8 @@ class Parser
 	var _tokens as List<of IToken>?
 	var _curTokenIndex as int
 
-	var _boxStack as Stack<of Box>
+	var _isNamesStack as Stack<of String>?
+	var _boxStack as Stack<of Box>?
 
 
 	def construct
@@ -60,6 +63,8 @@ class Parser
 		tokVerbosity = _verbosity - 4  # in order words, tokenizer does not spew unless our verbosity is 5 or greater
 		if tokVerbosity<0
 			tokVerbosity = 0
+
+		_isNamesStack = Stack<of String>()  # for `shared` for example
 
 		_tokens = nil
 		try
@@ -342,8 +347,45 @@ class Parser
 			pass
 		.expect('INDENT')
 
+	var _validIsNames as List<of String>?
+
 	def isDeclNames as List<of String>
-		return List<of String>()  # TODO
+		"""
+		Example source:
+			# The | below is not literal--it's where this method starts parsing.
+			def Compute()
+				|is virtual, protected
+		Example return values:
+			[]
+			['shared']
+			['private', 'shared']
+		Errors:
+			TODO
+		Used by: classDecl, interfaceDecl, enumDecl, indentIsDeclNames
+		"""
+		if _validIsNames is nil
+			_validIsNames = ['fake', 'shared', 'virtual', 'nonvirtual', 'override', 'public', 'protected', 'private', 'internal']
+		names = List<of String>()
+		if _isNamesStack
+			names.add(_isNamesStack.peek())
+#		names = if(_isNamesStack, [_isNamesStack.peek()], List<of String>())
+		isWord = .optional('IS')
+		if isWord is nil
+			return names
+		while true
+			what = .grab().text
+			if what in _validIsNames
+				names.add(what)
+			else
+				_error('Not expecting "[what]".')
+			comma = .optional('COMMA')
+			if comma is nil
+				break
+		.oneOrMore('EOL')
+		# TODO: error on virtual and override
+		# TODO: error on virtual and shared
+		# TODO: error if 2 or more of 'public', 'protected', 'private', 'internal'
+		return names
 
 	def interfaceDecl as Node
 		return Node()
