@@ -3,6 +3,21 @@ The Cobra Parser
 """
 
 
+class ParserException
+	inherits SystemException
+
+	var _token as IToken
+	var _msg as String
+
+	def construct(token as IToken, msg as String)
+		#base.construct(msg)  # CC:
+		_token = token
+		_msg = msg
+
+	get message as String is override
+		return _msg
+
+
 class Parser
 	"""
 	Notes:
@@ -14,7 +29,7 @@ class Parser
 
 	test
 		p = Parser()
-		module = p.parseSource('class Test\n\tpass\n')
+		module = p.parseSource('test1', 'class Test\n\tpass\n')
 		assert module
 		decls = module.declsInOrder
 		decl = decls[decls.count-1]
@@ -23,14 +38,17 @@ class Parser
 		else
 			assert false, decl
 
-		module = Parser().parseSource('class Test\n\tdef main is shared\n\t\treturn\n')
+		module = Parser().parseSource('test2', 'class Test\n\tdef main is shared\n\t\treturn\n')
 
 	enum WhenError
 		exit
+		throww
 
 	enum WhenWarning
 		emit
 		throww
+
+	var _whenError as WhenError
 
 	var _lowercaseLetters = 'abcdefghijklmnopqrstuvwxyz'
 	var _uppercaseLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -50,16 +68,17 @@ class Parser
 		_boxStack = Stack<of Box>()
 
 	def parseFileNamed(fileName as String) as Module
-		_fileName = fileName
 		source = File.readAllText(_fileName to String)  # CC: axe "to String" when "if" gets smart about non-nil
-		return .parseSource(source)
+		return .parseSource(fileName, source)
 
 	def parseSource(source as String) as Module
+		return .parseSource('(no file name)', source)
+
+	def parseSource(fileName as String, source as String) as Module
 		"""
 		Parses module source code and returns resulting module.
 		"""
-		if not _fileName
-			_fileName = '(no file name)'
+		_fileName = fileName
 		tokVerbosity = _verbosity - 4  # in order words, tokenizer does not spew unless our verbosity is 5 or greater
 		if tokVerbosity<0
 			tokVerbosity = 0
@@ -68,7 +87,7 @@ class Parser
 
 		_tokens = nil
 		try
-			_tokens = CobraTokenizer(tokVerbosity).startSource(source).allTokens()
+			_tokens = CobraTokenizer(tokVerbosity).startSource(_fileName, source).allTokens()
 		catch te as TokenizerError
 			print '<> Caught TokenizerError'
 			print te
@@ -405,7 +424,19 @@ class Parser
 		.expect('DEDENT')
 
 	def _error(msg as String)
-		assert false, 'to do'
+		if _whenError==WhenError.exit
+			token = .last
+			if token
+				print '[token.fileName]([token.lineNum],[token.colNum]): error: [msg]'
+			else
+				print '[token.fileName](1, 1): error: [msg]'
+			if _verbosity>=1
+				print 'Last tokens:'
+				assert false, 'TODO'
+			if _verbosity<2
+				Environment.exit(1)
+				# otherwise raise an exception in order to be more verbose
+		throw ParserException(.last, msg)
 
 	def _warning(msg as String)
 		assert false, 'to do'
