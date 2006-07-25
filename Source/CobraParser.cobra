@@ -67,6 +67,10 @@ class Parser
 	def construct
 		_boxStack = Stack<of Box>()
 
+	get curBox as Box
+		# yes there is only one box at the moment, but when nested classes and structs are supported there could by many.
+		return _boxStack.peek() to Box  # CC: axe typecast
+
 	def parseFileNamed(fileName as String) as Module
 		source = File.readAllText(_fileName to String)  # CC: axe "to String" when "if" gets smart about non-nil
 		return .parseSource(fileName, source)
@@ -214,6 +218,25 @@ class Parser
 			.grab()
 
 
+	## Common parsing bits (docString, indent, dedent, ...)
+
+	def docString as String?
+		return nil  # TODO
+
+	def indent
+		if .optional('COLON')
+			_warning('Colons are not used to start indented blocks.')
+		.expect('EOL')
+		while .optional('EOL')
+			pass
+		.expect('INDENT')
+
+	def dedent
+		while .optional('EOL')
+			pass
+		.expect('DEDENT')
+
+
 	## Parsing
 
 	var _module as Module
@@ -355,16 +378,7 @@ class Parser
 
 		return theClass
 
-	def docString as String?
-		return nil  # TODO
 
-	def indent
-		if .optional('COLON')
-			_warning('Colons are not used to start indented blocks.')
-		.expect('EOL')
-		while .optional('EOL')
-			pass
-		.expect('INDENT')
 
 	var _validIsNames as List<of String>?
 
@@ -419,9 +433,37 @@ class Parser
 		return Node()
 
 	def classMemberDecls(theClass as Class)
-		.expect('PASS')
-		.expect('EOL')
-		.expect('DEDENT')
+		decl as Node?
+		breakLoop = false  # cannot use 'break' to stop a 'while' loop in a branch statement. CC?
+		while not breakLoop
+			decl = nil
+			branch .peek().which
+				on 'PASS'
+					.classPass()
+					breakLoop = true
+				on 'DEDENT': breakLoop = true
+				on 'DEF': .declareMethod()
+				on 'EOL': .oneOrMore('EOL')
+				else
+					_error('Got [.peek()] when expecting var, def, pro, get, set, enum or shared')
+			if decl!
+				theClass.addDecl(decl to Node)  # CC: axe typecast when if gets smart about not nil
+		.dedent()
+
+	def classPass
+		if .curBox.declsInOrder
+			_warning('Encountered "pass" in a class that already has declared members.')  # TODO: change to an error
+		.grab()
+		.oneOrMore('EOL')
+
+	def declareMethod
+		.expect('DEF')
+		.expect('ID')
+		.expect('IS')
+		.expect('SHARED')
+		.indent()
+		.expect('RETURN')
+		.dedent()
 
 	def _error(msg as String)
 		if _whenError==WhenError.exit
@@ -432,7 +474,7 @@ class Parser
 				print '[token.fileName](1, 1): error: [msg]'
 			if _verbosity>=1
 				print 'Last tokens:'
-				assert false, 'TODO'
+				# TODO
 			if _verbosity<2
 				Environment.exit(1)
 				# otherwise raise an exception in order to be more verbose
@@ -476,12 +518,17 @@ class Box
 	inherits Node
 
 	var _name as String
+	var _declsInOrder as List<of Node>  # TODO: can the inner list type be narrowed more? say to IClassMemberDecl or ClassMemberDecl
 
 	def construct(name as String)
 		_name = name
 
 	get name from var
 
+	get declsInOrder from var
+
+	def addDecl(decl as Node)
+		_declsInOrder.add(decl)
 
 class Class
 	inherits Box
