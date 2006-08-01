@@ -1,1 +1,1 @@
-cobra --compile --sst CommandLine.cobra Compiler.cobra Tokenizer.cobra CobraTokenizer.cobra CobraParser.cobra
+cobra --compile --sst CobraMain.cobra CommandLine.cobra Compiler.cobra IndentedWriter.cobra Tokenizer.cobra CobraTokenizer.cobra Node.cobra Module.cobra CobraParser.cobra
