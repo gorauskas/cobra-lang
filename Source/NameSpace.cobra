@@ -1,0 +1,143 @@
+class CobraType
+	inherits Node
+
+	pass
+
+
+class NameSpace
+	inherits NamedNode  # TODO: in python version, inherited Type
+
+	var _superNameSpace as NameSpace?
+	var _type as CobraType
+	var _subNameSpaces as Dictionary<of String, NameSpace>
+	var _declsInOrder as List<of Node>
+	var _declsByName as Dictionary<of String, Node>
+
+	def construct(name as String, superNameSpace as NameSpace?)
+		base.construct(name)
+		_superNameSpace = superNameSpace
+# TODO:		_type = tnamespace
+		_subNameSpaces = Dictionary<of String, NameSpace>()
+		_declsInOrder = List<of Node>()
+		_declsByName = Dictionary<of String, Node>()
+
+#	def addMinFields(self):
+#		RootType.addMinFields(self)
+#		# root type should already do the name
+#		self.addMinField('subCount', len(self.subNameSpaces))
+
+#	def addRefFields(self):
+#		RootType.addRefFields(self)
+#		self.addRefField('superNameSpace', self.superNameSpace)
+#		self.addRefField('type', self.type)
+
+#	def addSubFields(self):
+#		RootType.addSubFields(self)
+#		self.addSubField('declsInOrder', self.declsInOrder)
+
+#	@property
+#	def fullyQualifiedName(self):
+#		parts = []
+#		ns = self
+#		while ns is not nil and ns.name!='global':
+#			parts.append(ns)
+#			ns = ns.superNameSpace
+#		parts.reverse()
+#		fqn = '.'.join([ns.name for ns in parts])
+#		return fqn
+
+	def getOrMakeNameSpaceNamed(name as String) as NameSpace  # CC: same
+		"""
+		Returns the existing sub-namespace with the given name or creates it.
+		Raises ValueError if there is a declaration in the namespace with the given name that is not a namespace.
+		"""
+		# TODO: enforce that case must match and 2 decls cannot be the same but for case. You cannot have a namespace FooBar and class Foobar under the same namespace
+		ns = _subNameSpaces[name]
+		if ns is nil
+			if _declsByName.containsKey(name)
+				throw Exception('There is a non-namespace declaration named "[name]".')
+			ns = NameSpace(name, this)  # TODO: replace hardcoded class
+			_subNameSpaces[name] = ns
+			.addDecl(ns)
+		return ns
+
+#	def dumpNames(self, out):
+#		out.write('%s %s %s:\n' % (self.__class__.__name__, self.name, len(self.declsInOrder)))
+#		out.indent()
+#		for decl in self.declsInOrder:
+#			decl.dumpName(out)
+#			if inherits(decl, NameSpace):
+#				decl.dumpNames(out)
+#		out.dedent()
+
+#	def dumpName(self, out):
+#		type = getattr(self, 'type', '(no type)')
+#		out.write('%s as %s  (%s)\n' % (self.name, type, self.__class__.__name__))
+
+#	def _bindInt(self, compiler):
+#		v = false
+#		if v: print '>> bindInt for namespace %s' % self.name; sys.stdout.indent()
+#		RootType._bindInt(self, compiler)
+#		compiler.nameStack.push(self)
+#		for decl in self.declsInOrder:
+#			if v: print '<> %r, %r' % (decl.__class__, decl.name)
+#			decl.bindInt(compiler)
+#		compiler.nameStack.pop()
+#		if v: sys.stdout.dedent(); print '<< bindInt for namespace %s' % self.name
+
+#	def _bindImp(self, compiler):
+#		RootType._bindImp(self, compiler)
+#		compiler.nameStack.push(self)
+#		for decl in self.declsInOrder:
+#			decl.bindImp(compiler)
+#		compiler.nameStack.pop()
+
+#	def memberForName(self, name):
+#		assert 0, name
+
+#	def symbolForName(self, name, canBeMember=false):
+#		v = false
+#		if v:
+#			print '>> NameSpace.symbolForName(%r, %s) self=%s' % (name, canBeMember, self.name)
+#			sys.stdout.indent()
+#		if name==self.name:
+#			symbol = self
+#		else:
+#			symbol = self.declsByName.get(name, nil)
+#			if symbol is nil:
+#				if name==self.name:
+#					symbol = self
+#				else:
+#					for decl in self.declsInOrder:
+#						if v: print '<> checking %s named %r' % (decl.__class__, decl.name)
+#						if inherits(decl, UseDirective):
+#							if v: print '<> will ask', decl.name, 'for', name
+#							symbol = decl.symbolForName(name)
+#							if symbol:
+#								break
+#		if symbol is nil and self.superNameSpace and self.superNameSpace.superNameSpace:  # that last expr is to avoid searching the global namespace (prematurely; the compiler will search it)
+#			if v: print '<> will call super name space. self=%r, super=%r' % (self.name, self.superNameSpace.name)
+#			symbol = self.superNameSpace.symbolForName(name, canBeMember)
+#		if v:
+#			sys.stdout.dedent()
+#			print '<< NameSpace.symbolForName(%r, %s) self=%s, returning %s' % (name, canBeMember, self.name, symbol)
+#		return symbol
+
+	def addDecl(decl as NamedNode)
+		# CC: restore this: assert not decl in _declsInOrder, decl
+		assert not _declsInOrder.contains(decl)
+		_declsInOrder.add(decl)
+		_declsByName[decl.name] = decl
+#		decl.nameSpace = self  # @@@@ TODO: Do I need this?
+
+#	def genCS(self, out):
+#		out.writeAndIndent('namespace %s {\n\n' % self.name)
+#		for decl in self.declsInOrder:
+#			decl.genCS(out)
+#		out.dedentAndWrite('} // namespace %s\n' % self.name)
+
+#	def asCS(self):
+#		"""
+#		Used in expressions.
+#		"""
+#		return self.name

@@ -63,9 +63,12 @@ class Parser
 	var _isNamesStack as Stack<of String>?
 	var _boxStack as Stack<of Box>?
 
+	var _nameSpaceStack as Stack<of NameSpace>
+
 
 	def construct
 		_boxStack = Stack<of Box>()
+		_nameSpaceStack = Stack<of NameSpace>()
 
 	pro verbosity from var
 
@@ -288,13 +291,13 @@ class Parser
 
 		return _module
 
-	def useDirective as Node
-		return Node()
+	def useDirective as NamedNode
+		return NamedNode('TODO')
 
 	def importDirective as Node
-		return Node()
+		return NamedNode('TODO')
 
-	def classDecl as Node
+	def classDecl as NamedNode
 		.expect('CLASS')
 		peek = .peek().which
 		if peek == 'ID'
@@ -425,17 +428,36 @@ class Parser
 		# TODO: error if 2 or more of 'public', 'protected', 'private', 'internal'
 		return names
 
-	def interfaceDecl as Node
-		return Node()
+	def interfaceDecl as NamedNode
+		return NamedNode('TODO')
 
-	def structDecl as Node
-		return Node()
+	def structDecl as NamedNode
+		return NamedNode('TODO')
 
-	def enumDecl as Node
-		return Node()
+	def enumDecl as NamedNode
+		return NamedNode('TODO')
 
-	def nameSpaceDecl as Node
-		return Node()
+	def nameSpaceDecl as NameSpace
+		.expect('NAMESPACE')
+		curNameSpace = _nameSpaceStack.peek() to NameSpace  # CC: remove "as Node"
+		name = .expect('ID').value to String  # CC: .value should probably be dynamic
+		curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(name)
+		_nameSpaceStack.push(curNameSpace)
+		.indent()
+		while true
+			tok = .peek()
+			if tok.which=='DEDENT'
+				break
+			branch tok.which
+				on 'CLASS':  curNameSpace.addDecl(.classDecl())
+				on 'INTERFACE': curNameSpace.addDecl(.interfaceDecl())
+				on 'STRUCT': curNameSpace.addDecl(.structDecl())
+				on 'USE': curNameSpace.addDecl(.useDirective())
+				on 'NAMESPACE': .nameSpaceDecl()
+				else: _error('expecting "class" but got [tok]')
+		.dedent()
+		_nameSpaceStack.pop()
+		return curNameSpace
 
 	def classMemberDecls(theClass as Class)
 		decl as Node?
@@ -496,15 +518,12 @@ class UseDirective
 		pass
 
 class Box
-	inherits Node
+	inherits NamedNode
 
-	var _name as String
 	var _declsInOrder as List<of Node>  # TODO: can the inner list type be narrowed more? say to IClassMemberDecl or ClassMemberDecl
 
 	def construct(name as String)
-		_name = name
-
-	get name from var
+		base.construct(name)
 
 	get declsInOrder from var
 
