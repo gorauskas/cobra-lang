@@ -29,6 +29,7 @@ class Parser
 
 	test
 		p = Parser()
+		p.globalNS = NameSpace('(global)')
 		module = p.parseSource('test1', 'class Test\n\tpass\n')
 		assert module
 		decls = module.declsInOrder
@@ -38,7 +39,9 @@ class Parser
 		else
 			assert false, decl
 
-		module = Parser().parseSource('test2', 'class Test\n\tdef main is shared\n\t\treturn\n')
+		p = Parser()
+		p.globalNS = NameSpace('(global)')
+		p.parseSource('test2', 'class Test\n\tdef main is shared\n\t\treturn\n')
 
 	enum WhenErrorEnum
 		exit
@@ -63,16 +66,31 @@ class Parser
 	var _isNamesStack as Stack<of String>?
 	var _boxStack as Stack<of Box>?
 
+	var _globalNS as NameSpace
 	var _nameSpaceStack as Stack<of NameSpace>
+
+	var _codeParts as Stack<of ICodePart>
+	var _curCodePart as ICodePart?
+
+	var _isContractOnSameLine as bool
 
 
 	def construct
 		_boxStack = Stack<of Box>()
 		_nameSpaceStack = Stack<of NameSpace>()
+		_codeParts = Stack<of ICodePart>()
 
 	pro verbosity from var
 
 	pro whenError from var
+
+	pro globalNS as NameSpace
+		get
+			return _globalNS
+		set
+			require _globalNS is nil
+			_globalNS = value
+			_nameSpaceStack.push(_globalNS)
 
 	get curBox as Box
 		# yes there is only one box at the moment, but when nested classes and structs are supported there could by many.
@@ -238,11 +256,43 @@ class Parser
 		while .optional('EOL')
 			pass
 		.expect('INDENT')
+		while .optional('EOL')  # added
+			pass
 
 	def dedent
 		while .optional('EOL')
 			pass
 		.expect('DEDENT')
+		while .optional('EOL')  # added
+			pass
+
+	def indentIsDeclNames as List<of String>
+		"""
+		Parses indentation followed by "is" names, or "is" names followed by indentation.
+		Example 1:
+			def main is shared
+				pass
+		Example 2:
+			def main
+				is shared
+				pass
+		In either case, returns the list of "is" names or nil if there were none.
+		"""
+		if .peek().which=='IS'
+			isNames = .isDeclNames()
+			.expect('INDENT')
+			return isNames
+		else
+			if .optionalIndent()
+				return .isDeclNames()
+			else
+				return List<of String>()
+
+	def optionalIndent as IToken?
+		if .optional('COLON')
+			_warning('Colons are not used to start indented blocks.')
+		.oneOrMore('EOL')
+		return .optional('INDENT')
 
 
 	## Parsing
@@ -253,48 +303,50 @@ class Parser
 		"""
 		Parses and then returns an instance of Module.
 		"""
-		_module = CobraModule(_fileName, _verbosity)  # TODO: does module really need verbosity?
-		if not _fileName.endsWith('SystemInterfaces.cobra')
-			# default use directives
-			_module.addDecl(UseDirective(nil, ['System']))
-			_module.addDecl(UseDirective(nil, ['System', 'Collections', 'Generic']))
-			_module.addDecl(UseDirective(nil, ['System', 'IO']))
-			_module.addDecl(UseDirective(nil, ['System', 'Text']))
-			_module.addDecl(UseDirective(nil, ['Cobra', 'Lang']))
-		# TODO: _module.docString = .docString()
-		what as Node?
-		while true
-			what = nil
-			addToNS = true
-			tok = .peek()
-			if tok is nil
-				break
-			branch tok.which
-				on 'USE':       what = .useDirective()
-				on 'IMPORT':    what = .importDirective()
-				on 'CLASS':     what = .classDecl()
-				on 'INTERFACE': what = .interfaceDecl()
-				on 'STRUCT':    what = .structDecl()
-				on 'ENUM':      what = .enumDecl()
-				on 'EOL':       .grab()
-				on 'NAMESPACE'
-					.nameSpaceDecl()
-					addToNS = false
-				else
-					_error('Expecting use, import, namespace, class, interface or enum, but got [tok]')
+		require
+			.globalNS
+		code
+			_module = CobraModule(_fileName, _verbosity)  # TODO: does module really need verbosity?
+			if not _fileName.endsWith('SystemInterfaces.cobra')
+				# default use directives
+				_module.addDecl(UseDirective(nil, ['System']))
+				_module.addDecl(UseDirective(nil, ['System', 'Collections', 'Generic']))
+				_module.addDecl(UseDirective(nil, ['System', 'IO']))
+				_module.addDecl(UseDirective(nil, ['System', 'Text']))
+				_module.addDecl(UseDirective(nil, ['Cobra', 'Lang']))
+			# TODO: _module.docString = .docString()
+			what as NamedNode?
+			while true
+				what = nil
+				addToNS = true
+				tok = .peek()
+				if tok is nil
 					break
-			if what
-				_module.addDecl(what to Node)  # CC: axe typecast
-# TODO:
-#				if addToNS
-#					_globalNS.addDecl(what)
+				branch tok.which
+					on 'USE':       what = .useDirective()
+					on 'IMPORT':    what = .importDirective()
+					on 'CLASS':     what = .classDecl()
+					on 'INTERFACE': what = .interfaceDecl()
+					on 'STRUCT':    what = .structDecl()
+					on 'ENUM':      what = .enumDecl()
+					on 'EOL':       .grab()
+					on 'NAMESPACE'
+						.nameSpaceDecl()
+						addToNS = false
+					else
+						_error('Expecting use, import, namespace, class, interface or enum, but got [tok]')
+						break
+				if what
+					_module.addDecl(what to Node)  # CC: axe typecast
+					if addToNS
+						_globalNS.addDecl(what to NamedNode)  # CC: axe "to NamedNode"
 
-		return _module
+			return _module
 
 	def useDirective as NamedNode
 		return NamedNode('TODO')
 
-	def importDirective as Node
+	def importDirective as NamedNode
 		return NamedNode('TODO')
 
 	def classDecl as NamedNode
@@ -311,7 +363,8 @@ class Parser
 		if name[0] not in _uppercaseLetters
 			_error('Class names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 
-#		params = []
+		# CC: rename paramsList to params (can't do it now because it's a C# reserved word and Cobra needs to generate IL or 'escape' these)
+#		paramsList = []
 #		if token.which=='OPEN_GENERIC'
 #			expectComma = false
 #			while 1
@@ -321,7 +374,7 @@ class Parser
 #				if expectComma
 #					.expect('COMMA')
 #				ident = .expect('ID').value
-#				params.append(GenericParam(ident))
+#				paramsList.append(GenericParam(ident))
 #				expectComma = true
 
 		.indent()
@@ -438,6 +491,7 @@ class Parser
 		return NamedNode('TODO')
 
 	def nameSpaceDecl as NameSpace
+		require _nameSpaceStack
 		.expect('NAMESPACE')
 		curNameSpace = _nameSpaceStack.peek() to NameSpace  # CC: remove "as Node"
 		name = .expect('ID').value to String  # CC: .value should probably be dynamic
@@ -483,14 +537,172 @@ class Parser
 		.grab()
 		.oneOrMore('EOL')
 
-	def declareMethod
-		.expect('DEF')
-		.expect('ID')
-		.expect('IS')
-		.expect('SHARED')
-		.indent()
-		.expect('RETURN')
+	def declareMethod as Method
+		token = .expect('DEF')
+		opener = .grab()
+		if opener.which not in ['ID', 'OPEN_CALL']
+			_error('Encountered [opener.which] when expecting an identifier.')
+		name = opener.value to String
+		curClass = .curBox
+		if name==curClass.name or Utils.capped(name)==curClass.name
+			_error('Method names cannot be the same as their enclosing [curClass.specificName]. Use `def construct` for creating a constructor or choose another name.')  # TODO list the enclosing types location
+# TODO
+#		overload = nil
+#		other = curClass.symbolForName(name, true)
+#		if other
+#			if name=='destruct'
+#				.error('Cannot define more than one destruct method.')  # TODO give reference to the other one
+#			if inherits(other, MemberOverload)
+#				overload = other
+#			else if inherits(other, DefOneCodeBlockMember)
+#				overload = MemberOverload(token, other)
+#				curClass.registerOverload(overload)
+#			else
+#				.error('There is already another class member with the name "%s".' % name)  # TODO list its location and possibly what it is
+#		else
+#			other = curClass.symbolForNameCI(name, true)
+#			if other
+#				.error('There is already another class member with the name "%s". You must differentiate member names by more than just case.' % other.name)
+#			if name[0] in .uppercaseLetters
+#				.error('%s names must start with lowercase letters. (%s)' % ('Method', name))
+
+#		if opener.which=='OPEN_CALL'
+#			params = .paramDecls(skipParen=true)
+#		else
+#			params = []
+		paramsList = List<of Param>()
+
+#		if .optional('AS')
+#			returnType = .type()
+#		else
+#			returnType = tvoid
+#		assert returnType
+
+		if curClass inherits Class
+			isNames = .indentIsDeclNames()
+#			implements = .optional('IMPLEMENTS') and .type() or nil
+#			if implements
+#				.oneOrMore('EOL')
+#			docString = .docString()
+			docString = ''
+
+#			assert returnType
+#			if name=='construct'
+#				if returnType is not tvoid
+#					.error('Cannot declare a return type for construct.')
+#				defMethod = DefConstruct(token, .curBox, params, isNames, docString)
+#			else if name=='destruct'
+#				if returnType is not tvoid
+#					.error('Cannot declare a return type for destruct.')
+#				if params
+#					.error('Cannot declare parameters for destruct.')
+#				if 'shared' in isNames
+#					.error('Cannot declare a shared destructor.')
+#				defMethod = DefDestruct(token, .curBox, isNames, docString)
+#			else
+#				if name=='constructor'
+#					.warning('Did you mean to say `construct`?')
+#				else if name=='destructor'
+#					.warning('Did you mean to say `destruct`?')
+			returnType = CobraType()
+			implementsList = List<of Node>()
+			if true
+				method = Method(token, .curBox, name, paramsList, returnType, isNames, implementsList, docString)
+			.statementsFor(method)
+		else if curClass inherits Interface
+			if .optionalIndent()
+				isNames = .isDeclNames()
+#				docString = .docString()
+				docString = ''
+				.dedent()
+			else
+				isNames = List<of String>()
+				docString = ''
+			implementsList = List<of Node>()
+			if name=='construct'
+				_error('Cannot declare "construct" in an interface.')
+			else if name=='destruct'
+				_error('Cannot declare "destruct" in an interface.')
+			else
+				method = Method(token, .curBox, name, paramsList, returnType, isNames, implementsList, docString)
+		else
+			throw Exception('Unhandled containing type [curClass]')
+		assert method
+#		if overload
+#			overload.addMember(defMethod)
+		return method
+
+	def statementsFor(codePart as ICodePart)
+		.statementsFor(codePart, nil)
+
+	def statementsFor(codePart as ICodePart, codePartContainingTest as ICodePart)
+		"""
+		Example source
+			<any statement 1>
+			<any statement 2>
+			<any statement N>
+		Example source
+			test
+				<any statement 1>
+				<any statement 2>
+				<any statement N>
+			code
+				<any statement 1>
+				<any statement 2>
+				<any statement N>
+		Returns
+			Nothing.
+		Errors
+			Already encountered "code" block.
+			Already encountered "test" block.
+		"""
+		_pushCodePart(codePart)
+		if codePartContainingTest is nil
+			codePartContainingTest = codePart
+		try
+			if .peek().which in ['CODE', 'TEST', 'REQUIRE', 'ENSURE']
+				# sectional
+				# not flexible. sequence is signature, contract, test, implementation
+				_isContractOnSameLine = false
+#				if .peek().which=='REQUIRE'
+#					.require(codePart)
+#				if .peek().which=='ENSURE'
+#					.ensure(codePart)
+#				if .peek().which=='TEST'
+#					.testSection(codePartContainingTest)
+#				if .peek().which=='CODE'
+#					.grab()
+#					codePart.setBlock(.block())
+#				else
+				if true
+					if _isContractOnSameLine
+						_statementsFor(codePart)
+					else
+						_error('Expecting `code` section.')
+				if not _isContractOnSameLine
+					.dedent()
+			else
+				# non-sectional
+				_statementsFor(codePart)
+		finally
+			_curCodePart = nil
+
+	def _statementsFor(codePart as ICodePart)
+		"""
+		Utility method for .statementsFor.
+		"""
+		while .peek().which<>'DEDENT'
+			stmt = .stmt()
+			if stmt is not nil
+				codePart.addStmt(stmt to Stmt)  # CC: axe "to Stmt"
 		.dedent()
+
+	def stmt as Stmt?
+		return nil
+
+	#
+	## Protected self utility
+	#
 
 	def _error(msg as String)
 		if _whenError==WhenErrorEnum.exit
@@ -510,6 +722,18 @@ class Parser
 	def _warning(msg as String)
 		assert false, 'to do'
 
+	def _pushCodePart(codePart as ICodePart)
+		_codeParts.push(codePart)
+		_curCodePart = codePart
+
+	def _popCodePart
+		require _codeParts
+		_codeParts.pop()
+		# CC: _curCodePart = if(_codeParts, _codeParts.peek(), nil)
+		if _codeParts
+			_curCodePart = _codeParts.peek() to ICodePart  # CC: axe "to ICodePart"
+		else
+			_curCodePart = nil
 
 class UseDirective
 	inherits Node
@@ -530,8 +754,92 @@ class Box
 	def addDecl(decl as Node)
 		_declsInOrder.add(decl)
 
+	get specificName as String
+		"""
+		Return the specific name of this type of box: class, interface, struct.
+		"""
+		return ''
+
+
 class Class
 	inherits Box
 
 	def construct(name as String, paramList as List<of Node>, isNames as List<of String>, baseName as String?, interfaceNames as List<of String>, docString as String?)
 		base.construct(name)
+
+	get specificName as String is override
+		return 'class'
+
+
+class Interface
+	inherits Box
+
+	def construct(name as String, paramList as List<of Node>, isNames as List<of String>, baseName as String?, interfaceNames as List<of String>, docString as String?)
+		base.construct(name)
+
+	get specificName as String is override
+		return 'interface'
+
+
+class ClassMember
+	inherits NamedNode
+
+	var _box as Box
+
+	def construct(box as Box, name as String)
+		base.construct(name)
+		_box = box
+
+
+
+interface ICodePart
+	"""
+	The common interface to:
+		- methods
+		- inits (special methods)
+		- property getter
+		- property setter
+		- nested method
+		- anonymous method
+	"""
+
+	def addStmt(stmt as Stmt)
+
+
+
+class Method
+	inherits ClassMember
+	implements ICodePart
+
+	var _params as List<of Param>
+	var _returnTypeNode as Node
+	var _isNames as List<of String>
+	var _implementsList as List<of Node>
+	var _docString as String
+	var _stmts as List<of Stmt>
+
+	def construct(token as IToken, box as Box, name as String, paramsList as List<of Param>, returnTypeNode as Node, isNames as List<of String>, implementsList as List<of Node>, docString as String)
+		base.construct(box, name)
+		_params = paramsList
+		_returnTypeNode = returnTypeNode
+		_isNames = isNames
+		_implementsList = implementsList
+		_docString = docString
+
+	def addStmt(stmt as Stmt)
+		_stmts.add(stmt)
+
+
+class Param
+	inherits NamedNode
+
+	def construct(name as String)
+		base.construct(name)
+
+
+class Stmt
+	inherits Node
+
+	def construct(token as IToken)
+		base.construct()
+		pass
