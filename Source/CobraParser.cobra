@@ -29,7 +29,7 @@ class Parser
 
 	test
 		p = Parser()
-		p.globalNS = NameSpace('(global)')
+		p.globalNS = NameSpace(Token.empty, '(global)')
 		module = p.parseSource('test1', 'class Test\n\tpass\n')
 		assert module
 		decls = module.declsInOrder
@@ -40,7 +40,7 @@ class Parser
 			assert false, decl
 
 		p = Parser()
-		p.globalNS = NameSpace('(global)')
+		p.globalNS = NameSpace(Token.empty, '(global)')
 		p.parseSource('test2', 'class Test\n\tdef main is shared\n\t\treturn\n')
 
 	enum WhenErrorEnum
@@ -214,7 +214,7 @@ class Parser
 						tokens.add(NumberedToken(i, _tokens[i]))
 			return tokens
 
-	def expect(whatTypes as vari String) as IToken?
+	def expect(whatTypes as vari String) as IToken
 		"""
 		Gets a token and complains if its type does not match whatType(s).
 		Returns the token.
@@ -234,7 +234,7 @@ class Parser
 				break
 		if not found
 			_error('Expecting [.join(" or ",whatTypes)], but got [t] instead.')
-		return t
+		return t to IToken  # CC: to !
 
 	def join(sep as String, stuff as vari String) as String
 		# CC: have a join() method for vari, List, IEnumerable, array, etc.; use that and axe this helper method
@@ -341,12 +341,14 @@ class Parser
 		code
 			_module = CobraModule(_fileName, _verbosity)  # TODO: does module really need verbosity?
 			if not _fileName.endsWith('SystemInterfaces.cobra')
+				# TODO: make an "implicit" token
+				useToken = Token(_fileName, 1, 1, 1, 'USE', 'use', nil)
 				# default use directives
-				_module.addDecl(UseDirective(nil, ['System']))
-				_module.addDecl(UseDirective(nil, ['System', 'Collections', 'Generic']))
-				_module.addDecl(UseDirective(nil, ['System', 'IO']))
-				_module.addDecl(UseDirective(nil, ['System', 'Text']))
-				_module.addDecl(UseDirective(nil, ['Cobra', 'Lang']))
+				_module.addDecl(UseDirective(useToken, nil, ['System']))
+				_module.addDecl(UseDirective(useToken, nil, ['System', 'Collections', 'Generic']))
+				_module.addDecl(UseDirective(useToken, nil, ['System', 'IO']))
+				_module.addDecl(UseDirective(useToken, nil, ['System', 'Text']))
+				_module.addDecl(UseDirective(useToken, nil, ['Cobra', 'Lang']))
 			# TODO: _module.docString = .docString()
 			what as NamedNode?
 			while true
@@ -377,13 +379,13 @@ class Parser
 			return _module
 
 	def useDirective as NamedNode
-		return NamedNode('TODO')
+		return NamedNode(Token.empty, 'TODO')
 
 	def importDirective as NamedNode
-		return NamedNode('TODO')
+		return NamedNode(Token.empty, 'TODO')
 
 	def classDecl as NamedNode
-		.expect('CLASS')
+		token = .expect('CLASS')
 		peek = .peek().which
 		if peek == 'ID'
 			token = .expect('ID')
@@ -462,7 +464,7 @@ class Parser
 
 		docString = .docString()
 
-		theClass = Class(name, paramList, isNames, baseName, interfaceNames, docString)
+		theClass = Class(token, name, paramList, isNames, baseName, interfaceNames, docString)
 
 		# TODO when supporting nested classes, look at the clintDeclStack and set a back pointer here
 		_boxStack.push(theClass)
@@ -515,24 +517,28 @@ class Parser
 		return names
 
 	def interfaceDecl as NamedNode
-		return NamedNode('TODO')
+		return NamedNode(Token.empty, 'TODO')
 
 	def structDecl as NamedNode
-		return NamedNode('TODO')
+		return NamedNode(Token.empty, 'TODO')
 
 	def enumDecl as NamedNode
-		return NamedNode('TODO')
+		return NamedNode(Token.empty, 'TODO')
 
 	def nameSpaceDecl as NameSpace
 		require _nameSpaceStack
 		.expect('NAMESPACE')
 		curNameSpace = _nameSpaceStack.peek() to NameSpace  # CC: remove "as Node"
-		name = .expect('ID').value to String  # CC: .value should probably be dynamic
-		curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(name)
+		tok = .expect('ID')
+		name = tok.value to String  # CC: .value should probably be dynamic
+		curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(tok, name)
 		_nameSpaceStack.push(curNameSpace)
 		.indent()
 		while true
-			tok = .peek()
+			peek = .peek()
+			if peek is nil
+				_error('expecting a namespace member, but source code ended')
+			tok = peek to IToken  # CC: to !
 			if tok.which=='DEDENT'
 				break
 			branch tok.which
@@ -541,7 +547,7 @@ class Parser
 				on 'STRUCT': curNameSpace.addDecl(.structDecl())
 				on 'USE': curNameSpace.addDecl(.useDirective())
 				on 'NAMESPACE': .nameSpaceDecl()
-				else: _error('expecting "class" but got [tok]')
+				else: _error('expecting a namespace member but got [tok]')
 		.dedent()
 		_nameSpaceStack.pop()
 		return curNameSpace
@@ -637,7 +643,7 @@ class Parser
 #					.warning('Did you mean to say `construct`?')
 #				else if name=='destructor'
 #					.warning('Did you mean to say `destruct`?')
-			returnType = CobraType()
+			returnType = CobraType(Token.empty)
 			implementsList = List<of Node>()
 			if true
 				method = Method(token, .curBox, name, paramsList, returnType, isNames, implementsList, docString)
@@ -905,8 +911,8 @@ class Parser
 class UseDirective
 	inherits Node
 
-	def construct(obj as Object?, nameParts as List<of String>)
-		pass
+	def construct(token as IToken, obj as Object?, nameParts as List<of String>)
+		base.construct(token)
 
 
 class Box
@@ -921,8 +927,8 @@ class Box
 
 	var _declsInOrder as List<of Node>  # TODO: can the inner list type be narrowed more? say to IClassMemberDecl or ClassMemberDecl
 
-	def construct(name as String)
-		base.construct(name)
+	def construct(token as IToken, name as String)
+		base.construct(token, name)
 		_declsInOrder = List<of Node>()
 
 	get declsInOrder from var
@@ -940,8 +946,8 @@ class Box
 class Class
 	inherits Box
 
-	def construct(name as String, paramList as List<of Node>, isNames as List<of String>, baseName as String?, interfaceNames as List<of String>, docString as String?)
-		base.construct(name)
+	def construct(token as IToken, name as String, paramList as List<of Node>, isNames as List<of String>, baseName as String?, interfaceNames as List<of String>, docString as String?)
+		base.construct(token, name)
 
 	get specificName as String is override
 		return 'class'
@@ -950,8 +956,8 @@ class Class
 class Interface
 	inherits Box
 
-	def construct(name as String, paramList as List<of Node>, isNames as List<of String>, baseName as String?, interfaceNames as List<of String>, docString as String?)
-		base.construct(name)
+	def construct(token as IToken, name as String, paramList as List<of Node>, isNames as List<of String>, baseName as String?, interfaceNames as List<of String>, docString as String?)
+		base.construct(token, name)
 
 	get specificName as String is override
 		return 'interface'
@@ -962,8 +968,8 @@ class ClassMember
 
 	var _box as Box
 
-	def construct(box as Box, name as String)
-		base.construct(name)
+	def construct(token as IToken, box as Box, name as String)
+		base.construct(token, name)
 		_box = box
 
 
@@ -995,7 +1001,7 @@ class Method
 	var _stmts as List<of Stmt>
 
 	def construct(token as IToken, box as Box, name as String, paramsList as List<of Param>, returnTypeNode as Node, isNames as List<of String>, implementsList as List<of Node>, docString as String)
-		base.construct(box, name)
+		base.construct(token, box, name)
 		_params = paramsList
 		_returnTypeNode = returnTypeNode
 		_isNames = isNames
@@ -1010,23 +1016,22 @@ class Method
 class Param
 	inherits NamedNode
 
-	def construct(name as String)
-		base.construct(name)
+	def construct(token as IToken, name as String)
+		base.construct(token, name)
 
 
 class LocalVar
 	inherits NamedNode
 
 	def construct(token as IToken, type as CobraType)
-		base.construct(token.text)
+		base.construct(token, token.text)
 
 
 class Stmt
 	inherits Node
 
 	def construct(token as IToken)
-		base.construct()
-		pass
+		base.construct(token)
 
 	def afterParserRecognizesStatement
 		pass
@@ -1043,6 +1048,7 @@ class ReturnStmt
 class NumberedToken
 	"""
 	In support of Parser.lastN.
+	# TODO: Replace this with Pair<T1, T2>
 	"""
 
 	var _i as int
