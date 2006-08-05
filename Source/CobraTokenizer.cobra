@@ -3,7 +3,7 @@ class CobraTokenizer
 
 	test
 		# There are plenty of external Cobra source code tests that will exercise the lexer.
-		# But here are a few basic tests to make sure the tokenizer can handle some of the basics.
+		# But here are a few basic tests to make sure the tokenizer has some viability.
 		t = CobraTokenizer()
 		# TODO:
 		t.startSource('foo bar')
@@ -30,7 +30,7 @@ class CobraTokenizer
 #		pass
 #	''')
 		tokens = t.allTokens()
-		Tokenizer.checkTokens(tokens, 'CLASS ID EOL INDENT PASS EOL DEDENT EOL CLASS ID EOL INDENT PASS EOL DEDENT')
+		Tokenizer.checkTokens(tokens, 'CLASS ID EOL INDENT PASS EOL EOL DEDENT CLASS ID EOL INDENT PASS EOL DEDENT')
 
 		t.restart()
 		t.startSource('class Foo\n\tdef foo()\n\t\treturn 1\n\nclass Bar\n\tpass\n')
@@ -43,7 +43,7 @@ class CobraTokenizer
 #	pass
 #''')
 		tokens = t.allTokens()
-		Tokenizer.checkTokens(tokens, 'CLASS ID EOL INDENT DEF OPEN_CALL RPAREN EOL INDENT RETURN INTEGER_LIT EOL DEDENT DEDENT EOL CLASS ID EOL INDENT PASS EOL DEDENT')
+		Tokenizer.checkTokens(tokens, 'CLASS ID EOL INDENT DEF OPEN_CALL RPAREN EOL INDENT RETURN INTEGER_LIT EOL EOL DEDENT DEDENT CLASS ID EOL INDENT PASS EOL DEDENT')
 
 	var _indentCount as int
 	var _substLBracketCount as int
@@ -69,7 +69,7 @@ class CobraTokenizer
 			r'INDENT_MIXED_1		^[\t]+[ ]+',
 			r'INDENT_MIXED_2		^[ ]+[\t]+',
 			r'INDENT_ALL_TABS		^[\t]+',
-			r'NO_INDENT				^(?=(!\t|\n|#))',
+			r'NO_INDENT				^(?=[^\t\n#])',
 			r'EOL					\n',
 			r'SINGLE_LINE_COMMENT	\#.*',
 			r'SPACE					[ \t]+',
@@ -230,9 +230,10 @@ class CobraTokenizer
 		return _processNumTabs(numTabs)
 
 	def onNO_INDENT(tok as IToken) as IToken?
-		#print '<> NO_INDENT'
+		require tok.text==''
 		_curTokenDef.ignoreCount = 1
-		return _processNumTabs(0)
+		t = _processNumTabs(0)
+		return t
 
 	def _processNumTabs(numTabs as int) as IToken?
 		firstTok as IToken? = nil  # CC: should be able to leave out type by inferring type from below
