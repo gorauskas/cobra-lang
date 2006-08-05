@@ -61,7 +61,7 @@ class Parser
 	var _verbosity = 0
 
 	var _tokens as List<of IToken>?
-	var _curTokenIndex as int
+	var _nextTokenIndex as int
 
 	var _isNamesStack as Stack<of String>?
 	var _boxStack as Stack<of Box>?
@@ -108,6 +108,14 @@ class Parser
 		"""
 		Parses module source code and returns resulting module.
 		"""
+		.preParseSource(fileName, source)
+		return .parseTokens()
+
+	def preParseSource(fileName as String, source as String)
+		"""
+		Sets up for parsing, but does not invoke parseTokens().
+		Used by parseSource() and various test sections.
+		"""
 		_fileName = fileName
 		tokVerbosity = _verbosity - 4  # in order words, tokenizer does not spew unless our verbosity is 5 or greater
 		if tokVerbosity<0
@@ -122,9 +130,7 @@ class Parser
 			print '<> Caught TokenizerError'
 			print te
 			assert false
-		_curTokenIndex = 0
-
-		return .parseTokens()
+		_nextTokenIndex = 0
 
 
 	## Tokens
@@ -133,10 +139,10 @@ class Parser
 		"""
 		Returns the next token or nil if there are none left.
 		"""
-		if _curTokenIndex >= _tokens.count
+		if _nextTokenIndex >= _tokens.count
 			return nil
-		token = _tokens[_curTokenIndex]
-		_curTokenIndex += 1
+		token = _tokens[_nextTokenIndex]
+		_nextTokenIndex += 1
 		if _willShowTokens
 			print 'grab    --> [token]'
 		return token
@@ -145,8 +151,8 @@ class Parser
 		"""
 		Undoes the last token() call. Often called "push" in parser examples.
 		"""
-		require _curTokenIndex>0
-		_curTokenIndex -= 1
+		require _nextTokenIndex>0
+		_nextTokenIndex -= 1
 		if _willShowTokens
 			print 'undo'
 
@@ -158,7 +164,7 @@ class Parser
 		Returns a token without changing the current token, or nil if none left.
 		With no offset, returns the current token, otherwise peeks ahead.
 		"""
-		i = _curTokenIndex + offset
+		i = _nextTokenIndex + offset
 		if i < _tokens.count
 			token = _tokens[i]
 		else
@@ -171,13 +177,40 @@ class Parser
 		"""
 		Returns the last token returned by get() or nil if get() was never invoked.
 		"""
-		if _curTokenIndex > 0
-			token = _tokens[_curTokenIndex]
+		if _nextTokenIndex > 0
+			token = _tokens[_nextTokenIndex-1]
 		else
 			token = nil to passthrough  # CC: get rid of cast somehow
 		if _willShowTokens
 			print 'last    --> [token]'
 		return token
+
+	def lastN(n as int) as List<of NumberedToken>  # CC: use List<of Pair<of int, IToken>>
+		"""
+		Returns a list of NumberedTokens.
+		"""
+		test
+			p = Parser()
+			s = 'namespace class Foo def'
+			p.preParseSource('(no filename)', s)
+			p.grab()
+			p.grab()
+			p.grab()
+			t = p.lastN(2)
+			assert t[0].token.which=='CLASS', t
+			assert t[1].token.which=='ID', t
+			assert t.count==2, t
+		code
+			tokens = List<of NumberedToken>()
+			if _nextTokenIndex > 0
+				while true
+					n -= 1
+					if n == -1
+						break
+					i = _nextTokenIndex - n - 1
+					if i >= 0 and i < _tokens.count
+						tokens.add(NumberedToken(i, _tokens[i]))
+			return tokens
 
 	def expect(whatTypes as vari String) as IToken?
 		"""
@@ -256,15 +289,11 @@ class Parser
 		while .optional('EOL')
 			pass
 		.expect('INDENT')
-		while .optional('EOL')  # added
-			pass
 
 	def dedent
 		while .optional('EOL')
 			pass
 		.expect('DEDENT')
-		while .optional('EOL')  # added
-			pass
 
 	def indentIsDeclNames as List<of String>
 		"""
@@ -836,9 +865,14 @@ class Parser
 		else
 			msg = '[token.fileName](1, 1): error: [msg]'
 		if _whenError==WhenErrorEnum.exit
+			print msg
 			if _verbosity>=1
 				print 'Last tokens:'
-				# TODO
+				print '    ...'
+				for pair in .lastN(9)
+					s = '    [pair.i]. [pair.token]'
+					s = s.padRight(25) + 'line [pair.token.lineNum]'
+					print s
 			if _verbosity<2
 				Environment.exit(1)
 				# otherwise raise an exception in order to be more verbose
@@ -1002,3 +1036,20 @@ class Expr
 		base.construct(token)
 		pass
 
+class NumberedToken
+	"""
+	In support of Parser.lastN.
+	"""
+
+	var _i as int
+	var _token as IToken
+
+	def construct(i as int, token as IToken)
+		_i = i
+		_token = token
+
+	get i from var
+	get token from var
+
+	def toString as String is override
+		return '([_i], [_token])'
