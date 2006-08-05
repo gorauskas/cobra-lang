@@ -1,0 +1,68 @@
+class Expr
+	inherits Stmt
+
+	var _type as CobraType?
+
+	def construct(token as IToken)
+		base.construct(token)
+		pass
+
+
+class AsExpr
+	inherits Expr
+	"""
+	i as int = 5
+	The "i as int" is an AsExpr.
+	"""
+
+	var _name as String
+#	var _token as IToken  # the 'as' keyword
+	var _nameToken as IToken  # the identifier
+	var _typeNode as Node
+	var _definition as Node?
+
+	def construct(token as IToken, nameToken as IToken, typeNode as Node)
+		base.construct(token)
+		_nameToken = nameToken
+		_name = nameToken.text
+		_typeNode = typeNode
+
+# TODO:
+#	def __repr__
+#		return 'AsExpr(%s, %r, %r, type=%r, definition=%r)' % (
+#		.serialNum, .token, .name, .type, getattr('definition', '(none)'))
+
+	def _bindImp is override
+		base._bindImp()
+		_typeNode.bindInt()
+		_typeNode.bindImp()
+		_type = _typeNode.namedType
+		_type.bindImp()
+		# make the local var if necessary (usually is)
+# TODO:		definition = compiler.findLocal(.name)
+		definition as LocalVar?
+		if definition is nil
+			definition = LocalVar(_nameToken, _type)
+			definition.bindAll()
+# TODO:			.compiler.nameStack.peek().pushName(definition)
+			_definition = definition
+		# TODO: check for redefinitions that are invalid by comparing .type with definition.type
+
+# TODO:
+#	def afterStatementBindImp
+#		base.afterStatementBindImp()
+#		if not inherits(.type, NilableType)
+#			if not inherits(.type, PrimitiveType)
+#				.error('Must initialize this non-nil object type, or change the type to nilable (suffix a ?).')
+
+	get asCS as String
+		return _name
+
+	def genCS(sw as IndentedWriter, genParams as bool)
+		sw.write(.asCS)
+
+#	def genCSStatement(out)
+#		# this happens for declarations like "i as int"
+#		out.write('// ')
+#		.genCS(out)
+#		out.write(';\n')
