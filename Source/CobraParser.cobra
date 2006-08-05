@@ -635,7 +635,7 @@ class Parser
 	def statementsFor(codePart as ICodePart)
 		.statementsFor(codePart, nil)
 
-	def statementsFor(codePart as ICodePart, codePartContainingTest as ICodePart)
+	def statementsFor(codePart as ICodePart, codePartContainingTest as ICodePart?)
 		"""
 		Example source
 			<any statement 1>
@@ -698,7 +698,131 @@ class Parser
 		.dedent()
 
 	def stmt as Stmt?
-		return nil
+		token = .peek()
+		which = token.which
+		s as Stmt? # the statement (node)
+		expectEOL = true
+		branch token.which
+			on 'ASSERT'
+				s = .assertStmt()
+			on 'BRANCH'
+				s = .branchStmt()
+				expectEOL = false
+			on 'BREAK'
+				s = .breakStmt()
+			on 'CONTINUE'
+				s = .continueStmt()
+			on 'EXPECT'
+				s = .expectStmt()
+				expectEOL = false
+			on 'FOR'
+				s = .forStmt()
+				expectEOL = false
+#			on 'DEF'
+#				s = .declareMethod()
+			on 'IF'
+				s = .ifStmt()
+				expectEOL = false
+			on 'GET'
+				_error('Cannot use "get" for a statement. If you mistakenly started a property above with "def", "get" or "set", then use "pro" instead.')
+			on 'PASS'
+				s = .passStmt()
+			on 'POST'
+				s = .postWhileStmt()
+				expectEOL = false
+			on 'PRINT'
+				s = .printStmt()
+				expectEOL = false
+			on 'RETURN'
+				s = .returnStmt()
+			on 'THROW'
+				s = .throwStmt()
+			on 'TRY'
+				s = .tryStmt()
+				expectEOL = false
+			on 'USING'
+				s = .usingStmt()
+				expectEOL = false
+			on 'WHILE'
+				s = .whileStmt()
+				expectEOL = false
+			on 'EOL'
+				.grab()  # ignore stray EOL (can especially come up at the end of a file)
+				expectEOL = false
+			else
+				s = .expression()
+				s.afterParserRecognizesStatement()
+		if expectEOL
+			if .verbosity>=5
+				print '<> last statement start token=[token]'
+				print '<> s = [s]'
+			.expect('EOL')
+		_finishSpaceAgnostic()
+		return s
+
+
+	#
+	## Individual Statements
+	#
+
+	def assertStmt as Stmt
+		return Stmt(.grab())
+
+	def branchStmt as Stmt
+		return Stmt(.grab())
+
+	def breakStmt as Stmt
+		return Stmt(.grab())
+
+	def continueStmt as Stmt
+		return Stmt(.grab())
+
+	def expectStmt as Stmt
+		return Stmt(.grab())
+
+	def forStmt as Stmt
+		return Stmt(.grab())
+
+	def ifStmt as Stmt
+		return Stmt(.grab())
+
+	def passStmt as Stmt
+		return Stmt(.grab())
+
+	def postWhileStmt as Stmt
+		return Stmt(.grab())
+
+	def printStmt as Stmt
+		return Stmt(.grab())
+
+	def returnStmt as Stmt
+		token = .expect('RETURN')
+		expr as Expr?  # axe this decl when Cobra looks at the second assignment in after "x = nil"
+		if .peek().which=='EOL'
+			expr = nil
+		else
+			expr = .expression()
+		return ReturnStmt(token, expr)
+
+	def throwStmt as Stmt
+		return Stmt(.grab())
+
+	def tryStmt as Stmt
+		return Stmt(.grab())
+
+	def usingStmt as Stmt
+		return Stmt(.grab())
+
+	def whileStmt as Stmt
+		return Stmt(.grab())
+
+
+	#
+	## Expressions
+	#
+
+	def expression as Expr
+		return Expr(.grab())
 
 
 	#
@@ -706,12 +830,12 @@ class Parser
 	#
 
 	def _error(msg as String)
+		token = .last
+		if token
+			msg = '[token.fileName]([token.lineNum],[token.colNum]): error: [msg]'
+		else
+			msg = '[token.fileName](1, 1): error: [msg]'
 		if _whenError==WhenErrorEnum.exit
-			token = .last
-			if token
-				print '[token.fileName]([token.lineNum],[token.colNum]): error: [msg]'
-			else
-				print '[token.fileName](1, 1): error: [msg]'
 			if _verbosity>=1
 				print 'Last tokens:'
 				# TODO
@@ -736,6 +860,9 @@ class Parser
 		else
 			_curCodePart = nil
 
+	def _finishSpaceAgnostic
+		pass
+
 
 class UseDirective
 	inherits Node
@@ -758,6 +885,7 @@ class Box
 
 	def construct(name as String)
 		base.construct(name)
+		_declsInOrder = List<of Node>()
 
 	get declsInOrder from var
 
@@ -835,6 +963,7 @@ class Method
 		_isNames = isNames
 		_implementsList = implementsList
 		_docString = docString
+		_stmts = List<of Stmt>()
 
 	def addStmt(stmt as Stmt)
 		_stmts.add(stmt)
@@ -853,3 +982,23 @@ class Stmt
 	def construct(token as IToken)
 		base.construct()
 		pass
+
+	def afterParserRecognizesStatement
+		pass
+
+
+class ReturnStmt
+	inherits Stmt
+
+	def construct(token as IToken, expr as Expr?)
+		base.construct(token)
+		pass
+
+
+class Expr
+	inherits Stmt
+
+	def construct(token as IToken)
+		base.construct(token)
+		pass
+
