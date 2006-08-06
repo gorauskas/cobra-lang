@@ -66,3 +66,182 @@ class AsExpr
 #		out.write('// ')
 #		.genCS(out)
 #		out.write(';\n')
+
+
+class BinaryOpExpr
+	inherits Expr
+
+	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
+		base.construct(opToken)
+
+
+class IdentifierExpr
+	inherits Expr
+
+	var _text as String
+	var _definition as Node?
+
+	def construct(token as IToken, text as String, definition as Node?)
+		base.construct(token)
+		_text = text
+		_definition = definition
+# TODO:
+#		if definition is nil:
+#			self.type = nil
+#		else:
+#			self.type = self._resolveType()
+
+
+class IndexExpr
+	inherits Expr
+
+	# TODO
+
+	def construct(token as IToken, target as Expr, exprs as List<of Expr>)
+		base.construct(token)
+
+
+class IsNilExpr
+	inherits Expr
+
+	def construct(token as IToken, expr as Expr)
+		base.construct(token)
+
+
+class IsNotNilExpr
+	inherits Expr
+
+	def construct(token as IToken, expr as Expr)
+		base.construct(token)
+
+
+class OldExpr
+	inherits Expr
+
+	def construct(token as IToken, expr as Expr)
+		base.construct(token)
+
+class UnaryOpExpr
+	inherits Expr
+
+	def construct(token as IToken, op as String, expr as Expr)
+		base.construct(token)
+
+
+##
+## Literals
+##
+
+class Literal
+	inherits Expr
+
+	def construct(token as IToken)
+		base.construct(token)
+
+	get asCS as String
+		return ''
+
+
+# TODO:
+#	def genCS(self, out, genParens=true):
+#		out.write(self.asCS())
+
+
+class AtomicLiteral
+	inherits Literal
+
+	var _text as String
+
+	def construct(token as IToken)
+		base.construct(token)
+		_text = token.text
+
+	def _bindImp is override
+		base._bindImp()
+		assert _type, this
+		_type.bindImp()
+
+	def toCobraSource as String
+		return _text
+
+
+class BoolLiteral
+	inherits AtomicLiteral
+
+	var _value as bool
+
+	def construct(token as IToken)
+		require token.text in ['true', 'false']
+		base.construct(token)
+		_value = token.text=='true'
+
+	def _bindImp is override
+		_type = .compiler.typeForName('bool')
+		base._bindImp()
+
+	get asCS as String is override
+		return if(_value, 'true', 'false')
+
+
+class IntegerLit
+	inherits AtomicLiteral
+
+	var _value as int
+
+	def construct(token as IToken)
+		require token.value inherits int
+		base.construct(token)
+		_value = token.value to int
+
+	get asCS as String is override
+		return _value.toString()
+
+
+class NilLiteral
+	inherits AtomicLiteral
+
+	def construct(token as IToken)
+		base.construct(token)
+
+	def _bindImp is override
+		_type = .compiler.typeForName('nil')
+		base._bindImp()
+
+
+class BaseLit
+	inherits AtomicLiteral
+
+	# TODO:
+
+	def construct(token as IToken, box as Box)
+		base.construct(token)
+
+# TODO:
+#	def genCS(self, out, genParens=false):
+#		out.write('base')
+
+	def memberForName(name as String)
+		assert .didBindImp
+		assert _type
+		assert false, 'TODO'
+#		t = self.receiverType and self.receiverType or self.type
+#		try:
+#			t = t.superType
+#		except:
+#			pass
+#		return t.symbolForName(name, true)
+
+
+class ThisLit
+	inherits AtomicLiteral
+
+	# TODO: somewhere it has to be error checked that you're not assigning to
+	# "this" (unless C# allows that)
+
+	def construct(token as IToken, box as Box)
+		base.construct(token)
+# TODO:		_type = theClass
+
+# TODO
+#	def genCS(self, out, genParens=false):
+#		out.write('this')

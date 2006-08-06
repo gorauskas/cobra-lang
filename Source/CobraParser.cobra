@@ -74,6 +74,12 @@ class Parser
 
 	var _isContractOnSameLine as bool
 
+	var _leftStack as Stack<of Expr>
+	var _opStackStack as Stack<of Stack<of String> >  # CC: should be able to say >> at the end instead of > >
+		"""
+		Used by expression parts so the last operator can be examined.
+		A stack of stacks is needed for CallExpr's args.
+		"""
 
 	def construct
 		_boxStack = Stack<of Box>()
@@ -122,6 +128,9 @@ class Parser
 			tokVerbosity = 0
 
 		_isNamesStack = Stack<of String>()  # for `shared` for example
+		_leftStack = Stack<of Expr>()
+		_opStackStack = Stack<of Stack<of String> >()
+		.newOpStack()
 
 		_tokens = nil
 		try
@@ -404,7 +413,7 @@ class Parser
 #			expectComma = false
 #			while 1
 #				if .peek().which=='GT'
-#					.get()
+#					.grab()
 #					break
 #				if expectComma
 #					.expect('COMMA')
@@ -453,7 +462,7 @@ class Parser
 #			expectComma = false
 #			while 1
 #				if .peek().which=='EOL'
-#					.get()
+#					.grab()
 #					break
 #				if expectComma
 #					.expect('COMMA')
@@ -860,8 +869,302 @@ class Parser
 	## Expressions
 	##
 
+	shared
+		var _binaryOpPrec = {
+			# CANNOT USE 0 AS A VALUE IN THIS DICTIONARY
+			'DOT':				80,
+			'LBRACKET':			80,
+			'LPAREN':			80,
+
+			'STARSTAR':			70,  # right associative
+
+			'QUESTION':			68,
+			'BANG':				68,
+
+			'TO':				65,
+			'TOQ':				65,
+
+			'STAR':				60,
+			'SLASH':			60,
+			'SLASHSLASH':		60,
+			'PERCENT':			60,
+
+			'PLUS':				50,
+			'MINUS':			50,
+
+			'EQ':				40,
+			'NE':				40,
+			'LT':				40,
+			'GT':				40,
+			'LE':				40,
+			'GE':				40,
+			'IS':				40,
+			'ISNOT':			40,
+			'INHERITS':			40,
+			'IMPLEMENTS':		40,
+
+			'IN':				35,
+			'NOTIN':			35,
+
+			'AND':				30,
+			'OR':				30,
+			'IMPLIES':			20,
+
+			'ASSIGN':			20,
+			'PLUS_EQUALS':		20,
+			'MINUS_EQUALS':		20,
+			'STAR_EQUALS':		20,
+			'SLASH_EQUALS':		20,
+			'PERCENT_EQUALS':	20,
+			'QUESTION_EQUALS':	20,
+			'BANG_EQUALS':		20,
+		}
+
+		var _unaryOpPrec = {
+			'MINUS': _binaryOpPrec['MINUS']+1,
+			'NOT': _binaryOpPrec['AND']+1,
+			'OLD': _binaryOpPrec['STARSTAR']+1,
+		}
+
 	def expression as Expr
-		return Expr(.grab())
+		test
+			# CC: neither of these work and both should
+
+			#assert 0 not in _binaryOpPrec.values
+
+			#for v in _binaryOpPrec.values
+			#	assert v<>0
+
+			pass
+
+		code
+			return .expression(0, nil)
+
+
+	def expression(precedence as int) as Expr
+		return .expression(precedence, nil)
+
+
+	def expression(precedence as int, left as Expr?) as Expr
+		if left is nil
+			left = .expression2()
+		while true
+			peek = .peek().which
+			# handle multi-word operators
+			op as String? = nil
+			if peek=='IS' and .peek(1).which=='NOT'  # CC: change to .peek(+1)
+				# 'is not' is a 2 keyword operator
+				op = 'ISNOT'
+			else if peek=='NOT' and .peek(1).which=='IN'  # CC: change to .peek(+1)
+				op = 'NOTIN'
+			# handle precedence (and detect non-binary operators)
+			binaryOpPrec = Utils.getSI(_binaryOpPrec, op ? peek, -1)
+			if binaryOpPrec==-1 or binaryOpPrec<precedence
+				break
+			# continue...
+			if peek=='LBRACKET'
+				# requires special handling - IndexExpr
+				token = .grab()
+				exprs = .commaSepExprs('RBRACKET')
+				return .expression(precedence, IndexExpr(token, left, exprs))
+			else if peek=='LPAREN'
+				# requires special handling - PostCallExpr
+				token = .grab()
+				exprs = .commaSepExprs('RPAREN')
+				assert false, 'TODO'
+#				return .expression(precedence, PostCallExpr(token, left, exprs))
+			else
+				# most operators are one-word affairs
+				if op is nil
+					opToken = .grab()
+					op = opToken.which
+				else
+					# op was set earlier for a two word operator. ISNOT NOTIN
+					opToken = .grab()
+					.grab()
+				# TODO: axe the following section
+#				if op=='QUESTION'
+					# ? can be a binary operator, or a unary postfix operator
+#					if .peek().which in ['COMMA', 'EOL', 'RPAREN']
+#						return IsNilExpr(opToken, left)
+#					if _binaryOpPrec.containsKey(.peek().which) and .peek().which!<>'DOT'
+#						# keep chugging
+#						left = IsNilExpr(opToken, left)
+#						opToken = .grab()
+#						op = opToken.which
+				if op=='BANG'
+					if .peek().which in ['COMMA', 'EOL', 'RPAREN']
+						return IsNotNilExpr(opToken, left)
+					if _binaryOpPrec.containsKey(.peek().which) and .peek().which<>'DOT'
+						# keep chugging
+						left = IsNotNilExpr(opToken, left)
+						opToken = .grab()
+						op = opToken.which
+			assert _binaryOpPrec.containsKey(op)
+			_leftStack.push(left)
+			.opStack.push(op)
+			try
+				prec = if(OperatorSpecs.rightAssoc().containsKey(op), binaryOpPrec, binaryOpPrec+1)
+				right = .expression(prec)
+#				if right inherits IdentifierExpr
+#					if right.definition is UnknownId
+#						_errorUnknownId(right.text)  # TODO this seems wrong since the name might not be available until later
+				if .peek().which=='QUESTION'
+					# ? unary postfix is higher precedence than any binary operator
+					right = IsNilExpr(.grab(), right)
+				else if .peek().which=='BANG'
+					# ! unary postfix is higher precedence than any binary operator
+					right = IsNotNilExpr(.grab(), right)
+				left = BinaryOpExpr(opToken, op, left, right)
+			finally
+				.opStack.pop()
+				_leftStack.pop()
+#		if left inherits IdentifierExpr and left.definition is UnknownId
+#			.errorUnknownId(left.text)  # TODO this seems wrong since the name might not be available until later
+		assert left
+		return left to Expr  # CC: to !
+
+	def expression2 as Expr
+		peek = .peek().which
+		if _unaryOpPrec.containsKey(peek)
+			token = .grab()
+			prec = _unaryOpPrec[peek]
+			if token.which=='OLD'
+				return OldExpr(token, .expression(prec))
+			else
+				return UnaryOpExpr(token, peek, .expression(prec))
+		# TODO: make a branch statement
+		else if peek=='LPAREN'
+			.grab()
+			node = .expression(0, nil)
+			.expect('RPAREN')
+			return node
+		else if peek=='DOT'
+			# leading dot
+			token = .grab()
+			peek = .peek().which
+			if peek=='ID'
+				token = .expect('ID')
+				assert false, 'TODO'
+#				expr = MemberExpr(token, token.text, nil, nil)
+			else if peek=='OPEN_CALL'
+				assert false, 'TODO'
+#				expr = .callExpr()
+			else
+				_error('Syntax error after "."')
+			expr = Expr(Token.empty)  # TODO: axe this when the above are fixed
+			return BinaryOpExpr(token, 'DOT', ThisLit(token, .curBox), expr)
+		else if peek=='NIL'
+			return NilLiteral(.grab())
+		else if peek=='TRUE'
+			return BoolLiteral(.grab())
+		else if peek=='FALSE'
+			return BoolLiteral(.grab())
+		else if peek=='THIS'
+			return ThisLit(.grab(), .curBox)
+		else if peek=='BASE'
+			return BaseLit(.grab(), .curBox)
+# TODO
+#		else if peek=='VAR'
+#			return VarLit(.grab(), .curCodeMember)
+#		else if peek=='CHAR_LIT_SINGLE'
+#			return CharLit(.grab())
+#		else if peek=='CHAR_LIT_DOUBLE'
+#			return CharLit(.grab())
+# TODO
+#		else if peek=='STRING_START_SINGLE'
+#			return .stringWithSubstitutionLit('STRING_START_SINGLE', 'STRING_PART_SINGLE', 'STRING_STOP_SINGLE')
+#		else if peek=='STRING_START_DOUBLE'
+#			return .stringWithSubstitutionLit('STRING_START_DOUBLE', 'STRING_PART_DOUBLE', 'STRING_STOP_DOUBLE')
+#		else if peek=='STRING_SINGLE'
+#			return StringLit(.grab())
+#		else if peek=='STRING_DOUBLE'
+#			return StringLit(.grab())
+		else if peek=='INTEGER_LIT'
+			return IntegerLit(.grab())
+#		else if peek=='DECIMAL_LIT'
+#			return DecimalLit(.grab())
+#		else if peek=='FLOAT_LIT'
+#			return FloatLit(.grab())
+# TODO
+#		else if peek=='LBRACKET'
+#			return .literalList()
+#		else if peek=='LCURLY'
+#			return .literalDict()
+#		else if peek=='OPEN_IF'
+#			return .ifExpr()
+#		else if peek=='OPEN_CALL'
+#			return .callExpr()
+#		else if peek=='OPEN_GENERIC'
+#			return TypeExpr(.type())
+		else if peek=='ID'
+			return .identifierExpr()
+# TODO
+#		else
+#			try
+#				return TypeExpr(.nonqualifiedType('throw'))
+#			catch ParserError, pe
+#				if pe.errorMessage==.expectingAType
+#					.error('Expecting an expression.')
+#				else
+#					throw
+		else
+			return Expr(Token.empty)  # TODO: axe this
+
+	def commaSepExprs(terminator as String) as List<of Expr>
+		# TODO
+		return List<of Expr>()
+
+	def identifierExpr as Expr
+		nameToken = .expect('ID')
+		name = nameToken.text  # TODO? use to be .value instead of .text
+		if .opStack and .opStack.peek()=='DOT'
+			assert false, 'TODO'
+			#return MemberExpr(token, name, UnknownId, tunknown)
+#			return MemberExpr(nameToken, name, nil, nil)
+		if .peek().which=='AS'
+# TODO
+#			if name[0] not in .lowercaseLetters
+#				.error(TidBits.localVarLowercaseError)
+			asToken = .grab()
+			type = .type()
+			assert type
+			return AsExpr(asToken, nameToken, type)
+		else
+			return IdentifierExpr(nameToken, name, nil)
+
+
+	##
+	## Types
+	##
+
+	def type as CobraType
+		token = .grab()
+		if token.text=='int'
+			return IntType(Token.empty)
+		else
+			_error('Unrecognized type: [token]')
+			assert false
+			return CobraType(Token.empty)
+
+
+	##
+	## Op stack
+	##
+
+	def newOpStack
+		require _opStackStack!
+		_opStackStack.push(Stack<of String>())
+
+	def delOpStack
+		require _opStackStack
+		_opStackStack.pop()
+
+	get opStack as Stack<of String>
+		"""
+		Returns the current opStack.
+		"""
+		return _opStackStack.peek() to Stack<of String>  # CC: axe to String
 
 
 	##
