@@ -12,6 +12,9 @@ class Expr
 	def toCobraSource as String
 		return ''
 
+	def memberForName(name as String) as ClassMember?
+		return nil
+
 
 class AsExpr
 	inherits Expr
@@ -73,11 +76,137 @@ class AsExpr
 #		out.write(';\n')
 
 
+class CallExpr
+	inherits Expr
+
+	var _name as String
+	var _args as List<of Expr>
+	var _definition as ClassMember?
+
+	def construct(token as IToken, name as String, args as List<of Expr>)
+		base.construct(token)
+		_name = name
+		_args = args
+		_definition = nil
+
+	def _bindImp is override
+		base._bindImp()
+
+		for arg in _args
+			arg.bindImp()
+
+		type as IType?
+
+		if _definition is nil  or  _type is nil
+			if _superNode inherits BinaryOpExpr
+				if _superNode.op=='DOT' and this is _superNode.right
+					# handle foo.bar() where this is the `bar()` part
+					definition = _superNode.left.memberForName(_name)
+					if definition is nil
+						type = .compiler.passThroughType
+					else
+						if not definition.isCallable
+							_error('Cannot call "[_name]" because it is a "[definition.englishName]".')
+						type = definition.resultType
+			if definition is nil
+				# TODO this needs to be an error in the long term
+				type = .compiler.passThroughType
+			else
+				type = definition.resultType  # NOTE: used to have .namedType at the end
+				if definition inherits MemberOverload
+					pass  # TODO handle overloads (1)
+				else
+					args = _args
+					if definition.hasVariParams
+						# TODO handle variable number of args (4)
+						pass
+					else
+						check = true
+						if not definition.hasParams
+							if args.count
+								_error('The method is expecting 0 arguments, but [args.count] are being supplied in this call.')
+						else
+							paramsx = definition.params  # CC: rename paramsx to params
+							if args.count<>paramsx.count
+								if _name=='toString'  # TODO because many structs like Decimal have a toString() overload which cannot currently be expressed in SystemInterfaces.cobra
+									check = false
+								else
+									_error('The method is expecting [paramsx.count] arguments, but [args.count] are being supplied in this call.')
+							if check
+								for i = 0 .. args.count
+									arg = args[i]
+									paramx = paramsx[i]  # CC: rename paramx to param
+									assert arg.didBindImp
+									assert paramx.didBindInt
+									if not arg.type.isAssignableTo(paramx.type)
+	# TODO
+	#									if paramx.type.__class__.__name__.startswith('GenericParam')
+	#										# TODO support generic params (2)
+	#										pass
+	#									else
+										if true
+											_error('Argument [i+1] of method "[_name]" expects type [paramx.type.name], but the call is supplying type [arg.type.name].')
+
+			_definition = definition
+			_type = type
+
+		assert _type, 'this=[this], def=[_definition]'
+		_type.bindImp()
+
+	def toCobraSource as String is override
+		sb = StringBuilder()
+		sb.append(_name)
+		sb.append('(')
+		sep = ''
+		for arg in _args
+			sb.append(sep)
+			sb.append(arg.toCobraSource())
+			sep = ', '
+		sb.append(')')
+		return sb.toString()
+
+#	def genCS(out, genParens=false)
+#		if .isNew
+#			if genParens
+#				out.write('(')
+#			out.write('new ')
+#		name = .isDotted and capped(.name) or .name
+#		out.write('%s(' % name)
+#		genCSBinaryOpStack.push('(')  # on order to make .isDotted false for the args inside the call
+#		try
+#			sep = ''
+#			for arg in .args
+#				out.write(sep)
+#				arg.genCS(out)
+#				sep = ', '
+#			out.write(')')
+#		finally
+#			genCSBinaryOpStack.pop()
+#		if .isNew
+#			if genParens
+#				out.write(')')
+
+
 class BinaryOpExpr
 	inherits Expr
 
+	var _op as String
+	var _left as Expr
+	var _right as Expr
+
 	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.construct(opToken)
+		_op = op
+		_left = left
+		_left.superNode = this
+		_right = right
+		_right.superNode = this
+
+	get op from var
+
+	get left from var
+
+	get right from var
 
 
 class IdentifierExpr
@@ -92,9 +221,9 @@ class IdentifierExpr
 		_definition = definition
 # TODO:
 #		if definition is nil:
-#			self.type = nil
+#			.type = nil
 #		else:
-#			self.type = self._resolveType()
+#			.type = ._resolveType()
 
 
 class IndexExpr
@@ -202,7 +331,7 @@ class Literal
 
 # TODO:
 #	def genCS(self, out, genParens=true):
-#		out.write(self.asCS())
+#		out.write(.asCS())
 
 
 class AtomicLiteral
@@ -266,6 +395,33 @@ class NilLiteral
 		base._bindImp()
 
 
+
+class StringLit
+	inherits AtomicLiteral
+
+	def construct(token as IToken)
+		require token.which.startsWith('STRING')
+		base.construct(token as IToken)
+		# AXE? .text = token.value
+
+	def _bindInt
+		if not _type
+			_type = .compiler.typeForName('String')
+		base._bindInt()
+
+	def _bindImp
+		if not _type
+			_type = .compiler.typeForName('String')
+		base._bindImp()
+
+#	def toCobraSource(self)
+#		return .token.text
+
+#	def asCS(self)
+#		.assertType()
+#		return .csStringLitFor(.text)
+
+
 class BaseLit
 	inherits AtomicLiteral
 
@@ -278,16 +434,17 @@ class BaseLit
 #	def genCS(self, out, genParens=false):
 #		out.write('base')
 
-	def memberForName(name as String)
+	def memberForName(name as String) as ClassMember? is override
 		assert .didBindImp
 		assert _type
 		assert false, 'TODO'
-#		t = self.receiverType and self.receiverType or self.type
+#		t = .receiverType and .receiverType or .type
 #		try:
 #			t = t.superType
 #		except:
 #			pass
 #		return t.symbolForName(name, true)
+		return nil
 
 
 class ThisLit

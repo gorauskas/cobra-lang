@@ -588,7 +588,7 @@ class Parser
 		name = opener.value to String
 		curClass = .curBox
 		if name==curClass.name or Utils.capped(name)==curClass.name
-			_error('Method names cannot be the same as their enclosing [curClass.specificName]. Use `def construct` for creating a constructor or choose another name.')  # TODO list the enclosing types location
+			_error('Method names cannot be the same as their enclosing [curClass.englishName]. Use `def construct` for creating a constructor or choose another name.')  # TODO list the enclosing types location
 # TODO
 #		overload = nil
 #		other = curClass.symbolForName(name, true)
@@ -1079,10 +1079,10 @@ class Parser
 #			return .stringWithSubstitutionLit('STRING_START_SINGLE', 'STRING_PART_SINGLE', 'STRING_STOP_SINGLE')
 #		else if peek=='STRING_START_DOUBLE'
 #			return .stringWithSubstitutionLit('STRING_START_DOUBLE', 'STRING_PART_DOUBLE', 'STRING_STOP_DOUBLE')
-#		else if peek=='STRING_SINGLE'
-#			return StringLit(.grab())
-#		else if peek=='STRING_DOUBLE'
-#			return StringLit(.grab())
+		else if peek=='STRING_SINGLE'
+			return StringLit(.grab())
+		else if peek=='STRING_DOUBLE'
+			return StringLit(.grab())
 		else if peek=='INTEGER_LIT'
 			return IntegerLit(.grab())
 #		else if peek=='DECIMAL_LIT'
@@ -1096,8 +1096,8 @@ class Parser
 #			return .literalDict()
 #		else if peek=='OPEN_IF'
 #			return .ifExpr()
-#		else if peek=='OPEN_CALL'
-#			return .callExpr()
+		else if peek=='OPEN_CALL'
+			return .callExpr()
 #		else if peek=='OPEN_GENERIC'
 #			return TypeExpr(.type())
 		else if peek=='ID'
@@ -1114,9 +1114,60 @@ class Parser
 		else
 			return Expr(Token.empty)  # TODO: axe this
 
+	def callExpr as CallExpr
+		"""
+		Syntax:
+			foo(args)
+		"""
+		token = .expect('OPEN_CALL')
+		callName = token.value to String
+		assert not callName.endsWith('(')
+		exprs = .commaSepExprs('RPAREN')
+		return CallExpr(token, callName, exprs)
+
 	def commaSepExprs(terminator as String) as List<of Expr>
-		# TODO
-		return List<of Expr>()
+		return .commaSepExprs([terminator], false)
+
+	def commaSepExprs(terminators as List<of String>) as List<of Expr>
+		return .commaSepExprs(terminators, false)
+
+	def commaSepExprs(terminators as List<of String>, isSpaceAgnostic as bool) as List<of Expr>
+		"""
+		Example source
+			... expr TERMINATOR
+			... expr, expr TERMINATOR
+			... expr, expr, expr, TERMINATOR
+		Returns
+			A list of expressions.
+		Notes
+			Popular terminators are 'EOL' and 'RPAREN'.
+			The terminator token is consumed, but can be examined with .last().
+		"""
+		expectComma = false
+		exprs = List<of Expr>()
+		while true
+			if isSpaceAgnostic
+				_spaceAgnostic()
+			if .peek().which in terminators
+				terminator = .grab()
+				break
+			if expectComma
+				.expect('COMMA')
+			if .peek().which in terminators
+				terminator = .grab()
+				break
+			if isSpaceAgnostic
+				_spaceAgnostic()
+			if .peek().which in terminators
+				terminator = .grab()
+				break
+			.newOpStack()
+			try
+				exprs.add(.expression())
+			finally
+				.delOpStack()
+			expectComma = true
+		return exprs
 
 	def identifierExpr as Expr
 		nameToken = .expect('ID')
@@ -1212,6 +1263,9 @@ class Parser
 			_curCodePart = _codeParts.peek() to ICodePart  # CC: axe "to ICodePart"
 		else
 			_curCodePart = nil
+
+	def _spaceAgnostic
+		pass
 
 	def _finishSpaceAgnostic
 		pass

@@ -19,7 +19,7 @@ class Box
 	def addDecl(decl as Node)
 		_declsInOrder.add(decl)
 
-	get specificName as String
+	get englishName as String
 		"""
 		Return the specific name of this type of box: class, interface, struct.
 		"""
@@ -32,7 +32,7 @@ class Class
 	def construct(token as IToken, name as String, paramList as List<of Node>, isNames as List<of String>, baseName as String?, interfaceNames as List<of String>, docString as String?)
 		base.construct(token, name)
 
-	get specificName as String is override
+	get englishName as String is override
 		return 'class'
 
 
@@ -42,7 +42,7 @@ class Interface
 	def construct(token as IToken, name as String, paramList as List<of Node>, isNames as List<of String>, baseName as String?, interfaceNames as List<of String>, docString as String?)
 		base.construct(token, name)
 
-	get specificName as String is override
+	get englishName as String is override
 		return 'interface'
 
 
@@ -55,6 +55,39 @@ class ClassMember
 		base.construct(token, name)
 		_box = box
 
+	get englishName as String
+		throw OverrideException()
+		return ''
+
+	get hasVariParams as bool
+		"""
+		Retuns true if the class member takes variable number of arguments.
+		"""
+		return false
+
+	get hasParams as bool
+		"""
+		Returns true if the class member has one or more parameters defined.
+		"""
+		return false
+
+	get params as List<of Param>
+		"""
+		Returns the list of params of this method, possibly empty.
+		Checking hasParams first is recommended since it's more efficient.
+		"""
+		return List<of Param>()
+
+	get isCallable as bool
+		throw OverrideException()
+		return false
+
+	get resultType as IType
+		"""
+		The result type of the var, method or property.
+		"""
+		throw OverrideException()
+		return CobraType()
 
 
 interface ICodePart
@@ -78,6 +111,7 @@ class Method
 
 	var _params as List<of Param>
 	var _returnTypeNode as Node
+	var _returnType as IType?
 	var _isNames as List<of String>
 	var _implementsList as List<of Node>
 	var _docString as String
@@ -95,16 +129,126 @@ class Method
 	def addStmt(stmt as Stmt)
 		_stmts.add(stmt)
 
+	get englishName as String is override
+		return 'method'
 
-class Param
+	get hasVariArgs as bool
+		print 'TODO: complete Method.hasVariArgs'
+		return false
+
+	get isCallable as bool is override
+		return true
+
+	get resultType as IType is override
+		require
+			.didBindInt
+			_returnType!
+		code
+			return _returnType to IType  # CC: to !
+
+
+class MemberOverload
+	inherits ClassMember
+
+	def construct(box as Box, name as String)
+		base.construct(TokenFix.empty, box, name)
+
+
+class AbstractLocalVar
 	inherits NamedNode
 
-	def construct(token as IToken, name as String)
-		base.construct(token, name)
+	var _type as IType
+	var _isImplicit as bool
+	var _isTracked as bool
+	var _ifInheritsStack = Stack<of IType>()
+	var _useCSNameStack = Stack<of String>()  # for if-inherits
+
+	def construct(token as IToken, type as IType, isImplicit as bool)
+		base.construct(token, token.text)
+		_type = type
+		_isImplicit = isImplicit
+		_isTracked = false
+
+#	def addMinFields
+#		base.addMinFields()
+#		.addMinField('name', .name)
+#		if .isImplicit
+#			.addMinField('isImplicit', .isImplicit)
+
+	def toString as String is override
+		type = if(.type, .type.name, "(no type)")
+		return '[.getType().name]([.serialNum], [.token], [.name], [type])'
+
+# TODO
+#	def symbolForName(name, canBeMember=false)
+#		t = .ifInheritsStack and .ifInheritsStack.peek() or .type
+#		return t.symbolForName(name, true)  # TODO is "true" the correct value here?
+
+#	def dumpName(out)
+#		out.write('%s as %s  (%s)\n' % (.name, .type.name, .__class__.__name__))
+
+	def _bindInt is override
+		base._bindInt()
+		_type.bindInt()
+
+	def _bindImp is override
+		base._bindImp()
+		_type.bindImp()
+# TODO		_type = _type.namedType
+
+	pro type as IType
+		get
+			return if(_ifInheritsStack, _ifInheritsStack.peek() to IType, _type)  # CC: axe to IType
+		set
+			assert _type is nil  # TODO: in [nil, tpassthrough, tunknown)
+			assert not _ifInheritsStack
+			_type = value
+
+	def csAssignmentNames as List<of String>
+		return List<of String>(_useCSNameStack)
+
+	get csName as String
+		return if(_useCSNameStack, _useCSNameStack.peek() to String, .name)  # CC: axe to String
+
+
+
+class Param
+	inherits AbstractLocalVar
+
+	def construct(token as IToken, type as IType, isImplicit as bool)
+		base.construct(token, type, isImplicit)
+
+# TODO
+#	def genCS(out)
+#		out.write('%s %s' % (.type.asCS(), .name))
 
 
 class LocalVar
-	inherits NamedNode
+	inherits AbstractLocalVar
 
 	def construct(token as IToken, type as IType)
-		base.construct(token, token.text)
+		.construct(token, type, false)
+
+	def construct(token as IToken, type as IType, isImplicit as bool)
+		base.construct(token, type as IType, isImplicit)
+
+
+class ResultVar
+	inherits LocalVar
+	"""
+	The implicit variable `result` used in `ensure` blocks.
+	"""
+
+	def construct(codeMember as ClassMember)
+		base.construct(_makeToken(codeMember), codeMember.resultType, true)
+
+	def _makeToken(codeMember as ClassMember) as IToken is shared
+		token = codeMember.token.copy
+		token.text = 'result'
+		return token
+
+	#._asCS = codeMember.csResultVarName
+
+# TODO
+#	def asCS
+#		return ._asCS

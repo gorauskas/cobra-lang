@@ -1,14 +1,27 @@
+class NodeException
+	inherits Exception
+
+	var _node as Node
+
+	def construct(node as Node, msg as String)
+		base.construct(msg)
+		_node = node
+
+	get node from var
+
+
 class Node
 	"""
 	Just about everything in the Cobra compiler that forms a data
 	structure of a program ultimately inherits from Node. For example,
-	all types and ASTs descend from node.
+	all types and ASTs descend from Node.
 
 	However, the tokenizer, parser, compiler object and command line
 	objects do not.
 	"""
 
 	shared
+		var _nextNodeSerialNum = 1001
 		var _compiler as Compiler?
 
 		pro compiler from var
@@ -16,16 +29,33 @@ class Node
 		def setCompiler(c as Compiler?) # CC: axe this method after the shared property is working
 			_compiler = c
 
+	var _serialNum as int
+
 	var _didBindInt as bool
 	var _didBindImp as bool
+	var _superNode as Node?
+		"""
+		Possibly points to the node that owns this node.
+		But this is not strictly required. It's used only when needed (typically in expressions).
+		"""
 
 
 	def construct
-		pass
+		ensure
+			.serialNum > 1000
+			not .didBindInt
+			not .didBindImp
+		code
+			_serialNum = _nextNodeSerialNum
+			_nextNodeSerialNum += 1
+
+	get serialNum from var
 
 	def writeDeepString
 		pass
 		# TODO
+
+	pro superNode from var
 
 
 	##
@@ -89,6 +119,14 @@ class Node
 	get didBindInt from var
 
 	get didBindImp from var
+
+
+	##
+	## Errors
+	##
+
+	def _error(msg as String)
+		throw NodeException(this, msg)
 
 
 class SyntaxNode

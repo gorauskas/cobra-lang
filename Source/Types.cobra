@@ -1,10 +1,16 @@
 interface ITypeProvider
+	"""
+	A type provider can provide essential types and serve as a place
+	they are "uniqued" in order to avoid type duplication.
+	"""
 
 	def typeForName(name as String) as IType
 
 	def typeOrNilForName(name as String) as IType?
 
 	get boolType as BoolType
+
+	get passThroughType as PassThroughType
 
 
 interface IType
@@ -14,6 +20,10 @@ interface IType
 	def bindInt as Node
 
 	def bindImp as Node
+
+	get csInit as String
+
+	def isAssignableTo(type as IType) as bool
 
 
 class CobraType
@@ -25,6 +35,13 @@ class CobraType
 
 	get name as String
 		return ''
+
+	def isAssignableTo(type as IType) as bool
+		throw OverrideException()
+		return false
+
+	get csInit as String
+		throw OverrideException()
 
 
 class IntType
@@ -39,3 +56,25 @@ class BoolType
 
 	def construct
 		base.construct()
+
+
+class PassThroughType
+	inherits CobraType
+	"""
+	This is a temporary helper type used while Cobra is still deficient in type checking mostly
+	due to its inability to look up methods, properties, etc.
+
+	Originally it overrode isDescendantOf() to always return true, but this mislead the C#
+	code generation. The override was removed and now you have to check for it explicitly.
+
+	TODO: remove this class
+	"""
+
+	def construct
+		base.construct()
+
+	get csInit as String is override
+		return 'null'
+
+	def isAssignableTo(type as IType) as bool is override
+		return true
