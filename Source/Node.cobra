@@ -51,10 +51,6 @@ class Node
 
 	get serialNum from var
 
-	def writeDeepString
-		pass
-		# TODO
-
 	pro superNode from var
 
 
@@ -129,6 +125,159 @@ class Node
 		throw NodeException(this, msg)
 
 
+	##
+	## Converting to string
+	##
+
+	def toString as String is override
+		return .shallowString
+
+	def toTechString as String
+		return .deepString
+
+	get minimalString as String
+		"""
+		Includes only atomic data like numbers and strings.
+		"""
+		return _toString(true, false, false)
+
+	get shallowString as String
+		"""
+		Includes minimal string plus references to other objects (their minimal strings).
+		"""
+		return _toString(true, true, false)
+
+	get deepString as String
+		"""
+		Includes shallow string plus subobjects (their deep strings).
+		"""
+		return _toString(true, true, true)
+
+	def addMinFields
+		"""
+		Subclasses should override to add minimal fields.
+		"""
+		pass
+
+	def addRefFields
+		pass
+
+	def addSubFields
+		pass
+
+	def addField(name as String, value as Object)
+		"""
+		Subclasses invoke this from their overrides of `addMinFields`,
+		`addRefFields` and `addSubFields`.
+		"""
+		__curFields.add(Field(name, value))
+
+	def addField(value as Object)
+		.addField('', value)
+
+	var __curFields as List<of Field>?
+
+	def _toString(doMin as bool, doRef as bool, doSub as bool) as String
+		"""
+		This is the implementation for minimalString, shallowString and deepString.
+		"""
+		if doSub
+			tag = 'd' # for deep
+		else if doRef
+			tag = 's' # for shallow
+		else
+			tag = 'm' # for minimal
+
+		sb = StringBuilder('[.getType().name]-[tag]([.serialNum]')
+
+		if doMin
+			__curFields = List<of Field>()
+			try
+				.addMinFields()
+				for field in __curFields
+					if field.name
+						sb.append(', [field.name]=[field.value]')
+					else
+						sb.append(', [field.value]')
+			finally
+				__curFields = nil
+
+		if doRef
+			__curFields = List<of Field>()
+			try
+				.addRefFields()
+				for field in __curFields
+					value as Object?
+					if field.value inherits Node
+						value = (field.value to Node).minimalString
+					else
+						value = field.value
+					sb.append(', ref:[field.name]=[value]')
+			finally
+				__curFields = nil
+
+		if doSub
+			__curFields = List<of Field>()
+			try
+				.addSubFields()
+				for field in __curFields
+					value as Object?
+					if field.value inherits Node
+						value = (field.value to Node).minimalString
+					else
+						value = field.value
+					sb.append(', sub:[field.name]=[field.value]')
+			finally
+				__curFields = nil
+
+		sb.append(')')
+		s = sb.toString()
+		if s.length>100
+			s = s.substring(0, s.length-1) + ', [.serialNum])'
+
+		return s
+
+	def writeDeepString(iw as IndentedWriter)
+		_writeDeepString(iw, this, true, true, true)
+
+	def _writeDeepString(iw as IndentedWriter, obj as Node, doMin as bool, doRef as bool, doSub as bool)
+		if doSub
+			iw.write(obj.shallowString)
+			iw.write('\n')
+			iw.indent()
+			try
+				__curFields = List<of Field>()
+				try
+					.addSubFields()
+					for field in __curFields
+						value = field.value
+						if value inherits Node
+							iw.write('sub:[field.name]=')
+							value._writeDeepString(iw, value, doMin, doRef, doSub)
+							#iw.write('\n')
+#						else if value inherits System.Collections.IList
+#							iw.write('sub:[field.name]=' + r'[\n')  # CC: should be able to say: 'sub:[name]=\[\n'
+#							iw.indent()
+#							try
+#								for i = 0 .. value.count
+#									iw.write('[i]=')
+#									value[i]._writeDeepString(iw, value[i], doMin, doRef, doSub)
+#							finally
+#								iw.dedent()
+#							iw.write(']\n')
+						else
+							iw.write('sub:[field.name]=[value]\n')
+				finally
+					__curFields = nil
+			finally
+				iw.dedent()
+			return
+		if doRef
+			iw.write(obj.shallowString)
+			return
+		if doMin
+			iw.write(obj.minimalString)
+
 class SyntaxNode
 	inherits Node
 	"""
@@ -146,6 +295,9 @@ class SyntaxNode
 
 	get token from var
 
+	def addMinFields is override
+		base.addMinFields()
+		.addField('token', .token)
 
 class NamedNode
 	inherits SyntaxNode
@@ -164,3 +316,20 @@ class NamedNode
 		_name = name
 
 	get name from var
+
+	def addMinFields is override
+		base.addMinFields()
+		.addField('name', .token)
+
+class Field
+
+	var _name as String
+	var _value as Object
+
+	def construct(name as String, value as Object)
+		_name = name
+		_value = value
+
+	get name from var
+
+	get value from var
