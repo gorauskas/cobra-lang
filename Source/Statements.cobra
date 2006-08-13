@@ -42,6 +42,106 @@ class AssertStmt
 #		out.dedent()
 
 
+class BlockStmt
+	inherits Stmt
+	"""
+	A BlockStmt holds a series of statements which are the target of complex statement such
+	if, while, etc. BlockStmts are *not* the target of a method or property.
+	"""
+
+	var _stmts as List<of Stmt>
+
+	def construct(token as IToken, stmts as List<of Stmt>)
+		base.construct(token)
+		_stmts = stmts
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('stmts', _stmts)
+
+
+class PrintStmt
+	inherits Stmt
+
+	var _destination as Expr?
+	var _args as List<of Expr>
+	var _stopp as bool
+
+	def construct(token as IToken, destination as Expr?, args as List<of Expr>, stopp as bool)
+		base.construct(token)
+		_destination = destination
+		_args = args
+		_stopp = stopp
+
+	def _bindImp is override
+		base._bindImp()
+		if _destination!
+			_destination.bindImp()
+		for arg in _args
+			arg.bindImp()
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('stopp', _stopp)
+		.addField('destination', _destination)
+		.addField('args', _args)
+
+#	def genCS(self, out):
+#		Stmt.genCS(self, out)
+#		if self.destination:
+#			out.write('(')
+#			self.destination.genCS(out)
+#			out.write(').%s(' % (self.stop and 'Write' or 'WriteLine'))
+#		else:
+#			out.write('CobraImp.%s(' % (self.stop and 'PrintStop' or 'PrintLine'))
+#		sep = ''
+#		for arg in self.args:
+#			out.write(sep)
+#			if arg.type.isStringClass:
+#				out.write('(')
+#			else:
+#				out.write('CobraImp.ToString(')
+#			arg.genCS(out)
+#			out.write(')')
+#			sep = '+'
+#		out.write(');\n')
+
+
+class PrintRedirectStmt
+	inherits Stmt
+
+	var _destination as Expr
+	var _block as BlockStmt
+
+	def construct(token as IToken, destination as Expr, block as BlockStmt)
+		base.construct(token)
+		_destination = destination
+		_block = block
+
+	def _bindImp is override
+		base._bindImp()
+		_destination.bindImp()
+		_block.bindImp()
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('destination', _destination)
+		.addField('block', _block)
+
+#	def genCS(self, out):
+#		Stmt.genCS(self, out)
+#		out.write('CobraImp.PushPrintTo(')
+#		self.destination.genCS(out, genParens=false)
+#		out.write(');\n')
+#		out.write('try')
+#		self.stmts.genCS(out)
+#		out.write('finally {\n')
+#		out.indent()
+#		out.write('CobraImp.PopPrintTo();\n')
+#		out.dedent()
+#		out.write('}\n')
+
+
 class ReturnStmt
 	inherits Stmt
 

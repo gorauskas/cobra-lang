@@ -288,13 +288,17 @@ class Parser
 	def docString as String?
 		return nil  # TODO
 
-	def indent
+	def indent as IToken
+		"""
+		Consumes an option COLON (which generates a warning), 1 or more EOLs and an INDENT.
+		Returns the INDENT.
+		"""
 		if .optional('COLON')
 			_warning('Colons are not used to start indented blocks.')
 		.expect('EOL')
 		while .optional('EOL')
 			pass
-		.expect('INDENT')
+		return .expect('INDENT')
 
 	def dedent
 		while .optional('EOL')
@@ -844,7 +848,40 @@ class Parser
 		return Stmt(.grab())
 
 	def printStmt as Stmt
-		return Stmt(.grab())
+		"""
+		Example source:
+			print arg
+			print a, b, c
+			print to sw, a, b
+			print to sw, a, b stop
+			print a, b, c stop
+			print to sw
+				code
+		"""
+		destination as Expr?
+		block as BlockStmt?
+		token = .expect('PRINT')
+		args = List<of Expr>()
+		stopp = false
+		if .optional('TO')
+			destination = .expression()
+			peek = .peek().which
+			if peek=='COMMA'
+				.grab()
+			else if peek=='EOL'
+				block = .block()
+			else
+				_error('Expecting a comma and print arguments, or a code block.')
+		if not block
+			args = .commaSepExprs(['EOL', 'STOP'])
+			terminator = .last
+			if terminator.which=='STOP'
+				stopp = true
+				.expect('EOL')
+		if block
+			return PrintRedirectStmt(token, destination, block)
+		else
+			return PrintStmt(token, destination, args, stopp)
 
 	def returnStmt as Stmt
 		token = .expect('RETURN')
@@ -866,6 +903,35 @@ class Parser
 
 	def whileStmt as Stmt
 		return Stmt(.grab())
+
+
+	##
+	## Statement parts
+	##
+
+	get curCodeMember as String
+		return ''
+
+	def block as BlockStmt
+		"""
+		Used by if, while, print-to, etc.
+		Consumes the (optional colon,) indent, statements and dedent.
+		Returns a BlockStmt().
+		"""
+		assert false
+		assert .curCodeMember
+		token = .indent()
+		stmts = List<of Stmt>()
+		while true
+			stmt = .stmt()
+			if stmt is not nil
+				stmts.add(stmt)
+			if .peek().which=='DEDENT'
+				break
+		if not stmts
+			_error('Missing statements in block. Add a real statement or a "pass".')
+		.dedent()
+		return BlockStmt(token, stmts)
 
 
 	##
