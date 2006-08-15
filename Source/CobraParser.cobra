@@ -25,6 +25,7 @@ class Parser
 	test
 		p = Parser()
 		p.globalNS = NameSpace(Token.empty, '(global)')
+		p.typeProvider = BasicTypeProvider()
 		module = p.parseSource('test1', 'class Test\n\tpass\n')
 		assert module
 		decls = module.declsInOrder
@@ -36,6 +37,7 @@ class Parser
 
 		p = Parser()
 		p.globalNS = NameSpace(Token.empty, '(global)')
+		p.typeProvider = BasicTypeProvider()
 		p.parseSource('test2', 'class Test\n\tdef main is shared\n\t\treturn\n')
 
 	enum WhenErrorEnum
@@ -591,6 +593,7 @@ class Parser
 		.oneOrMore('EOL')
 
 	def declareMethod as Method
+		require _typeProvider
 		token = .expect('DEF')
 		opener = .grab()
 		if opener.which not in ['ID', 'OPEN_CALL']
@@ -624,11 +627,11 @@ class Parser
 		else
 			paramsList = List<of Param>()
 
-#		if .optional('AS')
-#			returnType = .type()
-#		else
-#			returnType = tvoid
-#		assert returnType
+		if .optional('AS')
+			returnType = .type()
+		else
+			returnType = _typeProvider.voidType
+		assert returnType
 
 		if curClass inherits Class
 			isNames = .indentIsDeclNames()
@@ -656,7 +659,6 @@ class Parser
 #					.warning('Did you mean to say `construct`?')
 #				else if name=='destructor'
 #					.warning('Did you mean to say `destruct`?')
-			returnType = CobraType()
 			implementsList = List<of INode>()
 			if true
 				method = Method(token, .curBox, name, paramsList, returnType, isNames, implementsList, docString)
