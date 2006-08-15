@@ -10,16 +10,19 @@ interface ITypeProvider
 
 	get boolType as BoolType
 
+	get dynamicType as DynamicType
+
 	get passThroughType as PassThroughType
+
+	def variType(type as IType) as VariType
+
+	def variType(typeNode as INode) as VariType
 
 
 interface IType
+	inherits INode
 
 	get name as String
-
-	def bindInt as Node
-
-	def bindImp as Node
 
 	get csInit as String
 
@@ -58,6 +61,15 @@ class BoolType
 		base.construct()
 
 
+class DynamicType
+	inherits CobraType
+	"""
+	TODO: flesh out DynamicType
+	"""
+
+	pass
+
+
 class PassThroughType
 	inherits CobraType
 	"""
@@ -78,3 +90,56 @@ class PassThroughType
 
 	def isAssignableTo(type as IType) as bool is override
 		return true
+
+
+##
+## Wrapped Types
+##
+
+class WrappedType
+	inherits CobraType
+
+	# TODO: flesh this out
+
+	var _wrappedType as IType?
+	var _wrappedTypeNode as INode?
+
+	def construct(wrappedType as IType)
+		base.construct()  # TODO: ? pass wrappedType.superType
+		_wrappedType = wrappedType
+		_wrappedTypeNode = nil
+
+	def construct(wrappedTypeNode as INode)
+		base.construct()
+		_wrappedType = nil
+		_wrappedTypeNode = wrappedTypeNode
+
+	def _bindInt is override
+		_resolveType()
+
+	def _bindImp is override
+		_resolveType()
+
+	def _resolveType
+		require _wrappedType! or _wrappedTypeNode!
+		if _wrappedType!
+			return
+		if _wrappedTypeNode inherits IType
+			_wrappedType = _wrappedTypeNode to passthrough   # CC: shouldn't need the cast here
+			return
+		_wrappedType = _wrappedTypeNode.bindAll().namedType
+		if _wrappedType is nil
+			_error('Cannot resolve type.')  # TODO: add the name of the wrappedTypeNode or something
+
+
+class VariType
+	inherits WrappedType
+	"""
+	TODO: flesh out VariType
+	"""
+
+	def construct(wrappedType as IType)
+		base.construct(wrappedType)
+
+	def construct(wrappedTypeNode as INode)
+		base.construct(wrappedTypeNode)

@@ -76,6 +76,8 @@ class Parser
 		A stack of stacks is needed for CallExpr's args.
 		"""
 
+	var _typeProvider as ITypeProvider
+
 	def construct
 		_boxStack = Stack<of Box>()
 		_nameSpaceStack = Stack<of NameSpace>()
@@ -84,6 +86,8 @@ class Parser
 	pro verbosity from var
 
 	pro whenError from var
+
+	pro typeProvider from var
 
 	pro globalNS as NameSpace
 		get
@@ -98,11 +102,13 @@ class Parser
 		return _boxStack.peek() to Box  # CC: axe typecast
 
 	def parseFileNamed(fileName as String) as Module
+		require .typeProvider
 		_fileName = fileName
 		source = File.readAllText(_fileName to String)  # CC: axe "to String" when "if" gets smart about non-nil
 		return .parseSource(fileName, source)
 
 	def parseSource(source as String) as Module
+		require .typeProvider
 		return .parseSource('(no file name)', source)
 
 	def parseSource(fileName as String, source as String) as Module
@@ -447,7 +453,7 @@ class Parser
 #				if .optional('EOL')
 #					break
 #				expectComma = true
-		paramList = List<of Node>() # TODO: axe
+		paramList = List<of INode>() # TODO: axe
 
 		baseName as String?
 		if .optional('INHERITS')
@@ -536,7 +542,7 @@ class Parser
 	def nameSpaceDecl as NameSpace
 		require _nameSpaceStack
 		.expect('NAMESPACE')
-		curNameSpace = _nameSpaceStack.peek() to NameSpace  # CC: remove "as Node"
+		curNameSpace = _nameSpaceStack.peek() to NameSpace  # CC: remove "as INode"
 		tok = .expect('ID')
 		name = tok.value to String  # CC: .value should probably be dynamic
 		curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(tok, name)
@@ -561,7 +567,7 @@ class Parser
 		return curNameSpace
 
 	def classMemberDecls(theClass as Class)
-		decl as Node?
+		decl as INode?
 		breakLoop = false  # cannot use 'break' to stop a 'while' loop in a branch statement. CC?
 		while not breakLoop
 			decl = nil
@@ -613,11 +619,10 @@ class Parser
 #			if name[0] in .uppercaseLetters
 #				.error('%s names must start with lowercase letters. (%s)' % ('Method', name))
 
-#		if opener.which=='OPEN_CALL'
-#			params = .paramDecls(skipParen=true)
-#		else
-#			params = []
-		paramsList = List<of Param>()
+		if opener.which=='OPEN_CALL'
+			paramsList = .paramDecls(true)
+		else
+			paramsList = List<of Param>()
 
 #		if .optional('AS')
 #			returnType = .type()
@@ -637,11 +642,11 @@ class Parser
 #			if name=='construct'
 #				if returnType is not tvoid
 #					.error('Cannot declare a return type for construct.')
-#				defMethod = DefConstruct(token, .curBox, params, isNames, docString)
+#				defMethod = DefConstruct(token, .curBox, paramsList, isNames, docString)
 #			else if name=='destruct'
 #				if returnType is not tvoid
 #					.error('Cannot declare a return type for destruct.')
-#				if params
+#				if paramsList
 #					.error('Cannot declare parameters for destruct.')
 #				if 'shared' in isNames
 #					.error('Cannot declare a shared destructor.')
@@ -652,7 +657,7 @@ class Parser
 #				else if name=='destructor'
 #					.warning('Did you mean to say `destruct`?')
 			returnType = CobraType()
-			implementsList = List<of Node>()
+			implementsList = List<of INode>()
 			if true
 				method = Method(token, .curBox, name, paramsList, returnType, isNames, implementsList, docString)
 			.statementsFor(method)
@@ -665,7 +670,7 @@ class Parser
 			else
 				isNames = List<of String>()
 				docString = ''
-			implementsList = List<of Node>()
+			implementsList = List<of INode>()
 			if name=='construct'
 				_error('Cannot declare "construct" in an interface.')
 			else if name=='destruct'
@@ -678,6 +683,71 @@ class Parser
 #		if overload
 #			overload.addMember(defMethod)
 		return method
+
+	def paramDecls(skipParen as bool) as List<of Param>
+		return .paramDecls(skipParen, 'RPAREN')
+
+	def paramDecls(skipParen as bool, rightParen as String) as List<of Param>
+		if not skipParen
+			.expect('LPAREN')
+		paramsList = List<of Param>()
+		expectComma = false
+		while true
+			if .peek().which==rightParen
+				.grab()
+				break
+			if expectComma
+				.expect('COMMA')
+			param = .paramDecl()
+			paramsList.add(param)
+			if paramsList.count==1 and param.name=='self' and param.type is _typeProvider.dynamicType
+				_warning('The first parameter is "self" which may be a Python carry-over on your part. Cobra does not require that (and calls it "this" anyway).')
+			expectComma = true
+		return paramsList
+
+	def paramDecl as Param
+		return .paramDecl(_typeProvider.dynamicType)
+
+	def paramDecl(defaultType as IType) as Param
+		"""
+		Example source:
+			x as int
+			x as int?
+			x as vari object
+			x   # default type is dynamic    # TODO: should be unspecified
+		Arguments:
+			theClass is typically ClassVarDecl, LocalVar or Param
+			whatName could be set to 'Parameter' for example.
+		Returns:
+			A theClass(name, type)
+		Errors:
+			None
+		"""
+		token = .expect('ID')
+		identifier = token.value to String
+		.checkStartsLowercase(identifier, 'Parameter')
+		type as INode?
+		if .peek().which=='AS'
+			.grab()
+			varii = .optional('VARI')
+			type = .type()
+			if varii
+				type = _typeProvider.variType(type)
+		else
+			type = nil
+		if type inherits IType
+			param = Param(token, type)
+		else if type inherits INode
+			param = Param(token, type)
+		else
+			throw FallThroughException(type)
+		# print param
+		return param
+
+
+	##
+	## Top Level Statement Entry
+	##
 
 	def statementsFor(codePart as ICodePart)
 		.statementsFor(codePart, nil)
@@ -1258,7 +1328,7 @@ class Parser
 	## Types
 	##
 
-	def type as Node
+	def type as INode
 		token = .grab()
 		# TODO: use typeForName()
 		if token.text=='int'
@@ -1293,6 +1363,21 @@ class Parser
 	##
 	## Protected self utility
 	##
+
+	def checkStartsLowercase(identifier as String, whatName as String)
+		"""
+		Makes an error if identifier does not match 'foo'.
+		whatName should be capitalized.
+		"""
+		if identifier[0]=='_'
+			sugg = identifier.substring(1, identifier.length-1)
+			while sugg
+				sugg = sugg.substring(1, sugg.length-1)
+			sugg = sugg[0].toString().toLower() + sugg.substring(1, sugg.length-1)
+			_error('[whatName] declarations cannot start with an underscore. Those are reserved for class variables. Try "[sugg]".')
+		if not identifier[0].toString()==identifier[0].toString().toLower()  # CC: should be char.isLower(identifier[0]), but cannot see members of char at this time
+			sugg = identifier[0].toString().toLower() + identifier.substring(1, identifier.length-1)
+			_error('[whatName] declarations must start with a lowercase letter to distinguish them from other types of identifiers. Try "[sugg]".')
 
 	def _error(msg as String)
 		token = .last

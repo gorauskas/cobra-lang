@@ -40,11 +40,10 @@ class Compiler
 			true
 		code
 			if _modules.count == 0
-				if false  # TODO
-					# python: path = os.path.join(os.path.dirname(__file__), 'SystemInterfaces.cobra')
-					path = r'C:\All\echuck\Projects\Cobra\Cobra\Source\SystemInterfaces.cobra'
-					assert File.exists(path), path
-					filenames.insert(0, path)
+				# python: path = os.path.join(os.path.dirname(__file__), 'SystemInterfaces.cobra')
+				path = r'C:\All\echuck\Projects\Cobra\Cobra\Source\SystemInterfaces.cobra'
+				assert File.exists(path), path
+				filenames.insert(0, path)
 			modules = List<of Module>()
 			for filename in filenames
 				# TODO: support C# code
@@ -59,6 +58,7 @@ class Compiler
 					parser = Parser()
 					parser.verbosity = _verbosity
 					parser.whenError = if(_whenError==ProblemAction.Exit, Parser.WhenErrorEnum.exit, Parser.WhenErrorEnum.throww)
+					parser.typeProvider = this
 					# TODO: parser.whenWarning = whenWarning
 					assert _globalNS
 					parser.globalNS = _globalNS
@@ -76,7 +76,9 @@ class Compiler
 	##
 
 	var _boolType as BoolType?
+	var _dynamicType as DynamicType?
 	var _passThroughType as PassThroughType?
+	var _variTypes as Dictionary<of INode, VariType>
 
 	def typeForName(name as String) as IType
 		assert false, 'TODO'
@@ -89,12 +91,33 @@ class Compiler
 	get boolType as BoolType
 		if _boolType is nil
 			_boolType = BoolType()
-		return _boolType to BoolType  # CC: axe to BoolType
+		return _boolType to BoolType  # CC: to ! | CC: axe to !
+
+	get dynamicType as DynamicType
+		if _dynamicType is nil
+			_dynamicType = DynamicType()
+		return _dynamicType to DynamicType
 
 	get passThroughType as PassThroughType
 		if _passThroughType is nil
 			_passThroughType = PassThroughType()
-		return _passThroughType to PassThroughType  # CC: axe to PassThroughType
+		return _passThroughType to PassThroughType  # CC: to ! | CC: axe to !
+
+	def variType(type as IType) as VariType
+		if _variTypes is nil
+			_variTypes = Dictionary<of INode, VariType>()
+		else if _variTypes.containsKey(type)
+			return _variTypes[type]
+		_variTypes[type] = vt = VariType(type)
+		return vt
+
+	def variType(typeNode as INode) as VariType
+		if _variTypes is nil
+			_variTypes = Dictionary<of INode, VariType>()
+		else if _variTypes.containsKey(typeNode)
+			return _variTypes[typeNode]
+		_variTypes[typeNode] = vt = VariType(typeNode)
+		return vt
 
 
 	##

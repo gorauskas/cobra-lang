@@ -1,16 +1,90 @@
 class NodeException
 	inherits Exception
 
-	var _node as Node
+	var _node as INode
 
-	def construct(node as Node, msg as String)
+	def construct(node as INode, msg as String)
 		base.construct(msg)
 		_node = node
 
 	get node from var
 
 
+interface INode
+	"""
+	Just about everything in the Cobra compiler that forms a data
+	structure of a program ultimately inherits from Node. For example,
+	all types and ASTs descend from Node.
+
+	However, the tokenizer, parser, compiler object and command line
+	objects do not.
+	"""
+
+	get serialNum as int
+
+	pro superNode as INode?
+
+
+	##
+	## Inquiries
+	##
+
+	get namedType as IType?
+		"""
+		If this node represents a type, this property returns it.
+		Otherwise, returns nil (which is the default behavior).
+		Implemented by TypeExpr and IdentifierExpr.
+		TODO: Can this be moved down to Expr?
+		"""
+
+
+	##
+	## Binding
+	##
+
+	def bindInt as INode  # CC: as this
+		"""
+		Invoke this method; do not override it.
+		"""
+
+	def bindImp as INode  # CC: as this
+		"""
+		Invoke this method; do not override it.
+		"""
+
+	def bindAll as INode  # CC: as this
+
+	get didBindInt as bool
+
+	get didBindImp as bool
+
+
+	##
+	## Converting to string
+	##
+
+	def toTechString as String
+
+	get minimalString as String
+		"""
+		Includes only atomic data like numbers and strings.
+		"""
+
+	get shallowString as String
+		"""
+		Includes minimal string plus references to other objects (their minimal strings).
+		"""
+
+	get deepString as String
+		"""
+		Includes shallow string plus subobjects (their deep strings).
+		"""
+
+	def writeDeepString(iw as IndentedWriter)
+
+
 class Node
+	implements INode
 	"""
 	Just about everything in the Cobra compiler that forms a data
 	structure of a program ultimately inherits from Node. For example,
@@ -33,7 +107,7 @@ class Node
 
 	var _didBindInt as bool
 	var _didBindImp as bool
-	var _superNode as Node?
+	var _superNode as INode?
 		"""
 		Possibly points to the node that owns this node.
 		But this is not strictly required. It's used only when needed (typically in expressions).
@@ -51,7 +125,11 @@ class Node
 
 	get serialNum from var
 
-	pro superNode from var
+	pro superNode as INode?
+		get
+			return var
+		set
+			var = value
 
 
 	##
@@ -61,7 +139,7 @@ class Node
 	get namedType as IType?
 		"""
 		If this node represents a type, this property returns it.
-		Otherwise, return nil
+		Otherwise, returns nil (which is the default behavior).
 		Implemented by TypeExpr and IdentifierExpr.
 		TODO: Can this be moved down to Expr?
 		"""
@@ -72,7 +150,7 @@ class Node
 	## Binding
 	##
 
-	def bindInt as Node  # CC: as this
+	def bindInt as INode  # CC: as this
 		"""
 		Invoke this method; do not override it.
 		"""
@@ -90,7 +168,7 @@ class Node
 		require .compiler
 		_didBindInt = true
 
-	def bindImp as Node  # CC: as this
+	def bindImp as INode  # CC: as this
 		"""
 		Invoke this method; do not override it.
 		"""
@@ -107,7 +185,7 @@ class Node
 		require .compiler
 		_didBindImp = true
 
-	def bindAll as Node  # CC: as this
+	def bindAll as INode  # CC: as this
 		.bindInt()
 		.bindImp()
 		return this
@@ -240,7 +318,7 @@ class Node
 	def writeDeepString(iw as IndentedWriter)
 		_writeDeepString(iw, this, true, true, true)
 
-	def _writeDeepString(iw as IndentedWriter, obj as Node, doMin as bool, doRef as bool, doSub as bool)
+	def _writeDeepString(iw as IndentedWriter, obj as INode, doMin as bool, doRef as bool, doSub as bool)
 		if doSub
 			iw.write(obj.shallowString)
 			iw.write('\n')

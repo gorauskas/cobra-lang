@@ -8,15 +8,15 @@ class Box
 	These are collectively known as "boxes".
 	"""
 
-	var _declsInOrder as List<of Node>  # TODO: can the inner list type be narrowed more? say to IClassMemberDecl or ClassMemberDecl
+	var _declsInOrder as List<of INode>  # TODO: can the inner list type be narrowed more? say to IClassMemberDecl or ClassMemberDecl
 
 	def construct(token as IToken, name as String)
 		base.construct(token, name)
-		_declsInOrder = List<of Node>()
+		_declsInOrder = List<of INode>()
 
 	get declsInOrder from var
 
-	def addDecl(decl as Node)
+	def addDecl(decl as INode)
 		_declsInOrder.add(decl)
 
 	get englishName as String
@@ -33,7 +33,7 @@ class Box
 class Class
 	inherits Box
 
-	def construct(token as IToken, name as String, paramList as List<of Node>, isNames as List<of String>, baseName as String?, interfaceNames as List<of String>, docString as String?)
+	def construct(token as IToken, name as String, paramList as List<of INode>, isNames as List<of String>, baseName as String?, interfaceNames as List<of String>, docString as String?)
 		base.construct(token, name)
 
 	get englishName as String is override
@@ -43,7 +43,7 @@ class Class
 class Interface
 	inherits Box
 
-	def construct(token as IToken, name as String, paramList as List<of Node>, isNames as List<of String>, baseName as String?, interfaceNames as List<of String>, docString as String?)
+	def construct(token as IToken, name as String, paramList as List<of INode>, isNames as List<of String>, baseName as String?, interfaceNames as List<of String>, docString as String?)
 		base.construct(token, name)
 
 	get englishName as String is override
@@ -114,14 +114,14 @@ class Method
 	implements ICodePart
 
 	var _params as List<of Param>
-	var _returnTypeNode as Node
+	var _returnTypeNode as INode
 	var _returnType as IType?
 	var _isNames as List<of String>
-	var _implementsList as List<of Node>
+	var _implementsList as List<of INode>
 	var _docString as String
 	var _stmts as List<of Stmt>
 
-	def construct(token as IToken, box as Box, name as String, paramsList as List<of Param>, returnTypeNode as Node, isNames as List<of String>, implementsList as List<of Node>, docString as String)
+	def construct(token as IToken, box as Box, name as String, paramsList as List<of Param>, returnTypeNode as INode, isNames as List<of String>, implementsList as List<of INode>, docString as String)
 		base.construct(token, box, name)
 		_params = paramsList
 		_returnTypeNode = returnTypeNode
@@ -177,8 +177,12 @@ class MemberOverload
 
 class AbstractLocalVar
 	inherits NamedNode
+	"""
+	The base class for Param and LocalVar.
+	"""
 
-	var _type as IType
+	var _type as IType?
+	var _typeNode as INode?
 	var _isImplicit as bool
 	var _isTracked as bool
 	var _ifInheritsStack = Stack<of IType>()
@@ -187,6 +191,12 @@ class AbstractLocalVar
 	def construct(token as IToken, type as IType, isImplicit as bool)
 		base.construct(token, token.text)
 		_type = type
+		_isImplicit = isImplicit
+		_isTracked = false
+
+	def construct(token as IToken, typeNode as INode, isImplicit as bool)
+		base.construct(token, token.text)
+		_typeNode = typeNode
 		_isImplicit = isImplicit
 		_isTracked = false
 
@@ -214,12 +224,23 @@ class AbstractLocalVar
 
 	def _bindImp is override
 		base._bindImp()
-		_type.bindImp()
-# TODO		_type = _type.namedType
+		_resolveType()
+
+	def _resolveType
+		require _type! or _typeNode!
+		if _type!
+			return
+		if _typeNode inherits IType
+			_type = _typeNode to passthrough   # CC: shouldn't need the cast here
+			return
+		_type = _typeNode.bindAll().namedType
+		if _type is nil
+			_error('Cannot resolve type.')  # TODO: add the name of the wrappedTypeNode or something
 
 	pro type as IType
 		get
-			return if(_ifInheritsStack, _ifInheritsStack.peek() to IType, _type)  # CC: axe to IType
+			require _type
+			return if(_ifInheritsStack, _ifInheritsStack.peek() to IType, _type to IType)  # CC: axe to IType and change last "to IType" to "to !"
 		set
 			assert _type is nil  # TODO: in [nil, tpassthrough, tunknown)
 			assert not _ifInheritsStack
@@ -236,8 +257,17 @@ class AbstractLocalVar
 class Param
 	inherits AbstractLocalVar
 
+	def construct(token as IToken, type as IType)
+		.construct(token, type, false)
+
+	def construct(token as IToken, typeNode as INode)
+		.construct(token, typeNode, false)
+
 	def construct(token as IToken, type as IType, isImplicit as bool)
 		base.construct(token, type, isImplicit)
+
+	def construct(token as IToken, typeNode as INode, isImplicit as bool)
+		base.construct(token, typeNode, isImplicit)
 
 # TODO
 #	def genCS(out)
