@@ -143,3 +143,58 @@ class VariType
 
 	def construct(wrappedTypeNode as INode)
 		base.construct(wrappedTypeNode)
+
+
+class TypeIdentifier
+	inherits SyntaxNode
+	"""
+	Created by CobraParser.type().
+	"""
+	# ? inherits AbstractTypeIdentifier
+
+	var _name as String
+	var _actualType as IType?
+
+	def construct(token as IToken)
+		require
+			token.which=='ID'
+			token.value
+		ensure
+			.name
+		code
+			base.construct(token)
+			_name = token.value to String
+
+	get name from var
+
+	def equals(other as Object) as bool is override
+		if other is nil
+			return false
+		if other inherits TypeIdentifier
+			if _actualType and other._actualType
+				return _actualType.equals(other._actualType)
+			else
+				return _name.equals(other._name)
+		return this is other
+
+	def getHashCode as int is override
+		return _name.getHashCode()
+
+	def _bindInt is override
+		base._bindInt()
+		# don't need to check "basic types" like int, bool, etc. here. the parser does those.
+		if Utils.isCapped(_name)
+			symbol = .compiler.symbolForName(.name, true)  # nested enum and class types are capped and are members of the current class
+		else
+			symbol = nil
+		if symbol is nil
+			sugg = ''
+			if not Utils.isCapped(_name)
+				sugg = Utils.capped(_name)
+				other = .compiler.symbolForName(sugg, true)
+				sugg = if(other, ' Try "[sugg]".', '')
+			_error('Cannot find type for "[_name]".[sugg]')
+
+		what = symbol.namedType
+		assert what!
+		_actualType = what
