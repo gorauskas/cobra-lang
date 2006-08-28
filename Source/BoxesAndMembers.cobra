@@ -8,22 +8,80 @@ class Box
 	These are collectively known as "boxes".
 	"""
 
-	var _declsInOrder as List<of INode>  # TODO: can the inner list type be narrowed more? say to IClassMemberDecl or ClassMemberDecl
+	var _declsInOrder as List<of INamedNode>  # TODO: can the inner list type be narrowed more? say to IClassMemberDecl or ClassMemberDecl
+	var _declsByName as Dictionary<of String, INamedNode>
+	var _declsByNameCI as Dictionary<of String, INamedNode>
+	var _overloads as List<of MemberOverload>
+	var _nextPrivateSerialNumber = 1001
 
 	def construct(token as IToken, name as String)
 		base.construct(token, name)
-		_declsInOrder = List<of INode>()
+		_declsInOrder = List<of INamedNode>()
+		_declsByName = Dictionary<of String, INamedNode>()
+		_declsByNameCI = Dictionary<of String, INamedNode>()
+		_overloads = List<of MemberOverload>()
 
 	get declsInOrder from var
 
-	def addDecl(decl as INode)
-		_declsInOrder.add(decl)
+	def addDecl(decl as INamedNode)
+		require
+			decl.name
+			.declForName(decl.name) is nil
+			.declForNameCI(decl.name) is nil
+		ensure
+			.declForName(decl.name) is decl
+			.declForNameCI(decl.name) is decl
+			.declsInOrder.count == old .declsInOrder.count + 1
+		code
+			_declsInOrder.add(decl)
+			_declsByName.add(decl.name, decl)
+			_declsByNameCI.add(decl.name.toLower(), decl)
+
+	def declForName(name as String) as INamedNode?
+		require
+			name
+		ensure
+			result implies result.name==name
+		code
+			# CC: this should work: return if(_declsByName.containsKey(name), _declsByName[name], nil)
+			if _declsByName.containsKey(name)
+				return _declsByName[name]
+			else
+				return nil
+
+	def declForNameCI(name as String) as INamedNode?
+		require
+			name
+		ensure
+			result implies result.name.toLower()==name.toLower()
+			result is nil implies .declForName(name) is nil
+		code
+			name = name.toLower()
+			# CC: should do following with: if(...) like in declForName
+			if _declsByNameCI.containsKey(name)
+				return _declsByNameCI[name]
+			else
+				return nil
 
 	get englishName as String
 		"""
 		Return the specific name of this type of box: class, interface, struct.
 		"""
 		return ''
+
+	def makeNextPrivateSerialNumber as int
+		n = _nextPrivateSerialNumber
+		_nextPrivateSerialNumber += 1
+		return n
+
+	def registerOverload(ol as MemberOverload)
+		require
+			ol.name
+			ol not in _overloads
+		code
+			_overloads.add(ol)
+			_declsByName[ol.name] = ol
+			_declsByName[ol.name.toLower()] = ol
 
 	def addSubFields is override
 		base.addSubFields()
@@ -53,13 +111,36 @@ class Interface
 class ClassMember
 	inherits NamedNode
 
+	shared
+		var _accessLevels = ['public', 'protected', 'internal', 'protected internal', 'private']
+			"""
+			The access level names are the same in both Cobra and C#.
+			"""
+
 	var _box as Box
+	var _docString as String?
+	var _isNames as List<of String>?
 
 	def construct(token as IToken, box as Box, name as String)
+		this.construct(token, box, name, nil)
+
+	def construct(token as IToken, box as Box, name as String, docString as String?)
 		base.construct(token, name)
 		_box = box
+		_docString = docString
+
+	get box from var
+
+	pro docString from var
+
+	get isShared as bool
+		return 'shared' in _isNames
 
 	get englishName as String
+		throw OverrideException()
+		return ''
+
+	get defaultAccessLevel as String
 		throw OverrideException()
 		return ''
 
@@ -86,12 +167,39 @@ class ClassMember
 		throw OverrideException()
 		return false
 
+	get isClassMember as bool
+		return _box inherits Class
+
+# TODO:
+#	get isInterfaceMember as bool
+#		return _box inherits Interface
+
 	get resultType as IType
 		"""
 		The result type of the var, method or property.
 		"""
 		throw OverrideException()
 		return CobraType()
+
+	def addMinFields is override
+		base.addMinFields()
+		.addField('name', _name)
+		.addField('isNames', _isNames)
+
+	def addRefFields is override
+		base.addRefFields()
+		.addField('classDecl', _box)
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('docString', _docString)
+
+
+class ClassVar
+	inherits ClassMember
+
+	def construct(token as IToken, box as Box, name as String, docString as String)
+		base.construct(token, box, name, docString)
 
 
 interface ICodePart
@@ -109,29 +217,246 @@ interface ICodePart
 
 
 
-class Method
+class OneCodeBlockMember
 	inherits ClassMember
 	implements ICodePart
+	"""
+	The abstract ancestor class for
+		Constructor
+		Method
+		PropertyXetter
 
-	var _params as List<of Param>
+	But not for Property (which has two code blocks "get" and "set"),
+	or other class decls like variables.
+
+	Subclasses must set _params.
+	"""
+
 	var _returnTypeNode as INode
 	var _returnType as IType?
-	var _isNames as List<of String>
-	var _implementsList as List<of INode>
-	var _docString as String
+	var _requirePart as Node?  # TODO: narrow
+	var _ensurePart as Node?  # TODO: narrow
+	var _overloadGroup as MemberOverload?
+	var _oldExprs as List<of Expr>  # TODO: add a doc string for this
+	var _params as List<of Param>?
+	var _locals as List<of LocalVar>
 	var _stmts as List<of Stmt>
+	var _csResultVarName as String?
+
+	def construct(token as IToken, box as Box, name as String, docString as String)
+		base.construct(token, box, name, docString)
+		_oldExprs = List<of Expr>()
+		_locals = List<of LocalVar>()
+		_stmts = List<of Stmt>()
+
+	get defaultAccessLevel as String is override
+		return 'public'
+
+	def addStmt(stmt as Stmt)
+		_stmts.add(stmt)
+
+	get resultType as IType is override
+		require
+			.didBindInt
+			_returnType!
+		code
+			return _returnType to IType  # CC: to !
+
+	def findLocal(name as String) as AbstractLocalVar?  # TODO: narrow to common base of Param and LocalVar
+		# TODO: does it really matter if a the symbols are traversed in reverse order?
+		# TODO: should this use a dictionary lookup?
+		i = _locals.count
+		while i>0
+			node as LocalVar = _locals[i]
+			if node.name==name
+			# CC: axe 2 lines above and uncomment:
+			#if _locals[i].name==name
+				return _locals[i]
+			i -= 1
+		for param in _params
+			if param.name==name
+				return param
+		return nil
+
+	def findLocalCI(name as String) as AbstractLocalVar?
+		name = name.toLower()
+		# TODO: does it really matter if a the symbols are traversed in reverse order?
+		# TODO: should this use a dictionary lookup?
+		i = _locals.count
+		while i>0
+			if _locals[i].name.toLower()==name
+				return _locals[i]
+			i -= 1
+		for param in _params
+			if param.name.toLower()==name
+				return param
+		return nil
+
+	def addLocal(local as LocalVar)
+		require
+			local.name
+			.findLocal(local.name) is nil  # TODO: , 'symbol=[symbol], symbolForName=[.symbolForName(symbol.name)]'
+		code
+			other = .findLocalCI(local.name)
+			if other!
+				_error('Parameters and locals must vary by more than just their case. Change "[local.name]" or "[other.name]" to match, or rename one of them to something different.')
+			local.isTracked = true
+			_locals.add(local)
+
+#	def dumpName(out)
+#		name = getattr('name', '(noname)')
+#		returnType = getattr('returnType', '(no return type)')
+#		while iscallable(returnType)
+#			returnType = returnType()
+#		out.write('%s as %s  (%s)\n' % (name, returnType, .className))
+
+# TODO: is pushName() needed?
+#	def pushName(var)
+#		.addSymbol(var)
+
+#	def dumpNames(out)
+#		out.write('%s\n' % .__class__.__name__)
+#		out.indent()
+#		for param in .params
+#			param.dumpName(out)
+#		for name in .names
+#			name.dumpName(out)
+#		out.dedent()
+
+	def addOldExpr(oldExpr as Expr)  # TODO: can this be narrowed to OldExrp?
+		_oldExprs.add(oldExpr)
+# TODO:		oldExpr.csVarName = '_lh_old_' + _oldExprs.count.toString()
+
+	def addRefFields is override
+		base.addRefFields()
+		.addField('returnTypeNode', _returnTypeNode)
+		.addField('returnType', _returnType)
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('params', _params)
+		.addField('locals', _locals)
+		.addField('stmts', _stmts)
+
+	def _bindInt is override
+		base._bindInt()
+		.compiler.codeMemberStack.push(this)
+		for param in _params
+			param.bindInt()
+		if _requirePart
+			_requirePart.bindInt()
+		if _ensurePart
+			_ensurePart.bindInt()
+		.compiler.codeMemberStack.pop()
+
+	def _bindImp is override
+		base._bindImp()
+		.compiler.codeMemberStack.push(this)
+		for param in _params
+			param.bindImp()
+		for local in _locals
+			local.bindImp()
+		# TODO re-enable the assertion below
+		#assert compiler.opStack.count==0, repr(compiler.opStack._items)
+		if _requirePart
+			_requirePart.bindImp()
+		if _ensurePart and _returnType is not nil and _returnType is not .compiler.voidType
+			_csResultVarName = '_lh_result_[_box.makeNextPrivateSerialNumber()]'
+		else
+			_csResultVarName = nil
+		for stmt in _stmts
+			stmt.bindImp()
+		if _ensurePart
+			_ensurePart.bindImp()
+		.compiler.codeMemberStack.pop()
+
+#	def genCSLocals(out, locals=nil, open=true)
+#		if open
+#			out.writeAndIndent('{\n')
+#		# record the `old` expressions in `ensure`
+#		for oldExpr in .oldExprs
+#			oldExpr.genCSAssignment(out)
+#		if locals is nil
+#			locals = .names
+#		if locals
+#			out.write('// locals\n')
+#			for var in locals
+#				if not var.isImplicit
+#					init = var.type.csInit()
+#					if init is nil
+#						out.write('%s %s;\n' % (var.type.asCS(), var.name))
+#					else
+#						out.write('%s %s = %s;\n' % (var.type.asCS(), var.name, init))
+
+#	def genCSParamCheck(param, out)
+#		from Expressions import Param
+#		assert inherits(param, Param)
+#		if param.type.isReference and not inherits(param.type, NilableType)
+#			out.write('if (%s==null) throw new ArgumentNullException("%s");\n' % (
+#				param.name, param.name))
+#			# TODO axe the code below or above
+#			#out.write('if (%s==null) throw new ArgumentNullException("%s", string.Format("Object reference \\"%s\\" not set to an instance of an object."));\n' % (
+#			#	param.name, param.name, param.name))
+
+#	def genCSImp(out, skipFirst=false)
+#		out.writeAndIndent('{\n')
+#		if .compiler.hasSuperStackTraceOption
+#			.genSSTHead(out)
+#		for param in .params
+#			.genCSParamCheck(param, out)
+#		if .requirePart
+#			.requirePart.genCS(out)
+#		.genCSLocals(out, open=false)
+#		if .ensurePart
+#			if .csResultVarName  # set in _bindImp
+#				out.write('%s %s = %s;\n' % (.returnType.asCS(), .csResultVarName, .returnType.csInit()))
+#			out.writeAndIndent('try {\n')
+#		.block.genCS(out, open=false, close=false, skipFirst=skipFirst)
+#		if .ensurePart
+#			out.dedentAndWrite('} finally { // ensure\n')
+#			out.indent()
+#			.ensurePart.genCS(out)
+#			out.dedentAndWrite('}\n')
+#		if .compiler.hasSuperStackTraceOption
+#			.genSSTTail(out)
+#		out.dedent()
+#		out.write('}\n')
+#		out.write('\n')
+
+#	def genSSTHead(out)
+#		out.write('CobraImp.PushFrame("%s", "%s"' % (.box.name, .name))
+#		if not .isShared
+#			out.write(', "this", this')
+#		for param in .params
+#			out.write(', "%s", %s' % (param.name, param.name))
+#		out.write(');\n')
+#		out.write('CobraImp.SetLine(%s);\n' % .token.lineNum)
+#		out.writeAndIndent('try {\n')
+
+#	def genSSTTail(out)
+#		out.dedentAndWrite('} catch {\n')
+#		out.indent()
+#		out.write('CobraImp.CaughtUncaughtException();\n')
+#		out.write('throw;\n')
+#		out.dedentAndWrite('} finally {\n')
+#		out.indent()
+#		out.write('CobraImp.PopFrame();\n')
+#		out.dedentAndWrite('}\n')
+
+
+class Method
+	inherits OneCodeBlockMember
+	implements ICodePart
+
+	var _implementsList as List<of INode>
 
 	def construct(token as IToken, box as Box, name as String, paramsList as List<of Param>, returnTypeNode as INode, isNames as List<of String>, implementsList as List<of INode>, docString as String)
-		base.construct(token, box, name)
+		base.construct(token, box, name, docString)
 		_params = paramsList
 		_returnTypeNode = returnTypeNode
 		_isNames = isNames
 		_implementsList = implementsList
-		_docString = docString
 		_stmts = List<of Stmt>()
-
-	def addStmt(stmt as Stmt)
-		_stmts.add(stmt)
 
 	get englishName as String is override
 		return 'method'
@@ -143,36 +468,23 @@ class Method
 	get isCallable as bool is override
 		return true
 
-	get resultType as IType is override
-		require
-			.didBindInt
-			_returnType!
-		code
-			return _returnType to IType  # CC: to !
-
-	def addMinFields is override
-		base.addMinFields()
-		.addField('isNames', '_isNames')
-
-	def addRefFields is override
-		base.addRefFields()
-		.addField('returnTypeNode', _returnTypeNode)
-		.addField('returnType', _returnType)
-
 	def addSubFields is override
 		base.addSubFields()
-		.addField('params', _params)
 		if _implementsList
 			.addField('implementsList', _implementsList)
-		.addField('docString', _docString)
-		.addField('stmts', _stmts)
 
 
 class MemberOverload
 	inherits ClassMember
 
+	def construct(box as Box, node as INamedNode)
+		this.construct(box, node.name)
+
 	def construct(box as Box, name as String)
 		base.construct(TokenFix.empty, box, name)
+
+	def addMember(member as INode?)
+		assert false, 'TODO: implemenent overloading'
 
 
 class AbstractLocalVar
@@ -200,7 +512,9 @@ class AbstractLocalVar
 		_isImplicit = isImplicit
 		_isTracked = false
 
-#	def addMinFields
+	pro isTracked from var
+
+#	def addMinFields is override
 #		base.addMinFields()
 #		.addMinField('name', .name)
 #		if .isImplicit
@@ -282,6 +596,10 @@ class LocalVar
 
 	def construct(token as IToken, type as IType, isImplicit as bool)
 		base.construct(token, type as IType, isImplicit)
+
+	def addMinFields is override
+		base.addMinFields()
+		.addField('isTracked', _isTracked)
 
 
 class ResultVar

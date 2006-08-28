@@ -7,12 +7,24 @@ enum ProblemAction
 
 class Compiler
 	implements ITypeProvider
+	"""
+	General notes:
+
+	To cope with nesting, the compiler keeps a stack of the three types of things that can be nested. Items are pushed and popped off these stacks during each of the "bind interface" and "bind implementation" phases. The three stacks are:
+		* nameSpaceStack - namespaces
+		* boxStack - boxes are classes, structs and interfaces
+		* codeMemberStack - methods, properties and constructors
+	"""
 
 	var _verbosity as int
 	var _whenError as ProblemAction
 	var _options as Dictionary<of String, Object>
 	var _globalNS as NameSpace
 	var _modules as List<of Module>
+
+	var _nameSpaceStack as Stack<of NameSpace>
+	var _boxStack as Stack<of Box>
+	var _codeMemberStack as Stack<of ICodePart>
 
 	def construct(verbosity as int)
 		.construct(verbosity, ProblemAction.Exit)
@@ -22,12 +34,21 @@ class Compiler
 		_modules = List<of Module>()
 		_whenError = whenError
 		_globalNS = NameSpace(Token.empty, '(global)')
+		_nameSpaceStack = Stack<of NameSpace>()
+		_boxStack = Stack<of Box>()
+		_codeMemberStack = Stack<of ICodePart>()
 
 	get modules from var
 
 	pro whenError from var
 
 	pro options from var
+
+	get nameSpaceStack from var
+
+	get boxStack from var
+
+	get codeMemberStack from var
 
 	def parseFilesNamed(filenames as List<of String>) as List<of Module>
 		"""
@@ -76,6 +97,7 @@ class Compiler
 	##
 
 	var _boolType as BoolType?
+	var _charType as CharType?
 	var _dynamicType as DynamicType?
 	var _passThroughType as PassThroughType?
 	var _voidType as VoidType?
@@ -93,6 +115,11 @@ class Compiler
 		if _boolType is nil
 			_boolType = BoolType()
 		return _boolType to BoolType  # CC: to ! | CC: axe to !
+
+	get charType as CharType
+		if _charType is nil
+			_charType = CharType()
+		return _charType to CharType  # CC: to! | CC: axe to !
 
 	get dynamicType as DynamicType
 		if _dynamicType is nil

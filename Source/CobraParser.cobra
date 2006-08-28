@@ -294,7 +294,7 @@ class Parser
 	## Common parsing bits (docString, indent, dedent, ...)
 
 	def docString as String?
-		return nil  # TODO
+		return ''  # TODO
 
 	def indent as IToken
 		"""
@@ -367,13 +367,15 @@ class Parser
 				_module.addDecl(UseDirective(useToken, nil, ['Cobra', 'Lang']))
 			# TODO: _module.docString = .docString()
 			what as NamedNode?
-			while true
+			keepParsing = true
+			while keepParsing
 				what = nil
 				addToNS = true
 				tok = .peek()
 				if tok is nil
 					break
 				branch tok.which
+					on 'STOPSTOP':	keepParsing = false
 					on 'USE':       what = .useDirective()
 					on 'IMPORT':    what = .importDirective()
 					on 'CLASS':     what = .classDecl()
@@ -584,12 +586,15 @@ class Parser
 					breakLoop = true
 				on 'DEDENT': breakLoop = true
 				on 'DEF': theClass.addDecl(.declareMethod())
+				on 'GET': theClass.addDecl(.declarePropertyGet())
+				on 'SET': theClass.addDecl(.declarePropertySet())
+				on 'PRO': theClass.addDecl(.declareProperty())
 				on 'EOL': .oneOrMore('EOL')
 				on 'SHARED': .classMemberDeclsShared(theClass)
 				else
 					_error('Got [.peek()] when expecting var, def, pro, get, set, enum or shared')
 			if decl!
-				theClass.addDecl(decl to Node)  # CC: axe typecast when if gets smart about not nil
+				theClass.addDecl(decl to INamedNode)  # CC: axe typecast when if gets smart about not nil
 		.dedent()
 
 	def classMemberDeclsShared(theClass as Class)
@@ -701,6 +706,196 @@ class Parser
 #			overload.addMember(defMethod)
 		return method
 
+	def declareProperty as Property
+		"""
+		Example source
+			pro age as int
+				get
+					return _age
+				set
+					assert value>0
+					_age = value
+		"""
+		token = .expect('PRO')
+		overload as MemberOverload? = nil  # CC: axe "as MemberOverload" when Cobra gets smarter about type inference of "x = nil"
+		if .optional('LBRACKET')
+			paramsList = .paramDecls(true, 'RBRACKET')
+			name = r'[]'
+			other = .curBox.declForName(name)
+			if other
+				if other inherits MemberOverload
+					overload = other
+				else if other inherits Property
+					overload = MemberOverload(.curBox, other)
+					.curBox.registerOverload(overload to MemberOverload)  # CC: axe typecast
+		else
+			name = .expect('ID').text
+			.checkProperty(name)
+			if .optional('FROM')
+				return .declarePropertyFrom(token, name, 'getset')
+			paramsList = List<of Param>()
+		if .optional('AS')
+			returnType = .type()
+		else
+			returnType = _typeProvider.dynamicType
+		assert returnType
+		if .curBox inherits Class
+			isNames = .indentIsDeclNames()
+			docString = .docString()
+			if paramsList
+				assert false, 'TODO: implement indexers'
+			prop = Property(token, .curBox, name, returnType, isNames, docString)
+
+# TODO:
+#			if .peek().which=='TEST'
+#				.testSection(defProperty)
+
+			getWord = .optional('GET')
+			if getWord
+				.indent()
+				.statementsFor(prop.makeGetPart(getWord to IToken))  # CC: axe to IToken
+
+			setWord = .optional('SET')
+			if setWord
+				.indent()
+				.statementsFor(prop.makeSetPart(setWord to IToken))  # CC: axe to IToken
+
+			.dedent()
+# TODO
+#		else if .curBox inherits Interface
+#			if .optionalIndent
+#				isNames = .isDeclNames()
+#				docString = .docString()
+#				.dedent()
+#			else
+#				isNames = List<of String>()
+#				docString = nil
+#			defProperty = Property(token, .curBox, name, paramsList, returnType, isNames, docString)
+#			defProperty.makeGetPart(token)
+#			defProperty.makeSetPart(token)
+		else
+			throw FallThroughException(.curBox)
+		if overload
+			overload.addMember(prop)
+		return prop
+
+	def declarePropertyFrom(token as IToken, name as String, coverWhat as String) as Property
+		require coverWhat in ['get', 'set', 'getset']
+		if .optional('VAR')
+			varName = '_' + name
+		else
+			varName = .expect('ID').text
+		possibleVarDef = .curBox.declForName(varName)
+		if not possibleVarDef inherits ClassVar
+#TODO			if _verbosity>=3
+#				.curBox.dumpNames(sys.stdout)
+			_error('A property can only cover for variables. [varName] is a [possibleVarDef]')
+		varDef = possibleVarDef to ClassVar
+		if .curBox inherits Interface
+			_error('Cannot use the "from" form of a property inside an interface declaration.')
+		if .optionalIndent()
+			docString = .docString()
+			.dedent()
+		else
+			docString = nil
+		isNames = List<of String>()  # TODO: cover isNames
+		return Property(token, .curBox, name, isNames, varDef, coverWhat, docString)
+
+	def declarePropertyGet as Property
+		"""
+		Example source
+			get meaningOfLife as int
+				return 42
+		"""
+		token = .expect('GET')
+		overload as MemberOverload? = nil
+		if .optional('LBRACKET')
+			paramsList = .paramDecls(true, 'RBRACKET')
+			name = r'[]'
+			other = .curBox.declForName(name)
+			if other
+				if other inherits MemberOverload
+					overload = other
+				else if other inherits Property
+					overload = MemberOverload(.curBox, other)
+					.curBox.registerOverload(overload to MemberOverload)  # CC: axe typecast
+		else
+			name = .expect('ID').text
+			.checkProperty(name)
+			if .optional('FROM')
+				return .declarePropertyFrom(token, name, 'get')
+			paramsList = List<of Param>()
+		if .optional('AS')
+			returnType = .type()
+		else
+			returnType = _typeProvider.dynamicType
+		assert returnType!
+
+		if .curBox inherits Class
+			isNames = .indentIsDeclNames()
+			docString = .docString()
+			prop = Property(token, .curBox, name, returnType, isNames, docString)
+			.statementsFor(prop.makeGetPart(token), prop)
+# TODO
+#		else if .curBox inherits Interface
+#			if .optionalIndent
+#				isNames = .isDeclNames()
+#				docString = .docString()
+#				.dedent()
+#			else
+#				isNames = List<of String>()
+#				docString = nil
+#			prop = Property(token, .curBox, name, paramsList, returnType, isNames, docString)
+#			prop.makeGetPart(token)
+		else
+			throw FallThroughException(.curBox)
+		if overload
+			overload.addMember(prop)
+		return prop
+
+	def declarePropertySet as Property
+		"""
+		Example source
+			set foo as int
+				_foo = value
+		"""
+		token = .expect('SET')
+		name = .expect('ID').text
+		.checkProperty(name)
+		if .optional('FROM')
+			return .declarePropertyFrom(token, name, 'set')
+		if .optional('AS')
+			returnType = .type()
+			assert returnType
+		else
+			returnType = _typeProvider.dynamicType
+		assert returnType
+
+		if .curBox inherits Class
+			isNames = .indentIsDeclNames()
+			docString = .docString()
+			defProperty = Property(token, .curBox, name, returnType, isNames, docString)
+			.statementsFor(defProperty.makeSetPart(token), defProperty)
+		else if .curBox inherits Interface
+			if .optionalIndent()
+				isNames = .isDeclNames()
+				docString = .docString()
+				.dedent()
+			else
+				isNames = List<of String>()
+				docString = nil
+			prop = Property(token, .curBox, name, returnType, isNames, docString)
+			prop.makeSetPart(token)
+		else
+			throw FallThroughException(.curBox)
+
+		return prop
+
+
+	##
+	## Parameter declarations
+	##
+
 	def paramDecls(skipParen as bool) as List<of Param>
 		return .paramDecls(skipParen, 'RPAREN')
 
@@ -769,7 +964,7 @@ class Parser
 	def statementsFor(codePart as ICodePart)
 		.statementsFor(codePart, nil)
 
-	def statementsFor(codePart as ICodePart, codePartContainingTest as ICodePart?)
+	def statementsFor(codePart as ICodePart, codePartContainingTest as ClassMember?)
 		"""
 		Example source
 			<any statement 1>
@@ -792,7 +987,7 @@ class Parser
 		"""
 		_pushCodePart(codePart)
 		if codePartContainingTest is nil
-			codePartContainingTest = codePart
+			codePartContainingTest = codePart to ClassMember  # TODO: figure out better typing for this assignement and the method sig of this method
 		try
 			if .peek().which in ['CODE', 'TEST', 'REQUIRE', 'ENSURE']
 				# sectional
@@ -1352,6 +1547,8 @@ class Parser
 			return IntType()
 		else if token.text=='bool'
 			return BoolType()
+		else if token.text=='char'
+			return CharType()
 		else if token.which=='ID'
 			return TypeIdentifier(token)
 		else
@@ -1382,6 +1579,19 @@ class Parser
 	## Protected self utility
 	##
 
+	def checkProperty(name as String)
+		box = .curBox
+		if name==box.name
+			_error('Property names cannot be the same as their enclosing type.')  # TODO: list the enclosing types location
+		other = box.declForName(name)
+		if other
+			_error('There is already another class member with the name "[name]".')  # TODO: list its location and possibly what it is
+		other = box.declForNameCI(name)
+		if other
+			_error('There is already another class member with the name "[other.name]". You must differentiate member names by more than just case.')
+		if Utils.startsNonLower(name)
+			_error('Property names must start with lowercase letters. ([name])')
+
 	def checkStartsLowercase(identifier as String, whatName as String)
 		"""
 		Makes an error if identifier does not match 'foo'.
@@ -1393,7 +1603,7 @@ class Parser
 				sugg = sugg.substring(1, sugg.length-1)
 			sugg = sugg[0].toString().toLower() + sugg.substring(1, sugg.length-1)
 			_error('[whatName] declarations cannot start with an underscore. Those are reserved for class variables. Try "[sugg]".')
-		if not identifier[0].toString()==identifier[0].toString().toLower()  # CC: should be char.isLower(identifier[0]), but cannot see members of char at this time
+		if Utils.startsNonLower(identifier)  # CC: should be char.isLower(identifier[0]), but cannot see members of char at this time
 			sugg = identifier[0].toString().toLower() + identifier.substring(1, identifier.length-1)
 			_error('[whatName] declarations must start with a lowercase letter to distinguish them from other types of identifiers. Try "[sugg]".')
 
