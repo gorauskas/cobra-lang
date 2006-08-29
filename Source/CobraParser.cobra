@@ -1433,8 +1433,8 @@ class Parser
 			return StringLit(.grab())
 		else if peek=='INTEGER_LIT'
 			return IntegerLit(.grab())
-#		else if peek=='DECIMAL_LIT'
-#			return DecimalLit(.grab())
+		else if peek=='DECIMAL_LIT'
+			return DecimalLit(.grab())
 #		else if peek=='FLOAT_LIT'
 #			return FloatLit(.grab())
 # TODO
@@ -1450,8 +1450,9 @@ class Parser
 #			return TypeExpr(.type())
 		else if peek=='ID'
 			return .identifierExpr()
+		else
+			return .typeExpr()
 # TODO
-#		else
 #			try
 #				return TypeExpr(.nonqualifiedType('throw'))
 #			catch ParserError, pe
@@ -1459,8 +1460,6 @@ class Parser
 #					.error('Expecting an expression.')
 #				else
 #					throw
-		else
-			return Expr(Token.empty)  # TODO: axe this
 
 	def callExpr as CallExpr
 		"""
@@ -1533,6 +1532,15 @@ class Parser
 		else
 			return IdentifierExpr(nameToken, name, nil)
 
+	def typeExpr as TypeExpr
+		t = .type()
+		# Not expecting a TypeIdentifier() because the ID token case is
+		# handled in expression parsing well before Cobra starts looking
+		# for a type.
+		if t inherits IType
+			return TypeExpr(.last, t)
+		else
+			assert false, t
 
 	##
 	## Types
@@ -1547,6 +1555,8 @@ class Parser
 			return BoolType()
 		else if token.text=='char'
 			return CharType()
+		else if token.text=='decimal'
+			return DecimalType()
 		else if token.which=='ID'
 			return TypeIdentifier(token)
 		else
