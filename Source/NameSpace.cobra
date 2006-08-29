@@ -1,13 +1,11 @@
 
 
 class NameSpace
-	inherits NamedNode  # TODO: in python version, inherited Type
+	inherits Container  # TODO: in python version, inherited Type. should implement IType?
 
 	var _superNameSpace as NameSpace?
 	var _type as IType
 	var _subNameSpaces as Dictionary<of String, NameSpace>
-	var _declsInOrder as List<of NamedNode>
-	var _declsByName as Dictionary<of String, NamedNode>
 
 	def construct(token as IToken, name as String)
 		.construct(token, name, nil)
@@ -17,8 +15,8 @@ class NameSpace
 		_superNameSpace = superNameSpace
 # TODO:		_type = tnamespace
 		_subNameSpaces = Dictionary<of String, NameSpace>()
-		_declsInOrder = List<of NamedNode>()
-		_declsByName = Dictionary<of String, NamedNode>()
+
+	get superNameSpace from var
 
 	def addMinFields is override
 		base.addMinFields()
@@ -28,10 +26,6 @@ class NameSpace
 		base.addRefFields()
 		.addField('superNameSpace', _superNameSpace)
 		.addField('type', _type)
-
-	def addSubFields is override
-		base.addSubFields()
-		.addField('declsInOrder', _declsInOrder)
 
 #	@property
 #	def fullyQualifiedName(self):
@@ -56,7 +50,6 @@ class NameSpace
 			if _declsByName.containsKey(name)
 				throw Exception('There is a non-namespace declaration named "[name]".')
 			ns = NameSpace(token, name, this)  # TODO: replace hardcoded class
-			_subNameSpaces[name] = ns
 			.addDecl(ns)
 		return ns
 
@@ -122,11 +115,11 @@ class NameSpace
 #			print '<< NameSpace.symbolForName(%r, %s) self=%s, returning %s' % (name, canBeMember, self.name, symbol)
 #		return symbol
 
-	def addDecl(decl as NamedNode)
-		# CC: restore this: assert not decl in _declsInOrder, decl
-		assert not _declsInOrder.contains(decl)
-		_declsInOrder.add(decl)
-		_declsByName[decl.name] = decl
+	def addDecl(decl as IMember) is override
+		base.addDecl(decl)
+		if decl inherits NameSpace
+			_subNameSpaces.add(decl.name, decl)  # TODO: add some require and ensure around the subNameSpaces
+			assert decl.superNameSpace is this  # TODO: can this be moved to require?
 #		decl.nameSpace = self  # @@@@ TODO: Do I need this?
 
 #	def genCS(self, out):
@@ -140,3 +133,9 @@ class NameSpace
 #		Used in expressions.
 #		"""
 #		return self.name
+
+
+class ArgumentException
+	is fake
+	inherits Exception
+	pass

@@ -2,18 +2,45 @@ class Expr
 	inherits Stmt
 
 	var _type as IType?
+	var _receiverType as IType?
+		"""
+		The type for receiving messages which can be different than the
+		_type in a static situation such as `ChessPiece.Color` (where
+		Color is an enum). The type of that expression, if assigned to a
+		local var, is Type. But if accessed with a further dot
+		(`ChessPiece.Color.Black`), then the type is the Color
+		enumeration itself--the receiverType.
+
+		For a runtime access (ex: `user.name`) the two types are
+		conceptually the same (ex: `String`) and _receiverType is left
+		nil.
+
+		_receiverType is used in memberForName() to look up members such
+		as "Black".
+
+		TODO: rename to _typeForMemberAccess
+		"""
 
 	def construct(token as IToken)
 		base.construct(token)
 		pass
 
-	get type from var
+	pro type from var
 
 	def toCobraSource as String
 		return ''
 
-	def memberForName(name as String) as ClassMember?
-		return nil
+	def memberForName(name as String) as IMember?
+		require
+			.didBindImp
+			.type
+		code
+			t = _receiverType ? _type
+			container = t to? IContainer
+			if container!
+				return container.declForName(name)
+			else
+				return nil
 
 
 class AsExpr
@@ -95,57 +122,63 @@ class CallExpr
 		for arg in _args
 			arg.bindImp()
 
+		definition as ClassMember?
 		type as IType?
 
 		if _definition is nil  or  _type is nil
 			if _superNode inherits BinaryOpExpr
 				if _superNode.op=='DOT' and this is _superNode.right
 					# handle foo.bar() where this is the `bar()` part
-					definition = _superNode.left.memberForName(_name)
-					if definition is nil
+					possibleDefinition = _superNode.left.memberForName(_name)
+					if possibleDefinition is nil
 						type = .compiler.passThroughType
 					else
-						if not definition.isCallable
-							_error('Cannot call "[_name]" because it is a "[definition.englishName]".')
+						if not possibleDefinition inherits ClassMember
+							assert not possibleDefinition.isCallable
+							_error('Cannot call "[_name]" because it is a "[possibleDefinition.englishName]".')
+						definition = possibleDefinition to ClassMember
 						type = definition.resultType
 			if definition is nil
 				# TODO this needs to be an error in the long term
 				type = .compiler.passThroughType
 			else
-				type = definition.resultType  # NOTE: used to have .namedType at the end
-				if definition inherits MemberOverload
-					pass  # TODO handle overloads (1)
-				else
-					args = _args
-					if definition.hasVariParams
-						# TODO handle variable number of args (4)
-						pass
+				if definition inherits ClassMember
+					type = definition.resultType  # NOTE: used to have .namedType at the end
+					if definition inherits MemberOverload
+						pass  # TODO handle overloads (1)
 					else
-						check = true
-						if not definition.hasParams
-							if args.count
-								_error('The method is expecting 0 arguments, but [args.count] are being supplied in this call.')
+						args = _args
+						if definition.hasVariParams
+							# TODO handle variable number of args (4)
+							pass
 						else
-							paramsx = definition.params  # CC: rename paramsx to params
-							if args.count<>paramsx.count
-								if _name=='toString'  # TODO because many structs like Decimal have a toString() overload which cannot currently be expressed in SystemInterfaces.cobra
-									check = false
-								else
-									_error('The method is expecting [paramsx.count] arguments, but [args.count] are being supplied in this call.')
-							if check
-								for i = 0 .. args.count
-									arg = args[i]
-									paramx = paramsx[i]  # CC: rename paramx to param
-									assert arg.didBindImp
-									assert paramx.didBindInt
-									if not arg.type.isAssignableTo(paramx.type)
-	# TODO
-	#									if paramx.type.__class__.__name__.startswith('GenericParam')
-	#										# TODO support generic params (2)
-	#										pass
-	#									else
-										if true
-											_error('Argument [i+1] of method "[_name]" expects type [paramx.type.name], but the call is supplying type [arg.type.name].')
+							check = true
+							if not definition.hasParams
+								if args.count
+									_error('The method is expecting 0 arguments, but [args.count] are being supplied in this call.')
+							else
+								paramsx = definition.params  # CC: rename paramsx to params
+								if args.count<>paramsx.count
+									if _name=='toString'  # TODO because many structs like Decimal have a toString() overload which cannot currently be expressed in SystemInterfaces.cobra
+										check = false
+									else
+										_error('The method is expecting [paramsx.count] arguments, but [args.count] are being supplied in this call.')
+								if check
+									for i = 0 .. args.count
+										arg = args[i]
+										paramx = paramsx[i]  # CC: rename paramx to param
+										assert arg.didBindImp
+										assert paramx.didBindInt
+										if not arg.type.isAssignableTo(paramx.type)
+		# TODO
+		#									if paramx.type.__class__.__name__.startswith('GenericParam')
+		#										# TODO support generic params (2)
+		#										pass
+		#									else
+											if true
+												_error('Argument [i+1] of method "[_name]" expects type [paramx.type.name], but the call is supplying type [arg.type.name].')
+				else
+					assert false, definition
 
 			_definition = definition
 			_type = type
@@ -193,6 +226,7 @@ class BinaryOpExpr
 	var _op as String
 	var _left as Expr
 	var _right as Expr
+	var _definition as IMember?
 
 	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.construct(opToken)
@@ -208,14 +242,16 @@ class BinaryOpExpr
 
 	get right from var
 
+	pro definition from var
+
 
 class IdentifierExpr
 	inherits Expr
 
 	var _text as String
-	var _definition as INode?
+	var _definition as IContainer?
 
-	def construct(token as IToken, text as String, definition as INode?)
+	def construct(token as IToken, text as String, definition as IContainer?)
 		base.construct(token)
 		_text = text
 		_definition = definition
@@ -224,6 +260,15 @@ class IdentifierExpr
 #			.type = nil
 #		else:
 #			.type = ._resolveType()
+
+	get definition from var
+
+	def memberForName(name as String) as IMember? is override
+		require
+			.didBindImp
+			.definition
+		code
+			return _definition.declForName(name)
 
 
 class IndexExpr
@@ -247,6 +292,87 @@ class IsNotNilExpr
 
 	def construct(token as IToken, expr as Expr)
 		base.construct(token)
+
+
+class MemberExpr
+	inherits Expr
+	"""
+	Example members are fields and properties.
+	"""
+
+	var _name as String
+	var _definition as IMember?
+
+	def construct(token as IToken, name as String)
+		base.construct(token)
+		_name = name
+
+	def addMinFields is override
+		base.addMinFields()
+		.addField('name', _name)
+
+	def addRefFields is override
+		base.addRefFields()
+		.addField('definition', _definition)
+
+	get binarySuperNode as BinaryOpExpr
+		# TODO: move to Expr
+		require
+			.superNode
+			.superNode inherits BinaryOpExpr
+		code
+			return .superNode to BinaryOpExpr
+
+	def _bindImp is override
+		require
+			.superNode inherits BinaryOpExpr
+			.binarySuperNode.op == 'DOT'
+			.binarySuperNode.right is this
+		ensure
+			.type  # CC: should really be the ensure of Expr
+		code
+			base._bindImp()
+			if _definition is nil or _type is nil
+				_definition = .binarySuperNode.left.memberForName(_name)
+				if _definition is nil
+					if _name=='length'
+						# TODO get rid of this total hack to support the vari type (and possibly arrays in general)
+						_type = .compiler.intType
+						.binarySuperNode.type = .type
+						return
+					if Utils.isCapped(_name)
+						sugg = 'If the name is essentially correct, try the lowercase version ("[Utils.uncapped(_name)]") instead.'
+					else
+						sugg = ''
+					_error('Cannot find a definition for "[_name]" in "[.binarySuperNode.left.type.name]" whose type is "[.binarySuperNode.left.type.name]". [sugg]')
+				assert _definition
+				if _definition inherits IType
+					assert false, 'TODO: handle foo.sometype'
+					# TODO:
+					# effectiveType = .compiler.typeType  # namespace, class, interface
+					receiverType as IType? = _definition to IType  # TODO: should not need "as IType". Type inference is not respecting the if-inherits stack
+				else
+					effectiveType = _definition.resultType
+					receiverType = nil
+				# TODO:
+				#else
+				#	throw FallThroughException(_definition)
+				assert effectiveType
+				_type = effectiveType
+				# TODO: _receiverType = receiverType
+				.binarySuperNode.definition = _definition  # TODO: is this needed?
+				.binarySuperNode.type = .type  # the type of foo.bar is what bar returns. A MemberExpr is the "bar" part.
+				# TODO: .binarySuperNode.receiverType = _receiverType  # TODO: what is this used for?
+			assert _type
+			_type.bindImp()
+
+	def toCobraSource as String is override
+		return _name
+
+# TODO
+#	def genCS(out)
+#		name = .isDotted and Utils.capped(_name) or _name
+#		out.write(name)
 
 
 class OldExpr
@@ -434,7 +560,7 @@ class BaseLit
 #	def genCS(self, out, genParens=false):
 #		out.write('base')
 
-	def memberForName(name as String) as ClassMember? is override
+	def memberForName(name as String) as IMember? is override
 		assert .didBindImp
 		assert _type
 		assert false, 'TODO'

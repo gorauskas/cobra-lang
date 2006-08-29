@@ -366,7 +366,7 @@ class Parser
 				_module.addDecl(UseDirective(useToken, nil, ['System', 'Text']))
 				_module.addDecl(UseDirective(useToken, nil, ['Cobra', 'Lang']))
 			# TODO: _module.docString = .docString()
-			what as NamedNode?
+			what as IMember?
 			keepParsing = true
 			while keepParsing
 				what = nil
@@ -390,21 +390,21 @@ class Parser
 						_error('Expecting use, import, namespace, class, interface or enum, but got [tok]')
 						break
 				if what
-					_module.addDecl(what to Node)  # CC: axe typecast
+					_module.addDecl(what to IMember)  # CC: axe typecast
 					if addToNS
-						_globalNS.addDecl(what to NamedNode)  # CC: axe "to NamedNode"
+						_globalNS.addDecl(what to IMember)  # CC: axe "to NamedNode"
 
 			return _module
 
-	def useDirective as NamedNode
+	def useDirective as IMember
 		assert false
-		return NamedNode(Token.empty, 'TODO')
+		return nil to passthrough
 
-	def importDirective as NamedNode
+	def importDirective as IMember
 		assert false
-		return NamedNode(Token.empty, 'TODO')
+		return nil to passthrough
 
-	def classDecl as NamedNode
+	def classDecl as Class
 		token = .expect('CLASS')
 		peek = .peek().which
 		if peek == 'ID'
@@ -536,17 +536,17 @@ class Parser
 		# TODO: error if 2 or more of 'public', 'protected', 'private', 'internal'
 		return names
 
-	def interfaceDecl as NamedNode
+	def interfaceDecl as Class  # TODO: InterfaceDecl
 		assert false, 'TO DO'
-		return NamedNode(Token.empty, 'TODO')
+		return nil to passthrough
 
-	def structDecl as NamedNode
+	def structDecl as Class  # TODO: StructDecl
 		assert false, 'TO DO'
-		return NamedNode(Token.empty, 'TODO')
+		return nil to passthrough
 
-	def enumDecl as NamedNode
+	def enumDecl as Class  # TODO: Enum
 		assert false, 'TO DO'
-		return NamedNode(Token.empty, 'TODO')
+		return nil to passthrough
 
 	def nameSpaceDecl as NameSpace
 		require _nameSpaceStack
@@ -594,7 +594,7 @@ class Parser
 				else
 					_error('Got [.peek()] when expecting var, def, pro, get, set, enum or shared')
 			if decl!
-				theClass.addDecl(decl to INamedNode)  # CC: axe typecast when if gets smart about not nil
+				theClass.addDecl(decl to IMember)  # CC: axe typecast when if gets smart about not nil
 		.dedent()
 
 	def classMemberDeclsShared(theClass as Class)
@@ -1519,11 +1519,9 @@ class Parser
 
 	def identifierExpr as Expr
 		nameToken = .expect('ID')
-		name = nameToken.text  # TODO? use to be .value instead of .text
+		name = nameToken.text
 		if .opStack and .opStack.peek()=='DOT'
-			assert false, 'TODO'
-			#return MemberExpr(token, name, UnknownId, tunknown)
-#			return MemberExpr(nameToken, name, nil, nil)
+			return MemberExpr(nameToken, name)
 		if .peek().which=='AS'
 # TODO
 #			if name[0] not in .lowercaseLetters
@@ -1652,9 +1650,27 @@ class Parser
 
 class UseDirective
 	inherits SyntaxNode
+	implements IMember
+
+	var _nameParts as List<of String>
 
 	def construct(token as IToken, obj as Object?, nameParts as List<of String>)
 		base.construct(token)
+		_nameParts = nameParts
+
+	get isCallable as bool
+		return false
+
+	## IMember
+
+	get englishName as String
+		return 'use directive'
+
+	get name as String
+		return CobraCore.toTechString(_nameParts)  # TODO: clean this up a bit and give this an impossible prefix so it can't actually be referred to from a Cobra program
+
+	get resultType as IType
+		assert false, 'should never use the result type of a UseDirective'
 
 
 class NumberedToken

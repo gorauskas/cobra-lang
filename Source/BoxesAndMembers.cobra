@@ -1,5 +1,5 @@
 class Box
-	inherits NamedNode
+	inherits Container
 	"""
 	The abstract base class for:
 		* Class
@@ -8,66 +8,12 @@ class Box
 	These are collectively known as "boxes".
 	"""
 
-	var _declsInOrder as List<of INamedNode>  # TODO: can the inner list type be narrowed more? say to IClassMemberDecl or ClassMemberDecl
-	var _declsByName as Dictionary<of String, INamedNode>
-	var _declsByNameCI as Dictionary<of String, INamedNode>
 	var _overloads as List<of MemberOverload>
 	var _nextPrivateSerialNumber = 1001
 
 	def construct(token as IToken, name as String)
 		base.construct(token, name)
-		_declsInOrder = List<of INamedNode>()
-		_declsByName = Dictionary<of String, INamedNode>()
-		_declsByNameCI = Dictionary<of String, INamedNode>()
 		_overloads = List<of MemberOverload>()
-
-	get declsInOrder from var
-
-	def addDecl(decl as INamedNode)
-		require
-			decl.name
-			.declForName(decl.name) is nil
-			.declForNameCI(decl.name) is nil
-		ensure
-			.declForName(decl.name) is decl
-			.declForNameCI(decl.name) is decl
-			.declsInOrder.count == old .declsInOrder.count + 1
-		code
-			_declsInOrder.add(decl)
-			_declsByName.add(decl.name, decl)
-			_declsByNameCI.add(decl.name.toLower(), decl)
-
-	def declForName(name as String) as INamedNode?
-		require
-			name
-		ensure
-			result implies result.name==name
-		code
-			# CC: this should work: return if(_declsByName.containsKey(name), _declsByName[name], nil)
-			if _declsByName.containsKey(name)
-				return _declsByName[name]
-			else
-				return nil
-
-	def declForNameCI(name as String) as INamedNode?
-		require
-			name
-		ensure
-			result implies result.name.toLower()==name.toLower()
-			result is nil implies .declForName(name) is nil
-		code
-			name = name.toLower()
-			# CC: should do following with: if(...) like in declForName
-			if _declsByNameCI.containsKey(name)
-				return _declsByNameCI[name]
-			else
-				return nil
-
-	get englishName as String
-		"""
-		Return the specific name of this type of box: class, interface, struct.
-		"""
-		return ''
 
 	def makeNextPrivateSerialNumber as int
 		n = _nextPrivateSerialNumber
@@ -82,10 +28,6 @@ class Box
 			_overloads.add(ol)
 			_declsByName[ol.name] = ol
 			_declsByName[ol.name.toLower()] = ol
-
-	def addSubFields is override
-		base.addSubFields()
-		.addField('declsInOrder', _declsInOrder)
 
 
 class Class
@@ -108,8 +50,9 @@ class Interface
 		return 'interface'
 
 
-class ClassMember
+class ClassMember  # TODO: rename to BoxMember
 	inherits NamedNode
+	implements IMember
 
 	shared
 		var _accessLevels = ['public', 'protected', 'internal', 'protected internal', 'private']
@@ -132,6 +75,9 @@ class ClassMember
 	get box from var
 
 	pro docString from var
+
+	get isCallable as bool
+		return false
 
 	get isShared as bool
 		return 'shared' in _isNames
@@ -162,10 +108,6 @@ class ClassMember
 		Checking hasParams first is recommended since it's more efficient.
 		"""
 		return List<of Param>()
-
-	get isCallable as bool
-		throw OverrideException()
-		return false
 
 	get isClassMember as bool
 		return _box inherits Class
@@ -204,7 +146,9 @@ class ClassVar
 
 interface ICodePart
 	"""
-	The common interface to:
+	A code part responds to addStmt(stmt).
+
+	It is the common interface to:
 		- methods
 		- inits (special methods)
 		- property getter
@@ -251,6 +195,9 @@ class OneCodeBlockMember
 
 	get defaultAccessLevel as String is override
 		return 'public'
+
+	get isCallable as bool is override
+		return true
 
 	def addStmt(stmt as Stmt)
 		_stmts.add(stmt)
