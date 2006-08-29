@@ -1422,11 +1422,10 @@ class Parser
 			return CharLit(.grab())
 		else if peek=='CHAR_LIT_DOUBLE'
 			return CharLit(.grab())
-# TODO
-#		else if peek=='STRING_START_SINGLE'
-#			return .stringWithSubstitutionLit('STRING_START_SINGLE', 'STRING_PART_SINGLE', 'STRING_STOP_SINGLE')
-#		else if peek=='STRING_START_DOUBLE'
-#			return .stringWithSubstitutionLit('STRING_START_DOUBLE', 'STRING_PART_DOUBLE', 'STRING_STOP_DOUBLE')
+		else if peek=='STRING_START_SINGLE'
+			return .stringWithSubstitutionLit('STRING_START_SINGLE', 'STRING_PART_SINGLE', 'STRING_STOP_SINGLE')
+		else if peek=='STRING_START_DOUBLE'
+			return .stringWithSubstitutionLit('STRING_START_DOUBLE', 'STRING_PART_DOUBLE', 'STRING_STOP_DOUBLE')
 		else if peek=='STRING_SINGLE'
 			return StringLit(.grab())
 		else if peek=='STRING_DOUBLE'
@@ -1531,6 +1530,31 @@ class Parser
 			return AsExpr(asToken, nameToken, type)
 		else
 			return IdentifierExpr(nameToken, name, nil)
+
+	def stringWithSubstitutionLit(whichStart as String, whichPart as String, whichStop as String) as StringSubstLit
+		# comment this mo-fo
+		items = List<of Expr>()
+		item = .expect(whichStart)
+		items.add(StringLit(item))
+		while true
+			expr = .expression()
+			fmt = .optional('STRING_PART_FORMAT')
+			if fmt
+				assert fmt.text.startsWith('')
+				items.add(FormattedExpr(expr, fmt.text.substring(1)))
+			else
+				items.add(expr)
+			peek = .peek().which
+			if peek==whichPart
+				items.add(StringLit(.grab()))
+			else if peek==whichStop
+				items.add(StringLit(.grab()))
+				break
+			else
+				if _verbosity>=4
+					print '<> stringWithSubstitutionLit([whichStart], [whichPart], [whichStop])'
+				_error('Expecting more string contents or the string end after the expression.')
+		return StringSubstLit(items)
 
 	def typeExpr as TypeExpr
 		t = .type()

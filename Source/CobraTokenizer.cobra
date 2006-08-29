@@ -178,8 +178,7 @@ class CobraTokenizer
 		for which as String in 'RBRACKET_SPECIAL STRING_PART_SINGLE STRING_STOP_SINGLE STRING_PART_DOUBLE STRING_STOP_DOUBLE'.split(c' ')  # CC: remove "as String"
 			_tokenDefsByWhich[which].isActive = false
 
-	# TODO: get the base class calling isActive
-	def isActiveCall(tok as IToken) as bool
+	def isActiveCall(tok as TokenDef) as bool is override
 		if tok.which=='STRING_PART_SINGLE' or tok.which=='STRING_STOP_SINGLE'
 			return _inSubstStringSingle
 		return true
@@ -364,4 +363,123 @@ class CobraTokenizer
 		s = tok.text.substring(2, tok.text.length-3)  # CC: [2:-1]
 		assert s.length==1 or s.length==2
 		tok.value = s
+		return tok
+
+
+	##
+	## String substitution handling
+	##
+
+	def tokValueForString(s as String) as String
+		"""
+		Utility class for onSTRING_START|PART|STOP_SINGLE|DOUBLE.
+		"""
+		require
+			s
+			s.length>=2  # CC: #s[0] in [c'"', c"'"] #s[s.length-1] in [c'"', c"'"]
+		code
+			s = s.substring(1, s.length-2)
+			# TODO: any other codes?
+			s = s.replace('\\t', '\t')
+			s = s.replace('\\n', '\n')
+			s = s.replace('\\r', '\r')
+			return s
+
+	def onSTRING_START_SINGLE(tok as IToken) as IToken
+		require not _inSubstStringSingle
+		_inSubstStringSingle = true
+		tok.value = .tokValueForString(tok.text)
+		_tokenDefsByWhich['STRING_PART_SINGLE'].isActive = true
+		_tokenDefsByWhich['STRING_STOP_SINGLE'].isActive = true
+		return tok
+
+	def onSTRING_PART_SINGLE(tok as IToken) as IToken
+		require _inSubstStringSingle
+		tok.value = .tokValueForString(tok.text)
+		return tok
+
+	def onSTRING_STOP_SINGLE(tok as IToken) as IToken
+		require _inSubstStringSingle
+		_inSubstStringSingle = false
+		tok.value = .tokValueForString(tok.text)
+		_tokenDefsByWhich['STRING_PART_SINGLE'].isActive = false
+		_tokenDefsByWhich['STRING_STOP_SINGLE'].isActive = false
+		return tok
+
+
+	def onSTRING_START_DOUBLE(tok as IToken) as IToken
+		require not _inSubstStringDouble
+		_inSubstStringDouble = true
+		tok.value = .tokValueForString(tok.text)
+		_tokenDefsByWhich['STRING_PART_DOUBLE'].isActive = true
+		_tokenDefsByWhich['STRING_STOP_DOUBLE'].isActive = true
+		return tok
+
+	def onSTRING_PART_DOUBLE(tok as IToken) as IToken
+		require _inSubstStringDouble
+		tok.value = .tokValueForString(tok.text)
+		return tok
+
+	def onSTRING_STOP_DOUBLE(tok as IToken) as IToken
+		require _inSubstStringDouble
+		_inSubstStringDouble = false
+		tok.value = .tokValueForString(tok.text)
+		_tokenDefsByWhich['STRING_PART_DOUBLE'].isActive = false
+		_tokenDefsByWhich['STRING_STOP_DOUBLE'].isActive = false
+		return tok
+
+
+	def onLBRACKET(tok as IToken) as IToken
+		if _inSubstStringSingle or _inSubstStringDouble
+			_substLBracketCount += 1
+			if _substLBracketCount==1
+				_tokenDefsByWhich['RBRACKET_SPECIAL'].isActive = true
+		return tok
+
+	def onRBRACKET_SPECIAL(tok as IToken) as IToken
+		require
+			_inSubstStringSingle or _inSubstStringDouble
+			_substLBracketCount
+		code
+			_substLBracketCount -= 1
+			if _substLBracketCount==0
+				_tokenDefsByWhich['RBRACKET_SPECIAL'].isActive = false
+			tok.which = 'RBRACKET'  # tricky, tricky. the parser never sees an RBRACKET_SPECIAL
+			return tok
+
+
+	##
+	## Simple string literals
+	##
+
+	def onSTRING_RAW_SINGLE(tok as IToken) as IToken
+		require tok.text.startsWith('r')
+		tok.value = tok.text.substring(2, tok.text.length-3)
+		tok.which = 'STRING_SINGLE'
+		return tok
+
+	def onSTRING_RAW_DOUBLE(tok as IToken) as IToken
+		require tok.text.startsWith('r')
+		tok.value = tok.text.substring(2, tok.text.length-3)
+		tok.which = 'STRING_DOUBLE'
+		return tok
+
+	def onSTRING_NOSUB_SINGLE(tok as IToken) as IToken
+		require tok.text.startsWith('ns')
+		tok.value = .tokValueForString(tok.text.substring(2))
+		tok.which = 'STRING_SINGLE'
+		return tok
+
+	def onSTRING_NOSUB_DOUBLE(tok as IToken) as IToken
+		require tok.text.startsWith('ns')
+		tok.value = .tokValueForString(tok.text.substring(2))
+		tok.which = 'STRING_DOUBLE'
+		return tok
+
+	def onSTRING_SINGLE(tok as IToken) as IToken
+		tok.value = .tokValueForString(tok.text)
+		return tok
+
+	def onSTRING_DOUBLE(tok as IToken) as IToken
+		tok.value = .tokValueForString(tok.text)
 		return tok

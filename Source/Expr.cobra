@@ -612,6 +612,66 @@ class StringLit
 #		return .csStringLitFor(.text)
 
 
+class StringSubstLit
+	inherits Literal
+
+	var _items as List<of Expr>
+
+	def construct(items as List<of Expr>)
+		require items
+		base.construct(items[0].token)
+		_items = items
+
+	def _bindImp is override
+		base._bindImp()
+		for item in _items
+			item.bindImp()
+		if not _type
+			_type = .compiler.libraryType('System', 'String')
+
+# TODO:
+#	def genCS(out, genParens=false)
+#		out.write('CobraImp.MakeString(')
+#		sep = ''
+#		for item in _items
+#			out.write(sep)
+#			if inherits(item, str)
+#				out.write(_csStringLitFor(item))
+#			else if inherits(item, FormattedExpr)
+#				out.write('CobraImp.ToString(')
+#				item.expr.genCS(out)
+#				out.write(',')
+#				out.write(_csStringLitFor(item.format))
+#				out.write(')')
+#			else if inherits(item, Expr)
+#				out.write('CobraImp.ToString(')
+#				item.genCS(out)
+#				out.write(')')
+#			else
+#				assert 0, item
+#			sep = ','
+#		out.write(')')
+
+class FormattedExpr
+	inherits Expr
+	"""
+	This is used exclusively for string substitutions that have formatting:
+		'[i:N]'
+	"""
+
+	var _expr as Expr
+	var _format as String
+
+	def construct(expr as Expr, format as String)
+		base.construct(expr.token)
+		_expr = expr
+		_format = format
+
+	def _bindImp is override
+		base._bindImp()
+		_expr.bindImp()
+
+
 class BaseLit
 	inherits AtomicLiteral
 
