@@ -477,7 +477,9 @@ class Tokenizer
 				#print '<> Trying to match [tokenDef]'
 				sourceLine = _sourceLine to String  # CC: to !
 				match = tokenDef.match(sourceLine, _sourceLineIndex)
-				if match is nil or not match.getType().getProperty('Success').getValue(match, nil)  # CC: if match is nil or not match.`success`
+				# CC: if match is nil or not match.`success`
+				if match is nil or not $sharp('match.Success')
+				#if match is nil or not match.getType().getProperty('Success').getValue(match, nil)
 					#print '<> No match on [tokenDef] for [_sourceLine[_sourceLineIndex]]'
 					continue
 				if match.index>_sourceLineIndex
@@ -586,6 +588,9 @@ class Tokenizer
 
 class TokenDef
 
+	shared
+		var _compiledRegExes = Dictionary<of String, Regex>()
+
 	var _which as String
 	var _regExSource as String
 	var _re as Regex
@@ -602,7 +607,12 @@ class TokenDef
 		code
 			_which = which
 			_regExSource = regExSource
-			_re = Regex(_regExSource)
+#			_re = Regex(_regExSource)
+			if _compiledRegExes.containsKey(regExSource)
+				_re = _compiledRegExes[regExSource]
+			else
+				_re = Regex(_regExSource, $sharp('RegexOptions.Compiled'))
+				_compiledRegExes[regExSource] = _re
 
 	pro which from var
 
