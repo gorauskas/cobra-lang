@@ -1121,7 +1121,20 @@ class Parser
 		return Stmt(.grab())
 
 	def ifStmt as Stmt
-		return Stmt(.grab())
+		token = .expect('IF')
+		cond = .expression()
+		trueStmts = .block()
+		falseStmts as BlockStmt?
+		if .peek().which=='ELSE'
+			.grab()
+			peek = .peek().which
+			if peek=='EOL'
+				falseStmts = .block()
+			else if peek=='IF'
+				falseStmts = BlockStmt(.peek(), [.ifStmt()])
+			else
+				_error('Syntax error. Expecting end-of-line or "if" after an "else".')
+		return IfStmt(token, cond, trueStmts, falseStmts)
 
 	def passStmt as Stmt
 		return Stmt(.grab())
@@ -1200,8 +1213,6 @@ class Parser
 		Consumes the (optional colon,) indent, statements and dedent.
 		Returns a BlockStmt().
 		"""
-		assert false
-		assert .curCodeMember
 		token = .indent()
 		stmts = List<of Stmt>()
 		while true
