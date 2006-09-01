@@ -462,7 +462,7 @@ class Tokenizer
 		if _tokenQueue
 			# eat up queue first
 			return _tokenQueue.dequeue()
-		if not _sourceLine or _sourceLineIndex==_sourceLine.length
+		if not _sourceLine
 			if not _obtainSource()
 				return nil
 		try
@@ -472,32 +472,32 @@ class Tokenizer
 					continue
 				if not tokenDef.isActive
 					continue
+				if _sourceLineIndex>0 and tokenDef.requiresBOL
+					continue
 				if not .isActiveCall(tokenDef)
 					continue
 				#print '<> Trying to match [tokenDef]'
 				sourceLine = _sourceLine to String  # CC: to !
-				match = tokenDef.match(sourceLine, _sourceLineIndex)
+				#print '_sourceLineIndex=[_sourceLineIndex]'
+				match = tokenDef.match(sourceLine)
 				# CC: if match is nil or not match.`success`
 				if match is nil or not $sharp('match.Success')
 				#if match is nil or not match.getType().getProperty('Success').getValue(match, nil)
 					#print '<> No match on [tokenDef] for [_sourceLine[_sourceLineIndex]]'
 					continue
-				if match.index>_sourceLineIndex
-					# TODO: there's no option I can see to get the regex to fail to match if it can't
-					# match the first character! wtf? This will kill performance and probably dictate
-					# that Cobra go to a non-regex solution, if it wasn't already going to.
-					continue
+				assert match.index==0
 				_lastTokenDef = _curTokenDef
 				_curTokenDef = tokenDef  # this enables onTOKENWHICH() methods to access the current tokenDef
 				text = match.toString()
-				#print '<> Match! [text] - [tokenDef]'
+				#print '<> Match! [CobraCore.toTechString(text)] - [tokenDef]'
 				# tok = Token(_fileName, _lineNum, _colNum, _charNum, tokenDef.which, text, text) to ? # CC
 				tok as IToken?
 				tok = Token(_fileName, _lineNum, _colNum, _charNum, tokenDef.which, text, text)
 				len = text.length
-				_sourceLineIndex += len
 				_colNum += len
 				_charNum += len
+				_sourceLineIndex += len
+				_sourceLine = _sourceLine.substring(len)
 
 				# enable methods to customize handling of tokens
 				reinvoke = false
@@ -519,7 +519,7 @@ class Tokenizer
 						reinvoke = true  # to pick up the queue
 
 				# finished with current line?
-				if _sourceLineIndex==_sourceLine.length
+				if _sourceLine.length==0
 					_lastSourceLine = _sourceLine
 					_sourceLine = nil
 					_sourceLineIndex = -1
@@ -595,6 +595,7 @@ class TokenDef
 	var _which as String
 	var _regExSource as String
 	var _re as Regex
+	var _requiresBOL as bool
 	var _ignoreCount as int
 	var _isActive = true
 	var _isActiveCall as Object # @@@@??
@@ -606,9 +607,11 @@ class TokenDef
 		ensure
 			.re
 		code
+			_requiresBOL = regExSource.startsWith('^')
+			if not _requiresBOL
+				regExSource = '^' + regExSource
 			_which = which
 			_regExSource = regExSource
-#			_re = Regex(_regExSource)
 			if _compiledRegExes.containsKey(regExSource)
 				_re = _compiledRegExes[regExSource]
 			else
@@ -622,11 +625,19 @@ class TokenDef
 	get length as int
 		return _regExSource.length
 
+	get requiresBOL from var
+
 	get re from var
 
 	pro ignoreCount from var
 
 	pro isActive from var
+
+	def match(input as String) as Match
+		require
+			input
+		code
+			return _re.match(input)
 
 	def match(input as String, startAt as int) as Match
 		require
