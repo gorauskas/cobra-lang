@@ -1,1 +1,2 @@
-CobraMain.exe %*
+CobraMain.exe %* > r
+e r
