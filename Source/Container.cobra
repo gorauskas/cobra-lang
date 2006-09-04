@@ -1,0 +1,156 @@
+interface IContainer
+	inherits IMember
+	"""
+	Containers are named nodes that respond to declForName().
+	Containers include:
+		* NameSpace
+		* Box
+		  * Class
+		  * Struct
+		  * Interface
+		* Enum
+	"""
+	def declForName(name as String) as IMember?
+		"""
+		Returns the member of this container with the given name.
+		May return nil if no such container exists.
+		Case-sensitive.
+		"""
+
+
+class Container
+	inherits NamedNode
+	implements IContainer, IType
+	"""
+	A container has declarations in a given order, but also accessible
+	by name, both case-sensitive and non.
+
+	The target type that is contained is INamedNode.  TODO: should that be a generic parameter?
+
+	Subclasses are responsible for passing bindInt and bindImp to _declsInOrder.
+	"""
+
+	var _declsInOrder as List<of IMember>  # TODO: can the inner list type be narrowed more? say to IClassMemberDecl or ClassMemberDecl
+	var _declsByName as Dictionary<of String, IMember>
+	var _declsByNameCI as Dictionary<of String, IMember>
+
+	def construct(token as IToken, name as String)
+		base.construct(token, name)
+		_declsInOrder = List<of IMember>()
+		_declsByName = Dictionary<of String, IMember>()
+		_declsByNameCI = Dictionary<of String, IMember>()
+
+	get declsInOrder from var
+
+	def addDecl(decl as IMember)
+		require
+			decl.name
+			not .declsInOrder.contains(decl)
+			.declForName(decl.name) is nil
+			.declForNameCI(decl.name) is nil
+		ensure
+			.declsInOrder.contains(decl)
+			.declForName(decl.name) is decl
+			.declForNameCI(decl.name) is decl
+			.declsInOrder.count == old .declsInOrder.count + 1
+		code
+			_declsInOrder.add(decl)
+			_declsByName.add(decl.name, decl)
+			_declsByNameCI.add(decl.name.toLower(), decl)
+
+	def declForName(name as String) as IMember?
+		require
+			name
+		ensure
+			result implies result.name==name
+		code
+			# CC: this should work: return if(_declsByName.containsKey(name), _declsByName[name], nil)
+			if _declsByName.containsKey(name)
+				return _declsByName[name]
+			else
+				return nil
+
+	def declForNameCI(name as String) as IMember?
+		require
+			name
+		ensure
+			result implies result.name.toLower()==name.toLower()
+			result is nil implies .declForName(name) is nil
+		code
+			name = name.toLower()
+			# CC: should do following with: if(...) like in declForName
+			if _declsByNameCI.containsKey(name)
+				return _declsByNameCI[name]
+			else
+				return nil
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('declsInOrder', _declsInOrder)
+
+	## IMember
+
+	get englishName as String
+		throw OverrideException()
+		return ''
+
+	get isCallable as bool
+		return false
+
+	get resultType as IType
+		return this
+
+	## IType
+
+	get csInit as String
+		throw OverrideException()
+		return ''
+
+	def isAssignableTo(type as IType) as bool
+		if this is type
+			return true
+		# TODO: can anything else be done at this level?
+		return false
+
+	get innerType as IType?
+		return nil
+
+
+interface IMember
+	inherits INamedNode
+	"""
+	Anything that could conceivably be a member of namespace, class,
+	struct or interface, implements IMember.
+
+	That includes namespaces, classes, structs and interfaces
+	themselves. As well as the obvious choices of methods, constructors,
+	properties and indexers. Also, enums.
+
+	IContainer and Container both reference IMember extensively.
+
+	Furthermore, IContainer happens to implement IMember because, as it
+	turns out, all of the containers may be members of other containers.
+	"""
+
+	get isCallable as bool
+		"""
+		Returns true if this member can be called with parens: () or (args)
+		"""
+
+	get englishName as String  # TODO: rename to englishTypeName
+		"""
+		Return the type of member as a plain, lowercase English word:
+			class, property, method, namespace, etc.
+		"""
+
+	get resultType as IType  # TODO: rename to dottedAccessResultType
+		"""
+		Returns the result of accessing this member in the source
+		expression "foo.bar" where this is the bar. For a method or
+		property, this would be the return type. For other members like
+		enums and classes, this would be the member itself.
+		"""
+
+	# TODO: shouldn't need this since inherited from INamedNode
+
+	get name as String
