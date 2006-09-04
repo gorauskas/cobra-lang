@@ -60,6 +60,175 @@ class BlockStmt
 		.addField('stmts', _stmts)
 
 
+interface IVar
+	inherits INamedNode
+	# TODO: move to INode.cobra or somewhere else?
+
+	pro type as IType?
+
+	# TODO: axe this as it is inherited from INamedNode
+	get name as String
+
+
+class ForStmt
+	inherits Stmt
+	"""
+	Abstract base class for ForNumericStmt and ForEnumerablebase.
+	"""
+
+	var _var as IVar
+	var _block as BlockStmt
+
+	def construct(token as IToken, varr as IVar, block as BlockStmt)
+		base.construct(token)
+		_var = varr
+		_block = block
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('var', _var)
+
+	def _bindImp is override
+		base._bindImp()
+		varr = _var
+		#if not var.isTracked  TODO disabled this to get tests\200-classes\804-test.cobra working.
+		if 1
+			ns = .compiler.nameSpaceStack.peek() to NameSpace  # CC: axe typecast
+# TODO: check for existing  variables
+#			existingVar = ns.findLocal(varr.name)
+#			if existingVar
+#				# that's fine as long as the types are the name
+#				if varr.type is .compiler.passThroughType
+#					varr.type = existingVar.type
+#				else if existingVar.type is not varr.type
+#					.error('Cannot redeclare "[varr.name]" as "[varr.type]" because it was declared as "[existingVar.type]" earlier.')
+#			else
+#				.compiler.nameStack.peek().pushName(varr)   # TODO should be pushSymbol() or pushVar()
+		varr.bindAll()  # CallExpr() wants its definition to have bound int, so here we call bindAll() instead of bindImp()
+		_block.bindImp()
+		# TODO axe this
+		#if not varr.isTracked
+		#	.compiler.nameStack.peek().pop()   # TODO should be popSymbol() or popVar()
+
+
+class ForNumericStmt
+	inherits ForStmt
+
+	var _start as Expr
+	var _stop as Expr
+	var _dir as int
+	var _step as Expr?
+
+	def construct(token as IToken, varr as IVar, start as Expr, stopp as Expr, dir as int, stepp as Expr?, block as BlockStmt)
+		require
+			true # dir==-1 or dir==+1
+		code
+			base.construct(token, varr, block)
+			_start = start
+			_stop = stopp
+			_dir = dir
+			_step = stepp
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('start', _start)
+		.addField('stop', _stop)
+		.addField('dir', _dir)
+		.addField('step', _step)
+		.addField('block', _block)
+
+	def _bindImp is override
+		varr  = _var
+		start = _start
+		stopp = _stop
+		stepp = _step
+		start.bindImp()
+		stopp.bindImp()
+		if stepp
+			stepp.bindImp()
+		passThrough = .compiler.passThroughType
+		if varr.type is nil
+			if start.type is stopp.type
+				varr.type = start.type
+			else if stopp.type is passThrough  and  start.type is not passThrough
+				varr.type = start.type
+			else if start.type is passThrough  and  stopp.type is not passThrough
+				varr.type = stopp.type
+			else
+				# TODO find the greatest common denominator between two types
+				_error('Cannot determine type of for loop variable "[varr.name]".')
+		base._bindImp()
+		_block.bindImp()
+
+#	def genCS(out)
+#		base.genCS(out)
+#		csVar = _var.asCS()
+#		wr = out.write
+#		#wr('for (%s %s=' % (_var.type.asCS(), csVar))
+#		wr('for (%s=' % csVar)
+#		_start.genCS(out)
+#		wr('; %s' % csVar)
+#		if .dir==1
+#			wr('<')
+#		else
+#			wr('>')
+#		_stop.genCS(out)
+#		wr('; ')
+#		if _step
+#			if .dir==1
+#				wr('%s+=' % csVar)
+#			else
+#				wr('%s-=' % csVar)
+#			_step.genCS(out)
+#		else
+#			if .dir==1
+#				wr('%s++' % csVar)
+#			else
+#				wr('%s--' % csVar)
+#		wr(')')
+#		_block.genCS(out)
+
+
+class ForEnumerableStmt
+	inherits ForStmt
+
+	var _what as Expr
+	var _varNumber as int
+
+	def construct(token as IToken, varr as IVar, what as Expr, block as BlockStmt)
+		base.construct(token, varr, block)
+		_what = what
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('_what', _what)
+		.addField('_block', _block)
+
+	def _bindImp is override
+		_what.bindImp()
+		varr = _var
+		if varr.type is nil
+			if _what.type is .compiler.passThroughType
+				varr.type = .compiler.passThroughType
+			else
+				varr.type = _what.type.innerType
+				if varr.type is nil
+					_error('Cannot enumerate a [_what.type].')
+		base._bindImp()
+		_varNumber = .compiler.curBox.makeNextPrivateSerialNumber()
+		_block.bindImp()
+
+#	def genCS(out)
+#		base.genCS(out)
+#		# in a C# foreach, (1) you must declare a new variable, (2) you cannot reassign it and (3) you cannot access it after the loop
+#		# these constraints don't exist in Cobra
+#		helperName = '_lh_for_%s_%s' % (_var.name, _varNumber)
+#		out.write('foreach (%s %s in ' % (_var.type.asCS(), helperName))
+#		.what.genCS(out, genParens=false)
+#		out.write(')')
+#		_block.genCS(out, top='%s = %s;\n' % (_var.asCS(), helperName))
+
+
 class IfStmt
 	inherits Stmt
 
@@ -73,13 +242,13 @@ class IfStmt
 		_trueStmts  = trueStmts
 		_falseStmts = falseStmts
 
-	def addSubFields
+	def addSubFields is override
 		base.addSubFields()
 		.addField('cond', _cond)
 		.addField('trueStmts', _trueStmts)
 		.addField('falseStmts', _falseStmts)
 
-	def _bindImp
+	def _bindImp is override
 		base._bindImp()
 		_cond.bindImp()
 # TODO:		.noAssignmentAllowed(_cond)
@@ -215,12 +384,12 @@ class WhileStmt
 		_expr = expr
 		_block = block
 
-	def addSubFields
+	def addSubFields is override
 		base.addSubFields()
 		.addField('expr', _expr)
 		.addField('block', _block)
 
-	def _bindImp()
+	def _bindImp is override
 		base._bindImp()
 		_expr.bindImp()
 # TODO:		.noAssignmentAllowed(_expr)

@@ -127,6 +127,11 @@ interface IType
 
 	def isAssignableTo(type as IType) as bool
 
+	get innerType as IType?
+		"""
+		Used by the enumerable for statement to infer the type of the control variable.
+		"""
+
 
 class CobraType
 	inherits Node
@@ -142,6 +147,9 @@ class CobraType
 		throw OverrideException()
 		return false
 
+	get innerType as IType?
+		return nil
+
 	get csInit as String
 		throw OverrideException()
 
@@ -151,6 +159,14 @@ class CobraType
 		"""
 		return nil
 
+	def equals(obj as Object) as bool is override
+		if obj is nil
+			return false
+		if not obj inherits CobraType
+			return false
+		if .getType() is obj.getType()
+			return true
+		return false
 
 class BoolType
 	inherits CobraType
@@ -254,6 +270,22 @@ class WrappedType
 		_wrappedType = nil
 		_wrappedTypeNode = wrappedTypeNode
 
+	def equals(obj as Object) as bool is override
+		if base.equals(obj)
+			assert obj inherits WrappedType
+			wt = obj to WrappedType  # CC: shouldn't need this due to the assertion just above
+			if _wrappedType and wt._wrappedType
+				return _wrappedType.equals(wt._wrappedType)
+			else if _wrappedTypeNode and wt._wrappedTypeNode
+				return _wrappedTypeNode.equals(wt._wrappedTypeNode)
+			else
+				throw FallThroughException([this, obj])
+		return false
+
+	get innerType as IType? is override
+		require .didBindImp
+		return _wrappedType.innerType
+
 	def _bindInt is override
 		_resolveType()
 
@@ -283,6 +315,9 @@ class VariType
 
 	def construct(wrappedTypeNode as INode)
 		base.construct(wrappedTypeNode)
+
+	get innerType as IType? is override
+		return _wrappedType
 
 
 class TypeType

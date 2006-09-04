@@ -1118,7 +1118,47 @@ class Parser
 		return Stmt(.grab())
 
 	def forStmt as Stmt
-		return Stmt(.grab())
+		"""
+		numeric    for int x = 0 up to n step 2
+		enumerable for Customer cust in customers
+		"""
+		token = .expect('FOR')
+		varr = .localVarDecl()
+		peek = .peek().which
+		if peek=='ASSIGN'
+			return .forNumericStmt(token, varr)
+		else if peek=='IN'
+			return .forEnumerableStmt(token, varr)
+		else
+			_error('Expecting "=" or "in".')
+			return Stmt(Token.empty)  # make C# code flow analysis happy
+
+	def forNumericStmt(token as IToken, varr as IVar) as ForNumericStmt
+		.expect('ASSIGN')
+		start = .expression()
+		.expect('DOTDOT')
+		stopp = .expression()
+		dirToken = .optional('PLUSPLUS')
+		if dirToken
+			dir = 1
+		else
+			dirToken = .optional('MINUSMINUS')
+			if dirToken
+				dir = -1
+		stepp as Expr?
+		if dirToken is nil
+			dir = 1
+			stepp = nil
+		else
+			stepp = .expression()
+		stmts = .block()
+		return ForNumericStmt(token, varr, start, stopp, dir, stepp, stmts)
+
+	def forEnumerableStmt(token as IToken, varr as IVar) as ForEnumerableStmt
+		.expect('IN')
+		what = .expression()
+		stmts = .block()
+		return ForEnumerableStmt(token, varr, what, stmts)
 
 	def ifStmt as Stmt
 		token = .expect('IF')
@@ -1203,11 +1243,8 @@ class Parser
 
 
 	##
-	## Statement parts
+	## Misc parts
 	##
-
-	get curCodeMember as String
-		return ''
 
 	def block as BlockStmt
 		"""
@@ -1228,6 +1265,66 @@ class Parser
 		.dedent()
 		return BlockStmt(token, stmts)
 
+	def localVarDecl as AbstractLocalVar
+		return .localVarDecl(nil)
+
+	def localVarDecl(defaultType as IType?) as AbstractLocalVar
+		"""
+		Variable declarations for parameters, `for` loops and exceptions.
+		Not class vars (see classVarDecl()).
+		Example source:
+			x   # default type is dynamic   # TODO: should be unspecified
+			i as int
+			cust as Customer
+		Arguments:
+			theClass is typically ClassVarDecl, LocalVar or Param
+			whatName could be set to 'Parameter' for example.
+		Returns:
+			A theClass(name, type)
+		Errors:
+			None
+		"""
+		token = .expect('ID')
+		name = token.value to String
+		.checkStartsLowercase(name, 'Variable')
+		type as INode?
+		if .peek().which=='AS'
+			.grab()
+			type = .type()
+		else
+			# maybe the var already exists?
+			definition = _curCodePart.findLocal(name)
+			if definition
+				return definition to AbstractLocalVar  # CC: axe type cast
+			type = nil
+
+		type = (type ? defaultType) to INode
+		assert type
+
+		definition = _curCodePart.findLocal(name)
+
+		# TODO: put this kind of check in bindImp maybe?
+		if definition
+			if definition.typeNode
+				if definition.typeNode==type
+					return definition to AbstractLocalVar  # same thing  # CC: axe type cast
+				else
+					# this should probably be moved to the bindImp phase since types can have different names like "int" and "System.Int32"
+					_error('Cannot redeclare "[name]" from "[definition.typeNode]" to "[type]". Previous definition is on line [definition.token.lineNum].')
+			else if definition.type
+				if definition.type==type
+					return definition to AbstractLocalVar  # same thing  # CC: axe type cast
+				else
+					# this should probably be moved to the bindImp phase since types can have different names like "int" and "System.Int32"
+					_error('Cannot redeclare "[name]" from "[definition.type]" to "[type]". Previous definition is on line [definition.token.lineNum].')
+			else
+				throw FallThroughException(definition)
+
+		# new def
+		varr = LocalVar(token, type)
+		_curCodePart.addLocal(varr)
+
+		return varr
 
 	##
 	## Expressions
@@ -1429,7 +1526,7 @@ class Parser
 			return BaseLit(.grab(), .curBox)
 # TODO
 #		else if peek=='VAR'
-#			return VarLit(.grab(), .curCodeMember)
+#			return VarLit(.grab(), _curCodePart)
 		else if peek=='CHAR_LIT_SINGLE'
 			return CharLit(.grab())
 		else if peek=='CHAR_LIT_DOUBLE'
