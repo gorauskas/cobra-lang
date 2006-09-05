@@ -66,9 +66,6 @@ interface IVar
 
 	pro type as IType?
 
-	# TODO: axe this as it is inherited from INamedNode
-	get name as String
-
 
 class ForStmt
 	inherits Stmt
@@ -309,16 +306,16 @@ class PrintStmt
 		.addField('destination', _destination)
 		.addField('args', _args)
 
-#	def genCS(self, out):
-#		Stmt.genCS(self, out)
-#		if self.destination:
+#	def genCS(out):
+#		Stmt.genCS(out)
+#		if .destination:
 #			out.write('(')
-#			self.destination.genCS(out)
-#			out.write(').%s(' % (self.stop and 'Write' or 'WriteLine'))
+#			.destination.genCS(out)
+#			out.write(').%s(' % (_stop and 'Write' or 'WriteLine'))
 #		else:
-#			out.write('CobraImp.%s(' % (self.stop and 'PrintStop' or 'PrintLine'))
+#			out.write('CobraImp.%s(' % (_stop and 'PrintStop' or 'PrintLine'))
 #		sep = ''
-#		for arg in self.args:
+#		for arg in _args:
 #			out.write(sep)
 #			if arg.type.isStringClass:
 #				out.write('(')
@@ -351,8 +348,8 @@ class PrintRedirectStmt
 		.addField('destination', _destination)
 		.addField('block', _block)
 
-#	def genCS(self, out):
-#		Stmt.genCS(self, out)
+#	def genCS(out):
+#		Stmt.genCS(out)
 #		out.write('CobraImp.PushPrintTo(')
 #		self.destination.genCS(out, genParens=false)
 #		out.write(');\n')
@@ -371,6 +368,160 @@ class ReturnStmt
 	def construct(token as IToken, expr as Expr?)
 		base.construct(token)
 		pass
+
+
+class TryStmt
+	inherits Stmt
+
+	var _tryBlock as BlockStmt
+	var _exceptBlocks as List<of ExceptBlock>
+	var _successBlock as BlockStmt?
+	var _finallyBlock as BlockStmt?
+	var _varNumber as int
+
+	def construct(token as IToken, tryBlock as BlockStmt, exceptBlocks as List<of ExceptBlock>, successBlock as BlockStmt?, finallyBlock as BlockStmt?)
+		base.construct(token)
+		_tryBlock = tryBlock
+		_exceptBlocks = exceptBlocks
+		_successBlock = successBlock
+		_finallyBlock = finallyBlock
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('tryBlock', _tryBlock)
+		.addField('exceptBlock', _exceptBlocks)
+		.addField('succesBlock', _successBlock)
+		.addField('finallyBlock', _finallyBlock)
+
+	def _bindImp is override
+		base._bindImp()
+		_varNumber = .compiler.curBox.makeNextPrivateSerialNumber()
+		_tryBlock.bindImp()
+		for eb in _exceptBlocks
+			eb.bindImp()
+		if _successBlock
+			_successBlock.bindImp()
+		if _finallyBlock
+			_finallyBlock.bindImp()
+
+#	def genCS(out)
+#		Stmt.genCS(out)
+#		if .successBlock
+#			# C# has no "success" (or in Python, "else") block for the "try" statement
+#			# so it has to be simulated
+#			helperName = '_lh_success_%s' % .varNumber  # lh => "local helper"
+#			out.write('bool %s = false;\n' % helperName)
+#			if .finallyBlock
+#				out.write('try {\n')
+#				out.indent()
+#			out.write('try')
+#			.tryBlock.genCS(out, close=false)
+#			out.write('%s = true;\n' % helperName)
+#			out.dedent()
+#			out.write('}\n')
+#			if .exceptBlocks
+#				.writeExceptBlocks(out)
+#			else
+#				out.write('finally { }\n')  # syntactically necessary
+#			out.write('if (%s)' % helperName)
+#			.successBlock.genCS(out)
+#			if .finallyBlock
+#				out.dedent()
+#				out.write('}\n')
+#				out.write('finally')
+#				.finallyBlock.genCS(out)
+#		else
+#			out.write('try')
+#			.tryBlock.genCS(out)
+#			.writeExceptBlocks(out)
+#			if .finallyBlock
+#				out.write('finally')
+#				.finallyBlock.genCS(out)
+
+#	def writeExceptBlocks(out)
+#		for eb in .exceptBlocks
+#			out.write('catch')
+#			if eb.type
+#				out.write(' (%s' % eb.type.name)
+#				if eb.varName
+#					helperName = eb.csHelperName
+#					out.write(' %s' % helperName)
+#				out.write(')')
+#			top = eb.varName and '%s = %s;\n'%(eb.varName,helperName) or ''
+#			eb.block.genCS(out, top=top)
+
+
+class ExceptBlock
+	inherits SyntaxNode
+
+	var _var as AbstractLocalVar?
+	var _typeNode as INode?  # TODO: get rid of typeNode
+	var _type as IType?
+	var _block as BlockStmt
+	var _varName as String?
+	var _csHelperName as String
+
+	def construct(token as IToken, varr as AbstractLocalVar?, typeNode as INode?, block as BlockStmt)
+		base.construct(token)
+		_var = varr
+		_typeNode = typeNode
+		_varName = if(varr, varr.name, nil)
+		_block = block
+
+	def construct(token as IToken, varr as AbstractLocalVar, block as BlockStmt)
+		base.construct(token)
+		_var = varr
+		_varName = if(varr, varr.name, nil)
+		_block = block
+
+	def _bindImp is override
+		base._bindImp()
+		if _var
+			_var.bindImp()
+			if not _var.isTracked
+				varr = _var to LocalVar  # CC: axe typecast
+				codePart = .compiler.codeMemberStack.peek() to ICodePart  # CC: remove typecast
+				existingVar = codePart.findLocal(varr.name)
+				if existingVar
+					if existingVar.type is not varr.type
+						_error('Cannot redeclare "[varr.name]" as "[varr.type]" because it was declared as "[existingVar.type]" earlier.')
+				else
+					codePart.addLocal(varr)
+		if _type is nil
+			if _typeNode
+				_typeNode.bindImp()
+				_type = _typeNode.namedType
+			else
+				_type = _var.type
+			assert _type
+		_csHelperName = '_lh_except_[.compiler.curBox.makeNextPrivateSerialNumber()]'
+		_block.bindImp()
+
+
+class ThrowStmt
+	inherits Stmt
+
+	var _expr as Expr?
+
+	def construct(token as IToken, expr as Expr?)
+		base.construct(token)
+		_expr = expr
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('expr', '_expr')
+
+	def _bindImp is override
+		base._bindImp()
+		if _expr
+			_expr.bindImp()
+
+#	def genCS(out):
+#		Stmt.genCS(out)
+#		out.write('throw ')
+#		if self.expr:
+#			self.expr.genCS(out, genParens=false)
+#		out.write(';\n')
 
 
 class WhileStmt

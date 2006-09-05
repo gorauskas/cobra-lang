@@ -162,28 +162,47 @@ class CobraType
 	def equals(obj as Object) as bool is override
 		if obj is nil
 			return false
+		if obj inherits CobraType
+			return .serialNum.equals(obj.serialNum)
+		else
+			return false
+
+	def getHashCode as int is override
+		return .serialNum.getHashCode()
+
+
+class ValueType
+	inherits CobraType
+
+	def equals(obj as Object) as bool is override
+		if obj is nil
+			return false
 		if not obj inherits CobraType
 			return false
 		if .getType() is obj.getType()
 			return true
 		return false
 
+	def getHashCode as int is override
+		return .getType().getHashCode()
+
+
 class BoolType
-	inherits CobraType
+	inherits ValueType
 
 	def construct
 		base.construct()
 
 
 class CharType
-	inherits CobraType
+	inherits ValueType
 
 	def construct
 		base.construct()
 
 
 class DecimalType
-	inherits CobraType
+	inherits ValueType
 
 	def construct
 		base.construct()
@@ -199,14 +218,14 @@ class DynamicType
 
 
 class FloatType
-	inherits CobraType
+	inherits ValueType
 
 	def construct
 		base.construct()
 
 
 class IntType
-	inherits CobraType
+	inherits ValueType
 
 	def construct
 		base.construct()
@@ -235,7 +254,7 @@ class PassThroughType
 
 
 class VoidType
-	inherits CobraType
+	inherits ValueType
 	"""
 	This type is used only for methods that don't declare a return type and therefore cannot return
 	anything.
@@ -259,6 +278,7 @@ class WrappedType
 
 	var _wrappedType as IType?
 	var _wrappedTypeNode as INode?
+	var _hashCode as int?
 
 	def construct(wrappedType as IType)
 		base.construct()  # TODO: ? pass wrappedType.superType
@@ -281,6 +301,16 @@ class WrappedType
 			else
 				throw FallThroughException([this, obj])
 		return false
+
+	def getHashCode as int is override
+		if _hashCode is nil
+			if _wrappedTypeNode
+				_hashCode = _wrappedTypeNode.getHashCode()
+			else if _wrappedType
+				_hashCode = _wrappedType.getHashCode()
+			else
+				_hashCode = base.getHashCode()
+		return _hashCode to int  # CC: to !
 
 	get innerType as IType? is override
 		require .didBindImp
