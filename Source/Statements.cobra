@@ -455,20 +455,22 @@ class ExceptBlock
 	inherits SyntaxNode
 
 	var _var as AbstractLocalVar?
-	var _typeNode as INode?  # TODO: get rid of typeNode
 	var _type as IType?
 	var _block as BlockStmt
 	var _varName as String?
 	var _csHelperName as String
 
-	def construct(token as IToken, varr as AbstractLocalVar?, typeNode as INode?, block as BlockStmt)
+	def construct(token as IToken, block as BlockStmt)
+		"""
+		This is for `success`, `finally` and typeless `catch` blocks.
+		"""
 		base.construct(token)
-		_var = varr
-		_typeNode = typeNode
-		_varName = if(varr, varr.name, nil)
 		_block = block
 
 	def construct(token as IToken, varr as AbstractLocalVar, block as BlockStmt)
+		"""
+		This is for `catch` blocks that specify a type and variable.
+		"""
 		base.construct(token)
 		_var = varr
 		_varName = if(varr, varr.name, nil)
@@ -488,11 +490,7 @@ class ExceptBlock
 				else
 					codePart.addLocal(varr)
 		if _type is nil
-			if _typeNode
-				_typeNode.bindImp()
-				_type = _typeNode.namedType
-			else
-				_type = _var.type
+			_type = _var.type
 			assert _type
 		_csHelperName = '_lh_except_[.compiler.curBox.makeNextPrivateSerialNumber()]'
 		_block.bindImp()
