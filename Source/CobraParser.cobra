@@ -544,9 +544,34 @@ class Parser
 		assert false, 'TO DO'
 		return nil to passthrough
 
-	def enumDecl as Class  # TODO: Enum
-		assert false, 'TO DO'
-		return nil to passthrough
+	def enumDecl as EnumDecl
+		token = .expect('ENUM')
+		name = .expect('ID').value to String
+		if name[0] not in _uppercaseLetters
+			_error('Enum types must start with uppercase letters to avoid collisions with other identifiers such as properties and methods.')
+		.indent()
+		isNames = .isDeclNames()
+		if .peek().which=='OF'
+			possibleStorageType = .type()
+			if possibleStorageType is .typeProvider.intType  # TODO: allow any integral type except char
+				storageType as IType? = possibleStorageType to IType  # CC: axe "as IType?" and change "to IType?"
+		docString = .docString()
+		enumMembers = List<of EnumMember>()
+		while .peek().which<>'DEDENT'
+			enumNameToken = .expect('ID')
+			if .peek().which=='ASSIGN'
+				.grab()
+				enumValue as int? = .expect('INTEGER_LIT').value to int  # CC: change cast to "to int?" and axe "as int?"
+			else
+				enumValue = nil
+			.oneOrMore('EOL')
+			enumMembers.add(EnumMember(enumNameToken, enumValue))
+			# TODO: check for repeated names
+			# TODO: check for values that repeat or go backwards
+		.dedent()
+		if not enumMembers
+			_error('Missing enum members.')
+		return EnumDecl(token, name, isNames, storageType, docString, enumMembers)
 
 	def nameSpaceDecl as NameSpace
 		require _nameSpaceStack
@@ -1261,7 +1286,7 @@ class Parser
 				varr = .localVarDecl()
 				# TODO Accept type, or id, or "id AS type". See what Boo does.
 				if false
-					expectType as IType?
+					exceptType as INode?
 					exceptVarName as String?
 					if .peek().which<>'EOL'
 						exceptType = .type()

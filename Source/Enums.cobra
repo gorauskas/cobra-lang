@@ -1,0 +1,88 @@
+class EnumDecl
+	inherits Container
+
+	# TODO: defaultAccessLevel = 'public'
+
+	var _storageType as IType?
+
+	def construct(token as IToken, name as String, isNames as List<of String>, storageType as IType?, docString as String, enumMembers as List<of EnumMember>)
+		base.construct(token, name)
+		# TODO: _isNames = isNames
+		_storageType = storageType
+		# TODO: put this at the container level. _docString = docString
+		for em in enumMembers
+			.addDecl(em)
+			em.enumDecl = this
+
+	get englishName as String is override
+		return 'enumeration type'
+
+	# TODO:	get requiresDotPrefix as bool is override
+	#	return false
+
+	get isShared as bool
+		return true
+
+	def _bindInt is override
+		base._bindInt()
+		if _storageType
+			_storageType.bindInt()
+
+	def _bindImp() is override
+		base._bindImp()
+		if _storageType
+			_storageType.bindImp()
+
+	get csInit as String is override
+		return _name + '.' + _declsInOrder[0].name
+
+#	def genCS(sw as SharpWriter)
+#		sw.write('%senum %s' % (_isNamesCS(), _name))
+#		storageType = _storageType
+#		if storageType is not nil and storageType is not tint
+#			sw.write(' %s' % storageType.asCS())
+#		sw.write(' {\n')
+#		sw.indent()
+#		i = 0
+#		for em in _enumMembers
+#			sw.write(capped(em.name))
+#			if em.value is not nil
+#				sw.write(' = %s' % em.value)
+#			if i<len(_enumMembers)-1
+#				sw.write(',')
+#			sw.write('\n')
+#			i += 1
+#		sw.dedent()
+#		sw.write('}\n\n')
+
+
+class EnumMember
+	inherits NamedNode
+	implements IMember
+	"""
+	Holds the name and (optionally) value of a member of an EnumDecl.
+	"""
+
+	var _value as int?
+	var _enumDecl as EnumDecl?
+
+	def construct(token as IToken, value as int?)
+		require token.which=='ID'
+		base.construct(token, token.text)
+		_value = value
+
+	def addMinFields is override
+		base.addMinFields()
+		.addField('value', _value)
+
+	pro enumDecl from var
+
+	get isCallable as bool
+		return false
+
+	get englishName as String
+		return 'enumeration value'
+
+	get resultType as IType
+		require _enumDecl
+		return _enumDecl to IType # CC: axe typecast
