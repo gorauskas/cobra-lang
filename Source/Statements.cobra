@@ -42,6 +42,80 @@ class AssertStmt
 #		out.dedent()
 
 
+class BranchStmt
+	inherits Stmt
+
+	var _expr as Expr
+	var _onParts as List<of BranchOnPart>
+	var _elsePart as BlockStmt?
+
+	def construct(token as IToken, expr as Expr, onParts as List<of BranchOnPart>, elsePart as BlockStmt?)
+		base.construct(token)
+		_expr = expr
+		_onParts = onParts
+		_elsePart = elsePart
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('expr', _expr)
+		.addField('onParts', _onParts)
+		.addField('elsePart', _elsePart)
+
+	def _bindImp is override
+		base._bindImp()
+		_expr.bindImp()
+		for bop in _onParts
+			bop.bindImp()
+		if _elsePart
+			_elsePart.bindImp()
+
+#	def genCS(out)
+#		base.genCS(out)
+#		out.write('switch(')
+#		_expr.genCS(out)
+#		out.write(') {\n')
+#		out.indent()
+#		for onPart in _onParts
+#			sep = ''
+#			for e in onPart.exprs
+#				out.write(sep)
+#				out.write('case ')
+#				e.genCS(out)
+#				out.write(' ')
+#				sep = '\n'
+#			onPart.block.genCS(out)
+#			out.write('break;\n')
+#		if _elsePart
+#			out.write('default ')
+#			_elsePart.genCS(out)
+#			out.write('break;\n')
+#		out.dedent()
+#		out.write('}\n')
+
+
+class BranchOnPart
+	inherits Node
+
+	var _exprs as List<of Expr>
+	var _block as BlockStmt
+
+	def construct(exprs as List<of Expr>, block as BlockStmt)
+		base.construct()
+		_exprs = exprs
+		_block = block
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('exprs', _exprs)
+		.addField('block', _block)
+
+	def _bindImp is override
+		base._bindImp()
+		for expr in _exprs
+			expr.bindImp()
+		_block.bindImp()
+
+
 class BlockStmt
 	inherits Stmt
 	"""
@@ -351,10 +425,10 @@ class PrintRedirectStmt
 #	def genCS(out):
 #		Stmt.genCS(out)
 #		out.write('CobraImp.PushPrintTo(')
-#		self.destination.genCS(out, genParens=false)
+#		_destination.genCS(out, genParens=false)
 #		out.write(');\n')
 #		out.write('try')
-#		self.stmts.genCS(out)
+#		_stmts.genCS(out)
 #		out.write('finally {\n')
 #		out.indent()
 #		out.write('CobraImp.PopPrintTo();\n')
@@ -517,8 +591,8 @@ class ThrowStmt
 #	def genCS(out):
 #		Stmt.genCS(out)
 #		out.write('throw ')
-#		if self.expr:
-#			self.expr.genCS(out, genParens=false)
+#		if _expr:
+#			_expr.genCS(out, genParens=false)
 #		out.write(';\n')
 
 
