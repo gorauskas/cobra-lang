@@ -1137,29 +1137,29 @@ class Parser
 		.indent()
 		onParts = List<of BranchOnPart>()
 		elsePart as BlockStmt? = nil  # CC: axe type decl
-		while true
-			peek = .peek().which
-			# TODO: use a branch stmt here
-			if peek=='ON'
-				.grab()
-				if elsePart
-					_error('Cannot have "on" parts after an "else" part.')
-				exprs = .commaSepExprs(['COLON', 'EOL'])
-				.undo()
-				block = .branchPartStatements()
-				onParts.add(BranchOnPart(exprs, block))
-			else if peek=='ELSE'
-				.grab()
-				if elsePart
-					_error('Cannot have more than one "else" in a branch.')
-				if not onParts
-					_error('Cannot have an "else" in a branch without at least one "on".')
-				elsePart = .branchPartStatements()
-			else if peek=='DEDENT'
-				.grab()
-				break
-			else
-				_error('Expecting "on", "else" or end of branch statement. Encountered [peek]')
+		continuee = true  # CC: axe this when 'break' can be used in a branch inside a loop
+		while continuee
+			branch .peek().which
+				on 'ON'
+					.grab()
+					if elsePart
+						_error('Cannot have "on" parts after an "else" part.')
+					exprs = .commaSepExprs(['COLON', 'EOL'])
+					.undo()
+					block = .branchPartStatements()
+					onParts.add(BranchOnPart(exprs, block))
+				on 'ELSE'
+					.grab()
+					if elsePart
+						_error('Cannot have more than one "else" in a branch.')
+					if not onParts
+						_error('Cannot have an "else" in a branch without at least one "on".')
+					elsePart = .branchPartStatements()
+				on 'DEDENT'
+					.grab()
+					continuee = false  # CC: axe this when we can use break in a branch
+				else
+					_error('Expecting "on", "else" or end of branch statement. Encountered [.peek().which]')
 		return BranchStmt(token, e, onParts, elsePart)
 
 	def branchPartStatements() as BlockStmt
