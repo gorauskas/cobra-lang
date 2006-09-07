@@ -29,6 +29,10 @@ class CobraCommandLine
 			print 'Run Cobra without options to get full usage information.'
 		Environment.exit(1)
 
+	def exit(codee as int)  # rename to code
+		print 'Exiting with code [codee]'
+		Environment.exit(codee)
+
 	def run
 		args = CobraCore.commandLineArgs
 		if args.count==2
@@ -119,30 +123,32 @@ class CobraCommandLine
 		.printSource(source)
 
 		print bar
-		firstLine as String = source.split([c'\n'].toArray(), 1)[0]  # CC: axe "as String"
+		# TODO: why doesn't the following line work?
+		# firstLine as String = source.split([c'\n'].toArray(), 1)[0]  # CC: axe "as String"
+		firstLine = source.split(c'\n')[0] to String
+
 		firstLineInsensitive = firstLine.trim().replace(' ', '')
 		if firstLineInsensitive.startsWith('#.error.')
-			print 'TODO: cannot handle .error. test directive yet'
-#			error = firstLine.split('.error.',1)[1].strip().lower()
-#			success = false
-#			try:
-#				c = Compiler(self.verbosity, 'raise')
-#				c.parseOne(filename=basename, source=source)
-#				c.bindInt()
-#				c.bindImp()
-#				success = true
-#			except CobraError, ce:
-#				#if ce.errorMessage.lower().find(error)==-1:
-#				if str(ce).lower().find(error)==-1:
-#					print 'Expecting error substring: %r' % error
-#					print 'Actual error is: %s' % ce
-#					sys.exit(1)
-#			if success:
-#				print 'Expecting error substring: %r' % error
-#				print 'No error at all.'
-#				sys.exit(1)
-#			print 'Expected error occurred: %r in %s' % (error, ce)
-#			return 1
+			# CC: support split() with a String extension method
+			# error = firstLine.split('.error.',1)[1].trim().toLower()
+			index = firstLine.indexOf('.error.')
+			error = firstLine.substring(index+7).trim().toLower()
+			try
+				c = Compiler(_verbosity, ProblemAction.Throw)
+				c.parseFilesNamed([baseName])
+				c.bindInt()
+				c.bindImp()
+			catch ce as CobraException
+				if ce.message.toLower().indexOf(error)==-1
+					print 'Expecting error substring: **[error]**'
+					print 'Actual error is: **[ce.message]**'
+					.exit(1)
+			success
+				print 'Expecting error substring: [error]'
+				print 'No error at all.'
+				.exit(1)
+			print 'Expected error occurred: [error] in [ce]'
+			return 1
 
 		if firstLineInsensitive.startsWith('#.warning.')
 			print 'TODO: cannot handle .warning. directive yet'
