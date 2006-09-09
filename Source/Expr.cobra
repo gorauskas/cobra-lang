@@ -42,6 +42,13 @@ class Expr
 			else
 				return nil
 
+	get binarySuperNode as BinaryOpExpr
+		require
+			.superNode
+			.superNode inherits BinaryOpExpr
+		code
+			return .superNode to BinaryOpExpr
+
 
 class AsExpr
 	inherits Expr
@@ -228,32 +235,67 @@ class IdentifierExpr
 	inherits Expr
 
 	var _text as String
-	var _definition as IContainer?
+	var _definition as INamedNode?
 
-	def construct(token as IToken, text as String, definition as IContainer?)
+	def construct(token as IToken, text as String, definition as INamedNode?)
 		base.construct(token)
 		_text = text
 		_definition = definition
-# TODO:
-#		if definition is nil:
-#			.type = nil
-#		else:
-#			.type = ._resolveType()
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('definition', _definition)
 
 	get definition from var
-
-	def _bindImp is override
-		base._bindImp()
-		if _definition is nil
-			assert false, _text
-			# @@@@@@ LEFT OFF HERE
 
 	def memberForName(name as String) as IMember? is override
 		require
 			.didBindImp
 			.definition
 		code
-			return _definition.declForName(name)
+			return _definition.typeForReceiver.memberForName(name)
+
+	def _bindImp is override
+		base._bindImp()
+		if _definition is nil
+			canBeMember = _text.startsWith('_') or Utils.isCapped(_text)  # isCapped could be an enum or, in the future, a nested class
+			if canBeMember
+				_definition = .compiler.symbolForName(_text, canBeMember, false) to passthrough
+			else
+				_definition = .compiler.findLocal(_text)
+			if _definition is nil and not canBeMember
+				if _superNode inherits BinaryOpExpr
+					if _superNode.right is this
+						curBox = .compiler.boxStack.peek()  # TODO: would like to use compiler.curClass except that could be an interface or struct. compiler.curCompositeType
+						definition = curBox.symbolForName(_text, true, true)
+						if definition is not nil
+							_error('You must refer to non-underscored members with a leading dot (.). Member name is "[_text]".')
+
+			# TODO: The effect of using symbolForName() just above and the next 3 lines is that class members mask globals of the same name. This will become a problem when module-level functions are supported.
+			#from Module import ClassMemberDecl
+			#if compiler.opStack and compiler.opStack.peek()!='ASSIGN':  # don't interfere with type inference. tests\200-class-decls\508-properties-access.cobra
+			#if isinstance(self.definition, ClassMemberDecl) and self.definition.requiresDotPrefix: # and not self.text.startswith('_'):
+			#	self.error('You must refer to non-underscored members with a leading dot (.).')
+
+			if _definition is nil and (not _superNode inherits BinaryOpExpr or .binarySuperNode.op<>'ASSIGN')
+				msg = 'Unknown identifier: "[_text]".'
+				sug = .compiler.suggestionFor(_text)
+				if sug
+					msg += ' Maybe you should try "[sug]".'
+				_error(msg)
+		if _type is nil
+			_resolveType()
+
+	def _resolveType
+		require _definition
+		if _definition
+			_type = _definition.typeForIdentifier
+# TODO: axe or enable
+#		else
+#			if compiler.opStack and compiler.opStack.peek()=='ASSIGN':
+#				pass
+#			else:
+#				compiler.errorUnknownId(self.text)
 
 
 class IndexExpr
@@ -299,14 +341,6 @@ class MemberExpr
 	def addRefFields is override
 		base.addRefFields()
 		.addField('definition', _definition)
-
-	get binarySuperNode as BinaryOpExpr
-		# TODO: move to Expr
-		require
-			.superNode
-			.superNode inherits BinaryOpExpr
-		code
-			return .superNode to BinaryOpExpr
 
 	def _bindImp is override
 		require

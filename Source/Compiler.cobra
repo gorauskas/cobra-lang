@@ -29,6 +29,9 @@ class Compiler
 	var _boxStack as Stack<of Box>
 	var _codeMemberStack as Stack<of ICodePart>
 
+	var _isBindingInt as bool
+	var _isBindingImp as bool
+
 	def construct(verbosity as int)
 		.construct(verbosity, ProblemAction.Exit)
 
@@ -45,6 +48,10 @@ class Compiler
 
 	def toString as String is override
 		return '[.getType().name]([_serialNum])'
+
+	get isBindingInt from var
+
+	get isBindingImp from var
 
 	get globalNS from var
 
@@ -197,23 +204,31 @@ class Compiler
 
 	def bindInt
 		# TODO: bindInt to all existing types
-		Node.setCompiler(this)
+		_isBindingInt = true
 		try
-			for module in _modules  # CC: make that _curModule and axe following assignment statement
-				_curModule = module
-				_curModule.bindInt()
+			Node.setCompiler(this)
+			try
+				for module in _modules  # CC: make that _curModule and axe following assignment statement
+					_curModule = module
+					_curModule.bindInt()
+			finally
+				Node.setCompiler(nil)
 		finally
-			Node.setCompiler(nil)
+			_isBindingInt = false
 
 	def bindImp
 		# TODO: bindImp to all existing types
-		Node.setCompiler(this)
+		_isBindingImp = true
 		try
-			for module in _modules  # CC: make that _curModule and axe following assignment statement
-				_curModule = module
-				_curModule.bindImp()
+			Node.setCompiler(this)
+			try
+				for module in _modules  # CC: make that _curModule and axe following assignment statement
+					_curModule = module
+					_curModule.bindImp()
+			finally
+				Node.setCompiler(nil)
 		finally
-			Node.setCompiler(nil)
+			_isBindingImp = false
 
 	def symbolForName(name as String, canBeMember as bool, haveThis as bool) as IMember?
 		"""
@@ -259,6 +274,16 @@ class Compiler
 	## Services to nodes
 	##
 
+	def findLocal(name as String) as AbstractLocalVar?
+		"""
+		Finds a local parameter or variable in the current code member.
+		"""
+		require
+			.isBindingImp
+			.codeMemberStack
+		code
+			return .codeMemberStack.peek().findLocal(name)
+
 	def libraryType(names as vari String) as IType
 		"""
 		Used to retrieve types such as System.String.
@@ -278,6 +303,48 @@ class Compiler
 		else
 			assert false, 'found [name], but it is not an IType. it is [thing]'
 
+	def suggestionFor(name as String) as String?
+		require name
+		# CC: return _unknownSuggestions.getDefault(name, nil)
+		if _unknownSuggestions.containsKey(name)
+			return _unknownSuggestions[name]
+		else
+			return nil
+
+	var _unknownSuggestions = {
+		# literals
+		'null':		'nil',
+		'NULL':		'nil',
+		'None':		'nil',
+		'Nothing':	'nil',
+		'True':		'true',
+		'False':	'false',
+
+		# special
+		'self':		'this',
+		'super':	'base',
+
+		# operators (word ones anyway)
+		'isa':		'inherits',
+		'new':		'SomeClass() or SomeClass(arg1,arg2) without new',
+
+		# constructs
+		#'lambda':	'def(args) ...',  # TODO
+
+		# statements
+		'do':		'post while <condition>',
+		'elif':		'else if',
+		'elseif':	'else if',
+		'foreach':	'for',
+		'throw':	'raise',
+
+		# types
+		'boolean':	'bool',
+		'double':	'float',
+		'single':	'float32',
+		'str':		'string',
+		# TODO: various int types like short, byte, long
+	}
 
 	##
 	## Generating C#
