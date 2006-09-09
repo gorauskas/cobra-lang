@@ -16,12 +16,15 @@ class Compiler
 		* codeMemberStack - methods, properties and constructors
 	"""
 
+	var _nextSerialNum as int is shared
+	var _serialNum as int
 	var _verbosity as int
 	var _whenError as ProblemAction
 	var _options as Dictionary<of String, Object>
 	var _globalNS as NameSpace
 	var _modules as List<of Module>
 
+	var _curModule as Module?  # set during bindInt() and bindImp()
 	var _nameSpaceStack as Stack<of NameSpace>
 	var _boxStack as Stack<of Box>
 	var _codeMemberStack as Stack<of ICodePart>
@@ -30,6 +33,8 @@ class Compiler
 		.construct(verbosity, ProblemAction.Exit)
 
 	def construct(verbosity as int, whenError as ProblemAction)
+		_nextSerialNum += 1
+		_serialNum = _nextSerialNum
 		_verbosity = verbosity
 		_modules = List<of Module>()
 		_whenError = whenError
@@ -37,6 +42,11 @@ class Compiler
 		_nameSpaceStack = Stack<of NameSpace>()
 		_boxStack = Stack<of Box>()
 		_codeMemberStack = Stack<of ICodePart>()
+
+	def toString as String is override
+		return '[.getType().name]([_serialNum])'
+
+	get globalNS from var
 
 	get modules from var
 
@@ -189,8 +199,9 @@ class Compiler
 		# TODO: bindInt to all existing types
 		Node.setCompiler(this)
 		try
-			for module in _modules
-				module.bindInt()
+			for module in _modules  # CC: make that _curModule and axe following assignment statement
+				_curModule = module
+				_curModule.bindInt()
 		finally
 			Node.setCompiler(nil)
 
@@ -198,13 +209,50 @@ class Compiler
 		# TODO: bindImp to all existing types
 		Node.setCompiler(this)
 		try
-			for module in _modules
-				module.bindImp()
+			for module in _modules  # CC: make that _curModule and axe following assignment statement
+				_curModule = module
+				_curModule.bindImp()
 		finally
 			Node.setCompiler(nil)
 
-	def symbolForName(name as String, canBeMember as bool) as INode?
-		return nil
+	def symbolForName(name as String, canBeMember as bool, haveThis as bool) as IMember?
+		"""
+		name - obvious.
+		canBeMember - the symbol can be a member of the current box
+			TODO: can this be retired now that there is findLocal()?
+		haveThis - if false, symbols like methods, properties, etc. will not be returned while enums, nested classes, etc. could be.
+		"""
+		require
+			name
+		code
+			assert _curModule
+
+			# TODO: is canBeMember ever false?
+
+			if name[0].toString().toLower()==name[0] and name[0]>=c'a' and name[0]<=c'z'  # TODO: cut out first part of expr?
+				assert false, 'use findLocal() instead. [name]'
+				return nil
+
+			boxStack = Stack<of Box>(_boxStack)
+			while boxStack
+				box = boxStack.pop()
+				x = box.symbolForName(name, canBeMember, haveThis)
+				if x is not nil
+					return x
+
+			nameSpaceStack = Stack<of NameSpace>(_nameSpaceStack)
+			while nameSpaceStack
+				ns = nameSpaceStack.pop()
+				assert ns.superNameSpace is nil or ns.superNameSpace is not nil
+				x = ns.symbolForName(name)
+				if x is not nil
+					return x
+
+			x = _curModule.symbolForName(name)
+			if x is not nil
+				return x
+
+			return _globalNS.symbolForName(name)
 
 
 	##
@@ -217,14 +265,18 @@ class Compiler
 		Example:
 			.compiler.libraryType('System', 'String')
 		"""
-		ns = _globalNS
+		ns as IContainer = _globalNS
+		thing as IContainer? = nil
 		for name in names
-			what = ns.declForName(name)
-			assert what, 'name=[name], names=[names]'
-		if what inherits IType
-			return what
+			possible = (thing ? ns).declForName(name)
+			if possible inherits IContainer
+				thing = possible
+			else
+				assert false, possible
+		if thing inherits IType
+			return thing
 		else
-			assert false, 'found [name], but it is not an IType. it is [what]'
+			assert false, 'found [name], but it is not an IType. it is [thing]'
 
 
 	##

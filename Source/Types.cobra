@@ -147,6 +147,10 @@ class CobraType
 		throw OverrideException()
 		return false
 
+	get namedType as IType? is override
+		# TODO: is this essential? if so, perhaps "namedType" --> "effectiveType"
+		return this
+
 	get innerType as IType?
 		return nil
 
@@ -387,6 +391,15 @@ class TypeIdentifier
 
 	get name from var
 
+	get actualType from var
+
+	get namedType as IType? is override
+		require
+			.didBindInt
+			.actualType
+		code
+			return _actualType
+
 	def equals(other as Object) as bool is override
 		if other is nil
 			return false
@@ -404,17 +417,22 @@ class TypeIdentifier
 		base._bindInt()
 		# don't need to check "basic types" like int, bool, etc. here. the parser does those.
 		if Utils.isCapped(_name)
-			symbol = .compiler.symbolForName(.name, true)  # nested enum and class types are capped and are members of the current class
+			symbol = .compiler.symbolForName(.name, true, false)  # nested enum and class types are capped and are members of the current class
 		else
 			symbol = nil
 		if symbol is nil
 			sugg = ''
 			if not Utils.isCapped(_name)
 				sugg = Utils.capped(_name)
-				other = .compiler.symbolForName(sugg, true)
+				other = .compiler.symbolForName(sugg, true, false)
 				sugg = if(other, ' Try "[sugg]".', '')
 			_error('Cannot find type for "[_name]".[sugg]')
 
-		what = symbol.namedType
-		assert what!
-		_actualType = what
+		if symbol inherits IType
+			_actualType = symbol
+		else
+			what = symbol.namedType
+			assert what!, symbol
+			_actualType = what
+
+		assert _actualType is not nil

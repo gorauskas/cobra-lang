@@ -72,6 +72,10 @@ class AsExpr
 		_typeNode.bindInt()
 		_typeNode.bindImp()
 		_type = _typeNode.namedType
+		# TODO:  @@@@@@ remove this escape
+		if _type is nil
+			return
+		assert _type, _typeNode
 		_type.bindImp()
 		# make the local var if necessary (usually is)
 # TODO:		definition = compiler.findLocal(.name)
@@ -238,6 +242,12 @@ class IdentifierExpr
 
 	get definition from var
 
+	def _bindImp is override
+		base._bindImp()
+		if _definition is nil
+			assert false, _text
+			# @@@@@@ LEFT OFF HERE
+
 	def memberForName(name as String) as IMember? is override
 		require
 			.didBindImp
@@ -304,7 +314,7 @@ class MemberExpr
 			.binarySuperNode.op == 'DOT'
 			.binarySuperNode.right is this
 		ensure
-			.type  # CC: should really be the ensure of Expr
+			true or .type  # TODO: get rid of true @@@@@ # CC: should really be the ensure of Expr
 		code
 			base._bindImp()
 			if _definition is nil or _type is nil
@@ -459,10 +469,13 @@ class AtomicLiteral
 		base.construct(token)
 		_text = token.text
 
+	def bindImp as INode is override
+		base.bindImp()
+		assert _type, this
+		return this
+
 	def _bindImp is override
 		base._bindImp()
-		assert _type, this
-		_type.bindImp()
 
 	def toCobraSource as String is override
 		return _text
@@ -479,8 +492,8 @@ class BoolLiteral
 		_value = token.text=='true'
 
 	def _bindImp is override
-		_type = .compiler.typeForName('bool')
 		base._bindImp()
+		_type = .compiler.boolType
 
 	get asCS as String is override
 		return if(_value, 'true', 'false')
@@ -517,6 +530,10 @@ class DecimalLit
 		base.construct(token)
 		_value = token.value to decimal
 
+	def _bindImp is override
+		base._bindImp()
+		_type = .compiler.decimalType
+
 	get asCS as String is override
 		return _value.toString()
 
@@ -531,6 +548,10 @@ class FloatLit
 		base.construct(token)
 		_value = token.value to float
 
+	def _bindImp is override
+		base._bindImp()
+		_type = .compiler.floatType
+
 	get asCS as String is override
 		return _value.toString()
 
@@ -544,6 +565,10 @@ class IntegerLit
 		require token.value inherits int
 		base.construct(token)
 		_value = token.value to int
+
+	def _bindImp is override
+		base._bindImp()
+		_type = .compiler.intType
 
 	get asCS as String is override
 		return _value.toString()
@@ -571,12 +596,12 @@ class StringLit
 
 	def _bindInt is override
 		if not _type
-			_type = .compiler.typeForName('String')
+			_type = .compiler.libraryType('System', 'String')
 		base._bindInt()
 
 	def _bindImp is override
 		if not _type
-			_type = .compiler.typeForName('String')
+			_type = .compiler.libraryType('System', 'String')
 		base._bindImp()
 
 #	def toCobraSource(self)

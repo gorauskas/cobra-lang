@@ -31,6 +31,21 @@ class Box
 			_declsByName[ol.name] = ol
 			_declsByName[ol.name.toLower()] = ol
 
+	def symbolForName(name as String, canBeMember as bool, haveThis as bool) as IMember?
+		"""
+		Unlike the inherited declForName(), this method follows the
+		inheritance change and provides options for canBeMember and
+		haveThis.
+		"""
+		# TODO: is canBeMember ever false?
+		if not canBeMember
+			return nil
+		x = .declForName(name)
+		if x and not haveThis
+			if x.requiresThis
+				return nil
+		return x
+
 	def _bindInt is override
 		base._bindInt()
 		.compiler.boxStack.push(this)
@@ -42,6 +57,7 @@ class Box
 
 	def _bindImp is override
 		base._bindImp()
+		assert .didBindInt
 		.compiler.boxStack.push(this)
 		try
 			for decl in _declsInOrder
@@ -136,12 +152,22 @@ class ClassMember  # TODO: rename to BoxMember
 #	get isInterfaceMember as bool
 #		return _box inherits Interface
 
+	get requiresThis as bool
+		return true
+
 	get resultType as IType
 		"""
 		The result type of the var, method or property.
 		"""
 		throw OverrideException()
 		return CobraType()
+
+	def _bindInt is override
+		base._bindInt()
+
+	def _bindImp is override
+		base._bindImp()
+		assert .didBindInt  # class members should have always received a bindInt first
 
 	def addMinFields is override
 		base.addMinFields()
@@ -213,8 +239,9 @@ class OneCodeBlockMember
 	var _stmts as List<of Stmt>
 	var _csResultVarName as String?
 
-	def construct(token as IToken, box as Box, name as String, docString as String)
+	def construct(token as IToken, box as Box, name as String, docString as String, paramsList as List<of Param>)
 		base.construct(token, box, name, docString)
+		_params = paramsList
 		_oldExprs = List<of Expr>()
 		_locals = List<of LocalVar>()
 		_stmts = List<of Stmt>()
@@ -424,8 +451,7 @@ class Method
 	var _implementsList as List<of INode>
 
 	def construct(token as IToken, box as Box, name as String, paramsList as List<of Param>, returnTypeNode as INode, isNames as List<of String>, implementsList as List<of INode>, docString as String)
-		base.construct(token, box, name, docString)
-		_params = paramsList
+		base.construct(token, box, name, docString, paramsList)
 		_returnTypeNode = returnTypeNode
 		_isNames = isNames
 		_implementsList = implementsList
@@ -508,7 +534,7 @@ class AbstractLocalVar
 
 	def _bindInt is override
 		base._bindInt()
-		_type.bindInt()
+		_resolveType()
 
 	def _bindImp is override
 		base._bindImp()

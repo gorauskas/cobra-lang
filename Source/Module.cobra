@@ -1,11 +1,15 @@
 class Module
 	inherits Node
 
+	var _fileName as String
 	var _declsInOrder as List<of IMember>
 
 	def construct(fileName as String, verbosity as int)
+		require fileName
 		base.construct()
+		_fileName = fileName
 		_declsInOrder = List<of IMember>()
+		# TODO: what's going on with verbosity?
 
 	get declsInOrder as List<of IMember>
 		return _declsInOrder
@@ -19,8 +23,30 @@ class Module
 	def addSubFields is override
 		.addField('declsInOrder', _declsInOrder)
 
+	def symbolForName(name as String) as IMember?
+		# TODO: make faster?
+		for decl in _declsInOrder
+			if decl.name==name
+				return decl
+		for decl in _declsInOrder
+			if decl inherits UseDirective
+				x = decl.findSymbol(name)
+				if x is not nil
+					return x
+		return nil
+
+	def addMinFields is override
+		base.addMinFields()
+		.addField('fileName', _fileName)
+
+	def _bindInt is override
+		base._bindInt()
+		for decl in _declsInOrder
+			decl.bindInt()
+
 	def _bindImp is override
 		base._bindImp()
+		assert .didBindInt
 		for decl in _declsInOrder
 			decl.bindImp()
 

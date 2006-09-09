@@ -19,6 +19,9 @@ class NameSpace
 # TODO:		_type = tnamespace
 		_subNameSpaces = Dictionary<of String, NameSpace>()
 
+	get isGlobal as bool
+		return _superNameSpace is nil and _name=='(global)'
+
 	get superNameSpace from var
 
 	def addMinFields is override
@@ -56,47 +59,48 @@ class NameSpace
 			.addDecl(ns)
 		return ns
 
-#	def dumpNames(self, out):
-#		out.write('%s %s %s:\n' % (self.__class__.__name__, self.name, len(self.declsInOrder)))
-#		out.indent()
-#		for decl in self.declsInOrder:
-#			decl.dumpName(out)
-#			if inherits(decl, NameSpace):
-#				decl.dumpNames(out)
-#		out.dedent()
+	def _bindInt is override
+		base._bindInt()
+		.compiler.nameSpaceStack.push(this)
+		try
+			for decl in _declsInOrder
+				decl.bindInt()
+		finally
+			.compiler.nameSpaceStack.pop()
 
-#	def dumpName(self, out):
-#		type = getattr(self, 'type', '(no type)')
-#		out.write('%s as %s  (%s)\n' % (self.name, type, self.__class__.__name__))
+	def _bindImp is override
+		base._bindImp()
+		.compiler.nameSpaceStack.push(this)
+		try
+			for decl in _declsInOrder
+				decl.bindImp()
+		finally
+			.compiler.nameSpaceStack.pop()
 
-#	def _bindInt(self, compiler):
-#		v = false
-#		if v: print '>> bindInt for namespace %s' % self.name; sys.stdout.indent()
-#		RootType._bindInt(self, compiler)
-#		compiler.nameStack.push(self)
-#		for decl in self.declsInOrder:
-#			if v: print '<> %r, %r' % (decl.__class__, decl.name)
-#			decl.bindInt(compiler)
-#		compiler.nameStack.pop()
-#		if v: sys.stdout.dedent(); print '<< bindInt for namespace %s' % self.name
+	def symbolForName(name as String) as IMember?
+		# our name?
+		if name==_name
+			return this
 
-#	def _bindImp(self, compiler):
-#		RootType._bindImp(self, compiler)
-#		compiler.nameStack.push(self)
-#		for decl in self.declsInOrder:
-#			decl.bindImp(compiler)
-#		compiler.nameStack.pop()
+		# our decl?
+		x = .declForName(name)
+		if x is not nil
+			return x
 
-#	def memberForName(self, name):
-#		assert 0, name
+		# a parent namespace?
+		if _superNameSpace and not _superNameSpace.isGlobal  # Compiler will search the global namespace
+			x = _superNameSpace.symbolForName(name)
+			if x is not nil
+				return x
 
-#	def symbolForName(self, name, canBeMember=false):
-#		v = false
-#		if v:
-#			print '>> NameSpace.symbolForName(%r, %s) self=%s' % (name, canBeMember, self.name)
-#			sys.stdout.indent()
-#		if name==self.name:
-#			symbol = self
+		# inside a use directive?
+		for decl in _declsInOrder
+			if decl inherits UseDirective
+				x = decl.findSymbol(name)
+				if x is not nil
+					return x
+		return nil
+
 #		else:
 #			symbol = self.declsByName.get(name, nil)
 #			if symbol is nil:
@@ -125,6 +129,13 @@ class NameSpace
 			assert decl.superNameSpace is this  # TODO: can this be moved to require?
 #		decl.nameSpace = self  # @@@@ TODO: Do I need this?
 
+	def subNameSpaceForName(name as String) as NameSpace?
+		require name
+		if _subNameSpaces.containsKey(name)
+			return _subNameSpaces[name]
+		else
+			return nil
+
 #	def genCS(self, out):
 #		out.writeAndIndent('namespace %s {\n\n' % self.name)
 #		for decl in self.declsInOrder:
@@ -136,6 +147,52 @@ class NameSpace
 #		Used in expressions.
 #		"""
 #		return self.name
+
+
+class UseDirective
+	inherits SyntaxNode
+	implements IMember
+
+	var _nameParts as List<of String>
+	var _boundNameSpace as NameSpace?
+
+	def construct(token as IToken, obj as Object?, nameParts as List<of String>)
+		base.construct(token)
+		_nameParts = nameParts
+
+	get isCallable as bool
+		return false
+
+	def findSymbol(name as String) as IMember?
+		if not .didBindInt
+			return nil
+		return _boundNameSpace.symbolForName(name)
+
+	def _bindInt is override
+		require .compiler.globalNS
+		base._bindInt()
+		curNS as NameSpace? = .compiler.globalNS  # CC: either "as ?" or "to ?"
+		for name in _nameParts
+			curNS = curNS.subNameSpaceForName(name)
+			if curNS is nil
+				break
+		# TODO: this assertion can be re-established when Cobra reads DLLs
+		#assert curNS, 'last name=%r, self.dottedNames=%r' % (name, self.dottedNames)
+		_boundNameSpace = curNS
+
+	## IMember
+
+	get englishName as String
+		return 'use directive'
+
+	get name as String
+		return CobraCore.toTechString(_nameParts)  # TODO: clean this up a bit and give this an impossible prefix so it can't actually be referred to from a Cobra program
+
+	get requiresThis as bool
+		return false
+
+	get resultType as IType
+		assert false, 'should never use the result type of a UseDirective'
 
 
 class ArgumentException
