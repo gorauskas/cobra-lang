@@ -58,8 +58,7 @@ class AsExpr
 	"""
 
 	var _name as String
-#	var _token as IToken  # the 'as' keyword
-	var _nameToken as IToken  # the identifier
+	var _nameToken as IToken  # the identifier vs. the `as` keyword which is the main token
 	var _typeNode as INode
 	var _definition as INode?
 
@@ -69,29 +68,28 @@ class AsExpr
 		_name = nameToken.text
 		_typeNode = typeNode
 
-# TODO:
-#	def __repr__
-#		return 'AsExpr(%s, %r, %r, type=%r, definition=%r)' % (
-#		.serialNum, .token, .name, .type, getattr('definition', '(none)'))
+	def addMinFields is override
+		base.addMinFields()
+		.addField('name', _name)
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('typeNode', _typeNode)
+		.addField('definition', _definition)
 
 	def _bindImp is override
 		base._bindImp()
-		_typeNode.bindInt()
-		_typeNode.bindImp()
+		_typeNode.bindAll()
 		_type = _typeNode.namedType
-		# TODO:  @@@@@@ remove this escape
-		if _type is nil
-			return
 		assert _type, _typeNode
-		_type.bindImp()
+		_type.bindAll()  # TODO: is this needed? try commenting out after whole test suite passes
 		# make the local var if necessary (usually is)
-# TODO:		definition = compiler.findLocal(.name)
-		definition as LocalVar?
+		definition = .compiler.findLocal(_name)
 		if definition is nil
-			definition = LocalVar(_nameToken, _type)
-			definition.bindAll()
-# TODO:			.compiler.nameStack.peek().pushName(definition)
-			_definition = definition
+			newVar = LocalVar(_nameToken, _type)
+			newVar.bindAll()
+			.compiler.codeMemberStack.peek().addLocal(newVar)
+			_definition = newVar
 		# TODO: check for redefinitions that are invalid by comparing .type with definition.type
 
 # TODO:
