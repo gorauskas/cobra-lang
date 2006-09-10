@@ -127,6 +127,8 @@ interface IType
 
 	def isAssignableTo(type as IType) as bool
 
+	def isDescendantOf(type as IType) as bool
+
 	get innerType as IType?
 		"""
 		Used by the enumerable for statement to infer the type of the control variable.
@@ -142,11 +144,16 @@ class CobraType
 	inherits Node
 	implements IType
 
+	var _superType as CobraType?
+
 	def construct
 		base.construct()
 
 	get name as String
 		return .getType().toString()
+
+	get superType as CobraType?
+		return _superType
 
 	def isAssignableTo(type as IType) as bool
 		throw OverrideException(.getType())
@@ -173,6 +180,21 @@ class CobraType
 		Returns nil by default.
 		"""
 		return nil
+
+	def isDescendantOf(type as IType) as bool
+		"""
+		Returns true if this type is a subtype (direct or indirect) of type.
+		"""
+		if this is type
+			return true
+		curType as CobraType? = this  # CC: change to: curType = this to ?
+		while true
+			if curType is type
+				return true
+			curType = curType.superType
+			if curType is nil
+				break
+		return false
 
 	def equals(obj as Object) as bool is override
 		if obj is nil
@@ -241,6 +263,12 @@ class DynamicType
 	get name as String is override
 		return 'dynamic'
 
+	def isDescendantOf(type as IType) as bool is override
+		"""
+		dynamic is compatible with all types because it is fully dynamic--only
+		at runtime will it be checked.
+		"""
+		return true
 
 class FloatType
 	inherits ValueType
