@@ -27,6 +27,9 @@ class Expr
 
 	pro type from var
 
+	get receiverType as IType?  # TODO: consider renaming to typeForReceiver.
+		return _receiverType ? _type
+
 	def toCobraSource as String
 		return ''
 
@@ -352,6 +355,9 @@ class MemberExpr
 			if _definition is nil or _type is nil
 				_definition = .binarySuperNode.left.memberForName(_name)
 				if _definition is nil
+					if .binarySuperNode.left.receiverType is .compiler.passThroughType
+						_type = .compiler.passThroughType
+						return
 					if _name=='length'
 						# TODO get rid of this total hack to support the vari type (and possibly arrays in general)
 						_type = .compiler.intType
@@ -361,7 +367,7 @@ class MemberExpr
 						sugg = 'If the name is essentially correct, try the lowercase version ("[Utils.uncapped(_name)]") instead.'
 					else
 						sugg = ''
-					_error('Cannot find a definition for "[_name]" in "[.binarySuperNode.left.type.name]" whose type is "[.binarySuperNode.left.type.name]". [sugg]')
+					_error('Cannot find a definition for "[_name]" in "[.binarySuperNode.left.token.text]" whose type is "[.binarySuperNode.left.receiverType.name]". [sugg]')
 				assert _definition
 				if _definition inherits IType
 					assert false, 'TODO: handle foo.sometype'
