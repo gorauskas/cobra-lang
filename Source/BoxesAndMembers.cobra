@@ -80,11 +80,48 @@ class Box
 class Class
 	inherits Box
 
-	# TODO: store base type
-	# TODO: 	def isDescendantOf(type as IType) as bool
+	var _baseClass as Class?
+	var _baseName as String
 
 	def construct(token as IToken, name as String, paramList as List<of INode>, isNames as List<of String>, baseName as String?, interfaceNames as List<of String>, docString as String?)
 		base.construct(token, name, docString)
+		_baseName = baseName ? "Object"  # TODO: this would pick up a local object instead of System.Object. Is that what's wanted?
+
+	def isAssignableTo(type as IType) as bool is override
+		if type is .compiler.passThroughType
+			return true
+		# TODO:
+		# if type inherits WrappedType
+		#	return .isAssignableTo(type.wrappedType)
+		return .isDescendantOf(type)
+
+	def isDescendantOf(type as IType) as bool is override
+		if not type.didBindInt
+			type.bindInt()
+		curClass as Class? = this  # CC: change to: curClass = this to ?
+		while curClass is not nil
+			if curClass is type
+				return true
+			curClass = curClass.baseClass
+		# TODO: handle interfaces
+		return false
+
+	get baseClass from var
+
+	def _bindInt is override
+		possible = .compiler.symbolForName(_baseName, false, false)  # should canBeMember be true?
+		if possible is nil
+			_error('Cannot locate base class named "[_baseName]" for class "[_name]".')
+		if possible inherits Class
+			_baseClass = possible
+		else if possible inherits Interface
+			_error('The base "[_baseName]" is an interface. Try "implements" instead of "inherits".')
+# TODO:
+#		else if possible inherits Struct
+#			_error('The base "[_baseName]" is a struct. Classes cannot inherit from structs.')
+		else
+			_error('The base class "[_baseName]" is not actually a class, it is a "[possible.englishName]".')
+		base._bindInt()
 
 	get englishName as String is override
 		return 'class'
