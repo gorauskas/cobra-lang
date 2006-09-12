@@ -9,6 +9,8 @@ class BinaryOpExpr
 			branch opToken.which
 				on 'TO'
 					return ToExpr(opToken, op, left, right)
+				on 'ASSIGN'
+					return AssignExpr(opToken, op, left, right)
 				else
 					return BinaryOpExpr(opToken, op, left, right)
 			# CC: axe the if true pass below which is there to shore up a parsing bug for branch. or maybe it's the multiline else above because it was single line originally and I had to change it
@@ -43,8 +45,12 @@ class BinaryOpExpr
 
 	def _bindImp is override
 		base._bindImp()
+		assert _left is not this, this
+		assert _right is not this, this
 		_left.bindImp()
 		_right.bindImp()
+		assert _left.didBindImp
+		assert _right.didBindImp
 
 	def addRefFields is override
 		base.addRefFields()
@@ -56,6 +62,32 @@ class BinaryOpExpr
 		.addField('left', _left)
 		.addField('right', _right)
 
+
+class AssignExpr
+	inherits BinaryOpExpr
+
+	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
+		base.construct(opToken, op, left, right)
+
+# TODO:
+#	def _bindImp is override
+#		base._bindImp()
+#		left = _left
+#		right = _right
+#		if left inherits IdentifierExpr and left.definition is nil:
+#			assert right.type
+#			if right.type is tpassthrough
+#				_error('Cannot infer type for "[left.text]" because the type of the right hand expression is unknown.')
+#			# type inference
+#			if left.text.startswith('_'):
+#				self.error('No class variable named "%s" exists and local variable declarations cannot start with an underscore (_).' % left.text)
+#			definition = LocalVar(left.token, right.type)
+#			definition.bindAll(compiler)
+#			compiler.nameStack.peek().pushName(definition)
+#			left.definition = definition
+#			left.type = definition.type
+#		if left.definition is nil
+#			compiler.errorUnknownId(left, left.text)
 
 class ToExpr
 	inherits BinaryOpExpr
