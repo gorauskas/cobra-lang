@@ -540,9 +540,92 @@ class Parser
 		assert false, 'TO DO'
 		return nil to passthrough
 
-	def structDecl as Class  # TODO: StructDecl
-		assert false, 'TO DO'
-		return nil to passthrough
+	def structDecl as Struct
+		token = .expect('STRUCT')
+		peek = .peek().which
+		if peek == 'ID'
+			token = .expect('ID')
+			name = token.value to String
+		else if peek == 'OPEN_GENERIC'
+			token = .expect('OPEN_GENERIC')
+			name = token.value to String
+		else
+			_error('Expecting a class name.')
+		if name[0] not in _uppercaseLetters
+			_error('Struct names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
+
+		# CC: rename paramsList to params (can't do it now because it's a C# reserved word and Cobra needs to generate IL or 'escape' these)
+#		paramsList = []
+#		if token.which=='OPEN_GENERIC'
+#			expectComma = false
+#			while 1
+#				if .peek().which=='GT'
+#					.grab()
+#					break
+#				if expectComma
+#					.expect('COMMA')
+#				ident = .expect('ID').value
+#				paramsList.append(GenericParam(ident))
+#				expectComma = true
+
+		.indent()
+
+		isNames = .isDeclNames()
+
+#		while .optional('WHERE')
+#			if token.which<>'OPEN_GENERIC'
+#				_error('Unexpected where clause for non-generic class.')
+#			paramName = .expect('ID').value
+#			found = false
+#			for param in params
+#				if param.name==paramName
+#					found = true
+#					break
+#			if not found
+#				_error('Unknown generic parameter "%s".' % name)
+#			if param.constraints
+#				_error('Already specified constraints for "%s".' % name)
+#			.expect('MUST')
+#			.expect('BE')
+#			expectComma = false
+#			while 1
+#				if expectComma
+#					.expect('COMMA')
+#				param.constraints.append(.genericConstraint())
+#				if .optional('EOL')
+#					break
+#				expectComma = true
+		paramList = List<of INode>() # TODO: axe
+
+		baseName as String?
+		if .optional('INHERITS')
+			_error('Structs cannot inherit. If you mean to implement an interface, use "implements" instead.')
+
+#		interfaceNames = []
+#		if .optional('IMPLEMENTS')
+#			expectComma = false
+#			while 1
+#				if .peek().which=='EOL'
+#					.grab()
+#					break
+#				if expectComma
+#					.expect('COMMA')
+#				interfaceName = .type()  # using .type since interface could be a generic like IEnumerable(of T)
+#				interfaceNames.append(interfaceName)
+#				expectComma = true
+		interfaceNames = List<of String>()  # TODO: axe
+
+		docString = .docString()
+
+		theStruct = Struct(token, name, paramList, isNames, baseName, interfaceNames, docString)
+
+		# TODO when supporting nested classes, look at the clintDeclStack and set a back pointer here
+		_boxStack.push(theStruct)
+#		.isNamesStack = Stack(str)
+		.classMemberDecls(theStruct)
+		_boxStack.pop()
+
+		return theStruct
 
 	def enumDecl as EnumDecl
 		token = .expect('ENUM')
@@ -600,7 +683,7 @@ class Parser
 		_nameSpaceStack.pop()
 		return curNameSpace
 
-	def classMemberDecls(theClass as Class)
+	def classMemberDecls(theClass as Box)  # TODO: rename theClass to box
 		decl as INode?
 		breakLoop = false  # cannot use 'break' to stop a 'while' loop in a branch statement. CC?
 		while not breakLoop
@@ -623,7 +706,7 @@ class Parser
 				theClass.addDecl(decl to IMember)  # CC: axe typecast when if gets smart about not nil
 		.dedent()
 
-	def classMemberDeclsShared(theClass as Class)
+	def classMemberDeclsShared(theClass as Box)
 		.expect('SHARED')
 		.indent()
 		_isNamesStack.push('shared')
@@ -679,7 +762,7 @@ class Parser
 			returnType = _typeProvider.voidType
 		assert returnType
 
-		if curClass inherits Class
+		if curClass inherits Class or curClass inherits Struct
 			isNames = .indentIsDeclNames()
 #			implements = .optional('IMPLEMENTS') and .type() or nil
 #			if implements
@@ -857,7 +940,7 @@ class Parser
 			returnType = _typeProvider.dynamicType
 		assert returnType!
 
-		if .curBox inherits Class
+		if .curBox inherits Class or .curBox inherits Struct
 			isNames = .indentIsDeclNames()
 			docString = .docString()
 			prop = Property(token, .curBox, name, returnType, isNames, docString)

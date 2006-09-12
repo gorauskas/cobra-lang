@@ -121,6 +121,9 @@ class Node
 	var _didBindInt as bool
 	var _didBindImp as bool
 
+	var _isBindingInt as bool
+	var _isBindingImp as bool
+
 	var _didBindIntBase as bool
 	var _didBindImpBase as bool
 
@@ -172,11 +175,15 @@ class Node
 		Invoke this method; do not override it.
 		"""
 		require .compiler
-		if not _didBindInt
-			_didBindIntBase = false
-			_bindInt()
-			assert _didBindIntBase, this
-			_didBindInt = true
+		if not _didBindInt and not _isBindingInt
+			_isBindingInt = true
+			try
+				_didBindIntBase = false
+				_bindInt()
+				assert _didBindIntBase, this
+				_didBindInt = true
+			finally
+				_isBindingInt = false
 		return this
 
 	def _bindInt
@@ -191,11 +198,16 @@ class Node
 		"""
 		Invoke this method; do not override it.
 		"""
-		if not _didBindImp
-			_didBindImpBase = false
-			_bindImp()
-			assert _didBindImpBase, this
-			_didBindImp = true
+		require .compiler
+		if not _didBindImp and not _isBindingImp
+			_isBindingImp = false
+			try
+				_didBindImpBase = false
+				_bindImp()
+				assert _didBindImpBase, this
+				_didBindImp = true
+			finally
+				_isBindingImp = false
 		return this
 
 	def _bindImp
