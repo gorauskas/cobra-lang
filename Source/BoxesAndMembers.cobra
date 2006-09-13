@@ -267,8 +267,82 @@ class ClassMember  # TODO: rename to BoxMember
 class ClassVar
 	inherits ClassMember
 
-	def construct(token as IToken, box as Box, name as String, docString as String)
+	var _typeNode as INode
+	var _type as IType?
+	var _initExpr as Expr?
+	var _ifInheritsStack as Stack<of IType>
+	var _useCSNameStack as Stack<of String>
+
+	def construct(token as IToken, box as Box, name as String, typeNode as INode, isNames as List<of String>, initExpr as Expr?, docString as String)
 		base.construct(token, box, name, docString)
+		_typeNode = typeNode
+		_initExpr = initExpr
+		_ifInheritsStack = Stack<of IType>()
+		_useCSNameStack = Stack<of String>()  # for if-inherits
+
+	get defaultAccessLevel as String is override
+		return 'protected'
+
+	def addRefFields is override
+		base.addRefFields()
+		if _type
+			.addField('type', _type)
+		else
+			.addField('typeNode', _typeNode)
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('initExpr', _initExpr)
+
+	# TODO @@@ who calls this and when?
+	def symbolForName(name as String, canBeMember as bool) as IMember?
+		t as IType? = if(_ifInheritsStack, _ifInheritsStack.peek() to passthrough, _type)  # CC: get rid of cast and 'as'
+		return t.memberForName(name)  # TODO is "true" the correct value here?
+
+	get requiresDotPrefix as bool
+		return _box is not nil and not _name.startsWith('_')
+
+	def _bindInt is override
+		base._bindInt()
+		if _initExpr
+			_initExpr.bindImp()  # that's bindImp intentionally
+			if _type is nil
+				_type = _initExpr.type
+		if _type is nil
+			assert _typeNode, 'typeNode should be set if _type is nil'
+			_typeNode.bindInt()
+			t = _typeNode.namedType
+			t.bindInt()
+			assert t, _typeNode
+			if _initExpr and not _initExpr.isKindOf(t to IType)  # CC: axe cast when "assert foo" is understood to prove that foo is not nil
+				_error('The expression type of [_initExpr.type] does not match the variable type of [t].')
+			_type = t
+		_type.bindInt()  # TODO: is this needed?
+
+	get resultType as IType is override
+		"""
+		The result type of the var, method or property.
+		"""
+		if _type
+			return _type to passthrough  # CC: axe cast
+		else
+			assert false, '_type is nil. this=[this]'
+
+	get csName as String
+		return if(_useCSNameStack, _useCSNameStack.peek(), _name)
+
+	get csAssignmentNames as List<of String>
+		return List<of String>(_useCSNameStack)
+
+#	get asCS as String is override  # TODO probably don't need both an asCS() and csName (above)
+#		return .csName
+
+#	def genCS(out)
+#		out.write('%s%s %s' % (_isNamesCS(), _type.asCS(), _name))
+#		if _initExpr
+#			out.write(' = ')
+#			_initExpr.genCS(out)
+#		out.write(';\n')
 
 
 interface ICodePart

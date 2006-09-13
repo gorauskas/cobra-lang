@@ -683,7 +683,7 @@ class Parser
 		_nameSpaceStack.pop()
 		return curNameSpace
 
-	def classMemberDecls(theClass as Box)  # TODO: rename theClass to box
+	def classMemberDecls(theClass as Box)  # TODO: rename theClass to box. TODO: rename classMemberDecls to memberDeclsWithBodies() and comment that it works for classes and structs
 		decl as INode?
 		breakLoop = false  # cannot use 'break' to stop a 'while' loop in a branch statement. CC?
 		while not breakLoop
@@ -697,6 +697,7 @@ class Parser
 				on 'GET': theClass.addDecl(.declarePropertyGet())
 				on 'SET': theClass.addDecl(.declarePropertySet())
 				on 'PRO': theClass.addDecl(.declareProperty())
+				on 'VAR': theClass.addDecl(.classVarDecl())
 				on 'EOL': .oneOrMore('EOL')
 				on 'ENUM': theClass.addDecl(.enumDecl())
 				on 'SHARED': .classMemberDeclsShared(theClass)
@@ -720,6 +721,56 @@ class Parser
 			_warning('Encountered "pass" in a class that already has declared members.')  # TODO: change to an error
 		.grab()
 		.oneOrMore('EOL')
+
+	def classVarDecl as ClassVar
+		.expect('VAR')
+		tok = .expect('ID')
+		identifier = tok.text
+		other = .curBox.symbolForName(identifier, true, true)  # TODO: should probably really be symbolForName() even after the current symbolForName() becomes findSymbol() or findMember()
+		if other
+			# TODO need a test case to trigger this
+			# TODO: this seems a little fishy as the type may be legit, but not resolved yet due to a forward reference.
+			# The error message should not show '(no type)' or this check should be moved to bindInt
+			reportType = if(other.resultType, other.resultType.name, '(no type)')
+			_error('The name "[identifier]" was already declared earlier as a "reportType".')
+		if identifier[0]<>'_'
+			sugg = '_' + identifier
+			_error('Class variables must start with an underscore to distinguish them from other types of identifiers. Try "[sugg]".')
+		numUnderscores = 1
+		s = identifier.substring(1)
+		while s.startsWith('_')
+			s = s.substring(1)
+			numUnderscores += 1
+		if not s
+			_error('A class variable must be made of more than underscores. Try "[identifier]x" or "[identifier]1".')
+		if s[0] not in _lowercaseLetters
+			if s[0] in _uppercaseLetters
+				sugg = String(c'_', numUnderscores) + s[0].toString().toLower() + s.substring(1)
+				sugg = ' Try "[sugg]".'
+			_error('Class variables must start with lowercase letters (after the underscore(s)) to distinguish them from other types of identifiers.[sugg]')
+		type = if(.optional('AS'), .type(), nil)
+		if .optional('ASSIGN')
+			initExpr as Expr? = .expression()  # CC: initExpr = .expression() to ?
+		else
+			initExpr = nil
+			if type is nil
+				type = .typeProvider.dynamicType
+		docString as String? = ''  # CC: change to: docString = '' to ?
+		isNames = List<of String>(_isNamesStack)
+		if .peek().which=='IS'
+			isNames = .isDeclNames()
+			assert .last.which=='EOL'
+			.undo()  # need the EOL
+			if .optionalIndent()
+				docString = .docString()
+				.dedent()
+		else
+			if .optionalIndent()
+				isNames = .isDeclNames()
+				docString = .docString()
+				.dedent()
+		assert isNames is not nil
+		return ClassVar(tok, .curBox, identifier, type, isNames, initExpr, docString)
 
 	def declareMethod as Method
 		require _typeProvider
@@ -1410,7 +1461,6 @@ class Parser
 				# TODO Accept type, or id, or "id AS type". See what Boo does.
 				if false
 					exceptType as INode?
-					exceptVarName as String?
 					if .peek().which<>'EOL'
 						exceptType = .type()
 						if .peek().which=='ID'
