@@ -602,6 +602,56 @@ class ThrowStmt
 #		out.write(';\n')
 
 
+class UsingStmt
+	inherits Stmt
+
+	var _var as AbstractLocalVar
+	var _initExpr as Expr
+	var _block as BlockStmt
+
+	def construct(token as IToken, varr as AbstractLocalVar, initExpr as Expr, block as BlockStmt)
+		base.construct(token)
+		_var = varr
+		_initExpr = initExpr
+		_block = block
+
+	def _bindImp is override
+		base._bindImp()
+		_initExpr.bindImp()
+		varr = _var
+		if _var.type is nil
+			t = _initExpr.type
+			if t
+				varr.type = t
+			else
+				assert false, 'no type for initExpr [_initExpr]'
+		# TODO: add an error check that the var type and expr type are compatible
+		varr.bindImp()
+		if .compiler.findLocal(varr.name) is not varr
+			if varr inherits LocalVar
+				.compiler.codeMemberStack.peek().addLocal(varr)
+			else
+				assert false, 'expecting varr to be a LocalVar. varr=[varr]'
+		_block.bindImp()
+
+#	def genCS(self, out):
+#		Stmt.genCS(self, out)
+#		var = self.var
+#		out.write('// using\n')
+#		out.write('%s = ' % var.asCS())
+#		self.initExpr.genCS(out)
+#		out.write(';\ntry')
+#		self.block.genCS(out)
+#		out.write('finally {\n')
+#		out.indent()
+#		name = var.asCS()
+#		if var.type.isReference:
+#			out.write('if (%s!=null) { ((IDisposable)%s).Dispose(); %s = null; }\n' % (name, name, name))
+#		else:
+#			out.write('((IDisposable)%s).Dispose();\n')
+#		out.dedentAndWrite('}\n')
+
+
 class WhileStmt
 	inherits Stmt
 
