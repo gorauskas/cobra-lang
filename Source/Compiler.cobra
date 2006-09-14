@@ -1,10 +1,5 @@
 
 
-enum ProblemAction
-	Exit
-	Throw
-
-
 class Compiler
 	implements ITypeProvider
 	"""
@@ -19,7 +14,8 @@ class Compiler
 	var _nextSerialNum as int is shared
 	var _serialNum as int
 	var _verbosity as int
-	var _whenError as ProblemAction
+	var _whenError as ErrorActionEnum
+	var _whenWarning as WarningActionEnum
 	var _options as Dictionary<of String, Object>
 	var _globalNS as NameSpace
 	var _modules as List<of Module>
@@ -32,19 +28,26 @@ class Compiler
 	var _isBindingInt as bool
 	var _isBindingImp as bool
 
-	def construct(verbosity as int)
-		.construct(verbosity, ProblemAction.Exit)
+	var _warnings as List<of CobraWarning>
 
-	def construct(verbosity as int, whenError as ProblemAction)
+	def construct(verbosity as int)
+		.construct(verbosity, ErrorActionEnum.Exit)
+
+	def construct(verbosity as int, whenError as ErrorActionEnum)
+		.construct(verbosity, whenError, WarningActionEnum.Print)
+
+	def construct(verbosity as int, whenError as ErrorActionEnum, whenWarning as WarningActionEnum)
 		_nextSerialNum += 1
 		_serialNum = _nextSerialNum
 		_verbosity = verbosity
 		_modules = List<of Module>()
 		_whenError = whenError
+		_whenWarning = whenWarning
 		_globalNS = NameSpace(Token.empty, '(global)')
 		_nameSpaceStack = Stack<of NameSpace>()
 		_boxStack = Stack<of Box>()
 		_codeMemberStack = Stack<of ICodePart>()
+		_warnings = List<of CobraWarning>()
 
 	def toString as String is override
 		return '[.getType().name]([_serialNum])'
@@ -59,6 +62,8 @@ class Compiler
 
 	pro whenError from var
 
+	pro whenWarning from var
+
 	pro options from var
 
 	get nameSpaceStack from var
@@ -70,6 +75,8 @@ class Compiler
 		return _boxStack.peek() to Box  # CC: axe typecast
 
 	get codeMemberStack from var
+
+	get warnings from var
 
 	def parseFilesNamed(filenames as List<of String>) as List<of Module>
 		"""
@@ -99,9 +106,9 @@ class Compiler
 						print 'Parsing [filename]'
 					parser = Parser()
 					parser.verbosity = _verbosity
-					parser.whenError = if(_whenError==ProblemAction.Exit, Parser.WhenErrorEnum.exit, Parser.WhenErrorEnum.throww)
+					parser.whenError = _whenError
+					parser.whenWarning = _whenWarning
 					parser.typeProvider = this
-					# TODO: parser.whenWarning = whenWarning
 					assert _globalNS
 					parser.globalNS = _globalNS
 					# @@ TODO: assert _globalNS is parser.nameSpaceStack[0]
@@ -316,6 +323,16 @@ class Compiler
 			return _unknownSuggestions[name]
 		else
 			return nil
+
+	def warning(node as ISyntaxNode, msg as String)
+		require
+			node
+			msg
+		code
+			cw = CobraWarning(node.token, msg)
+			_warnings.add(cw)
+			# TODO: shouldn't this take action based on _whenError?
+			print cw
 
 	var _unknownSuggestions = {
 		# literals

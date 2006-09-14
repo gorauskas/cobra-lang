@@ -40,15 +40,8 @@ class Parser
 		p.typeProvider = BasicTypeProvider()
 		p.parseSource('test2', 'class Test\n\tdef main is shared\n\t\treturn\n')
 
-	enum WhenErrorEnum
-		exit
-		throww
-
-	enum WhenWarningEnum
-		emit
-		throww
-
-	var _whenError as WhenErrorEnum
+	var _whenError as ErrorActionEnum
+	var _whenWarning as WarningActionEnum
 
 	var _lowercaseLetters = 'abcdefghijklmnopqrstuvwxyz'
 	var _uppercaseLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -88,6 +81,8 @@ class Parser
 	pro verbosity from var
 
 	pro whenError from var
+
+	pro whenWarning from var
 
 	pro typeProvider from var
 
@@ -2043,8 +2038,8 @@ class Parser
 		if token
 			msg = '[token.fileName]([token.lineNum],[token.colNum]): error: [msg]'
 		else
-			msg = '[token.fileName](1, 1): error: [msg]'
-		if _whenError==WhenErrorEnum.exit
+			msg = '[_fileName](1, 1): error: [msg]'
+		if _whenError==ErrorActionEnum.Exit
 			print msg
 			if _verbosity>=1
 				print 'Last tokens:'
@@ -2059,7 +2054,15 @@ class Parser
 		throw ParserException(.last, msg)
 
 	def _warning(msg as String)
-		assert false, 'to do'
+		token = .last
+		branch _whenWarning
+			on WarningActionEnum.Print
+				w = CobraWarning(_fileName, token, msg)
+				print w.message
+			on WarningActionEnum.Throw
+				throw CobraWarning(_fileName, token, msg)
+			else
+				throw FallThroughException()
 
 	def _pushCodePart(codePart as ICodePart)
 		_codeParts.push(codePart)

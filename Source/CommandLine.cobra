@@ -43,7 +43,7 @@ class CobraCommandLine
 	def handle_compile(paths as List<of String>) as Compiler
 		# paths = paths or self.fileList  # TODO
 		c = Compiler(.verbosity)
-		c.whenError = ProblemAction.Exit  # CC: use extended syntax
+		c.whenError = ErrorActionEnum.Exit  # CC: use extended syntax
 		# c.options = _optionDict    # CC: use extended syntax  # TODO
 		c.parseFilesNamed(filenames=paths)
 		c.bindInt()
@@ -134,7 +134,7 @@ class CobraCommandLine
 			index = firstLine.indexOf('.error.')
 			error = firstLine.substring(index+7).trim().toLower()
 			try
-				c = Compiler(_verbosity, ProblemAction.Throw)
+				c = Compiler(_verbosity, ErrorActionEnum.Throw, WarningActionEnum.Print)
 				c.parseFilesNamed([baseName])
 				c.bindInt()
 				c.bindImp()
@@ -151,34 +151,33 @@ class CobraCommandLine
 			return 1
 
 		if firstLineInsensitive.startsWith('#.warning.')
-			print 'TODO: cannot handle .warning. directive yet'
-#			warning = firstLine.split('.warning.',1)[1].strip().lower()
-#			success = false
-#			try:
-#				c = Compiler(self.verbosity, 'raise')
-#				c.parseOne(filename=basename, source=source, whenWarning='raise')
-#				c.bindInt()
-#				c.bindImp()
-#				success = true
-#			except CobraWarning, cw:
-#				if str(cw).lower().find(warning)==-1:
-#					print 'Expecting warning substring: %r' % warning
-#					print 'Actual warning is: %s' % cw
-#					sys.exit(1)
-#				print 'Expected warning occurred: %r in %s' % (warning, cw)
-#				return 1
-#			found = false
-#			for w in c.warnings:
-#				if w.msg.lower().find(warning)!=-1:
-#					found = true
-#					break
-#			if found:
-#				print 'Expected warning occurred: %r in %s' % (warning, w.msg)
-#				return 1
-#			else:
-#				print 'Expecting warning substring: %r' % warning
-#				print 'No warning at all.'
-#				sys.exit(1)
+			index = firstLine.indexOf('.warning.')
+			warning = firstLine.substring(index+9).trim().toLower()
+			# TODO: the following code both checks for warnings to be thrown as well as going through a list of warnings. Seems like it should just need to do one or the other.
+			try
+				c = Compiler(_verbosity, ErrorActionEnum.Throw, WarningActionEnum.Throw)
+				c.parseFilesNamed([baseName])
+				c.bindInt()
+				c.bindImp()
+			catch cw as CobraWarning
+				if cw.message.toLower().indexOf(warning)==-1
+					print 'Expecting warning substring: "[warning]"'
+					print 'Actual warning is: "[cw.message]"'
+					Environment.exit(1)
+				print 'Expected warning occurred: "[warning]" in "[cw.message]"'
+				return 1
+			found = false
+			for cw in c.warnings
+				if cw.message.toLower().indexOf(warning)<>-1
+					found = true
+					break
+			if found
+				print 'Expected warning occurred: "[warning]" in "[cw.message]"'
+				return 1
+			else
+				print 'Expecting warning substring: "[warning]"'
+				print 'No warning at all.'
+				Environment.exit(1)
 
 		if firstLineInsensitive.startsWith('#.skip.')
 			print 'Skipping per directive on first line of test source.'
@@ -197,7 +196,7 @@ class CobraCommandLine
 #			filenames = nil
 
 		# not expecting an error
-		c = Compiler(_verbosity, ProblemAction.Exit)
+		c = Compiler(_verbosity, ErrorActionEnum.Exit)
 
 #		if filenames:
 #			c.parseFilesNamed(filenames=filenames)
