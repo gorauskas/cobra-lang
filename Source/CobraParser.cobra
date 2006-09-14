@@ -294,7 +294,23 @@ class Parser
 	## Common parsing bits (docString, indent, dedent, ...)
 
 	def docString as String?
-		return ''  # TODO
+		if .optional('DOC_STRING_START')
+			textParts = List<of String>()
+			keepGoing = true
+			while keepGoing
+				tok = .grab()
+				branch tok.which
+					on 'DOC_STRING_STOP'
+						# TODO: check that indentation level is correct
+						keepGoing = false
+					on 'DOC_STRING_BODY_TEXT'
+						textParts.add(tok.text)
+					else
+						_error('Expecting more doc string contents or the end of the doc string instead of [tok].')
+			text = Utils.join('', textParts)
+			return text
+		else
+			return ''
 
 	def indent as IToken
 		"""
