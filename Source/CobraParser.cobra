@@ -1441,33 +1441,33 @@ class Parser
 		# try... except... success... finally...
 		token = .expect('TRY')
 		tryBlock = .block()
-		exceptBlocks = List<of ExceptBlock>()
-		didGetAnyExceptionBlock = false  # meaning the except that specifies no specific type of exception
+		catchBlocks = List<of CatchBlock>()
+		didParseCatchAnyBlock = false  # meaning the catch that specifies no specific type of exception
 		useCatchMsg = 'Use "catch" instead of "except". (Also, use "throw" for throwing exceptions and "raise" for raising events.)'
 		if .peek().which=='EXCEPT'
 			_error(useCatchMsg)
 		while .peek().which=='CATCH'
 			catchToken = .grab()
 			if .peek().which in ['COLON', 'EOL']
-				if didGetAnyExceptionBlock
-					_error('Already encountered the "any exception" block.')
-				anyExceptBlock = .block()
-				exceptBlocks.add(ExceptBlock(catchToken, anyExceptBlock))
-				didGetAnyExceptionBlock = true
+				if didParseCatchAnyBlock
+					_error('Already encountered the "catch every exception" block.')
+				anyCatchBlock = .block()
+				catchBlocks.add(CatchBlock(catchToken, anyCatchBlock))
+				didParseCatchAnyBlock = true
 			else
-				if didGetAnyExceptionBlock
-					_error('Cannot have a specific exception block after the "any exception" block.')
+				if didParseCatchAnyBlock
+					_error('Cannot have a specific exception block after the "catch every exception" block.')
 				varr = .localVarDecl()
 				# TODO Accept type, or id, or "id AS type". See what Boo does.
 				if false
-					exceptType as INode?
+					catchType as INode?
 					if .peek().which<>'EOL'
-						exceptType = .type()
+						catchType = .type()
 						if .peek().which=='ID'
-							exceptVarToken = .expect('ID')
-							_curCodePart.addLocal(LocalVar(exceptVarToken, exceptType))
-				exceptBlock = .block()
-				exceptBlocks.add(ExceptBlock(exceptBlock.token, varr, exceptBlock))
+							catchVarToken = .expect('ID')
+							_curCodePart.addLocal(LocalVar(catchVarToken, catchType))
+				catchBlock = .block()
+				catchBlocks.add(CatchBlock(catchBlock.token, varr, catchBlock))
 		if .peek().which=='EXCEPT'
 			_error(useCatchMsg)
 		if .peek().which=='ELSE'
@@ -1484,9 +1484,9 @@ class Parser
 			finallyBlock = .block()
 		else
 			finallyBlock = nil
-		if not exceptBlocks and not successBlock and not finallyBlock
+		if not catchBlocks and not successBlock and not finallyBlock
 			_error('A try needs at least one "except", "success" or "finally" block.')
-		return TryStmt(token, tryBlock, exceptBlocks, successBlock, finallyBlock)
+		return TryStmt(token, tryBlock, catchBlocks, successBlock, finallyBlock)
 
 	def usingStmt as Stmt
 		# syntax: using x = e  block
@@ -2028,7 +2028,7 @@ class Parser
 					print s
 			if _verbosity<2
 				Environment.exit(1)
-				# otherwise raise an exception in order to be more verbose
+				# otherwise throw an exception in order to be more verbose
 		throw ParserException(.last, msg)
 
 	def _warning(msg as String)

@@ -453,22 +453,22 @@ class TryStmt
 	inherits Stmt
 
 	var _tryBlock as BlockStmt
-	var _exceptBlocks as List<of ExceptBlock>  # TODO: Rename to _catchBlocks
+	var _catchBlocks as List<of CatchBlock>
 	var _successBlock as BlockStmt?
 	var _finallyBlock as BlockStmt?
 	var _varNumber as int
 
-	def construct(token as IToken, tryBlock as BlockStmt, exceptBlocks as List<of ExceptBlock>, successBlock as BlockStmt?, finallyBlock as BlockStmt?)
+	def construct(token as IToken, tryBlock as BlockStmt, catchBlocks as List<of CatchBlock>, successBlock as BlockStmt?, finallyBlock as BlockStmt?)
 		base.construct(token)
 		_tryBlock = tryBlock
-		_exceptBlocks = exceptBlocks
+		_catchBlocks = catchBlocks
 		_successBlock = successBlock
 		_finallyBlock = finallyBlock
 
 	def addSubFields is override
 		base.addSubFields()
 		.addField('tryBlock', _tryBlock)
-		.addField('exceptBlock', _exceptBlocks)
+		.addField('catchBlock', _catchBlocks)
 		.addField('succesBlock', _successBlock)
 		.addField('finallyBlock', _finallyBlock)
 
@@ -476,7 +476,7 @@ class TryStmt
 		base._bindImp()
 		_varNumber = .compiler.curBox.makeNextPrivateSerialNumber()
 		_tryBlock.bindImp()
-		for eb in _exceptBlocks
+		for eb in _catchBlocks
 			eb.bindImp()
 		if _successBlock
 			_successBlock.bindImp()
@@ -498,8 +498,8 @@ class TryStmt
 #			out.write('%s = true;\n' % helperName)
 #			out.dedent()
 #			out.write('}\n')
-#			if .exceptBlocks
-#				.writeExceptBlocks(out)
+#			if .catchBlocks
+#				.writeCatchBlocks(out)
 #			else
 #				out.write('finally { }\n')  # syntactically necessary
 #			out.write('if (%s)' % helperName)
@@ -512,13 +512,13 @@ class TryStmt
 #		else
 #			out.write('try')
 #			.tryBlock.genCS(out)
-#			.writeExceptBlocks(out)
+#			.writeCatchBlocks(out)
 #			if .finallyBlock
 #				out.write('finally')
 #				.finallyBlock.genCS(out)
 
-#	def writeExceptBlocks(out)
-#		for eb in .exceptBlocks
+#	def writeCatchBlocks(out)
+#		for eb in .catchBlocks
 #			out.write('catch')
 #			if eb.type
 #				out.write(' (%s' % eb.type.name)
@@ -530,8 +530,7 @@ class TryStmt
 #			eb.block.genCS(out, top=top)
 
 
-# TODO: Rename to CatchBlock
-class ExceptBlock
+class CatchBlock
 	inherits SyntaxNode
 
 	var _var as AbstractLocalVar?
@@ -572,7 +571,7 @@ class ExceptBlock
 			if _type is nil
 				_type = _var.type
 				assert _type
-		_csHelperName = '_lh_except_[.compiler.curBox.makeNextPrivateSerialNumber()]'
+		_csHelperName = '_lh_catch_[.compiler.curBox.makeNextPrivateSerialNumber()]'
 		_block.bindImp()
 
 
