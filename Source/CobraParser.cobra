@@ -489,7 +489,7 @@ class Parser
 		# TODO when supporting nested classes, look at the clintDeclStack and set a back pointer here
 		_boxStack.push(theClass)
 #		.isNamesStack = Stack(str)
-		.classMemberDecls(theClass)
+		.bodiedBoxMemberDecls(theClass)
 		_boxStack.pop()
 
 		return theClass
@@ -622,7 +622,7 @@ class Parser
 		# TODO when supporting nested classes, look at the clintDeclStack and set a back pointer here
 		_boxStack.push(theStruct)
 #		.isNamesStack = Stack(str)
-		.classMemberDecls(theStruct)
+		.bodiedBoxMemberDecls(theStruct)
 		_boxStack.pop()
 
 		return theStruct
@@ -683,36 +683,39 @@ class Parser
 		_nameSpaceStack.pop()
 		return curNameSpace
 
-	def classMemberDecls(theClass as Box)  # TODO: rename theClass to box. TODO: rename classMemberDecls to memberDeclsWithBodies() and comment that it works for classes and structs
-		decl as INode?
-		breakLoop = false  # cannot use 'break' to stop a 'while' loop in a branch statement. CC?
-		while not breakLoop
-			decl = nil
-			branch .peek().which
-				on 'PASS'
-					.classPass()
-					breakLoop = true
-				on 'DEDENT': breakLoop = true
-				on 'DEF': theClass.addDecl(.declareMethod())
-				on 'GET': theClass.addDecl(.declarePropertyGet())
-				on 'SET': theClass.addDecl(.declarePropertySet())
-				on 'PRO': theClass.addDecl(.declareProperty())
-				on 'VAR': theClass.addDecl(.classVarDecl())
-				on 'EOL': .oneOrMore('EOL')
-				on 'ENUM': theClass.addDecl(.enumDecl())
-				on 'SHARED': .classMemberDeclsShared(theClass)
-				else
-					_error('Got [.peek()] when expecting var, def, pro, get, set, enum or shared')
-			if decl!
-				theClass.addDecl(decl to IMember)  # CC: axe typecast when if gets smart about not nil
-		.dedent()
+	def bodiedBoxMemberDecls(box as Box)
+		require
+			not box inherits Interface
+		code
+			decl as INode?
+			breakLoop = false  # cannot use 'break' to stop a 'while' loop in a branch statement. CC?
+			while not breakLoop
+				decl = nil
+				branch .peek().which
+					on 'PASS'
+						.classPass()
+						breakLoop = true
+					on 'DEDENT': breakLoop = true
+					on 'DEF': box.addDecl(.declareMethod())
+					on 'GET': box.addDecl(.declarePropertyGet())
+					on 'SET': box.addDecl(.declarePropertySet())
+					on 'PRO': box.addDecl(.declareProperty())
+					on 'VAR': box.addDecl(.classVarDecl())
+					on 'EOL': .oneOrMore('EOL')
+					on 'ENUM': box.addDecl(.enumDecl())
+					on 'SHARED': .bodiedBoxMemberDeclsShared(box)
+					else
+						_error('Got [.peek()] when expecting var, def, pro, get, set, enum or shared')
+				if decl!
+					box.addDecl(decl to IMember)  # CC: axe typecast when if gets smart about not nil
+			.dedent()
 
-	def classMemberDeclsShared(theClass as Box)
+	def bodiedBoxMemberDeclsShared(box as Box)
 		.expect('SHARED')
 		.indent()
 		_isNamesStack.push('shared')
 		try
-			.classMemberDecls(theClass)
+			.bodiedBoxMemberDecls(box)
 		finally
 			_isNamesStack.pop()
 
