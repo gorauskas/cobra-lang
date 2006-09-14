@@ -146,6 +146,51 @@ interface IVar
 	pro type as IType?
 
 
+class ExpectStmt
+	inherits Stmt
+
+	var _exceptionTypeNode as INode
+	var _exceptionType as IType?
+	var _block as BlockStmt
+	var _varNumber as int
+
+	def construct(token as IToken, exceptionTypeNode as INode, block as BlockStmt)
+		base.construct(token)
+		_exceptionTypeNode = exceptionTypeNode
+		_block = block
+
+	def _bindImp is override
+		base._bindImp()
+		if _exceptionType is nil and _exceptionTypeNode
+			_exceptionType = _exceptionTypeNode.bindAll().namedType
+		assert _exceptionType, this
+		excClass = .compiler.libraryType('System', 'Exception')
+		assert excClass
+		if not _exceptionType.isDescendantOf(excClass)
+			_error('Can only use Exception and its descendants for "expect". "[_exceptionType.name]" does not inherit the Exception class.')
+		# TODO: take out the following stmt. looks like duplicate of statement afterwards
+		.compiler.curBox.makeNextPrivateSerialNumber()
+		_varNumber = .compiler.curBox.makeNextPrivateSerialNumber()
+		_block.bindImp()
+
+#	def genCS(out)
+#		base.genCS(out)
+#		gotWriteExceptionVarName = '_lh_expect_%s' % (_varNumber-1)  # lh => "local helper"
+#		out.write('bool %s = false;\n' % gotWriteExceptionVarName)
+#		out.write('try ')
+#		_block.genCS(out)
+#		out.writeAndIndent('catch (%s) {\n' % _exceptionType.asCS())
+#		out.write('// exactly what is expected\n')
+#		out.write('%s = true;\n' % gotWriteExceptionVarName)
+#		out.dedentAndWrite('}\n')
+#		wrongExceptionVarName = '_lh_expect_%s' % _varNumber
+#		assert gotWriteExceptionVarName!=wrongExceptionVarName
+#		out.writeAndIndent('catch (Exception %s) {\n' % wrongExceptionVarName)
+#		out.write('throw new ExpectException(typeof(%s), %s);\n' % (_exceptionType.asCS(), wrongExceptionVarName))
+#		out.dedentAndWrite('}\n')
+#		out.write('if (!%s) throw new ExpectException(typeof(%s), null);\n' % (gotWriteExceptionVarName, _exceptionType.asCS()))
+
+
 class ForStmt
 	inherits Stmt
 	"""
