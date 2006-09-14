@@ -43,6 +43,13 @@ class BinaryOpExpr
 		# TODO: this will probably go away when a DotExpr subclass is made
 		_receiverType = t
 
+	def bindImp as INode is override
+		base.bindImp()
+		assert .didBindImp
+		# TODO: maybe check() should only be invoked if left and right were bound without error
+		.check()
+		return this
+
 	def _bindImp is override
 		base._bindImp()
 		assert _left is not this, this
@@ -51,6 +58,14 @@ class BinaryOpExpr
 		_right.bindImp()
 		assert _left.didBindImp
 		assert _right.didBindImp
+
+	def check
+		"""
+		Invoked after bindImp() in order to do more error checking.
+		So this is a hook for subclasses to do error checking after
+		left and right have been successfully bound.
+		"""
+		pass
 
 	def addRefFields is override
 		base.addRefFields()
@@ -88,6 +103,16 @@ class AssignExpr
 #			left.type = definition.type
 #		if left.definition is nil
 #			compiler.errorUnknownId(left, left.text)
+
+	def check is override
+		base.check()
+		if _left inherits IdentifierExpr
+			assert _left.definition
+			if _left.definition inherits Param
+				if _right inherits IdentifierExpr
+					if _right.definition inherits ClassVar
+						.compiler.warning(this, 'Setting a parameter to a class variable is often a mistake. You may want to reverse the assignment.')
+
 
 class ToExpr
 	inherits BinaryOpExpr
