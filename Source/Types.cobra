@@ -142,9 +142,18 @@ interface IType
 		Used by the enumerable for statement to infer the type of the control variable.
 		"""
 
+	get superType as IType?
+		"""
+		Returns the super type of this type.
+		If an implementor has multiple super types (interfaces do), then this method should
+		return nil and other methods such as isDescendantOf() and memberForName() must be
+		sure to take the multiple super types into consideration.
+		"""
+
 	def memberForName(name as String) as IMember?
 		"""
 		Used for `foo.bar` where this type is the type of `foo`.
+		Should return members that are inherited (if any).
 		"""
 
 
@@ -160,8 +169,18 @@ class CobraType
 	get name as String
 		return .getType().toString()
 
-	get superType as CobraType?
+	get namedType as IType? is override
+		# TODO: is this essential? if so, perhaps "namedType" --> "effectiveType"
+		return this
+
+	get innerType as IType?
+		return nil
+
+	get superType as IType?
 		return _superType
+
+	get csInit as String
+		throw OverrideException(.getType())
 
 	def isAssignableTo(type as IType) as bool
 		require
@@ -176,15 +195,20 @@ class CobraType
 			#	return .isAssignableTo(type.wrappedType)
 			return .isDescendantOf(type)
 
-	get namedType as IType? is override
-		# TODO: is this essential? if so, perhaps "namedType" --> "effectiveType"
-		return this
-
-	get innerType as IType?
-		return nil
-
-	get csInit as String
-		throw OverrideException(.getType())
+	def isDescendantOf(type as IType) as bool
+		"""
+		Returns true if this type is a subtype (direct or indirect) of type.
+		"""
+		if this is type
+			return true
+		curType as IType? = this  # CC: change to: curType = this to ?
+		while true
+			if curType is type
+				return true
+			curType = curType.superType
+			if curType is nil
+				break
+		return false
 
 	def declForName(name as String) as IMember?
 		"""
@@ -197,21 +221,6 @@ class CobraType
 		Returns nil by default.
 		"""
 		return nil
-
-	def isDescendantOf(type as IType) as bool
-		"""
-		Returns true if this type is a subtype (direct or indirect) of type.
-		"""
-		if this is type
-			return true
-		curType as CobraType? = this  # CC: change to: curType = this to ?
-		while true
-			if curType is type
-				return true
-			curType = curType.superType
-			if curType is nil
-				break
-		return false
 
 	def equals(obj as Object) as bool is override
 		if obj is nil
@@ -314,7 +323,7 @@ class NilType
 		return 'nil'
 
 # TODO:
-#	def isReference(self):
+#	get isReference as bool is override
 #		return true
 
 	def isAssignableTo(type as IType) as bool is override
@@ -468,6 +477,63 @@ class VariType
 			return 'vari ' + _wrappedType.name
 		else
 			return 'vari UNBOUND'
+
+
+class QualifiedType
+	inherits WrappedType
+	"""
+	Represents types such as SomeNamespace.SomeClass.SomeEnum.
+	The parser has to track these namespace navigations in the code.
+	"""
+
+	var _initNodes as List<of INode>
+	var _boundNodes as List<of INode>
+	var _dottedParentNames as String?
+
+	def construct(nodes as List<of INode>)
+		require
+			nodes
+		code
+			base.construct(nodes[nodes.count-1])
+			print
+			for node in nodes
+				print '<> node = [node]'
+			print
+			_initNodes = nodes
+			_boundNodes = List<of INode>()  # set by _bindInt()
+			_dottedParentNames = nil
+
+	get name as String is override
+		if _wrappedType
+			return _dottedParentNames to String + _wrappedType.name  # CC: axe the cast
+		else
+			nodes = Utils.join(', ', _initNodes)
+			return '[.getType().name]([nodes])'
+
+	def toString as String is override
+		if _dottedParentNames is nil
+			return .name
+		else
+			return '[_dottedParentNames].[_wrappedType]'
+
+	def isDescendantOf(type as IType) as bool is override
+		assert .didBindInt
+		return _wrappedType.isDescendantOf(type)
+
+# TODO:
+#	get isReference as bool is override
+#		assert _didBindInt, this
+#		return _wrappedType.isReference
+
+#	def asCS()
+#		# TODO could just use _wrappedType.asCS() if I stick with ObjectType always being fully qualified.
+#		return _dottedParentNames + _wrappedType.name
+#
+#	def csInit()
+#		cs = _wrappedType.csInit()
+#		if cs!='null'
+#			cs = _dottedParentNames + cs
+#		return cs
 
 
 class TypeType
