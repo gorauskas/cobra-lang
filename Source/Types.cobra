@@ -161,7 +161,7 @@ class CobraType
 	inherits Node
 	implements IType
 
-	var _superType as CobraType?
+	var _superType as IType?
 
 	def construct
 		base.construct()
@@ -440,9 +440,11 @@ class WrappedType
 		return _wrappedType.innerType
 
 	def _bindInt is override
+		base._bindInt()
 		_resolveType()
 
 	def _bindImp is override
+		base._bindImp()
 		_resolveType()
 
 	def _resolveType
@@ -486,8 +488,8 @@ class QualifiedType
 	The parser has to track these namespace navigations in the code.
 	"""
 
-	var _initNodes as List<of INode>
-	var _boundNodes as List<of INode>
+	var _initNodes as List<of TypeIdentifier>
+	var _boundNodes as List<of Container>
 	var _dottedParentNames as String?
 
 	def construct(nodes as List<of INode>)
@@ -495,16 +497,25 @@ class QualifiedType
 			nodes
 		code
 			base.construct(nodes[nodes.count-1])
-			print
+			_initNodes = List<of TypeIdentifier>()
 			for node in nodes
-				print '<> node = [node]'
-			print
-			_initNodes = nodes
-			_boundNodes = List<of INode>()  # set by _bindInt()
+				if node inherits TypeIdentifier
+					_initNodes.add(node)
+				else
+					assert false, node
+			_boundNodes = List<of Container>()  # set by _bindInt()
 			_dottedParentNames = nil
 
+	def addSubFields is override
+		base.addSubFields()
+		if _boundNodes
+			.addField('boundNodes', _boundNodes)
+		.addField('initNodes', _initNodes)
+		if _dottedParentNames
+			.addField('dottedParentNames', _dottedParentNames)
+
 	get name as String is override
-		if _wrappedType
+		if false and _wrappedType
 			return _dottedParentNames to String + _wrappedType.name  # CC: axe the cast
 		else
 			nodes = Utils.join(', ', _initNodes)
@@ -524,6 +535,42 @@ class QualifiedType
 #	get isReference as bool is override
 #		assert _didBindInt, this
 #		return _wrappedType.isReference
+
+	def _bindInt is override
+		_dottedParentNames = ''
+		prevNode as Container? = nil
+		node as INode? = nil
+		sep = ''
+		for initNode in _initNodes
+			if prevNode is nil
+				initNode.bindInt()
+				node = initNode.namedType
+				if node inherits Container
+					node.bindInt()
+					_boundNodes.add(node)
+					prevNode = node
+					_dottedParentNames += sep + node.name
+				else
+					assert false, node
+			else
+				node = prevNode.memberForName(initNode.name)
+				if node is nil
+					_error('Cannot find "[initNode.name]" in [prevNode].')
+				if node inherits Container
+					node.bindInt()
+					_boundNodes.add(node)
+					prevNode = node
+					_dottedParentNames += sep + node.name
+				else
+					assert false, node
+			sep = '.'
+		_wrappedType = _boundNodes[_boundNodes.count-1]
+		base._bindInt()
+		if _superType is nil
+			_superType = _wrappedType.superType
+			# TODO: are the following 2 lines needed?
+			if _superType is nil
+				_superType = .compiler.typeType
 
 #	def asCS()
 #		# TODO could just use _wrappedType.asCS() if I stick with ObjectType always being fully qualified.
