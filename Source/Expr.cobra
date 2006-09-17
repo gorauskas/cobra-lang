@@ -24,6 +24,10 @@ class Expr
 	def construct(token as IToken)
 		base.construct(token)
 
+	def addRefFields is override
+		base.addRefFields()
+		.addField('type', _type)
+
 	pro type from var
 
 	get receiverType as IType?  # TODO: consider renaming to typeForReceiver.
@@ -305,6 +309,58 @@ class IdentifierExpr
 #				pass
 #			else:
 #				compiler.errorUnknownId(self.text)
+
+
+class IfExpr
+	inherits Expr
+
+	var _cond as Expr
+	var _tpart as Expr
+	var _fpart as Expr
+
+	def construct(token as IToken, cond as Expr, tpart as Expr, fpart as Expr)
+		base.construct(token)
+		_cond = cond
+		_tpart = tpart
+		_fpart = fpart
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('cond', _cond)
+		.addField('tpart', _tpart)
+		.addField('fpart', _fpart)
+
+	def _bindImp is override
+		base._bindImp()
+		tpart = _tpart
+		fpart = _fpart
+		_cond.bindImp()
+		if not _cond.type.isDescendantOf(.compiler.boolType)
+			_cond = TruthExpr(_cond)
+		_tpart.bindImp()
+		_fpart.bindImp()
+		# @@ TODO: use greatest common denominator between the 2 types. Right now if() expects that one inherits the other or one of them is nil.
+		assert tpart.type
+		assert fpart.type
+		if tpart.isKindOf(fpart.type to IType)  # CC: change: to !
+			_type = fpart.type
+		else if fpart.isKindOf(tpart.type to IType)  # CC: change: to !
+			_type = tpart.type
+		else if fpart.isKindOf(.compiler.nilType)
+			_type = .compiler.nilableType(tpart.type to IType)  # CC: change: to !
+		else if tpart.isKindOf(.compiler.nilType)
+			_type = .compiler.nilableType(fpart.type to IType)  # CC: change: to !
+		else
+			_error('The return expressions of the if() do not have compatible types. They are "[tpart.type.name]" and "[fpart.type.name]".')
+
+#	def genCS(self, out, genParens=true):
+#		out.write('(')
+#		self.cond.genCS(out)
+#		out.write('?')
+#		self.tpart.genCS(out)
+#		out.write(':')
+#		self.fpart.genCS(out)
+#		out.write(')')
 
 
 class IndexExpr
