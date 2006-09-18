@@ -49,6 +49,7 @@ class CobraTokenizer
 	var _substLBracketCount as int
 	var _inSubstStringSingle = false
 	var _inSubstStringDouble = false
+	var _inDocString = false
 
 	def construct
 		base.construct()
@@ -451,6 +452,33 @@ class CobraTokenizer
 				_tokenDefsByWhich['RBRACKET_SPECIAL'].isActive = false
 			tok.which = 'RBRACKET'  # tricky, tricky. the parser never sees an RBRACKET_SPECIAL
 			return tok
+
+
+	##
+	## Doc Strings
+	##
+
+	def onDOC_STRING_START(tok as IToken) as IToken
+		assert not _inDocString
+		# narrow the tokenizer's token defs to a new shorter set
+		# TODO: cache the tokens below
+		.pushTokenDefs([
+			TokenDef('DOC_STRING_STOP', '\t*"""\n'),
+			TokenDef('DOC_STRING_BODY_TEXT', '.*\n'),
+		])
+		_inDocString = true
+		#print '<> inDocString is now %r' % self.inDocString
+		return tok
+
+	def onDOC_STRING_STOP(tok as IToken) as IToken
+		assert _inDocString
+		_inDocString = false
+		.popTokenDefs()
+		return tok
+
+	def onDOC_STRING_BODY_TEXT(tok as IToken) as IToken
+		assert _inDocString, tok
+		return tok
 
 
 	##
