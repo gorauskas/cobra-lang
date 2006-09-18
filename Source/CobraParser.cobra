@@ -724,10 +724,10 @@ class Parser
 						.classPass()
 						breakLoop = true
 					on 'DEDENT': breakLoop = true
-					on 'DEF': box.addDecl(.declareMethod())
-					on 'GET': box.addDecl(.declarePropertyGet())
-					on 'SET': box.addDecl(.declarePropertySet())
-					on 'PRO': box.addDecl(.declareProperty())
+					on 'DEF': .addDecl(box, .declareMethod())
+					on 'GET': .addDecl(box, .declarePropertyGet())
+					on 'SET': .addDecl(box, .declarePropertySet())
+					on 'PRO': .addDecl(box, .declareProperty())
 					on 'VAR': box.addDecl(.classVarDecl())
 					on 'EOL': .oneOrMore('EOL')
 					on 'ENUM': box.addDecl(.enumDecl())
@@ -737,6 +737,14 @@ class Parser
 				if decl!
 					box.addDecl(decl to IMember)  # CC: axe typecast when if gets smart about not nil
 			.dedent()
+
+	def addDecl(box as Box, member as ClassMember?)
+		"""
+		Created specifically to deal with the fact that overloads should not be added. The methods
+		that encounter overloads will create (or affect existing) MemberOverloads and return nil.
+		"""
+		if member is not nil
+			box.addDecl(member)
 
 	def bodiedBoxMemberDeclsShared(box as Box)
 		.expect('SHARED')
@@ -803,7 +811,7 @@ class Parser
 		assert isNames is not nil
 		return ClassVar(tok, .curBox, identifier, type, isNames, initExpr, docString)
 
-	def declareMethod as Method
+	def declareMethod as Method?
 		require _typeProvider
 		token = .expect('DEF')
 		opener = .grab()
@@ -813,25 +821,24 @@ class Parser
 		curClass = .curBox
 		if name==curClass.name or Utils.capped(name)==curClass.name
 			_error('Method names cannot be the same as their enclosing [curClass.englishName]. Use `def construct` for creating a constructor or choose another name.')  # TODO list the enclosing types location
-# TODO
-#		overload = nil
-#		other = curClass.symbolForName(name, true)
-#		if other
-#			if name=='destruct'
-#				.error('Cannot define more than one destruct method.')  # TODO give reference to the other one
-#			if inherits(other, MemberOverload)
-#				overload = other
-#			else if inherits(other, DefOneCodeBlockMember)
-#				overload = MemberOverload(token, other)
-#				curClass.registerOverload(overload)
-#			else
-#				.error('There is already another class member with the name "%s".' % name)  # TODO list its location and possibly what it is
-#		else
-#			other = curClass.symbolForNameCI(name, true)
-#			if other
-#				.error('There is already another class member with the name "%s". You must differentiate member names by more than just case.' % other.name)
-#			if name[0] in .uppercaseLetters
-#				.error('%s names must start with lowercase letters. (%s)' % ('Method', name))
+		overload as MemberOverload? = nil
+		other = curClass.symbolForName(name, true, true)
+		if other
+			if name=='destruct'
+				_error('Cannot define more than one destruct method.')  # TODO give reference to the other one
+			if other inherits MemberOverload
+				overload = other
+			else if other inherits OneCodeBlockMember
+				overload = MemberOverload(other)
+				curClass.registerOverload(overload to MemberOverload)  # CC: axe cast
+			else
+				_error('There is already another class member with the name "[name]".')  # TODO list its location and possibly what it is
+		else
+			other = curClass.symbolForName(name, true, false)  # TODO: should be a CI there for case-insensitive
+			if other
+				_error('There is already another class member with the name "[other.name]". You must differentiate member names by more than just case.')
+			if name[0] in _uppercaseLetters
+				_error('Method names must start with lowercase letters. ([name])')
 
 		if opener.which=='OPEN_CALL'
 			paramsList = .paramDecls(true)
@@ -849,8 +856,7 @@ class Parser
 #			implements = .optional('IMPLEMENTS') and .type() or nil
 #			if implements
 #				.oneOrMore('EOL')
-#			docString = .docString()
-			docString = ''
+			docString = .docString()
 
 #			assert returnType
 #			if name=='construct'
@@ -877,8 +883,7 @@ class Parser
 		else if curClass inherits Interface
 			if .optionalIndent()
 				isNames = .isDeclNames()
-#				docString = .docString()
-				docString = ''
+				docString = .docString()
 				.dedent()
 			else
 				isNames = List<of String>()
@@ -893,11 +898,13 @@ class Parser
 		else
 			throw Exception('Unhandled containing type [curClass]')
 		assert method
-#		if overload
-#			overload.addMember(defMethod)
-		return method
+		if overload
+			overload.addMember(method)
+			return nil
+		else
+			return method
 
-	def declareProperty as Property
+	def declareProperty as Property?
 		"""
 		Example source
 			pro age as int
@@ -917,7 +924,7 @@ class Parser
 				if other inherits MemberOverload
 					overload = other
 				else if other inherits Property
-					overload = MemberOverload(.curBox, other)
+					overload = MemberOverload(other)
 					.curBox.registerOverload(overload to MemberOverload)  # CC: axe typecast
 		else
 			name = .expect('ID').text
@@ -968,7 +975,9 @@ class Parser
 			throw FallThroughException(.curBox)
 		if overload
 			overload.addMember(prop)
-		return prop
+			return nil
+		else
+			return prop
 
 	def declarePropertyFrom(token as IToken, name as String, coverWhat as String) as Property
 		require coverWhat in ['get', 'set', 'getset']
@@ -992,7 +1001,7 @@ class Parser
 		isNames = List<of String>()  # TODO: cover isNames
 		return Property(token, .curBox, name, isNames, varDef, coverWhat, docString)
 
-	def declarePropertyGet as Property
+	def declarePropertyGet as Property?
 		"""
 		Example source
 			get meaningOfLife as int
@@ -1008,7 +1017,7 @@ class Parser
 				if other inherits MemberOverload
 					overload = other
 				else if other inherits Property
-					overload = MemberOverload(.curBox, other)
+					overload = MemberOverload(other)
 					.curBox.registerOverload(overload to MemberOverload)  # CC: axe typecast
 		else
 			name = .expect('ID').text
@@ -1042,7 +1051,9 @@ class Parser
 			throw FallThroughException(.curBox)
 		if overload
 			overload.addMember(prop)
-		return prop
+			return nil
+		else
+			return prop
 
 	def declarePropertySet as Property
 		"""

@@ -64,6 +64,8 @@ class Box
 			for decl in _declsInOrder
 				assert not decl is this, this
 				decl.bindInt()
+			for ol in _overloads
+				ol.bindInt()
 		finally
 			.compiler.boxStack.pop()
 
@@ -75,6 +77,8 @@ class Box
 			for decl in _declsInOrder
 				assert not decl is this, this
 				decl.bindImp()
+			for ol in _overloads
+				ol.bindImp()
 		finally
 			.compiler.boxStack.pop()
 
@@ -176,6 +180,7 @@ class ClassMember  # TODO: rename to BoxMember
 	var _box as Box
 	var _docString as String?
 	var _isNames as List<of String>?
+	var _overloadGroup as MemberOverload?
 
 	def construct(token as IToken, box as Box, name as String)
 		this.construct(token, box, name, nil)
@@ -188,6 +193,10 @@ class ClassMember  # TODO: rename to BoxMember
 	get box from var
 
 	pro docString from var
+
+	pro isNames from var
+
+	pro overloadGroup from var
 
 	get isCallable as bool
 		return false
@@ -405,7 +414,6 @@ class OneCodeBlockMember
 	var _returnType as IType?
 	var _requirePart as Node?  # TODO: narrow
 	var _ensurePart as Node?  # TODO: narrow
-	var _overloadGroup as MemberOverload?
 	var _oldExprs as List<of Expr>  # TODO: add a doc string for this
 	var _params as List<of Param>
 	var _locals as List<of LocalVar>
@@ -659,14 +667,49 @@ class Method
 class MemberOverload
 	inherits ClassMember
 
-	def construct(box as Box, node as INamedNode)
-		this.construct(box, node.name)
+	var _members as List<of ClassMember>
 
-	def construct(box as Box, name as String)
-		base.construct(TokenFix.empty, box, name)
+	def construct(member as ClassMember)
+		require
+			member.name
+			member.box
+		code
+			base.construct(member.token, member.box, member.name)
+			_members = List<of ClassMember>()
+			_isNames = member.isNames  # pick up 'shared' for example
+			.addMember(member)
 
-	def addMember(member as INode?)
-		assert false, 'TODO: implemenent overloading'
+	def addSubFields is override
+		base.addSubFields()
+		.addField('members', _members)
+
+	def addMember(member as ClassMember)
+		if _members
+			assert member not in _members, member
+			assert member.getType() is _members[0].getType()
+		assert member.overloadGroup is nil
+		assert member.name==.name, '.name=[.name], member.name=[member.name]'
+		member.overloadGroup = this
+		_members.add(member)
+
+	get resultType as IType? is override
+		assert .didBindInt
+		return _members[0].resultType
+
+	def _bindInt is override
+		base._bindInt()
+		# rename the test members of the overload by suffixing them with '_o1' '_o2' etc.
+		i = 1
+# TODO:
+#		for member in _members
+#			if member.testMethod
+#				member.testMethod.name = member.testMethod.name + '_ol' + i.toString()
+#			i += 1
+		# TODO: error if the returnType is different among any members
+		# TODO: error if the two members have the same arguments
+
+	def _bindImp is override
+		base.bindImp()
 
 
 class AbstractLocalVar
