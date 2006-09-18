@@ -683,17 +683,23 @@ class MemberOverload
 		base.addSubFields()
 		.addField('members', _members)
 
+	get members from var
+
 	def addMember(member as ClassMember)
-		if _members
-			assert member not in _members, member
-			assert member.getType() is _members[0].getType()
-		assert member.overloadGroup is nil
-		assert member.name==.name, '.name=[.name], member.name=[member.name]'
-		member.overloadGroup = this
-		_members.add(member)
+		require
+			member is not this
+			not member inherits MemberOverload
+			member.overloadGroup is nil
+			member.name==.name # CC:, '.name=[.name], member.name=[member.name]'
+			.members implies member not in .members # CC: , member
+			.members implies member.getType() is .members[0].getType()
+		code
+			member.overloadGroup = this
+			_members.add(member)
 
 	get resultType as IType? is override
 		assert .didBindInt
+		assert _members[0] is not this
 		return _members[0].resultType
 
 	def _bindInt is override
@@ -709,7 +715,7 @@ class MemberOverload
 		# TODO: error if the two members have the same arguments
 
 	def _bindImp is override
-		base.bindImp()
+		base._bindImp()
 
 
 class AbstractLocalVar
