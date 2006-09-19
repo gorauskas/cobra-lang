@@ -931,7 +931,7 @@ class Parser
 			if other
 				if other inherits MemberOverload
 					overload = other
-				else if other inherits Property
+				else if other inherits ProperDexer
 					overload = MemberOverload(other)
 					.curBox.registerOverload(overload to MemberOverload)  # CC: axe typecast
 		else
@@ -945,7 +945,7 @@ class Parser
 		else
 			returnType = _typeProvider.dynamicType
 		assert returnType
-		if .curBox inherits Class
+		if .curBox inherits Class or .curBox inherits Struct
 			isNames = .indentIsDeclNames()
 			docString = .docString()
 			if paramsList
@@ -984,7 +984,7 @@ class Parser
 			throw FallThroughException(.curBox)
 		if overload
 			assert prop
-			overload.addMember(prop to ClassMember)  # CC: axe cast
+			overload.addMember(prop to ProperDexer)  # CC: axe cast
 			return nil
 		else
 			return prop
@@ -1009,12 +1009,13 @@ class Parser
 		isNames = List<of String>()  # TODO: cover isNames
 		return Property(token, .curBox, name, isNames, varDef, coverWhat, docString)
 
-	def declarePropertyGet as Property?
+	def declarePropertyGet as ProperDexer?
 		"""
 		Example source
 			get meaningOfLife as int
 				return 42
 		"""
+		prop as ProperDexer?
 		token = .expect('GET')
 		overload as MemberOverload? = nil
 		if .optional('LBRACKET')
@@ -1024,7 +1025,7 @@ class Parser
 			if other
 				if other inherits MemberOverload
 					overload = other
-				else if other inherits Property
+				else if other inherits ProperDexer
 					overload = MemberOverload(other)
 					.curBox.registerOverload(overload to MemberOverload)  # CC: axe typecast
 		else
@@ -1042,7 +1043,10 @@ class Parser
 		if .curBox inherits Class or .curBox inherits Struct
 			isNames = .indentIsDeclNames()
 			docString = .docString()
-			prop = Property(token, .curBox, name, returnType, isNames, docString)
+			if paramsList
+				prop = Indexer(token, .curBox, name, paramsList, returnType, isNames, docString)
+			else
+				prop = Property(token, .curBox, name, returnType, isNames, docString)
 			.statementsFor(prop.makeGetPart(token), prop)
 # TODO
 #		else if .curBox inherits Interface
@@ -1058,7 +1062,8 @@ class Parser
 		else
 			throw FallThroughException(.curBox)
 		if overload
-			overload.addMember(prop)
+			assert prop
+			overload.addMember(prop to ProperDexer)  # CC: to !
 			return nil
 		else
 			return prop
