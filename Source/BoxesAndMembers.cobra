@@ -165,14 +165,36 @@ class Class
 class Interface
 	inherits Box
 
-	# TODO: store base interfaces
-	# TODO: 	def isDescendantOf(type as IType) as bool
+	var _baseNodes as List<of INode>
+	var _baseInterfaces as List<of Interface>
+	var _baseTypes as List<of IType>  # can include types and interfaces
 
-	def construct(token as IToken, name as String, paramList as List<of INode>, isNames as List<of String>, baseName as String?, interfaceNames as List<of String>, docString as String?)
+	def construct(token as IToken, name as String, paramList as List<of INode>, isNames as List<of String>, baseNodes as List<of INode>, docString as String?)
 		base.construct(token, name, docString)
+		_baseNodes = baseNodes
+		_baseInterfaces = List<of Interface>()
+		_baseTypes = List<of IType>()
 
 	get englishName as String is override
 		return 'interface'
+
+	# TODO: 	def isDescendantOf(type as IType) as bool
+
+	def _bindInt is override
+		for node in _baseNodes
+			baseWhat = node.bindInt().namedType
+			if baseWhat inherits Interface
+				_baseInterfaces.add(baseWhat)
+				_baseTypes.add(baseWhat)
+			else if baseWhat inherits QualifiedType
+				if baseWhat.theWrappedType inherits Interface
+					_baseInterfaces.add(baseWhat.theWrappedType to Interface)
+					_baseTypes.add(baseWhat)
+				else
+					_error('Cannot inherit "[baseWhat.theWrappedType.name]" which is a [baseWhat.theWrappedType.englishName].')
+			else
+				_error('Cannot inherit "[baseWhat.name]" which is a [baseWhat.englishName].')
+		base._bindInt()
 
 
 class Struct

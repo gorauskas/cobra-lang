@@ -571,8 +571,89 @@ class Parser
 		return names
 
 	def interfaceDecl as Interface
-		assert false, 'TO DO'
-		return nil to passthrough
+		token = .expect('INTERFACE')
+		peek = .peek().which
+		if peek == 'ID'
+			token = .expect('ID')
+			name = token.value to String
+		else if peek == 'OPEN_GENERIC'
+			token = .expect('OPEN_GENERIC')
+			name = token.value to String
+		else
+			_error('Expecting an interface name.')
+		if name[0] not in _uppercaseLetters
+			_error('Interface names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
+
+		# CC: rename paramsList to params (can't do it now because it's a C# reserved word and Cobra needs to generate IL or 'escape' these)
+		paramsList = List<of INode>()  # TODO: change type to GenericParam
+		if token.which=='OPEN_GENERIC'
+			assert false, 'TODO: Generics'
+#			expectComma = false
+#			while 1
+#				if .peek().which=='GT'
+#					.grab()
+#					break
+#				if expectComma
+#					.expect('COMMA')
+#				ident = .expect('ID').value
+#				paramsList.append(GenericParam(ident))
+#				expectComma = true
+
+		.indent()
+
+		isNames = .isDeclNames()
+
+		while .optional('WHERE')
+			assert false, 'TODO: where clause'
+#			if token.which<>'OPEN_GENERIC'
+#				_error('Unexpected where clause for non-generic interface.')
+#			paramName = .expect('ID').value
+#			found = false
+#			for param in params
+#				if param.name==paramName
+#					found = true
+#					break
+#			if not found
+#				_error('Unknown generic parameter "%s".' % name)
+#			if param.constraints
+#				_error('Already specified constraints for "%s".' % name)
+#			.expect('MUST')
+#			.expect('BE')
+#			expectComma = false
+#			while 1
+#				if expectComma
+#					.expect('COMMA')
+#				param.constraints.append(.genericConstraint())
+#				if .optional('EOL')
+#					break
+#				expectComma = true
+
+		baseNames = List<of INode>()
+		if .optional('INHERITS')
+			expectComma = false
+			while true
+				if .optional('EOL')
+					break
+				if expectComma
+					.expect('COMMA')
+				baseName = .type()  # using self.type since interface could be a generic like IEnumerable(of T)
+				baseNames.add(baseName)
+				expectComma = true
+
+		if .optional('IMPLEMENTS')
+			_error('Encountered "implements" in interface declaration. Use "inherits" instead.')
+
+		# TODO: can an interface be nested in another interface?
+		docString = .docString()
+
+		theInterface = Interface(token, name, paramsList, isNames, baseNames, docString)
+
+		_boxStack.push(theInterface)
+#		.isNamesStack = Stack(str)
+		.bodiedBoxMemberDecls(theInterface)
+		_boxStack.pop()
+
+		return theInterface
 
 	def structDecl as Struct
 		token = .expect('STRUCT')
@@ -719,8 +800,9 @@ class Parser
 		return curNameSpace
 
 	def bodiedBoxMemberDecls(box as Box)
-		require
-			not box inherits Interface
+# TODO: remove this when SystemInterfaces.cobra and "is fake" goes away
+#		require
+#			not box inherits Interface
 		code
 			decl as INode?
 			breakLoop = false  # cannot use 'break' to stop a 'while' loop in a branch statement. CC?
