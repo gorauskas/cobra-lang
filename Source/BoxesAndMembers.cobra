@@ -88,10 +88,12 @@ class Class
 
 	var _baseClass as Class?
 	var _baseName as String
+	var _implementsNodes as List<of INode>
 
-	def construct(token as IToken, name as String, paramList as List<of INode>, isNames as List<of String>, baseName as String?, interfaceNames as List<of String>, docString as String?)
+	def construct(token as IToken, name as String, paramList as List<of INode>, isNames as List<of String>, baseName as String?, implementsNodes as List<of INode>, docString as String?)
 		base.construct(token, name, docString)
 		_baseName = baseName ? "Object"  # TODO: this would pick up a local object instead of System.Object. Is that what's wanted?
+		_implementsNodes = implementsNodes
 
 	get baseClass from var
 
@@ -147,11 +149,13 @@ class Class
 				_baseClass = possible
 			else if possible inherits Interface
 				_error('The base "[_baseName]" is an interface. Try "implements" instead of "inherits".')
-	# TODO:
-	#		else if possible inherits Struct
-	#			_error('The base "[_baseName]" is a struct. Classes cannot inherit from structs.')
+			else if possible inherits Struct
+				_error('The base "[_baseName]" is a struct. Classes cannot inherit from structs.')
 			else
 				_error('The base class "[_baseName]" is not actually a class, it is a "[possible.englishName]".')
+		for node in _implementsNodes
+			node.bindInt()
+			# TODO: actually record the interfaces that are found. see Interface for an example. maybe consolidate this code in Box as a util method
 		base._bindInt()
 
 	get englishName as String is override
