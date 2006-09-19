@@ -911,7 +911,7 @@ class Parser
 		else
 			return method
 
-	def declareProperty as Property?
+	def declareProperty as ProperDexer?
 		"""
 		Example source
 			pro age as int
@@ -921,6 +921,7 @@ class Parser
 					assert value>0
 					_age = value
 		"""
+		prop as ProperDexer?
 		token = .expect('PRO')
 		overload as MemberOverload? = nil  # CC: axe "as MemberOverload" when Cobra gets smarter about type inference of "x = nil"
 		if .optional('LBRACKET')
@@ -948,8 +949,9 @@ class Parser
 			isNames = .indentIsDeclNames()
 			docString = .docString()
 			if paramsList
-				assert false, 'TODO: implement indexers'
-			prop = Property(token, .curBox, name, returnType, isNames, docString)
+				prop = Indexer(token, .curBox, name, paramsList, returnType, isNames, docString)
+			else
+				prop = Property(token, .curBox, name, returnType, isNames, docString)
 
 # TODO:
 #			if .peek().which=='TEST'
@@ -958,12 +960,12 @@ class Parser
 			getWord = .optional('GET')
 			if getWord
 				.indent()
-				.statementsFor(prop.makeGetPart(getWord to IToken))  # CC: axe to IToken
+				.statementsFor(prop.makeGetPart(getWord))
 
 			setWord = .optional('SET')
 			if setWord
 				.indent()
-				.statementsFor(prop.makeSetPart(setWord to IToken))  # CC: axe to IToken
+				.statementsFor(prop.makeSetPart(setWord))
 
 			.dedent()
 # TODO
@@ -981,7 +983,8 @@ class Parser
 		else
 			throw FallThroughException(.curBox)
 		if overload
-			overload.addMember(prop)
+			assert prop
+			overload.addMember(prop to ClassMember)  # CC: axe cast
 			return nil
 		else
 			return prop
