@@ -11,8 +11,16 @@ class BinaryOpExpr
 					return ToExpr(opToken, op, left, right)
 				on 'ASSIGN'
 					return AssignExpr(opToken, op, left, right)
-				on 'EQ', 'NE', 'LT', 'GT', 'LE', 'GE'
+				on 'IS', 'ISNOT', 'EQ', 'NE', 'LT', 'GT', 'LE', 'GE'
 					return CompareExpr(opToken, op, left, right)
+				on 'AND', 'OR'
+					return BinaryBoolExpr(opToken, op, left, right)
+				on 'DOT'
+					return DotExpr(opToken, op, left, right)
+				on 'INHERITS'
+					return InheritsExpr(opToken, op, left, right)
+				on 'PLUS', 'MINUS', 'STAR', 'SLASH', 'SLASHSLASH', 'PERCENT'
+					return BinaryMathExpr(opToken, op, left, right)
 				else
 					return BinaryOpExpr(opToken, op, left, right)
 			# CC: axe the if true pass below which is there to shore up a parsing bug for branch. or maybe it's the multiline else above because it was single line originally and I had to change it
@@ -86,18 +94,20 @@ class AssignExpr
 	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.construct(opToken, op, left, right)
 
+	def _bindImp is override
+		base._bindImp()
+		left = _left
+		right = _right
+		assert left.type
+		_type = left.type
 # TODO:
-#	def _bindImp is override
-#		base._bindImp()
-#		left = _left
-#		right = _right
 #		if left inherits IdentifierExpr and left.definition is nil:
 #			assert right.type
 #			if right.type is tpassthrough
 #				_error('Cannot infer type for "[left.text]" because the type of the right hand expression is unknown.')
 #			# type inference
 #			if left.text.startswith('_'):
-#				self.error('No class variable named "%s" exists and local variable declarations cannot start with an underscore (_).' % left.text)
+#				_error('No class variable named "%s" exists and local variable declarations cannot start with an underscore (_).' % left.text)
 #			definition = LocalVar(left.token, right.type)
 #			definition.bindAll(compiler)
 #			compiler.nameStack.peek().pushName(definition)
@@ -116,7 +126,100 @@ class AssignExpr
 						.compiler.warning(this, 'Setting a parameter to a class variable is often a mistake. You may want to reverse the assignment.')
 
 
+class BinaryBoolExpr
+	inherits BinaryOpExpr
+
+	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
+		base.construct(opToken, op, left, right)
+
+	def _bindImp is override
+		base._bindImp()
+		_type = .compiler.boolType
+
+
+class BinaryMathExpr
+	inherits BinaryOpExpr
+
+	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
+		base.construct(opToken, op, left, right)
+		assert op in ['PLUS', 'MINUS', 'STAR', 'SLASH', 'SLASHSLASH', 'PERCENT']
+
+	def _bindImp is override
+		base._bindImp()
+		tint = .compiler.intType
+		tdecimal = .compiler.decimalType
+		tfloat = .compiler.floatType
+		tpassthrough = .compiler.floatType
+		tstring = .compiler.libraryType('System', 'String')
+		cannotMix = false
+		if _left.isKindOf(tint)
+			if _right.isKindOf(tint)
+				# special case: true division
+				# if both sides are ints, the type becomes decimal
+				if _op=='SLASH'
+					_type = tdecimal
+				else
+					_type = tint
+			else if _right.isKindOf(tdecimal)
+				_type = tdecimal
+			else if _right.isKindOf(tfloat)
+				_type = tfloat
+		else if _left.isKindOf(tdecimal)
+			if _right.isKindOf(tdecimal)
+				_type = tdecimal
+			else if _right.isKindOf(tint)
+				_type = tdecimal
+			else if _right.isKindOf(tfloat)
+				cannotMix = true
+			else
+				cannotMix = true
+		else if _left.isKindOf(tfloat)
+			if _right.isKindOf(tfloat)
+				_type = tfloat
+			else if _right.isKindOf(tint)
+				_type = tfloat
+			else if _right.isKindOf(tdecimal)
+				cannotMix = true
+			else
+				cannotMix = true
+		else if _left.isKindOf(tstring)
+			if _right.isKindOf(tstring)
+				_type = tstring
+			else
+				cannotMix = true
+		if cannotMix
+			if _left.isKindOf(tpassthrough) or _right.isKindOf(tpassthrough)
+				_type = tpassthrough
+			else
+				_error('Cannot mix types [_left.type.name] and [_right.type.name] for arithmetic.')
+		assert _type
+
+
 class CompareExpr
+	inherits BinaryOpExpr
+
+	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
+		base.construct(opToken, op, left, right)
+
+	def _bindImp is override
+		base._bindImp()
+		_type = .compiler.boolType
+
+
+class DotExpr
+	inherits BinaryOpExpr
+
+	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
+		base.construct(opToken, op, left, right)
+
+	def _bindImp is override
+		base._bindImp()
+		if not _type
+			assert _right.type
+			_type = _right.type
+
+
+class InheritsExpr
 	inherits BinaryOpExpr
 
 	def construct(opToken as IToken, op as String, left as Expr, right as Expr)

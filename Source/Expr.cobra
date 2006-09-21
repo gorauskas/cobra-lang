@@ -65,6 +65,19 @@ class Expr
 		code
 			return .superNode to BinaryOpExpr
 
+	def bindImp as INode
+		base.bindImp()
+		assert .didBindImp
+		assert .type
+		return this
+
+	def _bindImp is override
+		base._bindImp()
+		if _type is nil and .getType().name=='Expr'  # CC: cannot say ... and .getType() is Expr
+			# TODO: this happens with formatted strings, but why?
+			# I mean, why does an Expr get created in the first place? Could put an assert in the constructor to trap it.
+			_type = .compiler.passThroughType
+
 
 class AsExpr
 	inherits Expr
@@ -378,10 +391,29 @@ class IfExpr
 class IndexExpr
 	inherits Expr
 
-	# TODO
+	var _target as Expr
+	var _args as List<of Expr>
 
-	def construct(token as IToken, target as Expr, exprs as List<of Expr>)
+	def construct(token as IToken, target as Expr, args as List<of Expr>)
 		base.construct(token)
+		_target = target
+		_args = args
+
+	def _bindImp is override
+		base._bindImp()
+		_target.bindImp()
+		for arg in _args
+			arg.bindImp()  # TODO: error recovery
+
+		# TODO:
+		_type = _target.type.innerType  # should be using indexType(argTypes)
+		if _type is nil
+			_type = .compiler.passThroughType
+		#if self.type in (nil, tpassthrough):
+		#	t = self.target.type.indexType([e.type for e in self.exprs])
+		#	if t:
+		#		self.type = t
+
 
 
 class IsNilExpr
@@ -453,13 +485,14 @@ class MemberExpr
 					receiverType = nil
 				assert effectiveType
 				_type = effectiveType
+				_type.bindImp()  # @@@@ TODO: should be bindInt
 				# TODO: there should be a subclass of BinaryOpExpr called DotExpr and it should do the following work and maybe even the work above.
 				# TODO: _receiverType = receiverType
 				.binarySuperNode.definition = _definition  # TODO: is this needed?
 				.binarySuperNode.type = .type  # the type of foo.bar is what bar returns. A MemberExpr is the "bar" part.
 				.binarySuperNode.setReceiverType(receiverType)
 			assert _type
-			_type.bindImp()
+			_type.bindImp()  # @@@@ TODO: should be bindInt
 
 	def toCobraSource as String is override
 		return _name
@@ -538,6 +571,7 @@ class TruthExpr
 #			else
 			if true
 				_useRuntimeService = true
+		_type = .compiler.boolType
 
 	def toCobraSource as String is override
 		return _expr.toCobraSource()
@@ -573,8 +607,17 @@ class TypeExpr
 class UnaryOpExpr
 	inherits Expr
 
+	var _expr as Expr
+
 	def construct(token as IToken, op as String, expr as Expr)
 		base.construct(token)
+		_expr = expr
+
+	def _bindImp is override
+		base._bindImp()
+		_expr.bindImp()
+		if _type is nil
+			_type = _expr.type
 
 
 ##
@@ -790,6 +833,7 @@ class StringSubstLit
 #			sep = ','
 #		out.write(')')
 
+
 class FormattedExpr
 	inherits Expr
 	"""
@@ -808,6 +852,7 @@ class FormattedExpr
 	def _bindImp is override
 		base._bindImp()
 		_expr.bindImp()
+		_type = .compiler.libraryType('System', 'String')
 
 
 class BaseLit
