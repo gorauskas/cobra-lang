@@ -1,3 +1,3 @@
 @cls
-CobraMain.exe %* > r
-e r
+CobraMain.exe %* > r-run
+e r-run
