@@ -196,7 +196,11 @@ class CallExpr
 						pass  # TODO handle overloads (1)
 					else
 						args = _args
-						if definition.hasVariParams
+						hasVari = false
+						for param in definition.params
+							if param.type inherits VariType
+								hasVari = true
+						if hasVari
 							# TODO handle variable number of args (4)
 							pass
 						else
@@ -404,16 +408,15 @@ class IndexExpr
 		_target.bindImp()
 		for arg in _args
 			arg.bindImp()  # TODO: error recovery
-
-		# TODO:
-		_type = _target.type.innerType  # should be using indexType(argTypes)
 		if _type is nil
-			_type = .compiler.passThroughType
-		#if self.type in (nil, tpassthrough):
-		#	t = self.target.type.indexType([e.type for e in self.exprs])
-		#	if t:
-		#		self.type = t
-
+			# CC: use a list comprehension to get the types
+			# _target.type.indexType(for arg in _args select arg.type)
+			argTypes = List<of IType>()
+			for arg in _args
+				argTypes.add(arg.type)
+			_type = _target.type.indexType(argTypes)
+			if _type is nil
+				_type = .compiler.passThroughType
 
 
 class IsNilExpr
