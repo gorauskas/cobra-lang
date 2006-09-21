@@ -21,6 +21,8 @@ class BinaryOpExpr
 					return InheritsExpr(opToken, op, left, right)
 				on 'PLUS', 'MINUS', 'STAR', 'SLASH', 'SLASHSLASH', 'PERCENT'
 					return BinaryMathExpr(opToken, op, left, right)
+				on 'PLUS_EQUALS', 'MINUS_EQUALS', 'STAR_EQUALS', 'SLASH_EQUALS', 'SLASHSLASH_EQUALS', 'PERCENT_EQUALS'
+					return AugAssignMathExpr(opToken, op, left, right)
 				else
 					return BinaryOpExpr(opToken, op, left, right)
 			# CC: axe the if true pass below which is there to shore up a parsing bug for branch. or maybe it's the multiline else above because it was single line originally and I had to change it
@@ -126,23 +128,11 @@ class AssignExpr
 						.compiler.warning(this, 'Setting a parameter to a class variable is often a mistake. You may want to reverse the assignment.')
 
 
-class BinaryBoolExpr
+class NumericPromoExpr
 	inherits BinaryOpExpr
 
 	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.construct(opToken, op, left, right)
-
-	def _bindImp is override
-		base._bindImp()
-		_type = .compiler.boolType
-
-
-class BinaryMathExpr
-	inherits BinaryOpExpr
-
-	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
-		base.construct(opToken, op, left, right)
-		assert op in ['PLUS', 'MINUS', 'STAR', 'SLASH', 'SLASHSLASH', 'PERCENT']
 
 	def _bindImp is override
 		base._bindImp()
@@ -193,6 +183,42 @@ class BinaryMathExpr
 			else
 				_error('Cannot mix types [_left.type.name] and [_right.type.name] for arithmetic.')
 		assert _type
+
+
+class AugAssignMathExpr
+	inherits NumericPromoExpr
+	"""
+	How should:
+		someInt /= someInt
+	be handled given that
+		someInt / someInt
+	gives a decimal?
+	"""
+
+	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
+		base.construct(opToken, op, left, right)
+
+	def _bindImp is override
+		base._bindImp()
+
+
+class BinaryBoolExpr
+	inherits BinaryOpExpr
+
+	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
+		base.construct(opToken, op, left, right)
+
+	def _bindImp is override
+		base._bindImp()
+		_type = .compiler.boolType
+
+
+class BinaryMathExpr
+	inherits NumericPromoExpr
+
+	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
+		base.construct(opToken, op, left, right)
+		assert op in ['PLUS', 'MINUS', 'STAR', 'SLASH', 'SLASHSLASH', 'PERCENT']
 
 
 class CompareExpr
