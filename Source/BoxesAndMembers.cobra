@@ -17,11 +17,15 @@ class Box
 	var _overloads as List<of MemberOverload>
 	var _nextPrivateSerialNumber = 1001
 
+	var _testMethod as TestMethod
+
 	def construct(token as IToken, name as String, docString as String?)
 		base.construct(token, name, docString)
 		_overloads = List<of MemberOverload>()
 		_baseInterfaces = List<of Interface>()
 		_baseInterfaceTypes = List<of IType>()
+
+	pro testMethod from var
 
 	def makeNextPrivateSerialNumber as int
 		n = _nextPrivateSerialNumber
@@ -224,6 +228,7 @@ class ClassMember  # TODO: rename to BoxMember
 	var _docString as String?
 	var _isNames as List<of String>?
 	var _overloadGroup as MemberOverload?
+	var _testMethod as TestMethod?
 
 	def construct(token as IToken, box as Box, name as String)
 		this.construct(token, box, name, nil)
@@ -242,6 +247,8 @@ class ClassMember  # TODO: rename to BoxMember
 	pro isNames from var
 
 	pro overloadGroup from var
+
+	pro testMethod from var
 
 	get isCallable as bool
 		return false
@@ -318,10 +325,14 @@ class ClassMember  # TODO: rename to BoxMember
 
 	def _bindInt is override
 		base._bindInt()
+		if _testMethod
+			_testMethod.bindInt()
 
 	def _bindImp is override
 		base._bindImp()
 		assert .didBindInt  # class members should have always received a bindInt first
+		if _testMethod
+			_testMethod.bindImp()
 
 
 	## Fields
@@ -820,6 +831,38 @@ class MemberOverload
 	def _bindImp is override
 		base._bindImp()
 
+
+class TestMethod
+	inherits Method
+	"""
+	TODO: It's weird that you have to pass voidType. Maybe Node should have a shared typeProvider
+	like it has a shared compiler. The parser could set it.
+	"""
+
+	var _forMember as ClassMember?
+	var _forBox as Box?
+
+	def construct(token as IToken, member as ClassMember, voidType as IType)
+		require
+			member.box
+			member.name
+		code
+			# CC: shouldn't the .getCompiler() work? C# code gen puts a "this" in there even though it's shared and C# chokes on it
+			#base.construct(token, member.box, 'test_'+Utils.capped(member.name), List<of Param>(), .getCompiler().voidType, List<of String>(), List<of INode>(), '')
+			base.construct(token, member.box, 'test_'+Utils.capped(member.name), List<of Param>(), voidType, List<of String>(), List<of INode>(), '')
+			_forMember = member
+
+	def construct(token as IToken, box as Box, voidType as IType)
+		require
+			box.name
+		code
+			# CC: shouldn't the .getCompiler() work? C# code gen puts a "this" in there even though it's shared and C# chokes on it
+			# base.construct(token, box, 'test_class_'+Utils.capped(box.name), List<of Param>(), .getCompiler().voidType, List<of String>(), List<of INode>(), '')
+			base.construct(token, box, 'test_class_'+Utils.capped(box.name), List<of Param>(), voidType, List<of String>(), List<of INode>(), '')
+			_forBox = box
+
+
+## TODO: Move the below items to Vars.cobra. Put IVar in there too.
 
 class AbstractLocalVar
 	inherits NamedNode

@@ -819,6 +819,7 @@ class Parser
 					on 'EOL': .oneOrMore('EOL')
 					on 'ENUM': box.addDecl(.enumDecl())
 					on 'SHARED': .bodiedBoxMemberDeclsShared(box)
+					on 'TEST': .testSection(box)
 					else
 						_error('Got [.peek()] when expecting var, def, pro, get, set, enum or shared')
 				if decl!
@@ -1033,9 +1034,8 @@ class Parser
 			else
 				prop = Property(token, .curBox, name, returnType, isNames, docString)
 
-# TODO:
-#			if .peek().which=='TEST'
-#				.testSection(prop)
+			if .peek().which=='TEST'
+				.testSection(prop to ProperDexer)  # CC: axe cast
 
 			getWord = .optional('GET')
 			if getWord
@@ -1292,13 +1292,14 @@ class Parser
 #					.require(codePart)
 #				if .peek().which=='ENSURE'
 #					.ensure(codePart)
-#				if .peek().which=='TEST'
-#					.testSection(codePartContainingTest)
-#				if .peek().which=='CODE'
-#					.grab()
-#					codePart.setBlock(.block())
-#				else
-				if true
+				if .peek().which=='TEST'
+					.testSection(codePartContainingTest to ClassMember)  # CC: axe typecast
+				if .peek().which=='CODE'
+					.grab()
+					.indent()
+					_statementsFor(codePart)
+					# TODO: old py code: remove: codePart.setBlock(.block())
+				else
 					if _isContractOnSameLine
 						_statementsFor(codePart)
 					else
@@ -1627,6 +1628,30 @@ class Parser
 		if not catchBlocks and not successBlock and not finallyBlock
 			_error('A try needs at least one "except", "success" or "finally" block.')
 		return TryStmt(token, tryBlock, catchBlocks, successBlock, finallyBlock)
+
+	def testSection(codeMember as ClassMember) as TestMethod
+		"""
+		Parses the `test` section and sets codeMember.testMethod.
+		Returns the test method.
+		"""
+		# TODO: consider pushing the test method as the current code member
+		token = .expect('TEST')
+		.indent()
+		testMethod = TestMethod(token, codeMember, .typeProvider.voidType)
+		.statementsFor(testMethod)
+		codeMember.testMethod = testMethod
+		return testMethod
+
+	def testSection(box as Box) as TestMethod
+		# TODO: consider pushing the test method as the current code member
+		token = .expect('TEST')
+		.indent()
+		assert token, token
+		assert box, box
+		testMethod = TestMethod(token, box, .typeProvider.voidType)
+		.statementsFor(testMethod)
+		box.testMethod = testMethod
+		return testMethod
 
 	def usingStmt as Stmt
 		# syntax: using x = e  block
