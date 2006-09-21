@@ -85,7 +85,10 @@ class Box
 		assert _baseInterfaceNodes is not nil, this
 		for node in _baseInterfaceNodes
 			baseWhat = node.bindInt().namedType
-			if baseWhat inherits Interface
+			if baseWhat is nil
+				assert false, 'When does this happen?'
+				_error('Cannot locate [node].')
+			else if baseWhat inherits Interface
 				_baseInterfaces.add(baseWhat)
 				_baseInterfaceTypes.add(baseWhat)
 			else if baseWhat inherits QualifiedType
@@ -95,7 +98,10 @@ class Box
 				else
 					_error('Cannot inherit "[baseWhat.theWrappedType.name]" which is a [baseWhat.theWrappedType.englishName].')
 			else
-				_error('Cannot inherit "[baseWhat.name]" which is a [baseWhat.englishName].')
+				_badInterfaceError(baseWhat to IType)  # CC: axe type cast
+
+	def _badInterfaceError(type as IType)
+		_error('Cannot inherit "[type.name]" which is a [type.englishName].')
 
 	def _bindImp is override
 		base._bindImp()
@@ -181,6 +187,12 @@ class Class
 			else
 				_error('The base class "[_baseName]" is not actually a class, it is a "[possible.englishName]".')
 		base._bindInt()
+
+	def _badInterfaceError(type as IType) is override
+		msg = 'Cannot implement "[type.name]" which is a [type.englishName].'
+		if type inherits Class
+			msg += ' Use "inherits" instead.'
+		_error(msg)
 
 	get englishName as String is override
 		return 'class'
