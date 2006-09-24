@@ -121,11 +121,11 @@ class Class
 	inherits Box
 
 	var _baseClass as Class?
-	var _baseName as String
+	var _baseNode as INode?
 
-	def construct(token as IToken, name as String, paramList as List<of INode>, isNames as List<of String>, baseName as String?, implementsNodes as List<of INode>, docString as String?)
+	def construct(token as IToken, name as String, paramList as List<of INode>, isNames as List<of String>, baseNode as INode?, implementsNodes as List<of INode>, docString as String?)
 		base.construct(token, name, docString)
-		_baseName = baseName ? "Object"  # TODO: this would pick up a local object instead of System.Object. Is that what's wanted?
+		_baseNode = baseNode
 		_baseInterfaceNodes = implementsNodes
 
 	get baseClass from var
@@ -171,21 +171,27 @@ class Class
 	def _bindInt is override
 		# TODO: the following is a fix for SystemInterfaces.cobra.
 		# Upon reading mscorlib.dll, this won't be necessary
-		if _name=='Object' and .compiler.nameSpaceStack.peek().name=='System'
-			assert _baseName=='Object'
-			_baseName = ''
-		if _baseName
-			possible = .compiler.symbolForName(_baseName, false, false)  # should canBeMember be true?
+# @@@@ remove this
+#		if _name=='Object' and .compiler.nameSpaceStack.peek().name=='System'
+#			assert _baseName=='Object'
+#			_baseName = ''
+		if _baseNode
+			_baseNode.bindInt()
+			possible = _baseNode.namedType
+# TODO: remove:			possible = .compiler.symbolForName(_baseName, false, false)  # should canBeMember be true?
+			baseName = _baseNode.toString()
 			if possible is nil
-				_error('Cannot locate base class named "[_baseName]" for class "[_name]".')
+				_error('Cannot locate base class named "[baseName]" for class "[_name]".')
+			if possible inherits QualifiedType
+				$sharp('possible = ((QualifiedType)possible).TheWrappedType')
 			if possible inherits Class
 				_baseClass = possible
 			else if possible inherits Interface
-				_error('The base "[_baseName]" is an interface. Try "implements" instead of "inherits".')
+				_error('The base "[baseName]" is an interface. Try "implements" instead of "inherits".')
 			else if possible inherits Struct
-				_error('The base "[_baseName]" is a struct. Classes cannot inherit from structs.')
+				_error('The base "[baseName]" is a struct. Classes cannot inherit from structs.')
 			else
-				_error('The base class "[_baseName]" is not actually a class, it is a "[possible.englishName]".')
+				_error('The base class "[baseName]" is not actually a class, it is a "[possible.englishName]".')
 		base._bindInt()
 
 	def _badInterfaceError(type as IType) is override
@@ -950,6 +956,8 @@ class AbstractLocalVar
 	def _bindInt is override
 		base._bindInt()
 		_resolveType()
+		assert _type
+		_type.bindInt()
 
 	def _bindImp is override
 		base._bindImp()
