@@ -392,9 +392,6 @@ class ClassVar
 		_ifInheritsStack = Stack<of IType>()
 		_useCSNameStack = Stack<of String>()  # for if-inherits
 
-	get defaultAccessLevel as String is override
-		return 'protected'
-
 	def addRefFields is override
 		base.addRefFields()
 		if _type
@@ -406,13 +403,18 @@ class ClassVar
 		base.addSubFields()
 		.addField('initExpr', _initExpr)
 
+	get defaultAccessLevel as String is override
+		return 'protected'
+
+	pro ifInheritsStack from var
+
+	get requiresDotPrefix as bool
+		return _box is not nil and not _name.startsWith('_')
+
 	# TODO @@@ who calls this and when?
 	def symbolForName(name as String, canBeMember as bool) as IMember?
 		t as IType? = if(_ifInheritsStack, _ifInheritsStack.peek() to passthrough, _type)  # CC: get rid of cast and 'as'
 		return t.memberForName(name)  # TODO is "true" the correct value here?
-
-	get requiresDotPrefix as bool
-		return _box is not nil and not _name.startsWith('_')
 
 	def _bindInt is override
 		base._bindInt()
@@ -914,6 +916,8 @@ class AbstractLocalVar
 		_isImplicit = isImplicit
 		_isTracked = false
 
+	pro ifInheritsStack from var
+
 	pro isTracked from var
 
 #	def addMinFields is override
@@ -968,7 +972,8 @@ class AbstractLocalVar
 		return .type
 
 	get typeForReceiver as IType is override
-		return .type
+		assert _type
+		return if(_ifInheritsStack, _ifInheritsStack.peek(), _type to IType)
 
 	def csAssignmentNames as List<of String>
 		return List<of String>(_useCSNameStack)
