@@ -10,20 +10,35 @@ class Box
 
 	# TODO: Box should implement IType
 
+	var _params as List<of IType>
+
 	var _baseInterfaceNodes as List<of INode>
 	var _baseInterfaces as List<of Interface>
-	var _baseInterfaceTypes as List<of IType>  # can include interfaces and qualified types (containing interfaces)
+	var _baseInterfaceTypes as List<of IType>  # can include interfaces and qualified types (containing interfaces) TODO: another example of why QualifiedType should be replaced by TypeIdentifier
 
 	var _overloads as List<of MemberOverload>
 	var _nextPrivateSerialNumber = 1001
 
 	var _testMethod as TestMethod
 
-	def construct(token as IToken, name as String, docString as String?)
+	def construct
+		base.construct(TokenFix.empty, 'x', '')
+		assert false, 'CC: remove this when unnecessary return statements can be removed'
+
+	def construct(token as IToken, name as String, paramList as List<of IType>, docString as String?)
 		base.construct(token, name, docString)
-		_overloads = List<of MemberOverload>()
+		_params = paramList
 		_baseInterfaces = List<of Interface>()
 		_baseInterfaceTypes = List<of IType>()
+		_overloads = List<of MemberOverload>()
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('params', _params)
+		if _baseInterfaces
+			.addField('baseInterfaces', _baseInterfaces)
+		else
+			.addField('baseInterfaceNodes', _baseInterfaceNodes)
 
 	pro testMethod from var
 
@@ -41,6 +56,13 @@ class Box
 			_declsByName[ol.name] = ol
 			_declsByName[ol.name.toLower()] = ol
 
+	def paramForName(name as String) as IType?
+		# TODO: make faster
+		for param in _params
+			if name==param.name
+				return param
+		return nil
+
 	def symbolForName(name as String, canBeMember as bool, haveThis as bool) as IMember?
 		"""
 		Unlike the inherited declForName(), this method follows the
@@ -50,6 +72,12 @@ class Box
 		# TODO: is canBeMember ever false?
 		if not canBeMember
 			return nil
+		p = .paramForName(name)
+		if p
+			if haveThis
+				_error('Cannot refer to a generic parameter ("[name]") through `this`.')
+			else
+				return p
 		x = .declForName(name)
 		if x and not haveThis
 			if x.requiresThis
@@ -85,6 +113,9 @@ class Box
 		assert _baseInterfaceNodes is not nil, this
 		for node in _baseInterfaceNodes
 			baseWhat = node.bindInt().namedType
+			# TODO: strongly consider getting rid of QualifiedType and using TypeIdentifier in its place
+			if baseWhat inherits QualifiedType
+				baseWhat.bindInt()
 			if baseWhat is nil
 				assert false, 'When does this happen?'
 				_error('Cannot locate [node].')
@@ -96,6 +127,7 @@ class Box
 					_baseInterfaces.add(baseWhat.theWrappedType to Interface)
 					_baseInterfaceTypes.add(baseWhat)
 				else
+					assert baseWhat.theWrappedType<>nil, baseWhat.toTechString()
 					_error('Cannot inherit "[baseWhat.theWrappedType.name]" which is a [baseWhat.theWrappedType.englishName].')
 			else
 				_badInterfaceError(baseWhat to IType)  # CC: axe type cast
@@ -116,6 +148,32 @@ class Box
 		finally
 			.compiler.boxStack.pop()
 
+	## Generics
+
+	get isGenericTypeDef as bool is override
+		# TODO: make this more efficient, maybe be computing in the constructor
+		if _params
+			for param in _params
+				if not param inherits GenericParam
+					return false
+			return true
+		else
+			return false
+
+	get isGenericType as bool is override
+		return _params.count>0
+
+	get genericParams as List<of IType> is override
+		require .isGenericType
+		return _params
+
+	def makeGenericType(typeArgs as List<of IType>) as IType is override
+		require  # TODO: inherit this from the interface instead
+			.isGenericType
+		code
+			assert false, 'TODO'
+			return CobraType()
+
 
 class Class
 	inherits Box
@@ -123,8 +181,8 @@ class Class
 	var _baseClass as Class?
 	var _baseNode as INode?
 
-	def construct(token as IToken, name as String, paramList as List<of INode>, isNames as List<of String>, baseNode as INode?, implementsNodes as List<of INode>, docString as String?)
-		base.construct(token, name, docString)
+	def construct(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseNode as INode?, implementsNodes as List<of INode>, docString as String?)
+		base.construct(token, name, paramList, docString)
 		_baseNode = baseNode
 		_baseInterfaceNodes = implementsNodes
 
@@ -183,6 +241,7 @@ class Class
 			if possible is nil
 				_error('Cannot locate base class named "[baseName]" for class "[_name]".')
 			if possible inherits QualifiedType
+				possible.bindInt()  # TODO: another monkey wrench showing how QualifiedType should be retired
 				$sharp('possible = ((QualifiedType)possible).TheWrappedType')
 			if possible inherits Class
 				_baseClass = possible
@@ -211,8 +270,8 @@ class Class
 class Interface
 	inherits Box
 
-	def construct(token as IToken, name as String, paramList as List<of INode>, isNames as List<of String>, baseNodes as List<of INode>, docString as String?)
-		base.construct(token, name, docString)
+	def construct(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseNodes as List<of INode>, docString as String?)
+		base.construct(token, name, paramList, docString)
 		_baseInterfaceNodes = baseNodes
 
 	get englishName as String is override
@@ -236,13 +295,107 @@ class Interface
 class Struct
 	inherits Box
 
-	def construct(token as IToken, name as String, paramList as List<of INode>, isNames as List<of String>, baseName as String?, interfaceNodes as List<of INode>, docString as String?)
-		base.construct(token, name, docString)
+	def construct(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseName as String?, interfaceNodes as List<of INode>, docString as String?)
+		base.construct(token, name, paramList, docString)
 		_baseInterfaceNodes = interfaceNodes
 
 	def _bindInt is override
 		base._bindInt()
 
+
+class GenericParam
+	inherits CobraType
+	"""
+	A generic parameter *is* a type.
+	"""
+
+	var _name as String
+	var _constraints as List<of GenericConstraint>
+
+	def construct(name as String)
+		require name
+		base.construct()
+		_name = name
+		_constraints = List<of GenericConstraint>()
+
+	get name as String is override
+		return _name
+
+# TODO:	def isReference()
+#		return true
+
+	def declForName(name as String) as IMember? is override
+		for constraint in _constraints
+			decl = constraint.declForName(name)
+			if decl
+				return decl
+		return nil
+
+	def memberForName(name as String) as IMember? is override
+		for constraint in _constraints
+			member = constraint.memberForName(name)
+			if member
+				return member
+		return nil
+
+	def isDescendantOf(type as IType) as bool is override
+		if type is .compiler.libraryType('System', 'Object')
+			return true
+		if type.superType is nil  # the root type
+			return true
+		for constraint in _constraints
+			r = constraint.isDescendantOf(type)
+			if r
+				return true
+		return false
+
+	def _bindInt is override
+		base._bindInt()
+		for constraint in _constraints
+			constraint.bindInt()
+
+# TODO:
+#	def asCS()
+#		return _name
+#
+#	def csInit()
+#		return 'default(%s)' % _name
+#
+#	def genCSConstraint(out)
+#		if _constraints
+#			out.write('where %s  ' % _name)
+#			sep = ''
+#			for constraint in _constraints
+#				out.write(sep)
+#				constraint.genCS(out)
+#				sep = ', '
+#			out.write('\n')
+
+
+class GenericConstraint   # TODO
+	inherits Node
+
+	def declForName(name as String) as IMember?
+		"""
+		Returns nil by default.
+		"""
+		return nil
+
+	def memberForName(name as String) as IMember?
+		"""
+		Returns nil by default.
+		"""
+		return nil
+
+	def isDescendantOf(type as IType) as bool
+		return false
+
+	def _bindInt is override
+		base._bindInt()
+		# TODO
+
+
+# TODO: Move everything below to Members.cobra
 
 class ClassMember  # TODO: rename to BoxMember
 	inherits NamedNode
@@ -803,12 +956,12 @@ class ProperDexer
 	def makeGetPart(token as IToken) as OneCodeBlockMember
 		throw OverrideException()
 		# CC: shouldn't need a return:
-		return OneCodeBlockMember(token, Box(token, '', ''), '', '', List<of Param>())
+		return OneCodeBlockMember(token, Box(), '', '', List<of Param>())
 
 	def makeSetPart(token as IToken) as OneCodeBlockMember
 		throw OverrideException()
 		# CC: shouldn't need a return:
-		return OneCodeBlockMember(token, Box(token, '', ''), '', '', List<of Param>())
+		return OneCodeBlockMember(token, Box(), '', '', List<of Param>())
 
 
 class MemberOverload

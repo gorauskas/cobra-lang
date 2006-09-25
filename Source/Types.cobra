@@ -127,17 +127,46 @@ class BasicTypeProvider
 
 
 interface IType
-	inherits INode  # TODO: does an IType need to also be an IContainer?
-
-	get name as String
+	inherits IMember  # TODO: does an IType need to also be an IContainer?
 
 	get csInit as String
-
-	get englishName as String
 
 	def isAssignableTo(type as IType) as bool
 
 	def isDescendantOf(type as IType) as bool
+
+	get isGenericTypeDef as bool
+		"""
+		Returns true if this type is a definition of a generic type, and
+		therefore capable of making subsequent generic types via the
+		`makeGenericType` method. A generic type will have generic
+		parameters which are all GenericParam (as opposed to other types
+		such as `int` or a given class).
+		"""
+
+	get isGenericType as bool
+		"""
+		Returns true if this type is a generic type which includes
+		generic type defs and open-or-closed constructed types. Note
+		that arrays of generic types and pointers to generic types will
+		return false.
+		"""
+
+	get genericParams as List<of IType>
+		"""
+		Return the list of generic params for this generic type. This
+		property requires that .isGenericTypeDef is true.
+		"""
+		# TODO: require .isGenericTypeDef
+
+	def makeGenericType(typeArgs as List<of IType>) as IType
+		"""
+		Makes a new generic type with the given typeArgs which must
+		match in number to the generic parameters. This method requires
+		that .isGenericTypeDef is true. Note that the type args can be
+		GenericParams or other types or a mix.
+		"""
+		# TODO: require .isGenericTypeDef; typesArgs.count==.genericParams.count
 
 	def indexType(argTypes as List<of IType>) as IType?
 		"""
@@ -180,21 +209,52 @@ class CobraType
 	get name as String
 		return .getType().toString()
 
-	get namedType as IType? is override
-		# TODO: is this essential? if so, perhaps "namedType" --> "effectiveType"
+	get isCallable as bool
+		return true
+
+	get requiresThis as bool
+		return false
+
+	get resultType as IType?
 		return this
+
+	get typeForIdentifier as IType
+		return .compiler.typeType
+
+	get typeForReceiver as IType
+		return this
+
+	def indexType(argTypes as List<of IType>) as IType?
+		return nil
 
 	get innerType as IType?
 		return nil
 
+	get namedType as IType? is override
+		# TODO: is this essential? if so, perhaps "namedType" --> "effectiveType"
+		return this
+
 	get superType as IType?
 		return _superType
 
-	get csInit as String
-		throw OverrideException(.getType())
+	get isGenericTypeDef as bool
+		return false
 
-	def indexType(argTypes as List<of IType>) as IType?
-		return nil
+	get isGenericType as bool
+		return false
+
+	get genericParams as List<of IType>
+		if .isGenericTypeDef
+			throw Exception('.isGenericTypeDef returns true, but there is no override to return the genericParams')
+		else
+			throw Exception('.isGenericTypeDef returns false, so there can be no genericParams')
+
+	def makeGenericType(typeArgs as List<of IType>) as IType
+		if .isGenericTypeDef
+			throw Exception('.isGenericTypeDef returns true, but there is no override to makeGenericType')
+		else
+			throw Exception('.isGenericTypeDef returns false, so there can be no makeGenericType')
+		return CobraType()  # TODO: axe whole line when code flow analysis proves it's not needed
 
 	def isAssignableTo(type as IType) as bool
 		require
@@ -246,6 +306,9 @@ class CobraType
 
 	def getHashCode as int is override
 		return .serialNum.getHashCode()
+
+	get csInit as String
+		throw OverrideException(.getType())
 
 
 class ValueType
@@ -477,8 +540,8 @@ class WrappedType
 				_hashCode = base.getHashCode()
 		return _hashCode to int  # CC: to !
 
-	# CC: this should work
-	#get theWrappedType from _wrappedType
+	# CC: this should work, but C# don't dig it.
+	#get wrappedType from _wrappedType
 
 	get theWrappedType as IType?
 		return _wrappedType
@@ -559,7 +622,7 @@ class QualifiedType
 	var _boundNodes as List<of Container>
 	var _dottedParentNames as String?
 
-	def construct(nodes as List<of INode>)
+	def construct(nodes as IList<of ISyntaxNode>)
 		require
 			nodes
 		code
@@ -582,11 +645,18 @@ class QualifiedType
 			.addField('dottedParentNames', _dottedParentNames)
 
 	get name as String is override
-		if false and _wrappedType
-			return _dottedParentNames to String + _wrappedType.name  # CC: axe the cast
-		else
-			nodes = Utils.join(', ', _initNodes)
-			return '[.getType().name]([nodes])'
+		sb = StringBuilder()
+		for ti in _initNodes
+			if sb.length
+				sb.append('.')
+			sb.append(ti.name)
+		return sb.toString()
+		# TODO:
+#		if false and _wrappedType
+#			return _dottedParentNames to String + _wrappedType.name  # CC: axe the cast
+#		else
+#			nodes = Utils.join(', ', _initNodes)
+#			return '[.getType().name]([nodes])'
 
 	get englishName as String is override
 		assert .didBindInt # TODO: try moving this to CobraType
@@ -698,7 +768,39 @@ class TypeIdentifier
 			.name
 		code
 			base.construct(token)
-			_name = token.value to String
+			_name = token.value to String  # TODO: change to token.text
+
+	def construct(token as IToken, type as IType)
+		require
+			token.text
+		ensure
+			.name
+		code
+			base.construct(token)
+			_name = token.text
+			_actualType = type
+
+	def construct(token as IToken, name as String, type as IType)
+		"""
+		Use this to dictate a name other than what is specified by the token.
+		Used for QualifiedTypes, for example, that are created from multiple tokens.
+		"""
+		require
+			name
+		ensure
+			.name
+		code
+			base.construct(token)
+			_name = name
+			_actualType = type
+
+	def addMinFields is override
+		base.addMinFields()
+		.addField('name', _name)
+
+	def addRefFields is override
+		base.addSubFields()
+		.addField('actualType', _actualType)
 
 	get name from var
 
@@ -706,7 +808,7 @@ class TypeIdentifier
 
 	get namedType as IType? is override
 		require
-			.didBindInt
+			.didBindInt or .didBindImp
 			.actualType
 		code
 			return _actualType
@@ -726,6 +828,21 @@ class TypeIdentifier
 
 	def _bindInt is override
 		base._bindInt()
+		_resolveType()
+
+	def _bindImp is override
+		base._bindImp()
+		_resolveType()
+
+		# A TypeIdentifier can be given a type that is constructed
+		# during parsing (such as a QualifiedType). Consequently, it may
+		# not have gotten a bindInt() and without it one, it will barf at
+		# some point. So:
+		_actualType.bindInt()
+
+	def _resolveType
+		if _actualType is not nil
+			return
 		# don't need to check "basic types" like int, bool, etc. here. the parser does those.
 		if Utils.isCapped(_name)
 			symbol = .compiler.symbolForName(.name, true, false)  # nested enum and class types are capped and are members of the current class

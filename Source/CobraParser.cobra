@@ -380,7 +380,7 @@ class Parser
 				useToken = Token(_fileName, 1, 1, 1, 'USE', 'use', nil)
 				# default use directives
 				_module.addDecl(UseDirective(useToken, ['System']))
-#				_module.addDecl(UseDirective(useToken, ['System', 'Collections', 'Generic']))
+				_module.addDecl(UseDirective(useToken, ['System', 'Collections', 'Generic']))
 #				_module.addDecl(UseDirective(useToken, ['System', 'IO']))
 #				_module.addDecl(UseDirective(useToken, ['System', 'Text']))
 #				_module.addDecl(UseDirective(useToken, ['Cobra', 'Lang']))
@@ -451,19 +451,18 @@ class Parser
 			_error('Class names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 
 		# CC: rename paramsList to params (can't do it now because it's a C# reserved word and Cobra needs to generate IL or 'escape' these)
-		paramsList = List<of INode>()  # TODO: change type to GenericParam
+		paramsList = List<of IType>()
 		if token.which=='OPEN_GENERIC'
-			assert false, 'TODO: Generics'
-#			expectComma = false
-#			while true
-#				if .peek().which=='GT'
-#					.grab()
-#					break
-#				if expectComma
-#					.expect('COMMA')
-#				ident = .expect('ID').value
-#				paramsList.append(GenericParam(ident))
-#				expectComma = true
+			expectComma = false
+			while true
+				if .peek().which=='GT'
+					.grab()
+					break
+				if expectComma
+					.expect('COMMA')
+				ident = .expect('ID').text
+				paramsList.add(GenericParam(ident))
+				expectComma = true
 
 		.indent()
 
@@ -585,19 +584,18 @@ class Parser
 			_error('Interfaces must start with a capital "I".')
 
 		# CC: rename paramsList to params (can't do it now because it's a C# reserved word and Cobra needs to generate IL or 'escape' these)
-		paramsList = List<of INode>()  # TODO: change type to GenericParam
+		paramsList = List<of IType>()
 		if token.which=='OPEN_GENERIC'
-			assert false, 'TODO: Generics'
-#			expectComma = false
-#			while true
-#				if .peek().which=='GT'
-#					.grab()
-#					break
-#				if expectComma
-#					.expect('COMMA')
-#				ident = .expect('ID').value
-#				paramsList.append(GenericParam(ident))
-#				expectComma = true
+			expectComma = false
+			while true
+				if .peek().which=='GT'
+					.grab()
+					break
+				if expectComma
+					.expect('COMMA')
+				ident = .expect('ID').text
+				paramsList.add(GenericParam(ident))
+				expectComma = true
 
 		.indent()
 
@@ -670,19 +668,18 @@ class Parser
 			_error('Struct names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 
 		# CC: rename paramsList to params (can't do it now because it's a C# reserved word and Cobra needs to generate IL or 'escape' these)
-		paramsList = List<of INode>()  # TODO: change to GenericParam
+		paramsList = List<of IType>()
 		if token.which=='OPEN_GENERIC'
-			assert false, 'TODO: generics for structs'
-#			expectComma = false
-#			while true
-#				if .peek().which=='GT'
-#					.grab()
-#					break
-#				if expectComma
-#					.expect('COMMA')
-#				ident = .expect('ID').value
-#				paramsList.append(GenericParam(ident))
-#				expectComma = true
+			expectComma = false
+			while true
+				if .peek().which=='GT'
+					.grab()
+					break
+				if expectComma
+					.expect('COMMA')
+				ident = .expect('ID').text
+				paramsList.add(GenericParam(ident))
+				expectComma = true
 
 		.indent()
 
@@ -877,13 +874,13 @@ class Parser
 				sugg = String(c'_', numUnderscores) + s[0].toString().toLower() + s.substring(1)
 				sugg = ' Try "[sugg]".'
 			_error('Class variables must start with lowercase letters (after the underscore(s)) to distinguish them from other types of identifiers.[sugg]')
-		type = if(.optional('AS'), .type(), nil)
+		type as INode? = if(.optional('AS'), .type(), nil)
 		if .optional('ASSIGN')
 			initExpr as Expr? = .expression()  # CC: initExpr = .expression() to ?
 		else
 			initExpr = nil
 			if type is nil
-				type = .typeProvider.dynamicType
+				type = .typeProvider.dynamicType  # TODO: feels awkward to use Token.empty here since it's line number will be 1
 		docString as String? = ''  # CC: change to: docString = '' to ?
 		isNames = List<of String>(_isNamesStack)
 		if .peek().which=='IS'
@@ -936,7 +933,7 @@ class Parser
 			paramsList = List<of Param>()
 
 		if .optional('AS')
-			returnType = .type()
+			returnType as INode? = .type()
 		else
 			returnType = _typeProvider.voidType
 		assert returnType
@@ -1024,7 +1021,7 @@ class Parser
 				return .declarePropertyFrom(token, name, 'getset')
 			paramsList = List<of Param>()
 		if .optional('AS')
-			returnType = .type()
+			returnType as INode = .type()
 		else
 			returnType = _typeProvider.dynamicType
 		assert returnType
@@ -1117,7 +1114,7 @@ class Parser
 				return .declarePropertyFrom(token, name, 'get')
 			paramsList = List<of Param>()
 		if .optional('AS')
-			returnType = .type()
+			returnType as INode = .type()
 		else
 			returnType = _typeProvider.dynamicType
 		assert returnType!
@@ -1162,7 +1159,7 @@ class Parser
 		if .optional('FROM')
 			return .declarePropertyFrom(token, name, 'set')
 		if .optional('AS')
-			returnType = .type()
+			returnType as INode = .type()
 			assert returnType
 		else
 			returnType = _typeProvider.dynamicType
@@ -1983,8 +1980,8 @@ class Parser
 			return .ifExpr()
 		else if peek=='OPEN_CALL'
 			return .callExpr()
-#		else if peek=='OPEN_GENERIC'
-#			return TypeExpr(.type())
+		else if peek=='OPEN_GENERIC'
+			return TypeExpr(.type())
 		else if peek=='ID'
 			return .identifierExpr()
 		else if peek=='SHARP_OPEN'
@@ -2119,6 +2116,8 @@ class Parser
 		# for a type.
 		if t inherits IType
 			return TypeExpr(.last, t)
+		else if t inherits TypeIdentifier
+			return TypeExpr(t)
 		else
 			assert false, t
 
@@ -2126,14 +2125,14 @@ class Parser
 	## Types
 	##
 
-	def type as INode
+	def type as ISyntaxNode
 		return .qualifiedType()
 
-	def qualifiedType as INode
+	def qualifiedType as ISyntaxNode
 		"""
 		May actually return a non-qualified type.
 		"""
-		types = List<of INode>()
+		types = List<of ISyntaxNode>()
 		while true
 			t = .nonqualifiedType()
 			assert t
@@ -2146,31 +2145,33 @@ class Parser
 		if types.count==1
 			return types[0]
 		else
-			return QualifiedType(types)
+			qt = QualifiedType(types)
+			return TypeIdentifier(types[0].token, qt.name, qt)
 
-	def nonqualifiedType as INode
+	def nonqualifiedType as ISyntaxNode
 		return .nonqualifiedType(ErrorActionEnum.Exit)
 
-	def nonqualifiedType(action as ErrorActionEnum) as INode
+	def nonqualifiedType(action as ErrorActionEnum) as ISyntaxNode
 		token = .grab()
-		# TODO: use .typeProvider.fooType
+
+		# TODO: use a branch here
 		if token.text=='int'
-			return .typeProvider.intType
+			return TypeIdentifier(token, .typeProvider.intType)
 		else if token.text=='bool'
-			return .typeProvider.boolType
+			return TypeIdentifier(token, .typeProvider.boolType)
 		else if token.text=='char'
-			return .typeProvider.charType
+			return TypeIdentifier(token, .typeProvider.charType)
 		else if token.text=='decimal'
-			return .typeProvider.decimalType
+			return TypeIdentifier(token, .typeProvider.decimalType)
 		else if token.text=='float'
-			return .typeProvider.floatType
+			return TypeIdentifier(token, .typeProvider.floatType)
 		else if token.text=='passthrough'
-			return .typeProvider.passThroughType
+			return TypeIdentifier(token, .typeProvider.passThroughType)
 		else if token.which=='ID'
 			return TypeIdentifier(token)
 		else
 			_error('Unrecognized type: [token]')
-			return CobraType()
+			return SyntaxNode(Token.empty)  # CC: remove
 
 
 	##

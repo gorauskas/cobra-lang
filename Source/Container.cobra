@@ -131,12 +131,31 @@ class Container
 	get innerType as IType?
 		return nil
 
-	def memberForName(name as String) as IMember?
-		return .declForName(name)
-
 	get superType as IType?
 		require .didBindInt
 		return nil
+
+	get isGenericTypeDef as bool
+		return false
+
+	get isGenericType as bool
+		return false
+
+	get genericParams as List<of IType>
+		if .isGenericTypeDef
+			throw Exception('.isGenericTypeDef returns true, but there is no override to return the genericParams')
+		else
+			throw Exception('.isGenericTypeDef returns false, so there can be no genericParams')
+
+	def makeGenericType(typeArgs as List<of IType>) as IType
+		if .isGenericTypeDef
+			throw Exception('.isGenericTypeDef returns true, but there is no override to makeGenericType')
+		else
+			throw Exception('.isGenericTypeDef returns false, so there can be no makeGenericType')
+		return CobraType()  # TODO: axe whole line when code flow analysis proves it's not needed
+
+	def memberForName(name as String) as IMember?
+		return .declForName(name)
 
 	get csInit as String
 		throw OverrideException(.getType())
@@ -151,13 +170,18 @@ interface IMember
 
 	That includes namespaces, classes, structs and interfaces
 	themselves. As well as the obvious choices of methods, constructors,
-	properties and indexers. Also, enums.
+	properties and indexers. Also, enums and generic parameters, which
+	themselves can be specific types such as `int`.
+
+	That mostly leaves statements and expressions as the nodes that
+	cannot be IMembers.
 
 	IContainer and Container both reference IMember extensively.
 
 	Furthermore, IContainer happens to implement IMember because, as it
 	turns out, all of the containers may be members of other containers
-	(though not without restrictions).
+	(though not without restrictions (a namespace can belong to only
+	another namespace)).
 	"""
 
 	get isCallable as bool
@@ -184,4 +208,3 @@ interface IMember
 		property, this would be the return type. For other members like
 		enums and classes, this would be the member itself.
 		"""
-
