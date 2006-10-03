@@ -31,7 +31,7 @@ class Parser
 		decls = module.declsInOrder
 		decl = decls[decls.count-1]
 		if decl inherits Class
-			assert decl.name == 'Test'
+			assert decl.name == 'Test', decl.name
 		else
 			assert false, decl
 
@@ -451,18 +451,8 @@ class Parser
 			_error('Class names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 
 		# CC: rename paramsList to params (can't do it now because it's a C# reserved word and Cobra needs to generate IL or 'escape' these)
-		paramsList = List<of IType>()
-		if token.which=='OPEN_GENERIC'
-			expectComma = false
-			while true
-				if .peek().which=='GT'
-					.grab()
-					break
-				if expectComma
-					.expect('COMMA')
-				ident = .expect('ID').text
-				paramsList.add(GenericParam(ident))
-				expectComma = true
+		paramsList = .declGenericParams(token)
+		name = .nameForDeclGenericParams(token, paramsList)
 
 		.indent()
 
@@ -567,6 +557,40 @@ class Parser
 		# TODO: error if 2 or more of 'public', 'protected', 'private', 'internal'
 		return names
 
+	def declGenericParams(token as IToken) as List<of IType>
+		"""
+		This parses and returns the generic params for a box
+		declaration. It does NOT work for the generic params in other
+		types such as a return type or a base class type--those can have
+		other kinds parameters including other generic types and basic
+		types. Box declarations only have generic parameter names.
+		"""
+		paramsList = List<of IType>()
+		if token.which=='OPEN_GENERIC'
+			expectComma = false
+			while true
+				if .peek().which=='GT'
+					.grab()
+					break
+				if expectComma
+					.expect('COMMA')
+				ident = .expect('ID').text
+				paramsList.add(GenericParam(ident))
+				expectComma = true
+		return paramsList
+
+	def nameForDeclGenericParams(token as IToken, paramList as List<of IType>) as String
+		"""
+		This is called after declGenericParams() to update the name of the declaring type.
+		CC: add an "out name" parameter to declGenericParams() and axe this method.
+		"""
+		name = token.text.trim()
+		if token.which=='OPEN_GENERIC'
+			for i = 0 .. paramList.count-1
+				name += ','
+			name += '>'
+		return name
+
 	def interfaceDecl as Interface
 		token = .expect('INTERFACE')
 		peek = .peek().which
@@ -584,18 +608,8 @@ class Parser
 			_error('Interfaces must start with a capital "I".')
 
 		# CC: rename paramsList to params (can't do it now because it's a C# reserved word and Cobra needs to generate IL or 'escape' these)
-		paramsList = List<of IType>()
-		if token.which=='OPEN_GENERIC'
-			expectComma = false
-			while true
-				if .peek().which=='GT'
-					.grab()
-					break
-				if expectComma
-					.expect('COMMA')
-				ident = .expect('ID').text
-				paramsList.add(GenericParam(ident))
-				expectComma = true
+		paramsList = .declGenericParams(token)
+		name = .nameForDeclGenericParams(token, paramsList)
 
 		.indent()
 
@@ -648,7 +662,7 @@ class Parser
 
 		_boxStack.push(theInterface)
 #		.isNamesStack = Stack(str)
-		.bodiedBoxMemberDecls(theInterface)
+		.bodiedBoxMemberDecls(theInterface)  # TODO: this shouldn't be bodiedBoxMemberDecls, right?
 		_boxStack.pop()
 
 		return theInterface
@@ -668,18 +682,8 @@ class Parser
 			_error('Struct names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 
 		# CC: rename paramsList to params (can't do it now because it's a C# reserved word and Cobra needs to generate IL or 'escape' these)
-		paramsList = List<of IType>()
-		if token.which=='OPEN_GENERIC'
-			expectComma = false
-			while true
-				if .peek().which=='GT'
-					.grab()
-					break
-				if expectComma
-					.expect('COMMA')
-				ident = .expect('ID').text
-				paramsList.add(GenericParam(ident))
-				expectComma = true
+		paramsList = .declGenericParams(token)
+		name = .nameForDeclGenericParams(token, paramsList)
 
 		.indent()
 
@@ -1855,8 +1859,7 @@ class Parser
 				# requires special handling - PostCallExpr
 				token = .grab()
 				exprs = .commaSepExprs('RPAREN')
-				assert false, 'TODO'
-#				return .expression(precedence, PostCallExpr(token, left, exprs))
+				return .expression(precedence, PostCallExpr(token, left, exprs))
 			else
 				# most operators are one-word affairs
 				if op is nil
@@ -2153,6 +2156,10 @@ class Parser
 
 	def nonqualifiedType(action as ErrorActionEnum) as ISyntaxNode
 		token = .grab()
+		assert token
+
+		if token.which=='OPEN_GENERIC'
+			return .genericType(token to IToken)  # CC: axe cast
 
 		# TODO: use a branch here
 		if token.text=='int'
@@ -2172,6 +2179,26 @@ class Parser
 		else
 			_error('Unrecognized type: [token]')
 			return SyntaxNode(Token.empty)  # CC: remove
+
+	def genericType(openGenericToken as IToken) as ISyntaxNode
+		require openGenericToken.text.trim().endsWith('<of')
+		fullName = openGenericToken.text.trim() + ' '
+		rootName = fullName.substring(0, fullName.length-4)  # CC: [:-4]
+		expectComma = false
+		types = List<of ISyntaxNode>()
+		while true
+			if .peek().which=='GT'
+				.grab()
+				break
+			if expectComma
+				.expect('COMMA')
+				fullName += ', '
+			t = .type()
+			types.add(t)
+			fullName += t.token.text # TODO: this is totally wrong because the type could be something complex like a qualified type or a generic type.
+			expectComma = true
+		fullName += '>'
+		return GenericTypeIdentifier(openGenericToken, rootName, types, fullName)
 
 
 	##

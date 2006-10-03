@@ -8,9 +8,8 @@ class Box
 	These are collectively known as "boxes".
 	"""
 
-	# TODO: Box should implement IType
-
-	var _params as List<of IType>
+	var _params as List<of IType>  # as in generic parameters
+	var _constructedTypes as Dictionary<of String, IType>?
 
 	var _baseInterfaceNodes as List<of INode>
 	var _baseInterfaces as List<of Interface>
@@ -42,6 +41,8 @@ class Box
 
 	pro testMethod from var
 
+	get params from var
+
 	def makeNextPrivateSerialNumber as int
 		n = _nextPrivateSerialNumber
 		_nextPrivateSerialNumber += 1
@@ -72,6 +73,8 @@ class Box
 		# TODO: is canBeMember ever false?
 		if not canBeMember
 			return nil
+		if name==_name
+			return this
 		p = .paramForName(name)
 		if p
 			if haveThis
@@ -150,7 +153,7 @@ class Box
 
 	## Generics
 
-	get isGenericTypeDef as bool is override
+	get isGenericDef as bool is override
 		# TODO: make this more efficient, maybe be computing in the constructor
 		if _params
 			for param in _params
@@ -160,19 +163,43 @@ class Box
 		else
 			return false
 
-	get isGenericType as bool is override
+	get isGeneric as bool is override
 		return _params.count>0
 
 	get genericParams as List<of IType> is override
-		require .isGenericType
+		require .isGeneric
 		return _params
 
-	def makeGenericType(typeArgs as List<of IType>) as IType is override
+	def constructedTypeFor(typeArgs as List<of IType>) as IType is override
 		require  # TODO: inherit this from the interface instead
-			.isGenericType
+			.isGenericDef
+			typeArgs.count==.params.count
 		code
-			assert false, 'TODO'
-			return CobraType()
+			if _constructedTypes is nil
+				_constructedTypes = Dictionary<of String, IType>()
+
+			# CC: rewrite code below as:
+			# key = Utils.join(',', for type in typeArgs give type.name)
+			# key = for type in typeArgs give type.name joinedby ','
+			names = List<of String>()
+			for type in typeArgs
+				names.add(type.name)
+			key = Utils.join(',', names)
+
+			c = _constructedTypes to Dictionary<of String, IType>  # CC: axe this. it works around a bug
+
+			if _constructedTypes.containsKey(key)
+				# CC: return _contructedTypes[key]
+				return c[key]
+
+			t = .memberwiseClone() to Box
+			for i = 0 .. typeArgs.count
+				#t.params[i] = typeArgs[i]
+				$sharp(r't.Params[i] = typeArgs[i]')
+			# TODO: should be cloning the declarations to also incorporate the typeArgs where they happen to refer to generic params
+			# CC: _contructedTypes[key] = t
+			c[key] = t
+			return t
 
 
 class Class

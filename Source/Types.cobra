@@ -135,16 +135,16 @@ interface IType
 
 	def isDescendantOf(type as IType) as bool
 
-	get isGenericTypeDef as bool
+	get isGenericDef as bool
 		"""
 		Returns true if this type is a definition of a generic type, and
 		therefore capable of making subsequent generic types via the
-		`makeGenericType` method. A generic type will have generic
+		`constructedTypeFor` method. A generic type will have generic
 		parameters which are all GenericParam (as opposed to other types
 		such as `int` or a given class).
 		"""
 
-	get isGenericType as bool
+	get isGeneric as bool
 		"""
 		Returns true if this type is a generic type which includes
 		generic type defs and open-or-closed constructed types. Note
@@ -155,18 +155,20 @@ interface IType
 	get genericParams as List<of IType>
 		"""
 		Return the list of generic params for this generic type. This
-		property requires that .isGenericTypeDef is true.
+		property requires that .isGenericDef is true.
 		"""
-		# TODO: require .isGenericTypeDef
+		# TODO: require .isGenericDef
 
-	def makeGenericType(typeArgs as List<of IType>) as IType
+	def constructedTypeFor(typeArgs as List<of IType>) as IType
 		"""
 		Makes a new generic type with the given typeArgs which must
 		match in number to the generic parameters. This method requires
-		that .isGenericTypeDef is true. Note that the type args can be
-		GenericParams or other types or a mix.
+		that .isGenericDef is true. Note that the type args can be
+		GenericParams or other types or a mix. Also, this method must
+		return an existing type that matches the typeArgs if one already
+		exists.
 		"""
-		# TODO: require .isGenericTypeDef; typesArgs.count==.genericParams.count
+		# TODO: require .isGenericDef; typesArgs.count==.genericParams.count
 
 	def indexType(argTypes as List<of IType>) as IType?
 		"""
@@ -237,23 +239,23 @@ class CobraType
 	get superType as IType?
 		return _superType
 
-	get isGenericTypeDef as bool
+	get isGenericDef as bool
 		return false
 
-	get isGenericType as bool
+	get isGeneric as bool
 		return false
 
 	get genericParams as List<of IType>
-		if .isGenericTypeDef
-			throw Exception('.isGenericTypeDef returns true, but there is no override to return the genericParams')
+		if .isGenericDef
+			throw Exception('.isGenericDef returns true, but there is no override to return the genericParams')
 		else
-			throw Exception('.isGenericTypeDef returns false, so there can be no genericParams')
+			throw Exception('.isGenericDef returns false, so there can be no genericParams')
 
-	def makeGenericType(typeArgs as List<of IType>) as IType
-		if .isGenericTypeDef
-			throw Exception('.isGenericTypeDef returns true, but there is no override to makeGenericType')
+	def constructedTypeFor(typeArgs as List<of IType>) as IType
+		if .isGenericDef
+			throw Exception('.isGenericDef returns true, but there is no override to constructedTypeFor')
 		else
-			throw Exception('.isGenericTypeDef returns false, so there can be no makeGenericType')
+			throw Exception('.isGenericDef returns false, so there can be no constructedTypeFor')
 		return CobraType()  # TODO: axe whole line when code flow analysis proves it's not needed
 
 	def isAssignableTo(type as IType) as bool
@@ -745,54 +747,20 @@ class TypeType
 		return 'null'
 
 
-class TypeIdentifier
+class AbstractTypeIdentifier
 	inherits SyntaxNode
 	"""
-	Created by CobraParser.type() for identifiers found where types are
-	expected.
-
-	Cobra allows forward references so even though types are expected in
-	places like the return type of a method, they cannot be turned into
-	actual types until the bindInt phase (or bindImp for expressions).
+	The base class for:
+		TypeIdentifier
+		GenericTypeIdentifier
 	"""
-	# TODO: ? inherits AbstractTypeIdentifier
 
 	var _name as String
 	var _actualType as IType?
 
-	def construct(token as IToken)
-		require
-			token.which=='ID'
-			token.value
-		ensure
-			.name
-		code
-			base.construct(token)
-			_name = token.value to String  # TODO: change to token.text
-
-	def construct(token as IToken, type as IType)
-		require
-			token.text
-		ensure
-			.name
-		code
-			base.construct(token)
-			_name = token.text
-			_actualType = type
-
-	def construct(token as IToken, name as String, type as IType)
-		"""
-		Use this to dictate a name other than what is specified by the token.
-		Used for QualifiedTypes, for example, that are created from multiple tokens.
-		"""
-		require
-			name
-		ensure
-			.name
-		code
-			base.construct(token)
-			_name = name
-			_actualType = type
+	def construct(token as IToken, name as String)
+		base.construct(token)
+		_name = name
 
 	def addMinFields is override
 		base.addMinFields()
@@ -816,12 +784,14 @@ class TypeIdentifier
 	def equals(other as Object) as bool is override
 		if other is nil
 			return false
-		if other inherits TypeIdentifier
+		if this is other
+			return true
+		if other inherits AbstractTypeIdentifier
 			if _actualType and other._actualType
 				return _actualType.equals(other._actualType)
 			else
 				return _name.equals(other._name)
-		return this is other
+		return false
 
 	def getHashCode as int is override
 		return _name.getHashCode()
@@ -836,11 +806,61 @@ class TypeIdentifier
 
 		# A TypeIdentifier can be given a type that is constructed
 		# during parsing (such as a QualifiedType). Consequently, it may
-		# not have gotten a bindInt() and without it one, it will barf at
+		# not have gotten a bindInt() and without one, it will barf at
 		# some point. So:
+		# TODO: this may be axeable when QualifiedType is retired
 		_actualType.bindInt()
 
 	def _resolveType
+		"""
+		Subclasses must override. No need to invoke base.
+		"""
+		pass
+
+
+class TypeIdentifier
+	inherits AbstractTypeIdentifier
+	"""
+	Created by CobraParser.type() for identifiers found where types are
+	expected.
+
+	Cobra allows forward references so even though types are expected in
+	places like the return type of a method, they cannot be turned into
+	actual types until the bindInt phase (or bindImp for expressions).
+	"""
+
+	def construct(token as IToken)
+		require
+			token.which=='ID'
+			token.value
+		ensure
+			.name
+		code
+			base.construct(token, token.text)
+
+	def construct(token as IToken, type as IType)
+		require
+			token.text
+		ensure
+			.name
+		code
+			base.construct(token, token.text)
+			_actualType = type
+
+	def construct(token as IToken, name as String, type as IType)
+		"""
+		Use this to dictate a name other than what is specified by the token.
+		Used for QualifiedTypes, for example, that are created from multiple tokens.
+		"""
+		require
+			name
+		ensure
+			.name
+		code
+			base.construct(token, name)
+			_actualType = type
+
+	def _resolveType is override
 		if _actualType is not nil
 			return
 		# don't need to check "basic types" like int, bool, etc. here. the parser does those.
@@ -864,3 +884,55 @@ class TypeIdentifier
 			_actualType = what
 
 		assert _actualType is not nil
+
+
+class GenericTypeIdentifier
+	inherits AbstractTypeIdentifier
+	"""
+	The parser produces these when it encounters "List<of String>", for example.
+	"""
+
+	var _rootName as String  # ex: 'List'
+	var _fullName as String  # ex: 'List<of String>'
+	var _exactName as String # ex: 'List<of>' 'IDictionary<of,>' -- matches the actual box
+
+	var _typeNodes as List<of ISyntaxNode>
+
+	def construct(token as IToken, rootName as String, typeNodes as List<of ISyntaxNode>, fullName as String)
+		require
+			token.which=='OPEN_GENERIC'
+			rootName
+			fullName
+		code
+			base.construct(token, fullName)
+			_rootName = rootName
+			_typeNodes = typeNodes
+			_fullName = fullName
+			_exactName = _rootName + '<of'
+			for i = 0 .. _typeNodes.count-1
+				_exactName += ','
+			_exactName += '>'
+
+	def _resolveType is override
+		genericType = .compiler.symbolForName(_exactName, Utils.isCapped(_name), false)
+		if genericType is nil
+			_error('Cannot find a generic type named "[_rootName]".')
+		if genericType inherits IType
+			gt as IType = genericType to IType  # CC: shouldn't need this local. if-inherits looks broken for interfaces
+			if not gt.isGeneric
+				_error('"[_rootName]" is not a generic type.')
+			types = List<of IType>()
+			for tn in _typeNodes
+				tn.bindInt()
+				types.add(tn.namedType)
+			if gt.genericParams.count<>types.count
+				_error('The generic type "[_rootName]" expects [gt.genericParams.count] type arguments, not [types.count].')
+			t = gt.constructedTypeFor(types)
+			assert t
+			assert t.isGeneric
+			# assert not t.isGenericDef  Wrong! If some of the parameters are generic, then the constructed type could have generic params...
+			# ... hmmm, but am I using the wrong terms? Maybe the returned type is an open or closed constructed type and never a generic def. TODO: resolve this.
+			_actualType = t
+		else
+			assert false, 'When does this happen?'
+			_error('The definition for "[_fullName]" is not a type.')
