@@ -410,11 +410,47 @@ class NilableType
 	def construct(t as IType)
 		base.construct(t)
 
+	get name as String is override
+		if _wrappedType is not nil
+			return _wrappedType.name + '?'
+		else if _wrappedTypeNode is not nil
+			# CC:
+			#return _wrappedTypeNode.toString() + '?'
+			return '[_wrappedTypeNode.toString()]?'
+		else
+			throw FallThroughException(this)
+
 	# TODO
+#	def isReference(self):
+#		return self.wrappedType.isReference
+
+	# TODO: I think the following is appropriate, but come up with a test case for it first.
+	#def innerType(self):
+	#	return self.wrappedType.innerType
 
 	def indexType(argTypes as List<of IType>) as IType? is override
 		assert .didBindInt  # TODO: promote this to Type?
 		return _wrappedType.indexType(argTypes)
+
+	def isAssignableTo(type as IType) as bool is override
+		if type inherits PassThroughType
+			return true
+		if type inherits NilableType
+			assert .didBindInt or .didBindImp, this
+			return _wrappedType.isAssignableTo(type.theWrappedType to IType)  # CC: to ! or something
+		return false
+
+	def isDescendantOf(type as IType) as bool is override
+		return base.isDescendantOf(type) and _wrappedType.isDescendantOf(type)
+
+#	def asCS(self):
+#		cs = self.wrappedType.asCS()
+#		if not self.wrappedType.isReference:
+#			cs += '?'
+#		return cs
+#
+#	def csInit(self):
+#		return 'null'
 
 
 class NilType
@@ -819,6 +855,34 @@ class AbstractTypeIdentifier
 		Subclasses must override. No need to invoke base.
 		"""
 		pass
+
+
+class NilableTypeIdentifier
+	inherits AbstractTypeIdentifier
+
+	var _typeId as AbstractTypeIdentifier
+
+	def construct(token as IToken, typeId as AbstractTypeIdentifier)
+		require
+			token.text
+		ensure
+			.name
+		code
+			base.construct(token, token.text)
+			_typeId = typeId
+
+	def _bindInt is override
+		_typeId.bindInt()
+		base._bindInt()
+
+	def _bindImp is override
+		_typeId.bindImp()
+		base._bindImp()
+
+	def _resolveType is override
+		if _actualType is not nil
+			return
+		_actualType = NilableType(_typeId.actualType)
 
 
 class TypeIdentifier

@@ -2154,33 +2154,44 @@ class Parser
 	def nonqualifiedType as ISyntaxNode
 		return .nonqualifiedType(ErrorActionEnum.Exit)
 
-	def nonqualifiedType(action as ErrorActionEnum) as ISyntaxNode
+	def nonqualifiedType(action as ErrorActionEnum) as AbstractTypeIdentifier
 		token = .grab()
 		assert token
 
+		t as AbstractTypeIdentifier?
+
 		if token.which=='OPEN_GENERIC'
-			return .genericType(token to IToken)  # CC: axe cast
+			t = .genericType(token to IToken)  # CC: axe cast
 
 		# TODO: use a branch here
-		if token.text=='int'
-			return TypeIdentifier(token, .typeProvider.intType)
+		else if token.text=='int'
+			t = TypeIdentifier(token, .typeProvider.intType)
 		else if token.text=='bool'
-			return TypeIdentifier(token, .typeProvider.boolType)
+			t = TypeIdentifier(token, .typeProvider.boolType)
 		else if token.text=='char'
-			return TypeIdentifier(token, .typeProvider.charType)
+			t = TypeIdentifier(token, .typeProvider.charType)
 		else if token.text=='decimal'
-			return TypeIdentifier(token, .typeProvider.decimalType)
+			t = TypeIdentifier(token, .typeProvider.decimalType)
 		else if token.text=='float'
-			return TypeIdentifier(token, .typeProvider.floatType)
+			t = TypeIdentifier(token, .typeProvider.floatType)
 		else if token.text=='passthrough'
-			return TypeIdentifier(token, .typeProvider.passThroughType)
+			t = TypeIdentifier(token, .typeProvider.passThroughType)
 		else if token.which=='ID'
-			return TypeIdentifier(token)
+			t = TypeIdentifier(token)
 		else
 			_error('Unrecognized type: [token]')
-			return SyntaxNode(Token.empty)  # CC: remove
+			return AbstractTypeIdentifier(Token.empty, '')  # CC: remove
 
-	def genericType(openGenericToken as IToken) as ISyntaxNode
+		assert t<>nil
+
+		# check for 'optional' aka 'can be nil'
+		question = .optional('QUESTION')
+		if question is not nil
+			t = NilableTypeIdentifier(question, t)
+
+		return t to AbstractTypeIdentifier  # CC: axe cast
+
+	def genericType(openGenericToken as IToken) as AbstractTypeIdentifier
 		require openGenericToken.text.trim().endsWith('<of')
 		fullName = openGenericToken.text.trim() + ' '
 		rootName = fullName.substring(0, fullName.length-4)  # CC: [:-4]
