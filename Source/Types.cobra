@@ -135,6 +135,12 @@ interface IType
 
 	def isDescendantOf(type as IType) as bool
 
+	get isReference as bool
+		"""
+		Returns true if the type is a reference type, such as a class, interface or nilable type.
+		And as opposed to value type such as a struct, int, etc.).
+		"""
+
 	get isGenericDef as bool
 		"""
 		Returns true if this type is a definition of a generic type, and
@@ -213,6 +219,10 @@ class CobraType
 
 	get isCallable as bool
 		return true
+
+	get isReference as bool
+		throw OverrideException()
+		return false
 
 	get requiresThis as bool
 		return false
@@ -322,6 +332,9 @@ class ValueType
 	get englishName as String is override
 		return 'primitive type'
 
+	get isReference as bool is override
+		return false
+
 	def equals(obj as Object) as bool is override
 		if obj is nil
 			return false
@@ -426,9 +439,8 @@ class NilableType
 		else
 			throw FallThroughException(this)
 
-	# TODO
-#	def isReference(self):
-#		return self.wrappedType.isReference
+	get isReference as bool is override
+		return _wrappedType.isReference
 
 	# TODO: I think the following is appropriate, but come up with a test case for it first.
 	#def innerType(self):
@@ -465,9 +477,8 @@ class NilType
 	get name as String is override
 		return 'nil'
 
-# TODO:
-#	get isReference as bool is override
-#		return true
+	get isReference as bool is override
+		return true
 
 	def isAssignableTo(type as IType) as bool is override
 		if this is type
@@ -507,6 +518,9 @@ class PassThroughType
 
 	get englishName as String is override
 		return 'basic type'
+
+	get isReference as bool is override
+		return true
 
 	get name as String is override
 		return 'passthrough'
@@ -639,9 +653,8 @@ class VariType
 	get innerType as IType? is override
 		return _wrappedType
 
-# TODO:
-#	get isReference as bool is override
-#		return true
+	get isReference as bool is override
+		return true
 
 	get name as String is override
 		if _wrappedType
@@ -723,10 +736,9 @@ class QualifiedType
 		assert .didBindInt
 		return _wrappedType.isDescendantOf(type)
 
-# TODO:
-#	get isReference as bool is override
-#		assert _didBindInt, this
-#		return _wrappedType.isReference
+	get isReference as bool is override
+		assert _didBindInt, this
+		return _wrappedType.isReference
 
 	def _bindInt is override
 		_dottedParentNames = ''
@@ -783,6 +795,9 @@ class TypeType
 
 	get englishName as String is override
 		return 'type for types'
+
+	get isReference as bool is override
+		return true
 
 	get name as String is override
 		return 'Type'
