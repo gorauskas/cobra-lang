@@ -269,9 +269,9 @@ class CobraType
 			# TODO: remove this:
 			if type inherits GenericParam
 				return true
-			# TODO:
-			# if type inherits WrappedType
-			#	return .isAssignableTo(type.wrappedType)
+			# TODO: would this be needed if not for qualified types?
+			if type inherits WrappedType
+				return .isAssignableTo(type.theWrappedType to passthrough) # CC: do something here
 			return .isDescendantOf(type)
 
 	def isDescendantOf(type as IType) as bool
@@ -403,6 +403,12 @@ class IntType
 	get name as String is override
 		return 'int'
 
+	def isAssignableTo(type as IType) as bool is override
+		if type is .compiler.decimalType
+			return true
+		if type is .compiler.floatType
+			return true
+		return base.isAssignableTo(type)
 
 class NilableType
 	inherits WrappedType
@@ -468,9 +474,8 @@ class NilType
 			return true
 		if type is .compiler.passThroughType
 			return true
-		# TODO:
-		# if type inherits NilableType
-		#	return true
+		if type inherits NilableType
+			return true
 		return false
 
 # TODO:
@@ -781,6 +786,11 @@ class TypeType
 
 	get name as String is override
 		return 'Type'
+
+	def isAssignableTo(type as IType) as bool is override
+		b = base.isAssignableTo(type)
+		b = b or type is .compiler.libraryType('System', 'Type')
+		return b
 
 	get csInit as String is override
 		return 'null'
