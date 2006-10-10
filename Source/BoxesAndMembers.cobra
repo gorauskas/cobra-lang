@@ -247,16 +247,16 @@ class Class
 	def isDescendantOf(type as IType) as bool is override
 		if not type.didBindInt
 			type.bindInt()
-		curClass as Class? = this  # CC: change to: curClass = this to ?
-		while curClass is not nil
-			if curClass is type
-				return true
-			assert curClass is not curClass.baseClass, curClass
-			curClass = curClass.baseClass
+		if this is type
+			return true
 		if type inherits Interface
 			if .isDescendantOfInterface(type)
 				return true
-		return false
+		assert .baseClass is not this, this  # check for direct cycles
+		if .baseClass<>nil
+			return .baseClass.isDescendantOf(type)
+		else
+			return false
 
 	get isReference as bool is override
 		return true
@@ -1164,11 +1164,16 @@ class AbstractLocalVar
 
 	pro isTracked from var
 
-#	def addMinFields is override
-#		base.addMinFields()
-#		.addMinField('name', .name)
-#		if .isImplicit
-#			.addMinField('isImplicit', .isImplicit)
+	def addMinFields is override
+		base.addMinFields()
+		if _isImplicit
+			.addField('isImplicit', _isImplicit)
+		.addField('isTracked', _isTracked)
+
+	def addRefFields is override
+		base.addRefFields()
+		.addField('typeNode', _typeNode)
+		.addField('type', _type)
 
 	def toString as String is override
 		type = if(_type, .type.name, "(no type)")
