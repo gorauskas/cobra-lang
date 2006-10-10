@@ -9,6 +9,8 @@ class BinaryOpExpr
 			branch op
 				on 'TO'
 					return ToExpr(opToken, op, left, right)
+				on 'TOQ'
+					return ToQExpr(opToken, op, left, right)
 				on 'ASSIGN'
 					return AssignExpr(opToken, op, left, right)
 				on 'DOT'
@@ -279,7 +281,7 @@ class InheritsExpr
 		_type = .compiler.boolType
 
 
-class ToExpr
+class AbstractToExpr
 	inherits BinaryOpExpr
 
 	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
@@ -296,5 +298,27 @@ class ToExpr
 		else
 			assert false, _right
 		assert _type
+
+
+class ToExpr
+	inherits AbstractToExpr
+
+	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
+		base.construct(opToken, op, left, right)
+
+	def _bindImp is override
+		base._bindImp()
 		if _left inherits NilLiteral and not (_type inherits NilableType or _type inherits PassThroughType)
 			_error('Cannot cast nil to a non-nil type.')
+
+
+class ToQExpr
+	inherits AbstractToExpr
+
+	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
+		base.construct(opToken, op, left, right)
+
+	def _bindImp is override
+		base._bindImp()
+		if not _type inherits NilableType
+			_type = NilableType(_type).bindAll() to NilableType  # CC: axe cast when 'as this' is supported
