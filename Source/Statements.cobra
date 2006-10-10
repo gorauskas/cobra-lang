@@ -515,10 +515,43 @@ class PrintRedirectStmt
 class ReturnStmt
 	inherits Stmt
 
+	var _expr as Expr?
+
 	def construct(token as IToken, expr as Expr?)
 		base.construct(token)
-		pass
+		_expr = expr
 
+	def addSubFields
+		base.addSubFields()
+		.addField('expr', _expr)
+
+	def _bindImp is override
+		base._bindImp()
+		expr = _expr
+		curCodeMember = .compiler.codeMemberStack.peek()
+		if expr
+			_expr.bindImp()
+			if not expr.canBeAssignedTo(curCodeMember.resultType)
+				_error('Cannot return [expr.type.name] because "[curCodeMember.name]" is declared to return a [curCodeMember.resultType.name].')
+		else
+			if curCodeMember.resultType is not .compiler.voidType
+				_error('Return statement must return a [curCodeMember.resultType.name], or [curCodeMember.name] must have its return type removed.')
+		curCodeMember.hasReturnStmt = true
+		# TODO _csResultVarName = curCodeMember.csResultVarName
+
+#	def genCS(self, out):
+#		Stmt.genCS(self, out)
+#		if self.expr:
+#			if self.csResultVarName:
+#				out.write('return %s=' % self.csResultVarName)
+#				self.expr.genCS(out, genParens=false)
+#				out.write(';\n')
+#			else:
+#				out.write('return ')
+#				self.expr.genCS(out, genParens=false)
+#				out.write(';\n')
+#		else:
+#			out.write('return;\n')
 
 class TryStmt
 	inherits Stmt
