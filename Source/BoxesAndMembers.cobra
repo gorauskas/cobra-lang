@@ -55,6 +55,13 @@ class Box
 				return true
 		return false
 
+	def interfaceMemberForName(name as String) as IMember?
+		for inter in _baseInterfaceTypes
+			m = inter.memberForName(name)
+			if m is not nil
+				break
+		return m
+
 	def makeNextPrivateSerialNumber as int
 		n = _nextPrivateSerialNumber
 		_nextPrivateSerialNumber += 1
@@ -266,6 +273,8 @@ class Class
 		m = base.memberForName(name)
 		if m is nil and _baseClass is not nil
 			m = _baseClass.memberForName(name)
+			if m is nil
+				m = .interfaceMemberForName(name)
 		return m
 
 	def symbolForName(name as String, canBeMember as bool, haveThis as bool) as IMember? is override
@@ -347,14 +356,10 @@ class Interface
 		assert .didBindInt  # TODO: is this legit? if so, push up to Container
 		m = base.memberForName(name)
 		if m is nil
-			for inter in _baseInterfaceTypes
-				m = inter.memberForName(name)
-				if m is not nil
-					break
+			m = .interfaceMemberForName(name)
 			if m is nil
 				m = .compiler.libraryType('System', 'Object').memberForName(name)
 		return m
-
 
 class Struct
 	inherits Box
