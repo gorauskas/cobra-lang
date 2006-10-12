@@ -11,6 +11,14 @@ class BinaryOpExpr
 					return ToExpr(opToken, op, left, right)
 				on 'TOQ'
 					return ToQExpr(opToken, op, left, right)
+				on 'QUESTION'
+					return CoalesceExpr(opToken, op, left, right)
+				on 'QUESTION_EQUALS'
+					return CoalesceAssignExpr(opToken, op, left, right)
+				on 'BANG'
+					return InverseCoalesceExpr(opToken, op, left, right)
+				on 'BANG_EQUALS'
+					return InverseCoalesceAssignExpr(opToken, op, left, right)
 				on 'ASSIGN'
 					return AssignExpr(opToken, op, left, right)
 				on 'DOT'
@@ -322,3 +330,82 @@ class ToQExpr
 		base._bindImp()
 		if not _type inherits NilableType
 			_type = NilableType(_type).bindAll() to NilableType  # CC: axe cast when 'as this' is supported
+
+
+class CoalesceExpr
+	inherits BinaryOpExpr
+	"""
+	x ? y ==> if(x is nil, y, x)
+	but without the potential double evaluation of x, which could be a complex expression.
+	"""
+
+	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
+		base.construct(opToken, op, left, right)
+
+	def _bindImp is override
+		base._bindImp()
+		ptt = .compiler.passThroughType
+		if _left.type is ptt or _right.type is ptt
+			# x ? y   ...where either is typed as passthrough
+			_type = ptt
+		else if _left.type inherits NilableType and not _right.type inherits NilableType
+			# x ? y   ...where x can be nil, but y cannot
+			_type = (_left.type to NilableType).theWrappedType  # TODO: should be greatest common denominator between the two
+		else
+			# the catch all case
+			_type = _left.type  # TODO: should be greatest common denominator between the two
+
+
+class InverseCoalesceExpr
+	inherits BinaryOpExpr
+	"""
+	x ! y ==> if(x is not nil, y, x)
+	but without the potential double evaluation of x, which could be a complex expression.
+	"""
+
+	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
+		base.construct(opToken, op, left, right)
+
+	def _bindImp is override
+		base._bindImp()
+		ptt = .compiler.passThroughType
+		if _left.type is ptt or _right.type is ptt
+			# x ! y   ...where either is typed as passthrough
+			_type = ptt
+#		else if _right.type inherits NilableType and not _right.type inherits NilableType
+#			# x ? y   ...where x can be nil, but y cannot
+#			_type = _left.type.theWrappedType  # TODO: should be greatest common denominator between the two
+		else
+			# the catch all case
+			_type = _left.type  # TODO: should be greatest common denominator between the two
+
+
+class CoalesceAssignExpr
+	inherits BinaryOpExpr
+	"""
+	x ?= y
+	"""
+
+	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
+		base.construct(opToken, op, left, right)
+
+	def _bindImp is override
+		base._bindImp()
+		# TODO: error check that the left hand type is nilable?
+		# TODO: error check that the right hand type is not nilable?
+		_type = _right.type
+
+
+class InverseCoalesceAssignExpr
+	inherits BinaryOpExpr
+	"""
+	x != y
+	"""
+
+	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
+		base.construct(opToken, op, left, right)
+
+	def _bindImp is override
+		base._bindImp()
+		# TODO: any error checks here?
+		_type = _left.type
