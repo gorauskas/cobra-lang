@@ -113,24 +113,23 @@ class AssignExpr
 		left = _left
 		right = _right
 		assert right.type
-		_type = left.type
-# TODO:
-#		if left inherits IdentifierExpr and left.definition is nil:
-#			assert right.type
-#			if right.type is tpassthrough
-#				_error('Cannot infer type for "[left.text]" because the type of the right hand expression is unknown.')
-#			# type inference
-#			if left.text.startswith('_'):
-#				_error('No class variable named "%s" exists and local variable declarations cannot start with an underscore (_).' % left.text)
-#			definition = LocalVar(left.token, right.type)
-#			definition.bindAll(compiler)
-#			compiler.nameStack.peek().pushName(definition)
-#			left.definition = definition
-#			left.type = definition.type
-#		if left.definition is nil
-#			compiler.errorUnknownId(left, left.text)
+		if left inherits IdentifierExpr
+			if left.definition is nil
+				# type inference
+				assert right.type
+				if right.type is .compiler.passThroughType
+					_error('Cannot infer type for "[left.text]" because the type of the right hand expression is unknown.')
+				if left.text.startsWith('_')
+					_error('No class variable named "[left.text]" exists and local variable declarations cannot start with an underscore (_).')
+				definition = LocalVar(left.token, right.type).bindAll() to LocalVar  # CC: axe cast when supporting 'this'
+				.compiler.codeMemberStack.peek().addLocal(definition)
+				left.definition = definition
+				left.type = definition.type
+			if left.definition is nil
+				left.errorUnknownId(left.text)
 		if not right.canBeAssignedTo(left.type to IType)
 			_error('Incompatible types. Cannot assign value of type [right.type.name] on the right to [left.type.name] on the left.')
+		_type = left.type
 
 	def check is override
 		base.check()

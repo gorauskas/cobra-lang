@@ -81,8 +81,15 @@ class Expr
 	def bindImp as INode is override
 		base.bindImp()
 		assert .didBindImp, this
-		assert .type, this
+		.postBindImpAssertType()
 		return this
+
+	def postBindImpAssertType
+		"""
+		This is broken out because in rare cases, it doesn't apply. (Those classes override this to
+		do nothing.)
+		"""
+		assert .type, this
 
 	def _bindImp is override
 		base._bindImp()
@@ -304,7 +311,9 @@ class IdentifierExpr
 		base.addRefFields()
 		.addField('definition', _definition)
 
-	get definition from var
+	pro definition from var
+
+	get text from var
 
 	get namedType as IType? is override
 		# overridden to return the type this identifier represents in those cases when it does represent a type such an "int" or a class
@@ -358,18 +367,16 @@ class IdentifierExpr
 					msg += ' Maybe you should try "[sug]".'
 				_error(msg)
 		if _type is nil
-			_resolveType()
+			if _definition
+				_type = _definition.typeForIdentifier
+			else
+				if .binarySuperNode and .binarySuperNode inherits AssignExpr
+					pass  # let the AssignExpr have its chance at type inference
+				else
+					.errorUnknownId(.text)
 
-	def _resolveType
-		require _definition
-		if _definition
-			_type = _definition.typeForIdentifier
-# TODO: axe or enable
-#		else
-#			if compiler.opStack and compiler.opStack.peek()=='ASSIGN':
-#				pass
-#			else:
-#				compiler.errorUnknownId(self.text)
+	def postBindImpAssertType is override
+		pass
 
 
 class IfExpr
