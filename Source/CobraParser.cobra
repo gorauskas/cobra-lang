@@ -458,30 +458,7 @@ class Parser
 
 		isNames = .isDeclNames()
 
-		while .optional('WHERE')
-			assert false, 'TODO: where clause'
-#			if token.which<>'OPEN_GENERIC'
-#				_error('Unexpected where clause for non-generic class.')
-#			paramName = .expect('ID').value
-#			found = false
-#			for param in params
-#				if param.name==paramName
-#					found = true
-#					break
-#			if not found
-#				_error('Unknown generic parameter "%s".' % name)
-#			if param.constraints
-#				_error('Already specified constraints for "%s".' % name)
-#			.expect('MUST')
-#			.expect('BE')
-#			expectComma = false
-#			while true
-#				if expectComma
-#					.expect('COMMA')
-#				param.constraints.append(.genericConstraint())
-#				if .optional('EOL')
-#					break
-#				expectComma = true
+		.genericConstraints(token, paramsList)
 
 		baseNode as INode?
 		if .optional('INHERITS')
@@ -505,7 +482,7 @@ class Parser
 
 		docString = .docString()
 
-		theClass = Class(token, name, paramsList, isNames, baseNode, interfaceNames, docString)
+		theClass = Class(token, name, .makeList(List<of IType>(), paramsList) to List<of IType>, isNames, baseNode, interfaceNames, docString)
 
 		# TODO when supporting nested classes, look at the clintDeclStack and set a back pointer here
 		_boxStack.push(theClass)
@@ -515,6 +492,15 @@ class Parser
 
 		return theClass
 
+	def makeList(t as System.Collections.IList, u as System.Collections.IList) as System.Collections.IList
+		# This feels awkward as hell, but it's a .NET typing thing, not a Cobra thing.
+		# I need List<of GenericParam> in the my local code for declaring generics, but the various box constructors need to accept List<of IType>
+		# TODO: remove this somehow. Maybe Cobra could have a promotion feature:
+		# List<of IType>(paramsList promote to IEnumerable<of IType>)
+		# "promote to" works for generics where the new promo type has parameter types that are the same or ancestors to the original parameter types *and* ... ???
+		for item in u
+			t.add(item)
+		return t
 
 
 	var _validIsNames as List<of String>?
@@ -557,7 +543,7 @@ class Parser
 		# TODO: error if 2 or more of 'public', 'protected', 'private', 'internal'
 		return names
 
-	def declGenericParams(token as IToken) as List<of IType>
+	def declGenericParams(token as IToken) as List<of GenericParam>
 		"""
 		This parses and returns the generic params for a box
 		declaration. It does NOT work for the generic params in other
@@ -565,7 +551,7 @@ class Parser
 		other kinds parameters including other generic types and basic
 		types. Box declarations only have generic parameter names.
 		"""
-		paramsList = List<of IType>()
+		paramsList = List<of GenericParam>()
 		if token.which=='OPEN_GENERIC'
 			expectComma = false
 			while true
@@ -579,7 +565,7 @@ class Parser
 				expectComma = true
 		return paramsList
 
-	def nameForDeclGenericParams(token as IToken, paramList as List<of IType>) as String
+	def nameForDeclGenericParams(token as IToken, paramList as List<of GenericParam>) as String
 		"""
 		This is called after declGenericParams() to update the name of the declaring type.
 		CC: add an "out name" parameter to declGenericParams() and axe this method.
@@ -615,30 +601,7 @@ class Parser
 
 		isNames = .isDeclNames()
 
-		while .optional('WHERE')
-			assert false, 'TODO: where clause'
-#			if token.which<>'OPEN_GENERIC'
-#				_error('Unexpected where clause for non-generic interface.')
-#			paramName = .expect('ID').value
-#			found = false
-#			for param in params
-#				if param.name==paramName
-#					found = true
-#					break
-#			if not found
-#				_error('Unknown generic parameter "%s".' % name)
-#			if param.constraints
-#				_error('Already specified constraints for "%s".' % name)
-#			.expect('MUST')
-#			.expect('BE')
-#			expectComma = false
-#			while true
-#				if expectComma
-#					.expect('COMMA')
-#				param.constraints.append(.genericConstraint())
-#				if .optional('EOL')
-#					break
-#				expectComma = true
+		.genericConstraints(token, paramsList)
 
 		baseNames = List<of INode>()
 		if .optional('INHERITS')
@@ -658,7 +621,7 @@ class Parser
 		# TODO: can an interface be nested in another interface?
 		docString = .docString()
 
-		theInterface = Interface(token, name, paramsList, isNames, baseNames, docString)
+		theInterface = Interface(token, name, .makeList(List<of IType>(), paramsList) to List<of IType>, isNames, baseNames, docString)
 
 		_boxStack.push(theInterface)
 #		.isNamesStack = Stack(str)
@@ -689,30 +652,7 @@ class Parser
 
 		isNames = .isDeclNames()
 
-		while .optional('WHERE')
-			assert false, 'TODO: where clause for structs'
-#			if token.which<>'OPEN_GENERIC'
-#				_error('Unexpected where clause for non-generic class.')
-#			paramName = .expect('ID').value
-#			found = false
-#			for param in params
-#				if param.name==paramName
-#					found = true
-#					break
-#			if not found
-#				_error('Unknown generic parameter "%s".' % name)
-#			if param.constraints
-#				_error('Already specified constraints for "%s".' % name)
-#			.expect('MUST')
-#			.expect('BE')
-#			expectComma = false
-#			while true
-#				if expectComma
-#					.expect('COMMA')
-#				param.constraints.append(.genericConstraint())
-#				if .optional('EOL')
-#					break
-#				expectComma = true
+		.genericConstraints(token, paramsList)
 
 		baseName as String?
 		if .optional('INHERITS')
@@ -734,7 +674,7 @@ class Parser
 
 		docString = .docString()
 
-		theStruct = Struct(token, name, paramsList, isNames, baseName, interfaceNodes, docString)
+		theStruct = Struct(token, name, .makeList(List<of IType>(), paramsList) to List<of IType>, isNames, baseName, interfaceNodes, docString)
 
 		# TODO when supporting nested classes, look at the clintDeclStack and set a back pointer here
 		_boxStack.push(theStruct)
@@ -772,6 +712,45 @@ class Parser
 		if not enumMembers
 			_error('Missing enum members.')
 		return EnumDecl(token, name, isNames, storageType, docString, enumMembers)
+
+	def genericConstraints(token as IToken, paramsList as List<of GenericParam>)
+		while .optional('WHERE')
+			if token.which<>'OPEN_GENERIC'
+				_error('Unexpected where clause for non-generic class.')
+			paramName = .expect('ID').value
+			found = false
+			for param in paramsList
+				if param.name==paramName
+					found = true
+					break
+			if not found
+				_error('Unknown generic parameter "[paramName]".')
+			if param.constraints
+				_error('Already specified constraints for "[paramName]".')
+			.expect('MUST')
+			.expect('BE')
+			expectComma = false
+			while true
+				if expectComma
+					.expect('COMMA')
+				param.constraints.add(.genericConstraint())
+				if .optional('EOL')
+					break
+				expectComma = true
+
+	def genericConstraint as GenericConstraint
+		"""
+		Consumes a generic constraint and returns it.
+		Constraints include classes, interfaces and the keywords:
+			class struct callable
+		"""
+		peek = .peek().which
+		branch peek
+			on 'CLASS': return GenericClassConstraint(.grab())
+			on 'STRUCT': return GenericStructConstraint(.grab())
+			on 'CALLABLE': return GenericCallableConstraint(.grab())
+			else: return GenericTypeConstraint(.type())
+		pass  # CC: axe
 
 	def nameSpaceDecl as NameSpace
 		require _nameSpaceStack

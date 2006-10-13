@@ -22,7 +22,7 @@ class Box
 
 	def construct
 		base.construct(TokenFix.empty, 'x', '')
-		assert false, 'CC: remove this when unnecessary return statements can be removed'
+		assert false, 'CC: remove this constructor when unnecessary return statements can be removed'
 
 	def construct(token as IToken, name as String, paramList as List<of IType>, docString as String?)
 		base.construct(token, name, docString)
@@ -393,6 +393,8 @@ class GenericParam
 	get name as String is override
 		return _name
 
+	get constraints from var
+
 # TODO:	def isReference()
 #		return true
 
@@ -452,8 +454,14 @@ class GenericParam
 #			out.write('\n')
 
 
-class GenericConstraint   # TODO
-	inherits Node
+class GenericConstraint
+	inherits SyntaxNode
+
+	def construct(token as IToken)
+		base.construct(token)
+
+	def isDescendantOf(type as IType) as bool
+		return false
 
 	def declForName(name as String) as IMember?
 		"""
@@ -467,12 +475,88 @@ class GenericConstraint   # TODO
 		"""
 		return nil
 
-	def isDescendantOf(type as IType) as bool
-		return false
-
 	def _bindInt is override
 		base._bindInt()
 		# TODO
+
+
+class GenericClassConstraint
+	inherits GenericConstraint
+	"""
+	Represents the generic constraint class
+	"""
+
+	def construct(token as IToken)
+		base.construct(token)
+
+#	def genCS(out)
+#		out.write('class')
+
+
+class GenericStructConstraint
+	inherits GenericConstraint
+	"""
+	Represents the generic constraint class
+	"""
+
+	def construct(token as IToken)
+		base.construct(token)
+
+#	def genCS(out)
+#		out.write('struct')
+
+
+class GenericCallableConstraint
+	inherits GenericConstraint
+	"""
+	Represents the generic constraint callable
+	"""
+
+	def construct(token as IToken)
+		base.construct(token)
+
+#	def genCS(out)
+#		out.write('new')
+
+
+class GenericTypeConstraint
+	inherits GenericConstraint
+	"""
+	Represents the generic constraint callable
+	"""
+
+	var _representedType as IType?
+	var _typeNode as ISyntaxNode
+
+	def construct(typeNode as ISyntaxNode)
+		base.construct(typeNode.token)
+		_typeNode = typeNode
+
+	def isDescendantOf(type as IType) as bool is override
+		assert _representedType
+		return _representedType.isDescendantOf(type)
+
+# TODO?
+#	def declForName(name as String) as IMember? is override
+#		assert _representedType
+#		return _representedType.declForName(name)
+
+	def memberForName(name as String) as IMember? is override
+		assert _representedType
+		return _representedType.memberForName(name)
+
+	def _bindInt is override
+		base._bindInt()
+		if _representedType is nil
+			_typeNode.bindInt()
+			_representedType = _typeNode.namedType
+			assert _representedType
+		if not _representedType inherits Class and not _representedType inherits Interface
+			_error('A generic type constraint must be a class or an interface. "[_representedType.name]" is not.')
+
+#	def genCS(out)
+#		out.write(_representedType.asCS())
+
 
 
 # TODO: Move everything below to Members.cobra
