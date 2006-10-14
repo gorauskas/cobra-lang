@@ -164,7 +164,7 @@ class CallExpr
 
 	var _name as String
 	var _args as List<of Expr>
-	var _definition as ClassMember?
+	var _definition as INamedNode?
 
 	def construct(token as IToken, name as String, args as List<of Expr>)
 		base.construct(token)
@@ -190,7 +190,7 @@ class CallExpr
 		for arg in _args
 			arg.bindImp()
 
-		definition as ClassMember?
+		definition as INamedNode?
 		type as IType?
 
 		if _definition is nil  or  _type is nil
@@ -203,13 +203,41 @@ class CallExpr
 					else
 						if not possibleDefinition.isCallable
 							_error('Cannot call "[_name]" because it is a "[possibleDefinition.englishName]".')
-						definition = possibleDefinition to ClassMember
-						type = definition.resultType
+						definition = possibleDefinition
+						type = possibleDefinition.resultType
+			if type is nil
+				# handle instantiation such Car() or t() (where t is a System.Type)
+				canBeMember = _name.startsWith('_') or Utils.isCapped(_name)
+				if canBeMember
+					assert .compiler.boxStack
+					definition = .compiler.symbolForName(_name, canBeMember, false) to passthrough
+				else
+					definition = .compiler.findLocal(_name)
+				if definition is nil
+					_error('Cannot find "[_name]".')
 			if definition is nil
 				# TODO this needs to be an error in the long term
 				type = .compiler.passThroughType
 			else
-				if definition inherits ClassMember
+				if definition inherits IVar
+					# such as having:
+					#	t as Type
+					#	...
+					#	x = t()
+					if definition.type.isDescendantOf(.compiler.libraryType('System', 'Type'))
+						type = .compiler.libraryType('System', 'Object')  # TODO: should be dynamic type
+					else
+						_error('Cannot call a variable of type [definition.type.name].')
+				else if definition inherits Box
+					if definition inherits Interface
+						_error('Cannot instantiate an interface.')
+					else if definition inherits Class or definition inherits Struct
+						# constructing an instance of a class or struct
+						type = definition
+					else
+						# not ever expected since the three Box types are covered above
+						throw FallThroughException(definition)
+				else if definition inherits ClassMember
 					type = definition.resultType  # NOTE: used to have .namedType at the end
 					if definition inherits MemberOverload
 						pass  # TODO handle overloads (1)
@@ -258,9 +286,7 @@ class CallExpr
 
 			_definition = definition
 			_type = type
-
 		assert _type, 'this=[this], def=[_definition]'
-		_type.bindImp()
 
 	def toCobraSource as String is override
 		sb = StringBuilder()
@@ -569,9 +595,10 @@ class OldExpr
 class PostCallExpr
 	inherits Expr
 	"""
-	Covers the simple case of
-		Foo()
-	For "bar.foo()" that's a binary dot expression with a CallExpr on the right hand side.
+	Covers cases like:
+		obj[i]('x')
+	For "bar.foo('x')" that's a binary dot expression with a CallExpr on the right hand side.
+	For "Car()" or "someType()" that's also a CallExpr.
 	"""
 
 	var _expr as Expr
@@ -596,7 +623,7 @@ class PostCallExpr
 			assert _expr.containedType
 			_type = _expr.containedType
 		else
-			assert false, 'set the type. _expr=[_expr]'
+			assert false, 'what is this? _expr=[_expr]'
 
 	def toCobraSource as String is override
 		assert false, 'TODO'
