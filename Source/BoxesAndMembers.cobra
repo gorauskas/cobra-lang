@@ -27,6 +27,10 @@ class Box
 	def construct(token as IToken, name as String, paramList as List<of IType>, docString as String?)
 		base.construct(token, name, docString)
 		_params = paramList
+		for i = 0 .. _params.count
+			p = _params[i]
+			if p inherits GenericParam
+				p.index = i
 		_baseInterfaces = List<of Interface>()
 		_baseInterfaceTypes = List<of IType>()
 		_overloads = List<of MemberOverload>()
@@ -114,6 +118,25 @@ class Box
 
 	get typeForReceiver as IType is override
 		return this
+
+	## IType
+
+	def indexType(argTypes as List<of IType>) as IType? is override
+		"""
+		Used by the IndexExpr to determine its type.
+		"""
+		indexer = .memberForName(r'[]')
+
+		# TODO: check argTypes
+		if indexer
+			t = indexer.resultType
+			if t inherits GenericParam
+				return .typeForGenericParam(t)
+			else
+				return t
+		if .isGeneric
+			return .innerType
+		return nil
 
 	## Binding
 
@@ -223,7 +246,7 @@ class Box
 
 	def cloneCollections is override
 		base.cloneCollections()
-		_params = List<of IType>(_params)
+		_params = List<of IType>(_params)  # TODO: Can I just say _params.clone? Do I need the cast?
 		if _constructedTypes<>nil
 			# CC: _constructedTypes = Dictionary<of String, IType>(_constructedTypes)
 			orig as Dictionary<of String, IType>?
@@ -236,6 +259,17 @@ class Box
 		_baseInterfaceTypes = List<of IType>(_baseInterfaceTypes)
 		_overloads = List<of MemberOverload>(_overloads)
 
+	def typeForGenericParam(gp as GenericParam) as IType # TODO: is this needed for NilableType?
+		"""
+		Returns the specific type arg that corresponds to the given generic
+		parameter. Used to match the gp's in method, properties, etc. against
+		the actual types in a constructed type.
+		"""
+		require
+			.isGeneric
+			.params
+		code
+			return .params[gp.index]
 
 
 class Class
@@ -383,6 +417,7 @@ class GenericParam
 
 	var _name as String
 	var _constraints as List<of GenericConstraint>
+	var _index as int
 
 	def construct(name as String)
 		require name
@@ -394,6 +429,8 @@ class GenericParam
 		return _name
 
 	get constraints from var
+
+	pro index from var
 
 # TODO:	def isReference()
 #		return true
