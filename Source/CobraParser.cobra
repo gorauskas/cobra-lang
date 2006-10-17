@@ -62,6 +62,7 @@ class Parser
 	var _codeParts as Stack<of ICodePart>
 	var _curCodePart as ICodePart?
 
+	var _spaceAgnosticIndentLevel as int
 	var _isContractOnSameLine as bool
 
 	var _leftStack as Stack<of Expr>
@@ -2317,10 +2318,41 @@ class Parser
 			_curCodePart = nil
 
 	def _spaceAgnostic
-		pass
+		"""
+		Eats up EOLs, INDENTs and DEDENTs.
+		Call this to go into "space agnostic" mode.
+		Call finishSpaceAgnostic afterwards to eat up subsequent INDENTs and DEDENTs.
+		"""
+		while true
+			peek = .peek().which
+			branch peek
+				on 'EOL'
+					.grab()
+					continue
+				on 'INDENT'
+					.grab()
+					_spaceAgnosticIndentLevel += 1
+					continue
+				on 'DEDENT'
+					.grab()
+					_spaceAgnosticIndentLevel -= 1
+					continue
+			break
 
 	def _finishSpaceAgnostic
-		pass
+		"""
+		Eats up the DEDENTs and INDENTs that balance out the ones encountered in spaceAgnostic.
+		"""
+		if _verbosity>=5
+			print '<> finishSpaceAgnostic() level=[_spaceAgnosticIndentLevel]'
+		if _spaceAgnosticIndentLevel
+			while _spaceAgnosticIndentLevel>0
+				.dedent()
+				_spaceAgnosticIndentLevel -= 1
+			while _spaceAgnosticIndentLevel<0
+				.expect('INDENT')
+				_spaceAgnosticIndentLevel += 1
+		assert _spaceAgnosticIndentLevel==0  # cobra: make this an ensure
 
 
 class NumberedToken
