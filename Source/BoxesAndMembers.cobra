@@ -60,8 +60,11 @@ class Box
 		return false
 
 	def interfaceMemberForName(name as String) as IMember?
-		for inter in _baseInterfaceTypes
-			m = inter.memberForName(name)
+		m = .declForName(name)
+		if m is not nil
+			return m
+		for inter in _baseInterfaces
+			m = inter.interfaceMemberForName(name)
 			if m is not nil
 				break
 		return m
@@ -136,6 +139,31 @@ class Box
 				return t
 		if .isGeneric
 			return .innerType
+		return nil
+
+	get innerType as IType? is override
+		getEnum = .symbolForName('getEnumerator', true, true)
+		if getEnum
+			assert getEnum.didBindInt
+			rt = getEnum.resultType
+			if rt is .compiler.passThroughType
+				return rt
+			if rt.isGeneric
+				# assert not rt.isGenericDef
+				if rt inherits Box
+					it = rt.params[0]
+					if it inherits GenericParam
+						#it = .typeForGenericParam(it) # CC: this fails because IType on the right is more general than GenericParam on the left. But I'm thinking Cobra should allow you to back up to the original type if you like
+						return .typeForGenericParam(it)
+					else
+						return it
+				else
+					assert false, 'finish me'  # TODO
+			else
+				if rt is .compiler.libraryType('System', 'Collections', 'IEnumerator')
+					return .compiler.libraryType('System', 'Object')
+				else
+					assert false, 'finish me'  # TODO
 		return nil
 
 	## Binding
@@ -307,8 +335,8 @@ class Class
 		m = base.memberForName(name)
 		if m is nil and _baseClass is not nil
 			m = _baseClass.memberForName(name)
-			if m is nil
-				m = .interfaceMemberForName(name)
+		if m is nil
+			m = .interfaceMemberForName(name)
 		return m
 
 	def symbolForName(name as String, canBeMember as bool, haveThis as bool) as IMember? is override
@@ -320,6 +348,8 @@ class Class
 		m = base.symbolForName(name, canBeMember, haveThis)
 		if m is nil and _baseClass is not nil
 			m = _baseClass.memberForName(name)
+		if m is nil
+			m = .interfaceMemberForName(name)
 		return m
 
 	def _bindInt is override
