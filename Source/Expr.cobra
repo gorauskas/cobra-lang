@@ -1158,3 +1158,56 @@ class ListLit
 #				expr.genCS(out)
 #				sep = ', '
 #		out.write(')')
+
+
+class DictLit
+	inherits CompositeLiteral
+
+	var _entries as List<of List<of Expr> >  # CC: >>
+
+	def construct(token as IToken, entries as List<of List<of Expr> >)  # CC: >>
+		base.construct(token)
+		_entries = entries
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('_entries', _entries)
+
+	def _bindImp is override
+		base._bindImp()
+		for entry in _entries
+			entry[0].bindImp()
+			entry[1].bindImp()
+		if .type is nil
+			entries = _entries
+			if _entries.count==0
+				keyType = valueType = .compiler.libraryType('System', 'Object')
+			else
+				keyType   = entries[0][0].type to IType  # CC: to !
+				valueType = entries[0][1].type to IType  # CC: to !
+				i = 1
+				while i<entries.count
+					keyType   = entries[i][0].type.greatestCommonDenominatorWith(keyType)
+					valueType = entries[i][1].type.greatestCommonDenominatorWith(valueType)
+					i += 1
+				# TODO: get rid of this hack
+				# if keyType is troot: keyType = compiler.typeForName('Object')
+				# if valueType is troot: valueType = compiler.typeForName('Object')
+			_type = .compiler.libraryType('System', 'Collections', 'Generic', 'Dictionary<of,>').constructedTypeFor([keyType, valueType])
+			_type.bindAll()
+
+#	def genCS(self, out, genParens=false):
+#		assert len(self.type.typeArgs)==2
+#		keyType = self.type.typeArgs[0]
+#		valueType = self.type.typeArgs[1]
+#		out.write('CobraImp.MakeDict<%s,%s>(typeof(%s)' % (keyType.asCS(), valueType.asCS(), self.type.asCS()))
+#		if self.entries:
+#			out.write(', ')
+#			sep = ''
+#			for entry in self.entries:
+#				out.write(sep)
+#				entry[0].genCS(out)
+#				out.write(',')
+#				entry[1].genCS(out)
+#				sep = ', '
+#		out.write(')')
