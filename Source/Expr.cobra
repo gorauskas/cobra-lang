@@ -1087,3 +1087,70 @@ class VarLit
 # TODO
 #	def asCS
 #		return _name
+
+
+class CompositeLiteral
+	inherits Literal
+
+	def construct(token as IToken)
+		base.construct(token)
+
+
+class ListLit
+	inherits CompositeLiteral
+
+	var _exprs as List<of Expr>
+
+	def construct(token as IToken, exprs as List<of Expr>)
+		base.construct(token)
+		_exprs = exprs
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('exprs', _exprs)
+
+	def _bindImp is override
+		base._bindImp()
+		for expr in _exprs
+			expr.bindImp()
+		if _type is nil
+			exprs = _exprs
+			if exprs.count==0
+				type = .compiler.libraryType('System', 'Object')
+			else
+				type = exprs[0].type to IType
+				i = 1
+				while i<exprs.count
+					exprs[i].bindImp()
+					type = exprs[i].type.greatestCommonDenominatorWith(type)
+					i += 1
+				# TODO: get rid of this hack:
+				if type.getType().name=='CobraType'
+					type = .compiler.libraryType('System', 'Object')
+			_type = .compiler.libraryType('System', 'Collections', 'Generic', 'List<of>').constructedTypeFor([type])
+			_type.bindAll()
+
+# TODO
+#	def toCobraSource(self):
+#		sb = []
+#		sb.append('[')
+#		sep = ''
+#		for expr in self.exprs:
+#			sb.append(sep)
+#			sb.append(expr.toCobraSource())
+#			sep = ', '
+#		sb.append(']')
+#		return ''.join(sb)
+
+# TODO
+#	def genCS(self, out, genParens=false):
+#		innerType = self.type.typeArgs[0]
+#		out.write('CobraImp.MakeList<%s>(typeof(%s)' % (innerType.asCS(), self.type.asCS()))
+#		if self.exprs:
+#			out.write(', ')
+#			sep = ''
+#			for expr in self.exprs:
+#				out.write(sep)
+#				expr.genCS(out)
+#				sep = ', '
+#		out.write(')')
