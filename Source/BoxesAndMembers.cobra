@@ -1154,13 +1154,14 @@ class Method
 	inherits OneCodeBlockMember
 	implements ICodePart
 
-	var _implementsList as List<of INode>
+	var _implementsTypeNode as ISyntaxNode?
+	var _implementsType as IType?
 
-	def construct(token as IToken, box as Box, name as String, paramsList as List<of Param>, returnTypeNode as INode, isNames as List<of String>, implementsList as List<of INode>, docString as String)
+	def construct(token as IToken, box as Box, name as String, paramsList as List<of Param>, returnTypeNode as INode, isNames as List<of String>, implementsTypeNode as ISyntaxNode?, docString as String)
 		base.construct(token, box, name, docString, paramsList)
 		_returnTypeNode = returnTypeNode
 		_isNames = isNames
-		_implementsList = implementsList
+		_implementsTypeNode = implementsTypeNode
 		_stmts = List<of Stmt>()
 
 	get englishName as String is override
@@ -1175,12 +1176,21 @@ class Method
 
 	def addSubFields is override
 		base.addSubFields()
-		if _implementsList
-			.addField('implementsList', _implementsList)
+		if _implementsTypeNode
+			.addField('implementsTypeNode', _implementsTypeNode)
+		.addField('implementsType', _implementsType)
 
 	def defaultToVirtual is override
-		if .isClassMember and not _implementsList
+		if .isClassMember and not _implementsTypeNode
 			base.defaultToVirtual()
+
+	def _bindImp is override
+		base._bindImp()
+		if _implementsTypeNode is not nil
+			_implementsTypeNode.bindAll()
+			assert _implementsTypeNode.namedType
+			_implementsType = _implementsTypeNode.namedType
+			# TODO: make sure the type is among the interfaces of the box
 
 
 class ProperDexer
@@ -1287,8 +1297,8 @@ class TestMethod
 			member.name
 		code
 			# CC: shouldn't the .getCompiler() work? C# code gen puts a "this" in there even though it's shared and C# chokes on it
-			#base.construct(token, member.box, 'test_'+Utils.capped(member.name), List<of Param>(), .getCompiler().voidType, List<of String>(), List<of INode>(), '')
-			base.construct(token, member.box, 'test_'+Utils.capped(member.name), List<of Param>(), voidType, List<of String>(), List<of INode>(), '')
+			#base.construct(token, member.box, 'test_'+Utils.capped(member.name), List<of Param>(), .getCompiler().voidType, List<of String>(), nil, '')
+			base.construct(token, member.box, 'test_'+Utils.capped(member.name), List<of Param>(), voidType, List<of String>(), nil, '')
 			_forMember = member
 
 	def construct(token as IToken, box as Box, voidType as IType)
@@ -1297,7 +1307,7 @@ class TestMethod
 		code
 			# CC: shouldn't the .getCompiler() work? C# code gen puts a "this" in there even though it's shared and C# chokes on it
 			# base.construct(token, box, 'test_class_'+Utils.capped(box.name), List<of Param>(), .getCompiler().voidType, List<of String>(), List<of INode>(), '')
-			base.construct(token, box, 'test_class_'+Utils.capped(box.name), List<of Param>(), voidType, List<of String>(), List<of INode>(), '')
+			base.construct(token, box, 'test_class_'+Utils.capped(box.name), List<of Param>(), voidType, List<of String>(), nil, '')
 			_forBox = box
 
 
