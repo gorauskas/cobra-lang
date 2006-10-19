@@ -15,6 +15,9 @@ class CobraCommandLine
 		_output = IndentedWriter(Console.out)
 		_output.indentString = '    '
 
+	get testPath as String
+		return r'C:\All\echuck\Projects\Cobra\Cobra\Tests'
+
 	get versionString as String
 		return '0.2'
 
@@ -56,7 +59,7 @@ class CobraCommandLine
 	var _testifyCount as int
 
 	def handle_testify
-		.handle_testifyPaths([r'C:\All\echuck\Projects\Cobra\Cobra\Tests'])
+		.handle_testifyPaths([.testPath])
 
 	def handle_testifyPaths(paths as List<of String>)
 		"""
@@ -194,23 +197,18 @@ class CobraCommandLine
 			print 'Skipping per directive on first line of test source.'
 			return 0
 
+		fileNames = [baseName]
+
 		if firstLineInsensitive.startsWith('#.multi.')
-			print 'TODO: cannot handle .multi. directive yet'
-#			print 'Running multiple files.'
-#			filenames = [basename] + firstLine[firstLine.find('.multi.')+8:].split()
-#			print filenames
-#		else:
-#			filenames = nil
+			print 'Running multiple files.'
+			for fileName as String in firstLine.substring(firstLine.indexOf('.multi.')+8).split()  # CC: axe "as String"
+				if fileName
+					fileNames.add(Utils.combinePaths(Path.getDirectoryName(baseName), fileName))
+			print fileNames
 
-		# not expecting an error
-		c = Compiler(_verbosity, ErrorActionEnum.Exit)
+		c = Compiler(_verbosity, ErrorActionEnum.Exit)  # not expecting an error
 
-#		if filenames:
-#			c.parseFilesNamed(filenames=filenames)
-#		else:
-#			c.parseOne(filename=basename, source=source)
-
-		c.parseFilesNamed([baseName])
+		c.parseFilesNamed(fileNames)
 		assert c.modules
 		c.dumpModulesForTestify(_output, 'Modules after parsing')
 
