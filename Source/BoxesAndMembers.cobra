@@ -909,9 +909,15 @@ interface ICodePart
 
 	def findLocalCI(name as String) as AbstractLocalVar?
 
+	def removeLocal(name as String)
+
 	pro hasReturnStmt as bool
 
 	get resultType as IType
+
+	pro requirePart as RequirePart?
+
+	pro ensurePart as EnsurePart?
 
 
 class OneCodeBlockMember
@@ -931,8 +937,8 @@ class OneCodeBlockMember
 
 	var _returnTypeNode as INode
 	var _returnType as IType?
-	var _requirePart as Node?  # TODO: narrow
-	var _ensurePart as Node?  # TODO: narrow
+	var _requirePart as RequirePart
+	var _ensurePart as EnsurePart
 	var _oldExprs as List<of Expr>  # TODO: add a doc string for this
 	var _params as List<of Param>
 	var _locals as List<of LocalVar>
@@ -963,6 +969,10 @@ class OneCodeBlockMember
 
 	def addStmt(stmt as Stmt)
 		_stmts.add(stmt)
+
+	pro requirePart from var
+
+	pro ensurePart from var
 
 	get resultType as IType is override
 		require
@@ -1008,6 +1018,16 @@ class OneCodeBlockMember
 				_error('Parameters and locals must vary by more than just their case. Change "[local.name]" or "[other.name]" to match, or rename one of them to something different.')
 			local.isTracked = true
 			_locals.add(local)
+
+	def removeLocal(name as String)
+		require
+			name
+			.findLocal(name) is not nil
+		code
+			for i = 0 .. _locals.count
+				if _locals[i].name==name
+					_locals.removeAt(i)
+					break
 
 #	def dumpName(out)
 #		name = getattr('name', '(noname)')
@@ -1319,6 +1339,87 @@ class TestMethod
 			_forBox = box
 
 
+class ConditionPart
+	inherits SyntaxNode
+	"""
+	TODO: Rename to ContractPart
+	The abstract base class for RequirePart and EnsurePart.
+	"""
+
+	var _codeMember as ICodePart
+	var _exprs as List<of Expr>
+
+	def construct(token as IToken, codeMember as ICodePart, exprs as List<of Expr>)
+		base.construct(token)
+		_codeMember = codeMember
+		_exprs = exprs
+
+	def _bindImp is override
+		base._bindImp()
+		i = 0
+		for expr in _exprs
+			expr.bindImp()
+			assert expr.type
+			if expr.type is not .compiler.boolType
+				expr = TruthExpr(expr).bindAll() to Expr # CC: axe cast when Cobra supports "as this"
+				assert expr.type
+				_exprs[i] = expr
+			i += 1
+
+
+class RequirePart
+	inherits ConditionPart
+
+	def construct(token as IToken, codeMember as ICodePart, exprs as List<of Expr>)
+		base.construct(token, codeMember, exprs)
+		codeMember.requirePart = this
+
+#	def genCS(out)
+#		out.write('// require\n')
+#		for expr in _exprs
+#			out.write('if (!')
+#			expr.genCS(out)
+#			out.write(') ')
+#			out.indent()
+#			s = expr.toCobraSource()
+#			s = _csStringLitFor(s)
+#			out.write('throw new RequireException(%s, %s, %s, null);\n' % (
+#				_csStringLitFor(_token.fileName), _token.lineNum, s))
+#			out.dedent()
+#		out.write('// end require\n')
+
+
+class EnsurePart
+	inherits ConditionPart
+
+	def construct(token as IToken, codeMember as ICodePart, exprs as List<of Expr>)
+		base.construct(token, codeMember, exprs)
+		codeMember.ensurePart = this
+
+	def _bindImp is override
+		assert _codeMember.resultType
+		if _codeMember.resultType is .compiler.voidType
+			base._bindImp()
+		else
+			_codeMember.addLocal(ResultVar(.token, _codeMember))
+			try
+				base._bindImp()
+			finally
+				_codeMember.removeLocal('result')
+
+#	def genCS(out)
+#		for expr in _exprs
+#			out.write('if (!')
+#			expr.genCS(out)
+#			out.write(') ')
+#			out.indent()
+#			s = expr.toCobraSource()
+#			s = _csStringLitFor(s)
+#			out.write('throw new EnsureException(%s, %s, %s, null);\n' % (
+#				_csStringLitFor(_token.fileName), _token.lineNum, s))
+#			out.dedent()
+
+
 ## TODO: Move the below items to Vars.cobra. Put IVar in there too.
 
 class AbstractLocalVar
@@ -1468,11 +1569,11 @@ class ResultVar
 	The implicit variable `result` used in `ensure` blocks.
 	"""
 
-	def construct(codeMember as ClassMember)
-		base.construct(_makeToken(codeMember), codeMember.resultType, true)
+	def construct(token as IToken, codePart as ICodePart)
+		base.construct(_makeToken(token), codePart.resultType, true)
 
-	def _makeToken(codeMember as ClassMember) as IToken is shared
-		token = codeMember.token.copy
+	def _makeToken(token as IToken) as IToken is shared
+		token = token.copy
 		token.text = 'result'
 		return token
 
