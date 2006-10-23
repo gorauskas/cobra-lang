@@ -73,7 +73,8 @@ class BinaryOpExpr
 		base.bindImp()
 		assert .didBindImp
 		# TODO: maybe check() should only be invoked if left and right were bound without error
-		.check()
+		.check()  # TODO: rename this to checkFoo()
+		.checkForVoids()
 		return this
 
 	def _bindImp is override
@@ -92,6 +93,25 @@ class BinaryOpExpr
 		left and right have been successfully bound.
 		"""
 		pass
+
+	def checkForVoids
+		left = _left
+		right = _right
+		voidType = .compiler.voidType
+		# check for void on either side of the expression
+		sugg = 'Use a different method or change that method to return something.'
+		if left.type is voidType
+			if left inherits BinaryOpExpr and (left to BinaryOpExpr).op=='DOT' and (left to BinaryOpExpr).right inherits CallExpr  # CC: axe casts
+				append = ' because "[((left to BinaryOpExpr).right to CallExpr).name]" does not return anything.'  # CC: axe BinaryOp cast
+			else
+				append = '.'
+			_error('There is no type for the left hand side of "[.token.text]"[append] [sugg]')
+		if right.type is voidType and not right inherits CallExpr
+			if right inherits BinaryOpExpr and (right to BinaryOpExpr).op=='DOT' and (right to BinaryOpExpr).right inherits CallExpr  # CC: axe cast
+				append = ' because "[((right to BinaryOpExpr).right to CallExpr).name]" does not return anything.'  # CC: axe BinaryOp cast
+			else
+				append = '.'
+			_error('There is no type for the right hand side of "[.token.text]"[append] [sugg]')
 
 	def addRefFields is override
 		base.addRefFields()
