@@ -60,6 +60,16 @@ class Expr
 		code
 			t = _receiverType ? _type  # TODO: change to .receiverType
 			# TODO: change code below to something like. if container inherits IContainer ...
+			while true
+				if t inherits QualifiedType  # TODO: another example of QualifiedType being a pain
+					wt = t.theWrappedType
+					if wt is nil
+						t.bindInt()
+						wt = t.theWrappedType
+						assert wt
+					$sharp('t = wt')
+				else
+					break
 			container = t to? IContainer
 			if container!
 				return container.memberForName(name)
@@ -195,18 +205,25 @@ class CallExpr
 		type as IType?
 
 		if _definition is nil  or  _type is nil
+			handled = false
 			if _superNode inherits BinaryOpExpr
 				if _superNode.op=='DOT' and this is _superNode.right
 					# handle foo.bar() where this is the `bar()` part
 					possibleDefinition = _superNode.left.memberForName(_name)
 					if possibleDefinition is nil
-						type = .compiler.passThroughType
+						if _superNode.left.receiverType is .compiler.passThroughType
+							type = .compiler.passThroughType
+						else
+							_error('Cannot find "[_name]" in [_superNode.left.receiverType.name].')
 					else
 						if not possibleDefinition.isCallable
 							_error('Cannot call "[_name]" because it is a "[possibleDefinition.englishName]".')
 						definition = possibleDefinition
 						type = possibleDefinition.resultType
-			if type is nil
+					handled = true
+			if handled
+				assert type is not nil
+			else
 				# handle instantiation such Car() or t() (where t is a System.Type)
 				canBeMember = _name.startsWith('_') or Utils.isCapped(_name)
 				if canBeMember
@@ -216,10 +233,7 @@ class CallExpr
 					definition = .compiler.findLocal(_name)
 				if definition is nil
 					_error('Cannot find "[_name]".')
-			if definition is nil
-				# TODO this needs to be an error in the long term
-				type = .compiler.passThroughType
-			else
+			if definition is not nil
 				if definition inherits IVar
 					# such as having:
 					#	t as Type
@@ -262,7 +276,7 @@ class CallExpr
 									if _name=='toString'  # TODO because many structs like Decimal have a toString() overload which cannot currently be expressed in SystemInterfaces.cobra
 										check = false
 									else
-										_error('The method is expecting [paramsx.count] arguments, but [args.count] are being supplied in this call.')
+										_error('The method "[definition.name]" is expecting [paramsx.count] arguments, but [args.count] are being supplied in this call.')
 								if check
 									for i = 0 .. args.count
 										arg = args[i]
@@ -283,8 +297,9 @@ class CallExpr
 													paramx.writeDeepString()
 												_error('Argument [i+1] of method "[_name]" expects type [paramx.type.name], but the call is supplying type [arg.type.name].')
 				else
-					assert false, definition
-
+					throw FallThroughException(definition)
+			if type is nil
+				type = .compiler.passThroughType
 			_definition = definition
 			_type = type
 		assert _type, 'this=[this], def=[_definition]'
@@ -1015,6 +1030,10 @@ class StringSubstLit
 		require items
 		base.construct(items[0].token)
 		_items = items
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('items', _items)
 
 	def _bindImp is override
 		base._bindImp()

@@ -321,6 +321,14 @@ class Class
 		_baseNode = baseNode
 		_baseInterfaceNodes = implementsNodes
 
+	def addRefFields is override
+		base.addRefFields()
+		.addField('baseClass', _baseClass)
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('baseNode', _baseNode)
+
 	get baseClass from var
 
 	def isDescendantOf(type as IType) as bool is override
@@ -343,8 +351,9 @@ class Class
 	def memberForName(name as String) as IMember? is override
 		# the next assertion fails for Tests\600-misc\404-implement-IEnumerable
 		# could not fix. I'm confused. Something to do with generics. So bail on generics:
-		if not .isGeneric
-			assert .didBindInt  # TODO: is this legit? if so, push up to Container
+		# asserting .didBindInt is difficult because memberForName() gets invoked during bindInt
+		# if not .isGeneric
+		# 	assert .didBindInt  # TODO: is this legit? if so, push up to Container
 		m = base.memberForName(name)
 		if m is nil and _baseClass is not nil
 			m = _baseClass.memberForName(name)
@@ -390,6 +399,13 @@ class Class
 				_error('The base "[baseName]" is a struct. Classes cannot inherit from structs.')
 			else
 				_error('The base class "[baseName]" is not actually a class, it is a "[possible.englishName]".')
+		else
+			t = .compiler.libraryType('System', 'Object')
+			if t inherits Class
+				if this is not t  # don't want Object to inherit Object
+					_baseClass = t
+			else
+				throw FallThroughException(t)
 		base._bindInt()
 
 	def _badInterfaceError(type as IType) is override
