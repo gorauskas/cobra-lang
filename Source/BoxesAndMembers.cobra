@@ -17,6 +17,8 @@ class Box
 	var _baseInterfaces as List<of Interface>
 	var _baseInterfaceTypes as List<of IType>  # can include interfaces and qualified types (containing interfaces) TODO: another example of why QualifiedType should be replaced by TypeIdentifier
 
+	var _isNames as List<of String>
+
 	var _overloads as List<of MemberOverload>
 	var _nextPrivateSerialNumber = 1001
 
@@ -26,7 +28,7 @@ class Box
 		base.construct(TokenFix.empty, 'x', '')
 		assert false, 'CC: remove this constructor when unnecessary return statements can be removed'
 
-	def construct(token as IToken, name as String, paramList as List<of IType>, docString as String?)
+	def construct(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, docString as String?)
 		base.construct(token, name, docString)
 		_params = paramList
 		for i = 0 .. _params.count
@@ -35,6 +37,7 @@ class Box
 				p.index = i
 		_baseInterfaces = List<of Interface>()
 		_baseInterfaceTypes = List<of IType>()
+		_isNames = isNames
 		_overloads = List<of MemberOverload>()
 
 	def addMinFields is override
@@ -51,6 +54,9 @@ class Box
 			.addField('baseInterfaceNodes', _baseInterfaceNodes)
 
 	pro testMethod from var
+
+	get isFake as bool
+		return 'fake' in _isNames
 
 	get params from var
 
@@ -317,7 +323,7 @@ class Class
 	var _baseNode as INode?
 
 	def construct(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseNode as INode?, implementsNodes as List<of INode>, docString as String?)
-		base.construct(token, name, paramList, docString)
+		base.construct(token, name, paramList, isNames, docString)
 		_baseNode = baseNode
 		_baseInterfaceNodes = implementsNodes
 
@@ -426,7 +432,7 @@ class Interface
 	inherits Box
 
 	def construct(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseNodes as List<of INode>, docString as String?)
-		base.construct(token, name, paramList, docString)
+		base.construct(token, name, paramList, isNames, docString)
 		_baseInterfaceNodes = baseNodes
 
 	get englishName as String is override
@@ -458,7 +464,7 @@ class Struct
 	inherits Box
 
 	def construct(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseName as String?, interfaceNodes as List<of INode>, docString as String?)
-		base.construct(token, name, paramList, docString)
+		base.construct(token, name, paramList, isNames, docString)
 		_baseInterfaceNodes = interfaceNodes
 
 	def _bindInt is override
@@ -1232,11 +1238,14 @@ class Method
 
 	def _bindImp is override
 		base._bindImp()
+		numErrors = .compiler.errors.count
 		if _implementsTypeNode is not nil
 			_implementsTypeNode.bindAll()
 			assert _implementsTypeNode.namedType
 			_implementsType = _implementsTypeNode.namedType
 			# TODO: make sure the type is among the interfaces of the box
+		if .compiler.errors.count==numErrors and _returnType is not .compiler.voidType and not .hasReturnStmt and not .box.isFake and not .box inherits Interface
+			_error('Missing return statement for method "[_name]" which returns [_returnType.name].')
 
 
 class ProperDexer
