@@ -1,0 +1,32 @@
+class SharpWriter
+	inherits IndentedWriter
+
+	var _cobraLineNum as int
+	var _sharpLineNum as int
+	var _sharpToCobraLineNum as Dictionary<of int, int>
+
+	def construct(tw as TextWriter)
+		base.construct(tw)
+		_cobraLineNum = 1
+		_sharpLineNum = 1
+		_sharpToCobraLineNum = {1 : 1}
+
+	def node(node as SyntaxNode)
+		"""
+		As C# code is generated, each of the nodes should invoke this method so that the
+		SharpWriter can map C# line numbers back to Cobra source line numbers.
+		"""
+		lineNum = node.token.lineNum
+		if lineNum>0
+			assert lineNum >= _cobraLineNum, '[lineNum], [_cobraLineNum]'
+			_cobraLineNum = lineNum
+
+	def write(value as char) is override
+		base.write(value)
+		if _lastChar==_innerWriter.newLine or _lastChar==.newLine2
+			_sharpToCobraLineNum[_sharpLineNum] = _cobraLineNum
+			_sharpLineNum += 1
+
+	# CC: shouldn't need the following
+	def write(value as String) is override
+		base.write(value)
