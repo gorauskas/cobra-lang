@@ -137,8 +137,6 @@ class BasicTypeProvider
 interface IType
 	inherits IMember  # TODO: does an IType need to also be an IContainer?
 
-	get csInit as String
-
 	def isAssignableTo(type as IType) as bool
 
 	def isDescendantOf(type as IType) as bool
@@ -209,6 +207,12 @@ interface IType
 		Used for `foo.bar` where this type is the type of `foo`.
 		Should return members that are inherited (if any).
 		"""
+
+	## Code gen
+
+	get csInit as String
+
+	def writeSharpRef(sw as SharpWriter)
 
 
 class CobraType
@@ -354,8 +358,13 @@ class CobraType
 	def getHashCode as int is override
 		return .serialNum.getHashCode()
 
+	## Code gen
+
 	get csInit as String
 		throw OverrideException(.getType())
+
+	def writeSharpRef(sw as SharpWriter)
+		sw.write(.name)
 
 
 class ValueType
@@ -822,15 +831,17 @@ class QualifiedType
 			if _superType is nil
 				_superType = .compiler.typeType
 
-#	def asCS()
-#		# TODO could just use _wrappedType.asCS() if I stick with ObjectType always being fully qualified.
-#		return _dottedParentNames + _wrappedType.name
-#
-#	def csInit()
-#		cs = _wrappedType.csInit()
-#		if cs!='null'
-#			cs = _dottedParentNames + cs
-#		return cs
+	## Code gen
+
+	def writeSharpRef(sw as SharpWriter) is override
+		sw.write(_dottedParentNames)
+		sw.write(_wrappedType.name)
+
+	get csInit as String is override
+		cs = _wrappedType.csInit
+		if cs<>'null'
+			cs = _dottedParentNames to String + cs  # CC: axe cast
+		return cs
 
 
 class UnspecifiedType

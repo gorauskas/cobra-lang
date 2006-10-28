@@ -358,7 +358,7 @@ class Box
 		for decl in _declsInOrder
 			decl.writeSharpDef(sw)
 		.writeSharpTest(sw)
-		sw.indentAndWrite('} // [.csKeyWord] [.name]\n')
+		sw.dedentAndWrite('} // [.csKeyWord] [.name]\n')
 		sw.write('\n')
 
 	def writeSharpInheritance(sw as SharpWriter)
@@ -387,7 +387,7 @@ class Box
 #		sw.write('CobraImp.TestEnded("%s");\n' % self.name);
 #		sw.indentAndWrite('}\n')
 
-#	def genCSTestInvocation(self, out):
+#	def writeSharpTestInvocation(self, out):
 #		# used by the test option
 #		if not self.isFake:
 #			sw.write('\t\t%s.RunTestsIfNeeded();\n' % self.name)
@@ -509,7 +509,7 @@ class Class
 	get csKeyWord as String is override
 		return 'class'
 
-	def writeSharpInheritance(sw as SharpWriter)
+	def writeSharpInheritance(sw as SharpWriter) is override
 		if _baseClass
 			_baseClass.writeSharpRef(sw)
 
@@ -642,7 +642,7 @@ class GenericParam
 #	def csInit()
 #		return 'default(%s)' % _name
 #
-#	def genCSConstraint(sw)
+#	def writeSharpConstraint(sw)
 #		if _constraints
 #			sw.write('where %s  ' % _name)
 #			sep = ''
@@ -688,7 +688,7 @@ class GenericClassConstraint
 	def construct(token as IToken)
 		base.construct(token)
 
-#	def genCS(sw)
+#	def writeSharp(sw)
 #		sw.write('class')
 
 
@@ -701,7 +701,7 @@ class GenericStructConstraint
 	def construct(token as IToken)
 		base.construct(token)
 
-#	def genCS(sw)
+#	def writeSharp(sw)
 #		sw.write('struct')
 
 
@@ -714,7 +714,7 @@ class GenericCallableConstraint
 	def construct(token as IToken)
 		base.construct(token)
 
-#	def genCS(sw)
+#	def writeSharp(sw)
 #		sw.write('new')
 
 
@@ -753,7 +753,7 @@ class GenericTypeConstraint
 		if not _representedType inherits Class and not _representedType inherits Interface
 			_error('A generic type constraint must be a class or an interface. "[_representedType.name]" is not.')
 
-#	def genCS(sw)
+#	def writeSharp(sw)
 #		sw.write(_representedType.asCS())
 
 
@@ -832,9 +832,8 @@ class ClassMember  # TODO: rename to BoxMember
 	get isClassMember as bool
 		return _box inherits Class
 
-# TODO:
-#	get isInterfaceMember as bool
-#		return _box inherits Interface
+	get isInterfaceMember as bool
+		return _box inherits Interface
 
 	get requiresThis as bool
 		return not _name.startsWith('_')
@@ -895,6 +894,58 @@ class ClassMember  # TODO: rename to BoxMember
 	def addSubFields is override
 		base.addSubFields()
 		.addField('docString', _docString)
+
+
+	## Code gen
+
+	def writeSharpTest(sw as SharpWriter)
+		if _testMethod
+			_testMethod.writeSharpDef(sw)
+
+	def writeSharpTestInvocation(sw as SharpWriter)
+		if _testMethod
+			sw.write('[_testMethod.name]();\n')
+
+	def writeSharpParams(sw as SharpWriter) # TODO: could this be pushed down to OneCodeBlockMember
+		parens = '()'
+		sw.write(parens[0])
+		sep = ''
+		for param in .params
+			sw.write(sep)
+			param.writeSharpDef(sw)
+			sep = ', '
+		sw.write(parens[1].toString()+' ')
+
+	def writeSharpIsNames(sw as SharpWriter)
+		# TODO: cache this somewhere
+		accessLevels = ['public', 'protected', 'internal', 'protected internal', 'private']
+		# CC: accessLevels = 'public,protected,internal,protected internal,private'.split(c',')
+			# same names in both Cobra and C#
+
+		# TODO:
+		# if isNames is nil
+		#	isNames = _isNames
+		isNames = List<of String>(_isNames)
+		if .defaultAccessLevel
+			found = false
+			for level as String in accessLevels  # CC: axe as
+				if level in isNames
+					found = true
+			if not found
+				isNames.insert(0, .defaultAccessLevel)
+		isNameCS = {
+			# only have to specify the ones that are different
+			'shared': 'static',
+			'nonvirtual': '',
+		}
+		sep = ''
+		for name in isNames
+			name = Utils.getSS(isNameCS to passthrough, name, name) to String # CC: to !
+			sw.write(sep)
+			sw.write(name)
+			sep = ' '
+		if sep
+			sw.write(' ')
 
 
 class ClassVar
@@ -988,21 +1039,23 @@ class ClassVar
 
 	## Code Gen
 
-	get csName as String
-		return if(_useCSNameStack, _useCSNameStack.peek(), _name)
+	# TODO:
+#	get csAssignmentNames as List<of String>
+#		return List<of String>(_useCSNameStack)
 
-	get csAssignmentNames as List<of String>
-		return List<of String>(_useCSNameStack)
+	def writeSharpRef(sw as SharpWriter) is override
+		name = if(_useCSNameStack, _useCSNameStack.peek(), _name)
+		sw.write(name)
 
-#	get asCS as String is override  # TODO probably don't need both an asCS() and csName (above)
-#		return .csName
-
-#	def genCS(sw)
-#		sw.write('%s%s %s' % (_isNamesCS(), _type.asCS(), _name))
-#		if _initExpr
-#			sw.write(' = ')
-#			_initExpr.writeSharp(sw)
-#		sw.write(';\n')
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		.writeSharpIsNames(sw)
+		_type.writeSharpRef(sw)
+		sw.write(' [_name]')
+		if _initExpr
+			sw.write(' = ')
+			_initExpr.writeSharpDef(sw)
+		sw.write(';\n')
 
 
 interface ICodePart
@@ -1225,78 +1278,86 @@ class OneCodeBlockMember
 			_ensurePart.bindImp()
 		.compiler.codeMemberStack.pop()
 
-#	def genCSLocals(out, locals=nil, open=true)
-#		if open
-#			sw.writeAndIndent('{\n')
-#		# record the `old` expressions in `ensure`
-#		for oldExpr in .oldExprs
-#			oldExpr.genCSAssignment(sw)
-#		if locals is nil
-#			locals = .names
-#		if locals
-#			sw.write('// locals\n')
-#			for var in locals
-#				if not var.isImplicit
-#					init = var.type.csInit()
-#					if init is nil
-#						sw.write('%s %s;\n' % (var.type.asCS(), var.name))
-#					else
-#						sw.write('%s %s = %s;\n' % (var.type.asCS(), var.name, init))
+	## Code gen
 
-#	def genCSParamCheck(param, out)
-#		from Expressions import Param
-#		assert inherits(param, Param)
-#		if param.type.isReference and not inherits(param.type, NilableType)
-#			sw.write('if (%s==null) throw new ArgumentNullException("%s");\n' % (
-#				param.name, param.name))
-#			# TODO axe the code below or above
-#			#sw.write('if (%s==null) throw new ArgumentNullException("%s", string.Format("Object reference \\"%s\\" not set to an instance of an object."));\n' % (
-#			#	param.name, param.name, param.name))
+	def writeSharpImp(sw as SharpWriter, skipFirst as bool)
+		sw.writeAndIndent('{\n')
+		if .compiler.hasSuperStackTraceOption
+			.writeSSTHead(sw)
+		for param in _params
+			.writeSharpParamCheck(param, sw)
+		if _requirePart
+			_requirePart.writeSharpDef(sw)
+		.writeSharpLocals(sw, nil, false)
+		if _ensurePart
+			if _csResultVarName  # set in _bindImp
+				_returnType.writeSharpRef(sw)
+				sw.write(' [_csResultVarName] = [_returnType.csInit]')
+			sw.writeAndIndent('try {\n')
+		# TODO: .block.writeSharp(out, open=false, close=false, skipFirst=skipFirst)
+		if _ensurePart
+			sw.indentAndWrite('} finally { // ensure\n')
+			sw.indent()
+			_ensurePart.writeSharpDef(sw)
+			sw.indentAndWrite('}\n')
+		if .compiler.hasSuperStackTraceOption
+			.writeSSTTail(sw)
+		sw.indent()
+		sw.write('}\n')
+		sw.write('\n')
 
-#	def genCSImp(out, skipFirst=false)
-#		sw.writeAndIndent('{\n')
-#		if .compiler.hasSuperStackTraceOption
-#			.genSSTHead(sw)
-#		for param in .params
-#			.genCSParamCheck(param, out)
-#		if .requirePart
-#			.requirePart.writeSharp(sw)
-#		.genCSLocals(out, open=false)
-#		if .ensurePart
-#			if .csResultVarName  # set in _bindImp
-#				sw.write('%s %s = %s;\n' % (.returnType.asCS(), .csResultVarName, .returnType.csInit()))
-#			sw.writeAndIndent('try {\n')
-#		.block.writeSharp(out, open=false, close=false, skipFirst=skipFirst)
-#		if .ensurePart
-#			sw.indentAndWrite('} finally { // ensure\n')
-#			sw.indent()
-#			.ensurePart.writeSharp(sw)
-#			sw.indentAndWrite('}\n')
-#		if .compiler.hasSuperStackTraceOption
-#			.genSSTTail(sw)
-#		sw.indent()
-#		sw.write('}\n')
-#		sw.write('\n')
+	# TODO: axe?
+#	def writeSharpLocals(sw as SharpWriter)
+#		.writeSharpLocals(sw, nil, true)
 
-#	def genSSTHead(sw)
-#		sw.write('CobraImp.PushFrame("%s", "%s"' % (.box.name, .name))
-#		if not .isShared
-#			sw.write(', "this", this')
-#		for param in .params
-#			sw.write(', "%s", %s' % (param.name, param.name))
-#		sw.write(');\n')
-#		sw.write('CobraImp.SetLine(%s);\n' % .token.lineNum)
-#		sw.writeAndIndent('try {\n')
+	def writeSharpLocals(sw as SharpWriter, locals as List<of LocalVar>?, open as bool)
+		if open
+			sw.writeAndIndent('{\n')
+		# record the `old` expressions in `ensure`
+		# TODO: for oldExpr in .oldExprs
+		#	oldExpr.genCSAssignment(sw)
+		if locals is nil
+			locals = _locals
+		if locals
+			sw.write('// locals\n')
+			for local in locals
+				if not local.isImplicit
+					local.type.writeSharpRef(sw)
+					sw.write(' [local.name]')
+					init = local.type.csInit
+					if init
+						sw.write(' = [init]')
+					sw.write(';\n')
 
-#	def genSSTTail(sw)
-#		sw.indentAndWrite('} catch {\n')
-#		sw.indent()
-#		sw.write('CobraImp.CaughtUncaughtException();\n')
-#		sw.write('throw;\n')
-#		sw.indentAndWrite('} finally {\n')
-#		sw.indent()
-#		sw.write('CobraImp.PopFrame();\n')
-#		sw.indentAndWrite('}\n')
+	def writeSharpParamCheck(param as Param, sw as SharpWriter)
+		if param.type.isReference and not param.type inherits NilableType
+			sw.write('if ([param.name]==null) throw new ArgumentNullException("[param.name]");\n')
+			# TODO axe the code below or above
+			#sw.write('if (%s==null) throw new ArgumentNullException("%s", string.Format("Object reference \\"%s\\" not set to an instance of an object."));\n' % (
+			#	param.name, param.name, param.name))
+
+	def writeSSTHead(sw as SharpWriter)
+		return
+		# TODO
+		#sw.write('CobraImp.PushFrame("%s", "%s"' % (.box.name, .name))
+		#if not .isShared
+		#	sw.write(', "this", this')
+		#for param in .params
+		#	sw.write(', "%s", %s' % (param.name, param.name))
+		#sw.write(');\n')
+		#sw.write('CobraImp.SetLine(%s);\n' % .token.lineNum)
+		#sw.writeAndIndent('try {\n')
+
+	def writeSSTTail(sw as SharpWriter)
+		return
+		#sw.indentAndWrite('} catch {\n')
+		#sw.indent()
+		#sw.write('CobraImp.CaughtUncaughtException();\n')
+		#sw.write('throw;\n')
+		#sw.indentAndWrite('} finally {\n')
+		#sw.indent()
+		#sw.write('CobraImp.PopFrame();\n')
+		#sw.indentAndWrite('}\n')
 
 
 class Method
@@ -1343,6 +1404,23 @@ class Method
 			# TODO: make sure the type is among the interfaces of the box
 		if .compiler.errors.count==numErrors and _returnType is not .compiler.voidType and not .hasReturnStmt and not .box.isFake and not .box inherits Interface
 			_error('Missing return statement for method "[_name]" which returns [_returnType.name].')
+
+	## Code gen
+
+	def writeSharpDef(sw as SharpWriter) is override
+		name = Utils.capped(.name)
+		returnType = _returnType ? .compiler.voidType to IType  # CC: axe cast
+		if _implementsType
+			name = _implementsType.name + '.' + name  # TODO: is name sufficient?
+		.writeSharpIsNames(sw)
+		returnType.writeSharpRef(sw)
+		sw.write(' [name]')
+		.writeSharpParams(sw)
+		if .isInterfaceMember
+			sw.write(';\n')
+		else
+			.writeSharpImp(sw, false)
+			.writeSharpTest(sw)
 
 
 class ProperDexer
@@ -1498,7 +1576,7 @@ class RequirePart
 		base.construct(token, codeMember, exprs)
 		codeMember.requirePart = this
 
-#	def genCS(sw)
+#	def writeSharp(sw)
 #		sw.write('// require\n')
 #		for expr in _exprs
 #			sw.write('if (!')
@@ -1531,7 +1609,7 @@ class EnsurePart
 			finally
 				_codeMember.removeLocal('result')
 
-#	def genCS(sw)
+#	def writeSharp(sw)
 #		for expr in _exprs
 #			sw.write('if (!')
 #			expr.writeSharp(sw)
@@ -1573,6 +1651,8 @@ class AbstractLocalVar
 		_isTracked = false
 
 	pro ifInheritsStack from var
+
+	get isImplicit from var
 
 	pro isTracked from var
 
@@ -1663,7 +1743,7 @@ class Param
 		base.construct(token, typeNode, isImplicit)
 
 # TODO
-#	def genCS(sw)
+#	def writeSharp(sw)
 #		sw.write('%s %s' % (.type.asCS(), .name))
 
 

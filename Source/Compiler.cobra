@@ -44,6 +44,7 @@ class Compiler
 		_modules = List<of Module>()
 		_whenError = whenError
 		_whenWarning = whenWarning
+		_options = Dictionary<of String, Object>()
 		_globalNS = NameSpace(Token.empty, '(global)')
 		_nameSpaceStack = Stack<of NameSpace>()
 		_boxStack = Stack<of Box>()
@@ -83,6 +84,13 @@ class Compiler
 	get errors from var
 
 	get warnings from var
+
+	get hasSuperStackTraceOption as bool
+		# CC: return _options.get('superstacktrace', false) to bool
+		if _options.containsKey('superstacktrace')
+			return if(_options['superstacktrace'], true, false)
+		else
+			return false
 
 	def parseFilesNamed(filenames as List<of String>) as List<of Module>
 		"""
@@ -424,5 +432,143 @@ class Compiler
 		finally
 			Node.setCompiler(nil)
 
+	var _exeFileName as String  # TODO: is this needed?
+
+	var _cscExecPath = r'\WINDOWS\Microsoft.NET\Framework\v2.0.50727\csc'
+
 	def compileCS
-		pass
+		require
+			.options is not nil
+			.modules
+			.modules[0].fileName.endsWith('SystemInterfaces.cobra')
+		code
+			# exe names
+			# CC: exe = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName, _modules[1].csFileName)
+			exe = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName to passthrough, _modules[1].csFileName to passthrough) to String
+			if exe.endsWith('.cs')
+				exe = exe.substring(0, exe.length-3) # CC: [..-3]
+			if exe.endsWith('.cobra')
+				exe = exe.substring(0, exe.length-6) # CC: [..-6]
+			exe += '.exe'
+			_exeFileName = exe
+
+			# options
+			options = ''
+			# CC: cleanup
+			thing = Utils.getSO(_options, 'reference', [])
+			if thing
+				for refer in thing to List<of String>
+					options += ' /r:' + refer
+			debug = Utils.getSO(_options, 'debug', nil) to String
+			if debug is nil
+				pass
+			else if debug==1
+				options += ' /debug'
+			else if debug==0
+				options += ' /debug-'
+			else
+				assert debug in ['full', 'pdbonly'], debug
+				options += ' /debug: [debug]'
+
+			options += ' /out:' + exe
+
+			options += ' /nologo'
+
+			# .cs files
+			csFileNameList = List<of String>()
+			for module in _modules.getRange(1, _modules.count-1)  # CC: use range
+				csFileNameList.add(module.csFileName)
+			csFileNames = Utils.join(' ', csFileNameList)
+
+			# compilation command
+			cobraLangPath = r'C:\All\echuck\Projects\Cobra\Cobra\Source\CobraLang.cs'  # TODO: locate this next to cobra.exe
+
+			if _verbosity
+				print 'Compiling to produce [exe]'
+			p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
+			p.startInfo.fileName = _cscExecPath
+			p.startInfo.arguments = options + ' ' + csFileNames + ' ' + cobraLangPath
+			#if _verbosity >= 2  # TODO: restore
+			if true
+				print '[p.startInfo.fileName] [p.startInfo.arguments]'
+			p.startInfo.redirectStandardOutput = true
+			p.startInfo.redirectStandardError = true
+			p.startInfo.useShellExecute = false
+			# p.WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
+			p.start()
+			p.waitForExit()
+			output = p.standardOutput.readToEnd()
+
+			print output
+			if output.indexOf('error ')<>-1
+				errors = List<of String>()
+				for line as String in output.split(c'\n')  # CC: axe as
+					if line.indexOf('error ')<>-1
+						errors.add(line)
+				throw CompilationError(errors)
+
+			# remove C#
+			if Utils.getSO(_options, 'deletegen', 0)
+				for csFileName in csFileNameList
+					File.delete(csFileName)
+
+
+class CompilationError
+	inherits CobraException
+
+	def construct(error as List<of String>)
+		base.construct('C# compilation error')
+
+namespace System
+
+	namespace Diagnostics
+
+		class Process
+			is fake
+
+			var _startInfo as StartInfo
+
+			pro startInfo from var
+
+			def start
+				pass
+
+			def waitForExit
+				pass
+
+			get standardOutput as System.IO.TextReader
+				return nil to passthrough
+
+		class StartInfo
+			is fake
+
+			pro fileName as String
+				get
+					return ''
+				set
+					pass
+
+			pro arguments as String
+				get
+					return ''
+				set
+					pass
+
+			pro redirectStandardOutput as bool
+				get
+					return true
+				set
+					pass
+
+			pro redirectStandardError as bool
+				get
+					return true
+				set
+					pass
+
+			pro useShellExecute as bool
+				get
+					return true
+				set
+					pass
+
