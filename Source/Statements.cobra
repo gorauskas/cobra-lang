@@ -563,6 +563,7 @@ class ReturnStmt
 	inherits Stmt
 
 	var _expr as Expr?
+	var _csResultVarName as String?
 
 	def construct(token as IToken, expr as Expr?)
 		base.construct(token)
@@ -571,6 +572,8 @@ class ReturnStmt
 	def addSubFields is override
 		base.addSubFields()
 		.addField('expr', _expr)
+
+	pro csResultVarName from var
 
 	def _bindImp is override
 		base._bindImp()
@@ -586,19 +589,19 @@ class ReturnStmt
 		curCodeMember.hasReturnStmt = true
 		# TODO _csResultVarName = curCodeMember.csResultVarName
 
-#	def genCS(self, out):
-#		Stmt.genCS(self, out)
-#		if self.expr:
-#			if self.csResultVarName:
-#				out.write('return %s=' % self.csResultVarName)
-#				self.expr.genCS(out, genParens=false)
-#				out.write(';\n')
-#			else:
-#				out.write('return ')
-#				self.expr.genCS(out, genParens=false)
-#				out.write(';\n')
-#		else:
-#			out.write('return;\n')
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		if _expr
+			if _csResultVarName
+				sw.write('return [_csResultVarName]=')
+				_expr.writeSharpDef(sw, false)
+				sw.write(';\n')
+			else
+				sw.write('return ')
+				_expr.writeSharpDef(sw, false)
+				sw.write(';\n')
+		else
+			sw.write('return;\n')
 
 class TryStmt
 	inherits Stmt
