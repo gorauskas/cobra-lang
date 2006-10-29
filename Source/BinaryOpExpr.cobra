@@ -393,6 +393,8 @@ class CompareExpr
 		'LT': '<',
 		'GE': '>=',
 		'LE': '<=',
+		'IS': '==',
+		'ISNOT': '!=',
 	}
 
 	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
@@ -408,27 +410,35 @@ class CompareExpr
 		left = _left
 		right = _right
 		op = _op
+		# Compute the C# operation which will be an operator or method call
 		if op=='EQ' or op=='NE'
 			if not left.type.isReference and not right.type.isReference
-				left.writeSharpDef(sw)
-				sw.write(_cobraToSharp[_op])
-				right.writeSharpDef(sw)
+				op = _cobraToSharp[_op]
 			else
 				stringType = .compiler.libraryType('System', 'String')
 				if left.isKindOf(stringType) and right.isKindOf(stringType)
-					left.writeSharpDef(sw)
-					sw.write(if(op=='EQ', '==', '!='))
-					right.writeSharpDef(sw)
+					op = _cobraToSharp[_op]
 				else
-					sw.write(if(op=='EQ', 'CobraImp.Equals(', 'CobraImp.NotEquals('))
-					left.writeSharpDef(sw)
-					sw.write(',')
-					right.writeSharpDef(sw)
-					sw.write(')')
+					op = if(op=='EQ', 'CobraImp.Equals(', 'CobraImp.NotEquals(')
+		else if op=='IS' or op=='ISNOT'
+			if left.type inherits PrimitiveType and right.type inherits PrimitiveType
+				op = _cobraToSharp[_op]
+			else
+				op = if(op=='IS', 'CobraImp.Is(', 'CobraImp.IsNot(')
 		else
+			op = _cobraToSharp[_op]
+		# Write the C# code
+		if op.length==2
 			left.writeSharpDef(sw)
-			sw.write(_cobraToSharp[_op])
+			sw.write(op)
 			right.writeSharpDef(sw)
+		else
+			assert op.endsWith('('), op
+			sw.write(op)
+			left.writeSharpDef(sw)
+			sw.write(',')
+			right.writeSharpDef(sw)
+			sw.write(')')
 		if parens
 			sw.write(')')
 
