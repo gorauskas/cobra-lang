@@ -486,13 +486,13 @@ class PrintStmt
 
 	var _destination as Expr?
 	var _args as List<of Expr>
-	var _stopp as bool
+	var _stop as bool
 
 	def construct(token as IToken, destination as Expr?, args as List<of Expr>, stopp as bool)
 		base.construct(token)
 		_destination = destination
 		_args = args
-		_stopp = stopp
+		_stop = stopp
 
 	def _bindImp is override
 		base._bindImp()
@@ -503,29 +503,30 @@ class PrintStmt
 
 	def addSubFields is override
 		base.addSubFields()
-		.addField('stopp', _stopp)
+		.addField('stop', _stop)
 		.addField('destination', _destination)
 		.addField('args', _args)
 
-#	def genCS(out):
-#		Stmt.genCS(out)
-#		if .destination:
-#			out.write('(')
-#			.destination.genCS(out)
-#			out.write(').%s(' % (_stop and 'Write' or 'WriteLine'))
-#		else:
-#			out.write('CobraImp.%s(' % (_stop and 'PrintStop' or 'PrintLine'))
-#		sep = ''
-#		for arg in _args:
-#			out.write(sep)
-#			if arg.type.isStringClass:
-#				out.write('(')
-#			else:
-#				out.write('CobraImp.ToString(')
-#			arg.genCS(out)
-#			out.write(')')
-#			sep = '+'
-#		out.write(');\n')
+	def writeSharpDef(sw as SharpWriter) is override
+		if _destination
+			sw.write('(')
+			_destination.writeSharpDef(sw)
+			methodName = if(_stop, 'Write', 'WriteLine')
+			sw.write(').[methodName](')
+		else
+			methodName = if(_stop, 'PrintStop', 'PrintLine')
+			sw.write('CobraImp.[methodName](')
+		sep = ''
+		for arg in _args
+			sw.write(sep)
+			if arg.isKindOf(.compiler.libraryType('System', 'String'))
+				sw.write('(')
+			else
+				sw.write('CobraImp.ToString(')
+			arg.writeSharpDef(sw)
+			sw.write(')')
+			sep = '+'
+		sw.write(');\n')
 
 
 class PrintRedirectStmt
@@ -549,8 +550,8 @@ class PrintRedirectStmt
 		.addField('destination', _destination)
 		.addField('block', _block)
 
-#	def genCS(out):
-#		Stmt.genCS(out)
+	def writeSharpDef(sw as SharpWriter) is override
+		assert false
 #		out.write('CobraImp.PushPrintTo(')
 #		_destination.genCS(out, genParens=false)
 #		out.write(');\n')

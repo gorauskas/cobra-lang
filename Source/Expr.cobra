@@ -343,7 +343,7 @@ class CallExpr
 		#		out.write('(')
 		#	out.write('new ')
 		#name = .isDotted and capped(.name) or .name
-		assert .superNode inherits BinaryOpExpr, .superNode  # TODO: could be wrong
+		assert .superNode inherits DotExpr, .superNode  # TODO: could be wrong
 		sw.write('[Utils.capped(_name)](')
 		sep = ''
 		for arg in _args
@@ -650,10 +650,9 @@ class MemberExpr
 	def toCobraSource as String is override
 		return _name
 
-# TODO
-#	def genCS(out)
-#		name = .isDotted and Utils.capped(_name) or _name
-#		out.write(name)
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		assert .superNode inherits DotExpr
+		sw.write(Utils.capped(_name))
 
 
 class OldExpr
@@ -1046,14 +1045,19 @@ class NilLiteral
 		base._bindImp()
 		_type = .compiler.nilType
 
+	get asSharp as String is override
+		return 'nil'
+
 
 class StringLit
 	inherits AtomicLiteral
 
+	var _string as String  # String contents (with no surrounding quotes or escaping)
+
 	def construct(token as IToken)
 		require token.which.startsWith('STRING')
 		base.construct(token as IToken)
-		# AXE? .text = token.value
+		_string = token.value to String
 
 	def _bindInt is override
 		if not _type
@@ -1065,12 +1069,11 @@ class StringLit
 			_type = .compiler.libraryType('System', 'String')
 		base._bindImp()
 
-#	def toCobraSource(self)
-#		return .token.text
+	def toCobraSource as String is override
+		return .token.text
 
-#	def asCS(self)
-#		.assertType()
-#		return .csStringLitFor(.text)
+	get asSharp as String is override
+		return Utils.csStringLitFor(_string)
 
 
 class StringSubstLit
@@ -1094,8 +1097,8 @@ class StringSubstLit
 		if not _type
 			_type = .compiler.libraryType('System', 'String')
 
-# TODO:
-#	def genCS(out, genParens=false)
+	get asSharp as String is override
+		assert false
 #		out.write('CobraImp.MakeString(')
 #		sep = ''
 #		for item in _items
@@ -1158,9 +1161,8 @@ class BaseLit
 		#return t.symbolForName(name, true, true)
 		return t.memberForName(name)
 
-# TODO:
-#	def genCS(self, out, genParens=false):
-#		out.write('base')
+	get asSharp as String is override
+		return 'base'
 
 
 class ThisLit
@@ -1173,8 +1175,8 @@ class ThisLit
 		base.construct(token)
 		_type = box
 
-#	def genCS(self, out, genParens=false):
-#		out.write('this')
+	get asSharp as String is override
+		return 'this'
 
 
 class VarLit
@@ -1201,9 +1203,8 @@ class VarLit
 		_propertyMember = nil  # don't need this reference anymore
 		base._bindImp()
 
-# TODO
-#	def asCS
-#		return _name
+	get asSharp as String is override
+		return _name
 
 
 class CompositeLiteral
