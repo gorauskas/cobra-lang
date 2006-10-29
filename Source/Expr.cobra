@@ -189,6 +189,7 @@ class CallExpr
 	var _name as String
 	var _args as List<of Expr>
 	var _definition as INamedNode?
+	var _isNew as bool  # "Exception('foo')" would be a CallExpr that isNew
 
 	def construct(token as IToken, name as String, args as List<of Expr>)
 		base.construct(token)
@@ -322,6 +323,7 @@ class CallExpr
 				type = .compiler.passThroughType
 			_definition = definition
 			_type = type
+		_isNew = _definition inherits Box
 		assert _type, 'this=[this], def=[_definition]'
 
 	def toCobraSource as String is override
@@ -337,24 +339,23 @@ class CallExpr
 		return sb.toString()
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		# TODO: axe
-		#if .isNew
-		#	if genParens
-		#		sw.write('(')
-		#	sw.write('new ')
-		#name = .isDotted and capped(.name) or .name
-		assert .superNode inherits DotExpr, .superNode  # TODO: could be wrong
-		sw.write('[Utils.capped(_name)](')
+		if _isNew
+			if parens
+				sw.write('(')
+			sw.write('new ')
+			name = .name
+		else
+			assert .superNode inherits DotExpr, .superNode  # TODO: could be wrong
+			name = Utils.capped(_name)
+		sw.write('[name](')
 		sep = ''
 		for arg in _args
 			sw.write(sep)
 			arg.writeSharpDef(sw, false)
 			sep = ', '
 		sw.write(')')
-		# TODO: axe
-		#if .isNew
-		#	if genParens
-		#		sw.write(')')
+		if _isNew and parens
+			sw.write(')')
 
 
 class IdentifierExpr
