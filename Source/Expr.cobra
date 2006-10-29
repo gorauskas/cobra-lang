@@ -340,8 +340,8 @@ class CallExpr
 		# TODO: axe
 		#if .isNew
 		#	if genParens
-		#		out.write('(')
-		#	out.write('new ')
+		#		sw.write('(')
+		#	sw.write('new ')
 		#name = .isDotted and capped(.name) or .name
 		assert .superNode inherits DotExpr, .superNode  # TODO: could be wrong
 		sw.write('[Utils.capped(_name)](')
@@ -354,7 +354,7 @@ class CallExpr
 		# TODO: axe
 		#if .isNew
 		#	if genParens
-		#		out.write(')')
+		#		sw.write(')')
 
 
 class IdentifierExpr
@@ -517,13 +517,13 @@ class IfExpr
 			_error('The return expressions of the if() do not have compatible types. They are "[tpart.type.name]" and "[fpart.type.name]".')
 
 #	def genCS(self, out, genParens=true):
-#		out.write('(')
+#		sw.write('(')
 #		self.cond.genCS(out)
-#		out.write('?')
+#		sw.write('?')
 #		self.tpart.genCS(out)
-#		out.write(':')
+#		sw.write(':')
 #		self.fpart.genCS(out)
-#		out.write(')')
+#		sw.write(')')
 
 
 class IndexExpr
@@ -683,15 +683,15 @@ class OldExpr
 #		assert self.didBindImp
 #		assert self.csVarName
 #		assert self.type
-#		out.write('%s %s = ' % (self.type.asCS(), self.csVarName))
+#		sw.write('%s %s = ' % (self.type.asCS(), self.csVarName))
 #		self.expr.genCS(out)
-#		out.write(';\n')
+#		sw.write(';\n')
 
 # TODO:
 #	def genCS(self, out):
 #		assert self.csVarName
 #		# this gets called when generating the `ensure` code
-#		out.write(self.csVarName)
+#		sw.write(self.csVarName)
 
 
 class PostCallExpr
@@ -743,23 +743,23 @@ class PostCallExpr
 
 #	def genCS(out, genParens=false)
 #		if genParens
-#			out.write('(')
-#		#out.write('(')
+#			sw.write('(')
+#		#sw.write('(')
 #		#print '<> post call expr, _expr class=%r' % _expr.className
 #		if inherits(_expr, TypeExpr)
-#			out.write('new ')
+#			sw.write('new ')
 #		_expr.genCS(out)
-#		#out.write(')')
-#		out.write('(')
+#		#sw.write(')')
+#		sw.write('(')
 #		sep = ''
 #		for arg in _args
 #			assert inherits(arg, Expr)
-#			out.write(sep)
+#			sw.write(sep)
 #			arg.genCS(out, genParens=false)
 #			sep = ','
-#		out.write(')')
+#		sw.write(')')
 #		if genParens
-#			out.write(')')
+#			sw.write(')')
 
 
 class SharpExpr
@@ -781,10 +781,10 @@ class SharpExpr
 
 #	def genCS(self, out, genParens=true):
 #		if genParens:
-#			out.write('(')
-#		out.write(self.expr.token.value)
+#			sw.write('(')
+#		sw.write(self.expr.token.value)
 #		if genParens:
-#			out.write(')')
+#			sw.write(')')
 
 
 class TruthExpr
@@ -1085,6 +1085,8 @@ class StringLit
 		base.construct(token as IToken)
 		_string = token.value to String
 
+	get string from var
+
 	def _bindInt is override
 		if not _type
 			_type = .compiler.libraryType('System', 'String')
@@ -1110,7 +1112,18 @@ class StringSubstLit
 	def construct(items as List<of Expr>)
 		require items
 		base.construct(items[0].token)
-		_items = items
+		if true
+			_items = items
+		else
+			# TODO: the efficient, but not debugged case
+			# CC: potential
+			# _items = for item in items if not item inherits StringLit or item.string get item
+			_items = List<of Expr>()
+			for item in _items
+				if item inherits StringLit and not (item to StringLit).string
+					continue
+				_items.add(item)
+			assert _items
 
 	def addSubFields is override
 		base.addSubFields()
@@ -1123,28 +1136,29 @@ class StringSubstLit
 		if not _type
 			_type = .compiler.libraryType('System', 'String')
 
-	get asSharp as String is override
-		assert false
-#		out.write('CobraImp.MakeString(')
-#		sep = ''
-#		for item in _items
-#			out.write(sep)
-#			if inherits(item, str)
-#				out.write(_csStringLitFor(item))
-#			else if inherits(item, FormattedExpr)
-#				out.write('CobraImp.ToString(')
-#				item.expr.genCS(out)
-#				out.write(',')
-#				out.write(_csStringLitFor(item.format))
-#				out.write(')')
-#			else if inherits(item, Expr)
-#				out.write('CobraImp.ToString(')
-#				item.genCS(out)
-#				out.write(')')
-#			else
-#				assert 0, item
-#			sep = ','
-#		out.write(')')
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if _items.count>1
+			sw.write('CobraImp.MakeString(')
+		sep = ''
+		for item in _items
+			sw.write(sep)
+			if item inherits StringLit
+				item.writeSharpDef(sw, true)  # CC: axe the "true" when the bug about overload groups crossing inheritance is fixed
+			else if item inherits FormattedExpr
+				sw.write('CobraImp.ToString(')
+				item.expr.writeSharpDef(sw)
+				sw.write(',')
+				sw.write(Utils.csStringLitFor(item.format))
+				sw.write(')')
+			else if item inherits Expr
+				sw.write('CobraImp.ToString(')
+				item.writeSharpDef(sw, false)
+				sw.write(')')
+			else
+				throw FallThroughException(item)
+			sep = ','
+		if _items.count>1
+			sw.write(')')
 
 
 class FormattedExpr
@@ -1161,6 +1175,10 @@ class FormattedExpr
 		base.construct(expr.token)
 		_expr = expr
 		_format = format
+
+	get expr from var
+
+	get format from var
 
 	def _bindImp is override
 		base._bindImp()
@@ -1289,15 +1307,15 @@ class ListLit
 # TODO
 #	def genCS(self, out, genParens=false):
 #		innerType = self.type.typeArgs[0]
-#		out.write('CobraImp.MakeList<%s>(typeof(%s)' % (innerType.asCS(), self.type.asCS()))
+#		sw.write('CobraImp.MakeList<%s>(typeof(%s)' % (innerType.asCS(), self.type.asCS()))
 #		if self.exprs:
-#			out.write(', ')
+#			sw.write(', ')
 #			sep = ''
 #			for expr in self.exprs:
-#				out.write(sep)
+#				sw.write(sep)
 #				expr.genCS(out)
 #				sep = ', '
-#		out.write(')')
+#		sw.write(')')
 
 
 class DictLit
@@ -1340,14 +1358,14 @@ class DictLit
 #		assert len(self.type.typeArgs)==2
 #		keyType = self.type.typeArgs[0]
 #		valueType = self.type.typeArgs[1]
-#		out.write('CobraImp.MakeDict<%s,%s>(typeof(%s)' % (keyType.asCS(), valueType.asCS(), self.type.asCS()))
+#		sw.write('CobraImp.MakeDict<%s,%s>(typeof(%s)' % (keyType.asCS(), valueType.asCS(), self.type.asCS()))
 #		if self.entries:
-#			out.write(', ')
+#			sw.write(', ')
 #			sep = ''
 #			for entry in self.entries:
-#				out.write(sep)
+#				sw.write(sep)
 #				entry[0].genCS(out)
-#				out.write(',')
+#				sw.write(',')
 #				entry[1].genCS(out)
 #				sep = ', '
-#		out.write(')')
+#		sw.write(')')
