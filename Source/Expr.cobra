@@ -877,10 +877,12 @@ class TypeExpr
 class UnaryOpExpr
 	inherits Expr
 
+	var _op as String
 	var _expr as Expr
 
 	def construct(token as IToken, op as String, expr as Expr)
 		base.construct(token)
+		_op = op
 		_expr = expr
 
 	def _bindImp is override
@@ -888,6 +890,26 @@ class UnaryOpExpr
 		_expr.bindImp()
 		if _type is nil
 			_type = _expr.type
+		branch _op
+			on 'MINUS'
+				_type = _expr.type
+			on 'NOT'
+				if _expr.type is not .compiler.boolType
+					_expr = TruthExpr(_expr).bindAll() to TruthExpr  # CC: axe when "as this"
+					_type = .compiler.boolType
+			# TODO: handle DOT?
+			else
+				throw FallThroughException(_op)
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		branch _op
+			on 'MINUS'
+				sw.write('-')
+			on 'NOT'
+				sw.write('!')
+			else
+				throw FallThroughException(_op)
+		_expr.writeSharpDef(sw)
 
 
 ##
