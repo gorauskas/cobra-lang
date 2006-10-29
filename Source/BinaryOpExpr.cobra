@@ -33,9 +33,9 @@ class BinaryOpExpr
 					return CompareExpr(opToken, op, left, right)
 				on 'AND', 'OR'
 					return BinaryBoolExpr(opToken, op, left, right)
-				on 'PLUS', 'MINUS', 'STAR', 'SLASH', 'SLASHSLASH', 'PERCENT'
+				on 'PLUS', 'MINUS', 'STAR', 'STARSTAR', 'SLASH', 'SLASHSLASH', 'PERCENT'
 					return BinaryMathExpr(opToken, op, left, right)
-				on 'PLUS_EQUALS', 'MINUS_EQUALS', 'STAR_EQUALS', 'SLASH_EQUALS', 'SLASHSLASH_EQUALS', 'PERCENT_EQUALS'
+				on 'PLUS_EQUALS', 'MINUS_EQUALS', 'STAR_EQUALS', 'STARSTAR_EQUALS', 'SLASH_EQUALS', 'SLASHSLASH_EQUALS', 'PERCENT_EQUALS'
 					return AugAssignMathExpr(opToken, op, left, right)
 				else
 					return BinaryOpExpr(opToken, op, left, right)
@@ -241,9 +241,45 @@ class AugAssignMathExpr
 
 	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.construct(opToken, op, left, right)
+		assert op in ['PLUS_EQUALS', 'MINUS_EQUALS', 'STAR_EQUALS', 'STARSTAR_EQUALS', 'SLASH_EQUALS', 'SLASHSLASH_EQUALS', 'PERCENT_EQUALS']
 
 	def _bindImp is override
 		base._bindImp()
+		# TODO: does NumericPromoExpr cover everything we need?
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		left = _left
+		right = _right
+		op = ''
+		sep = ','  # for the method call case
+		branch _op
+			on 'PLUS_EQUALS'
+				op = '+='
+			on 'MINUS_EQUALS'
+				op = '-='
+			on 'STAR_EQUALS'
+				op = '*='
+			on 'STARSTAR_EQUALS'
+				op = 'CobraImp.PowerToEquals('
+			on 'SLASH'
+				op = '/='  # TODO: finish this
+			on 'SLASHSLASH_EQUALS'
+				op = '/='  # TODO: finish this
+			on 'PERCENT_EQUALS'
+				op = '%='
+			else
+				throw FallThroughException(_op)
+		assert op
+		if op.length==2
+			_left.writeSharpDef(sw)
+			sw.write(op)
+			_right.writeSharpDef(sw)
+		else
+			sw.write(op)  # ex: 'CobraImp.Foo('
+			_left.writeSharpDef(sw)
+			sw.write(sep)
+			_right.writeSharpDef(sw)
+			sw.write(')')
 
 
 class BinaryBoolExpr
@@ -273,6 +309,77 @@ class BinaryMathExpr
 	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.construct(opToken, op, left, right)
 		assert op in ['PLUS', 'MINUS', 'STAR', 'SLASH', 'SLASHSLASH', 'PERCENT']
+
+	def _bindImp
+		base._bindImp()
+		lt = _left.type
+		rt = _right.type
+		if lt is rt
+			_type = lt
+		else
+			# TODO: this will need to be more sophisticated in the future with different sized ints and floats
+			if lt.isDescendantOf(.compiler.intType)
+				_type = rt
+			else if rt.isDescendantOf(.compiler.intType)
+				_type = lt
+			else if lt.isDescendantOf(.compiler.decimalType)
+				if rt.isDescendantOf(.compiler.floatType)
+					_error('Cannot promote between decimal and float for operator "[_op]". Decimal is more accurate and float has more range.')
+				else
+					# int case already taken care of, so...
+					_error('Cannot promote between decimal and "[rt.name]".')
+			else if lt.isDescendantOf(.compiler.floatType)
+				if rt.isDescendantOf(.compiler.decimalType)
+					_error('Cannot promote between float and decimal for operator "[_op]". Decimal is more accurate and float has more range.')
+				else
+					# int case already taken care of, so...
+					_error('Cannot promote between decimal and "[rt.name]".')
+			else
+				throw FallThroughException({'lt': lt, 'rt': rt})
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		left = _left
+		right = _right
+		_left.writeSharpDef(sw)
+		op = ''
+		sep = ','  # for the method call case
+		branch _op
+			on 'PLUS'
+				op = '+'
+			on 'MINUS'
+				op = '-'
+			on 'STAR'
+				op = '*'
+			on 'STARSTAR'
+				op = 'CobraImp.PowerTo('
+			on 'SLASH'
+				op = '/'
+			on 'SLASHSLASH'
+				if left.isKindOf(.compiler.intType) and right.isKindOf(.compiler.intType)
+					op = '/'
+				else if left.isKindOf(.compiler.decimalType) or right.isKindOf(.compiler.decimalType)
+					op = 'Decimal.Floor('
+					sep = '/'
+				else if left.isKindOf(.compiler.floatType) or right.isKindOf(.compiler.floatType)
+					op = 'Math.Floor('
+					sep = '/'
+				else
+					throw FallThroughException([left.type, right.type])
+			on 'PERCENT'
+				op = '%'
+			else
+				throw FallThroughException(_op)
+		assert op
+		if op.length==1
+			_left.writeSharpDef(sw)
+			sw.write(op)
+			_right.writeSharpDef(sw)
+		else
+			sw.write(op)  # ex: 'CobraImp.Foo('
+			_left.writeSharpDef(sw)
+			sw.write(sep)
+			_right.writeSharpDef(sw)
+			sw.write(')')
 
 
 class CompareExpr
