@@ -166,11 +166,11 @@ class AsExpr
 			if .type.isReference
 				_error('Must initialize this non-nil object type, or change the type to nilable (suffix a ?).')
 
-	get asCS as String
+	get asSharp as String
 		return _name
 
 	def genCS(sw as IndentedWriter, genParams as bool)
-		sw.write(.asCS)
+		sw.write(.asSharp)
 
 #	def genCSStatement(out)
 #		# this happens for declarations like "i as int"
@@ -438,6 +438,39 @@ class IdentifierExpr
 
 	def toCobraSource as String is override
 		return _text
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		# TODO
+		#if self.isDotted:
+		#	sw.write(capped(self.text))
+		#else
+		if true
+			# if this names a type and it's not dotted, then C# requires typeof()
+			if _type inherits TypeType and .superNode is nil
+				sw.write('typeof('+.sharpName+')')
+			else if .superNode inherits BinaryOpExpr and .binarySuperNode.op=='ASSIGN' and .binarySuperNode.right is this and not .sharpName.startsWith('_lh')
+				sw.write('typeof('+.sharpName+')')
+			else
+				sw.write(.sharpName)
+
+	get sharpName as String
+		assert .didBindImp, this
+		assert .definition, this
+		assert not .type inherits UnspecifiedType
+		return if(.definition, .definition.sharpName, _text)
+
+	# TODO?
+#	def genCSStatement(self, out):
+#		assert 0, 'not expecting to be called'
+
+	# TODO?
+#	@property
+#	def csAssignmentNames(self):
+#		assert self.didBindImp, self
+#		assert self.definition, self
+#		assert self.definition is not UnknownId
+#		return self.definition.csAssignmentNames
+
 
 
 class IfExpr
@@ -781,33 +814,27 @@ class TruthExpr
 		base._bindImp()
 		_expr.bindImp()
 		if _expr.type is not .compiler.boolType
-# TODO
-#			if _expr.isKindOf(tpassthrough)
-#				_useRuntimeService = true
-#			else if _expr.isKindOf(compiler.numberType)
-#				_expr = BinaryOpExpr(nil, 'NE', IntegerLit(0), .expr)
-#				_expr.bindImp(compiler)
-#			else if _expr NilLiteral)
-#				.expr = lfalse
-#			else
-			if true
+			if _expr.isKindOf(.compiler.passThroughType)
 				_useRuntimeService = true
+			else if _expr.isKindOf(.compiler.numberType)
+				_expr = CompareExpr(_expr.token, 'NE', IntegerLit(_expr.token, 0), _expr)
+			else if $sharp('_expr is NilLiteral')
+				_expr = BoolLit(_expr.token, false)
+			else
+				_useRuntimeService = true
+			_expr.bindImp()
 		_type = .compiler.boolType
 
 	def toCobraSource as String is override
 		return _expr.toCobraSource()
 
-#	get asCS as String is override
-#		require .didBindImp
-#		return _expr.asCS
-
-#	def genCS(out, genParens=true)
-#		if .useRuntimeService
-#			out.write('CobraImp.IsTrue(')
-#			.expr.genCS(out)
-#			out.write(')')
-#		else
-#			.expr.genCS(out, genParens=genParens)
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if _useRuntimeService
+			sw.write('CobraImp.IsTrue(')
+			_expr.writeSharpDef(sw, false)
+			sw.write(')')
+		else
+			_expr.writeSharpDef(sw, parens)
 
 
 class TypeExpr
@@ -874,13 +901,11 @@ class Literal
 	def construct(token as IToken)
 		base.construct(token)
 
-	get asCS as String
+	get asSharp as String
 		return ''
 
-
-# TODO:
-#	def genCS(self, out, genParens=true):
-#		out.write(.asCS())
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		sw.write(.asSharp)
 
 
 class AtomicLiteral
@@ -907,7 +932,7 @@ class AtomicLiteral
 		return _text
 
 
-class BoolLiteral
+class BoolLit
 	inherits AtomicLiteral
 
 	var _value as bool
@@ -917,11 +942,15 @@ class BoolLiteral
 		base.construct(token)
 		_value = token.text=='true'
 
+	def construct(token as IToken, value as bool)
+		base.construct(token)
+		_value = value
+
 	def _bindImp is override
 		base._bindImp()
 		_type = .compiler.boolType
 
-	get asCS as String is override
+	get asSharp as String is override
 		return if(_value, 'true', 'false')
 
 
@@ -942,7 +971,7 @@ class CharLit
 		base._bindImp()
 		_type = .compiler.charType
 
-	get asCS as String is override
+	get asSharp as String is override
 		return "'" + _value.toString() + "'"
 
 
@@ -960,7 +989,7 @@ class DecimalLit
 		base._bindImp()
 		_type = .compiler.decimalType
 
-	get asCS as String is override
+	get asSharp as String is override
 		return _value.toString()
 
 
@@ -978,7 +1007,7 @@ class FloatLit
 		base._bindImp()
 		_type = .compiler.floatType
 
-	get asCS as String is override
+	get asSharp as String is override
 		return _value.toString()
 
 
@@ -992,11 +1021,15 @@ class IntegerLit
 		base.construct(token)
 		_value = token.value to int
 
+	def construct(token as IToken, value as int)
+		base.construct(token)
+		_value = value
+
 	def _bindImp is override
 		base._bindImp()
 		_type = .compiler.intType
 
-	get asCS as String is override
+	get asSharp as String is override
 		return _value.toString()
 
 
