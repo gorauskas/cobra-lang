@@ -97,28 +97,29 @@ class BranchStmt
 		if _elsePart
 			_elsePart.bindImp()
 
-#	def genCS(out)
-#		base.genCS(out)
-#		out.write('switch(')
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		assert false
+#		sw.write('switch(')
 #		_expr.genCS(out)
-#		out.write(') {\n')
-#		out.indent()
+#		sw.write(') {\n')
+#		sw.indent()
 #		for onPart in _onParts
 #			sep = ''
 #			for e in onPart.exprs
-#				out.write(sep)
-#				out.write('case ')
+#				sw.write(sep)
+#				sw.write('case ')
 #				e.genCS(out)
-#				out.write(' ')
+#				sw.write(' ')
 #				sep = '\n'
 #			onPart.block.genCS(out)
-#			out.write('break;\n')
+#			sw.write('break;\n')
 #		if _elsePart
-#			out.write('default ')
+#			sw.write('default ')
 #			_elsePart.genCS(out)
-#			out.write('break;\n')
-#		out.dedent()
-#		out.write('}\n')
+#			sw.write('break;\n')
+#		sw.dedent()
+#		sw.write('}\n')
 
 
 class BranchOnPart
@@ -174,6 +175,19 @@ class BlockStmt
 			stmt.afterStatementBindImp()  # to let expressions know when they are used as statements
 			# TODO: error recovery
 
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		.writeSharpDef(sw, true)
+
+	def writeSharpDef(sw as SharpWriter, close as bool)
+		sw.write(' {\n')
+		sw.indent()
+		for stmt in _stmts
+			stmt.writeSharpStmt(sw)
+		if close
+			sw.dedent()
+			sw.write('}\n')
+
 
 interface IVar
 	inherits INamedNode
@@ -217,22 +231,23 @@ class ExpectStmt
 		_varNumber = .compiler.curBox.makeNextPrivateSerialNumber()
 		_block.bindImp()
 
-#	def genCS(out)
-#		base.genCS(out)
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		assert false
 #		gotWriteExceptionVarName = '_lh_expect_%s' % (_varNumber-1)  # lh => "local helper"
-#		out.write('bool %s = false;\n' % gotWriteExceptionVarName)
-#		out.write('try ')
+#		sw.write('bool %s = false;\n' % gotWriteExceptionVarName)
+#		sw.write('try ')
 #		_block.genCS(out)
-#		out.writeAndIndent('catch (%s) {\n' % _exceptionType.asCS())
-#		out.write('// exactly what is expected\n')
-#		out.write('%s = true;\n' % gotWriteExceptionVarName)
-#		out.dedentAndWrite('}\n')
+#		sw.writeAndIndent('catch (%s) {\n' % _exceptionType.asCS())
+#		sw.write('// exactly what is expected\n')
+#		sw.write('%s = true;\n' % gotWriteExceptionVarName)
+#		sw.dedentAndWrite('}\n')
 #		wrongExceptionVarName = '_lh_expect_%s' % _varNumber
 #		assert gotWriteExceptionVarName!=wrongExceptionVarName
-#		out.writeAndIndent('catch (Exception %s) {\n' % wrongExceptionVarName)
-#		out.write('throw new ExpectException(typeof(%s), %s);\n' % (_exceptionType.asCS(), wrongExceptionVarName))
-#		out.dedentAndWrite('}\n')
-#		out.write('if (!%s) throw new ExpectException(typeof(%s), null);\n' % (gotWriteExceptionVarName, _exceptionType.asCS()))
+#		sw.writeAndIndent('catch (Exception %s) {\n' % wrongExceptionVarName)
+#		sw.write('throw new ExpectException(typeof(%s), %s);\n' % (_exceptionType.asCS(), wrongExceptionVarName))
+#		sw.dedentAndWrite('}\n')
+#		sw.write('if (!%s) throw new ExpectException(typeof(%s), null);\n' % (gotWriteExceptionVarName, _exceptionType.asCS()))
 
 
 class ForStmt
@@ -326,10 +341,11 @@ class ForNumericStmt
 		base._bindImp()
 		_block.bindImp()
 
-#	def genCS(out)
-#		base.genCS(out)
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		assert false
 #		csVar = _var.asCS()
-#		wr = out.write
+#		wr = sw.write
 #		#wr('for (%s %s=' % (_var.type.asCS(), csVar))
 #		wr('for (%s=' % csVar)
 #		_start.genCS(out)
@@ -383,14 +399,15 @@ class ForEnumerableStmt
 		_varNumber = .compiler.curBox.makeNextPrivateSerialNumber()
 		_block.bindImp()
 
-#	def genCS(out)
-#		base.genCS(out)
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		assert false
 #		# in a C# foreach, (1) you must declare a new variable, (2) you cannot reassign it and (3) you cannot access it after the loop
 #		# these constraints don't exist in Cobra
 #		helperName = '_lh_for_%s_%s' % (_var.name, _varNumber)
-#		out.write('foreach (%s %s in ' % (_var.type.asCS(), helperName))
+#		sw.write('foreach (%s %s in ' % (_var.type.asCS(), helperName))
 #		.what.genCS(out, genParens=false)
-#		out.write(')')
+#		sw.write(')')
 #		_block.genCS(out, top='%s = %s;\n' % (_var.asCS(), helperName))
 
 
@@ -467,18 +484,18 @@ class IfStmt
 		if _falseStmts is not nil
 			_falseStmts.bindImp()
 
-#	def genCS(out)
-#		Stmt.genCS(out)
-#		out.write('if (')
-#		_cond.genCS(out, genParens=false)
-#		out.write(')')
-#		_trueStmts.genCS(out, close=false)
-#		out.dedent()
-#		if _falseStmts
-#			out.write('} else')
-#			_falseStmts.genCS(out, close=false)
-#			out.dedent()
-#		out.write('}\n')
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		sw.write('if (')
+		_cond.writeSharpDef(sw, false)
+		sw.write(')')
+		_trueStmts.writeSharpDef(sw, false)
+		sw.dedent()
+		if _falseStmts
+			sw.write('} else')
+			_falseStmts.writeSharpDef(sw, false)
+			sw.dedent()
+		sw.write('}\n')
 
 
 class PrintStmt
@@ -508,6 +525,7 @@ class PrintStmt
 		.addField('args', _args)
 
 	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
 		if _destination
 			sw.write('(')
 			_destination.writeSharpDef(sw)
@@ -551,17 +569,18 @@ class PrintRedirectStmt
 		.addField('block', _block)
 
 	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
 		assert false
-#		out.write('CobraImp.PushPrintTo(')
+#		sw.write('CobraImp.PushPrintTo(')
 #		_destination.genCS(out, genParens=false)
-#		out.write(');\n')
-#		out.write('try')
+#		sw.write(');\n')
+#		sw.write('try')
 #		_stmts.genCS(out)
-#		out.write('finally {\n')
-#		out.indent()
-#		out.write('CobraImp.PopPrintTo();\n')
-#		out.dedent()
-#		out.write('}\n')
+#		sw.write('finally {\n')
+#		sw.indent()
+#		sw.write('CobraImp.PopPrintTo();\n')
+#		sw.dedent()
+#		sw.write('}\n')
 
 
 class ReturnStmt
@@ -642,49 +661,50 @@ class TryStmt
 		if _finallyBlock
 			_finallyBlock.bindImp()
 
-#	def genCS(out)
-#		Stmt.genCS(out)
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		assert false
 #		if .successBlock
 #			# C# has no "success" (or in Python, "else") block for the "try" statement
 #			# so it has to be simulated
 #			helperName = '_lh_success_%s' % .varNumber  # lh => "local helper"
-#			out.write('bool %s = false;\n' % helperName)
+#			sw.write('bool %s = false;\n' % helperName)
 #			if .finallyBlock
-#				out.write('try {\n')
-#				out.indent()
-#			out.write('try')
+#				sw.write('try {\n')
+#				sw.indent()
+#			sw.write('try')
 #			.tryBlock.genCS(out, close=false)
-#			out.write('%s = true;\n' % helperName)
-#			out.dedent()
-#			out.write('}\n')
+#			sw.write('%s = true;\n' % helperName)
+#			sw.dedent()
+#			sw.write('}\n')
 #			if .catchBlocks
 #				.writeCatchBlocks(out)
 #			else
-#				out.write('finally { }\n')  # syntactically necessary
-#			out.write('if (%s)' % helperName)
+#				sw.write('finally { }\n')  # syntactically necessary
+#			sw.write('if (%s)' % helperName)
 #			.successBlock.genCS(out)
 #			if .finallyBlock
-#				out.dedent()
-#				out.write('}\n')
-#				out.write('finally')
+#				sw.dedent()
+#				sw.write('}\n')
+#				sw.write('finally')
 #				.finallyBlock.genCS(out)
 #		else
-#			out.write('try')
+#			sw.write('try')
 #			.tryBlock.genCS(out)
 #			.writeCatchBlocks(out)
 #			if .finallyBlock
-#				out.write('finally')
+#				sw.write('finally')
 #				.finallyBlock.genCS(out)
 
 #	def writeCatchBlocks(out)
 #		for eb in .catchBlocks
-#			out.write('catch')
+#			sw.write('catch')
 #			if eb.type
-#				out.write(' (%s' % eb.type.name)
+#				sw.write(' (%s' % eb.type.name)
 #				if eb.varName
 #					helperName = eb.csHelperName
-#					out.write(' %s' % helperName)
-#				out.write(')')
+#					sw.write(' %s' % helperName)
+#				sw.write(')')
 #			top = eb.varName and '%s = %s;\n'%(eb.varName,helperName) or ''
 #			eb.block.genCS(out, top=top)
 
@@ -752,12 +772,13 @@ class ThrowStmt
 		if _expr
 			_expr.bindImp()
 
-#	def genCS(out):
-#		Stmt.genCS(out)
-#		out.write('throw ')
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		assert false
+#		sw.write('throw ')
 #		if _expr:
 #			_expr.genCS(out, genParens=false)
-#		out.write(';\n')
+#		sw.write(';\n')
 
 
 class UsingStmt
@@ -792,22 +813,23 @@ class UsingStmt
 				assert false, 'expecting varr to be a LocalVar. varr=[varr]'
 		_block.bindImp()
 
-#	def genCS(self, out):
-#		Stmt.genCS(self, out)
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		assert false
 #		var = self.var
-#		out.write('// using\n')
-#		out.write('%s = ' % var.asCS())
+#		sw.write('// using\n')
+#		sw.write('%s = ' % var.asCS())
 #		self.initExpr.genCS(out)
-#		out.write(';\ntry')
+#		sw.write(';\ntry')
 #		self.block.genCS(out)
-#		out.write('finally {\n')
-#		out.indent()
+#		sw.write('finally {\n')
+#		sw.indent()
 #		name = var.asCS()
 #		if var.type.isReference:
-#			out.write('if (%s!=null) { ((IDisposable)%s).Dispose(); %s = null; }\n' % (name, name, name))
+#			sw.write('if (%s!=null) { ((IDisposable)%s).Dispose(); %s = null; }\n' % (name, name, name))
 #		else:
-#			out.write('((IDisposable)%s).Dispose();\n')
-#		out.dedentAndWrite('}\n')
+#			sw.write('((IDisposable)%s).Dispose();\n')
+#		sw.dedentAndWrite('}\n')
 
 
 class WhileStmt
@@ -835,11 +857,12 @@ class WhileStmt
 #			_expr = TruthExpr(_expr).bindImp()
 		_block.bindImp()
 
-#	def genCS(out)
-#		Stmt.genCS(out)
-#		out.write('while (')
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		assert false
+#		sw.write('while (')
 #		_expr.genCS(out, genParens=false)
-#		out.write(')')
+#		sw.write(')')
 #		_stmts.genCS(out)
 
 
@@ -849,11 +872,12 @@ class PostWhileStmt
 	def construct(token as IToken, expr as Expr, block as BlockStmt)
 		base.construct(token, expr, block)
 
-#	def genCS(out)
-#		Stmt.genCS(out)
-#		out.write('do')
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		assert false
+#		sw.write('do')
 #		_stmts.genCS(out, close=false)
-#		out.dedent()
-#		out.write('} while (')
+#		sw.dedent()
+#		sw.write('} while (')
 #		_expr.genCS(out)
-#		out.write(');\n')
+#		sw.write(');\n')
