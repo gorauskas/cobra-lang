@@ -101,7 +101,7 @@ class BranchStmt
 		base.writeSharpDef(sw)
 		assert false
 #		sw.write('switch(')
-#		_expr.genCS(out)
+#		_expr.writeSharpDef(sw)
 #		sw.write(') {\n')
 #		sw.indent()
 #		for onPart in _onParts
@@ -109,14 +109,14 @@ class BranchStmt
 #			for e in onPart.exprs
 #				sw.write(sep)
 #				sw.write('case ')
-#				e.genCS(out)
+#				e.writeSharpDef(sw)
 #				sw.write(' ')
 #				sep = '\n'
-#			onPart.block.genCS(out)
+#			onPart.block.writeSharpDef(sw)
 #			sw.write('break;\n')
 #		if _elsePart
 #			sw.write('default ')
-#			_elsePart.genCS(out)
+#			_elsePart.writeSharpDef(sw)
 #			sw.write('break;\n')
 #		sw.dedent()
 #		sw.write('}\n')
@@ -237,7 +237,7 @@ class ExpectStmt
 #		gotWriteExceptionVarName = '_lh_expect_%s' % (_varNumber-1)  # lh => "local helper"
 #		sw.write('bool %s = false;\n' % gotWriteExceptionVarName)
 #		sw.write('try ')
-#		_block.genCS(out)
+#		_block.writeSharpDef(sw)
 #		sw.writeAndIndent('catch (%s) {\n' % _exceptionType.asCS())
 #		sw.write('// exactly what is expected\n')
 #		sw.write('%s = true;\n' % gotWriteExceptionVarName)
@@ -348,27 +348,27 @@ class ForNumericStmt
 #		wr = sw.write
 #		#wr('for (%s %s=' % (_var.type.asCS(), csVar))
 #		wr('for (%s=' % csVar)
-#		_start.genCS(out)
+#		_start.writeSharpDef(sw)
 #		wr('; %s' % csVar)
 #		if .dir==1
 #			wr('<')
 #		else
 #			wr('>')
-#		_stop.genCS(out)
+#		_stop.writeSharpDef(sw)
 #		wr('; ')
 #		if _step
 #			if .dir==1
 #				wr('%s+=' % csVar)
 #			else
 #				wr('%s-=' % csVar)
-#			_step.genCS(out)
+#			_step.writeSharpDef(sw)
 #		else
 #			if .dir==1
 #				wr('%s++' % csVar)
 #			else
 #				wr('%s--' % csVar)
 #		wr(')')
-#		_block.genCS(out)
+#		_block.writeSharpDef(sw)
 
 
 class ForEnumerableStmt
@@ -406,9 +406,9 @@ class ForEnumerableStmt
 #		# these constraints don't exist in Cobra
 #		helperName = '_lh_for_%s_%s' % (_var.name, _varNumber)
 #		sw.write('foreach (%s %s in ' % (_var.type.asCS(), helperName))
-#		.what.genCS(out, genParens=false)
+#		.what.writeSharpDef(sw, genParens=false)
 #		sw.write(')')
-#		_block.genCS(out, top='%s = %s;\n' % (_var.asCS(), helperName))
+#		_block.writeSharpDef(sw, top='%s = %s;\n' % (_var.asCS(), helperName))
 
 
 class IfStmt
@@ -572,10 +572,10 @@ class PrintRedirectStmt
 		base.writeSharpDef(sw)
 		assert false
 #		sw.write('CobraImp.PushPrintTo(')
-#		_destination.genCS(out, genParens=false)
+#		_destination.writeSharpDef(sw, genParens=false)
 #		sw.write(');\n')
 #		sw.write('try')
-#		_stmts.genCS(out)
+#		_stmts.writeSharpDef(sw)
 #		sw.write('finally {\n')
 #		sw.indent()
 #		sw.write('CobraImp.PopPrintTo();\n')
@@ -673,30 +673,30 @@ class TryStmt
 #				sw.write('try {\n')
 #				sw.indent()
 #			sw.write('try')
-#			.tryBlock.genCS(out, close=false)
+#			.tryBlock.writeSharpDef(sw, close=false)
 #			sw.write('%s = true;\n' % helperName)
 #			sw.dedent()
 #			sw.write('}\n')
 #			if .catchBlocks
-#				.writeCatchBlocks(out)
+#				.writeCatchBlocks(sw)
 #			else
 #				sw.write('finally { }\n')  # syntactically necessary
 #			sw.write('if (%s)' % helperName)
-#			.successBlock.genCS(out)
+#			.successBlock.writeSharpDef(sw)
 #			if .finallyBlock
 #				sw.dedent()
 #				sw.write('}\n')
 #				sw.write('finally')
-#				.finallyBlock.genCS(out)
+#				.finallyBlock.writeSharpDef(sw)
 #		else
 #			sw.write('try')
-#			.tryBlock.genCS(out)
-#			.writeCatchBlocks(out)
+#			.tryBlock.writeSharpDef(sw)
+#			.writeCatchBlocks(sw)
 #			if .finallyBlock
 #				sw.write('finally')
-#				.finallyBlock.genCS(out)
+#				.finallyBlock.writeSharpDef(sw)
 
-#	def writeCatchBlocks(out)
+#	def writeCatchBlocks(sw)
 #		for eb in .catchBlocks
 #			sw.write('catch')
 #			if eb.type
@@ -706,7 +706,7 @@ class TryStmt
 #					sw.write(' %s' % helperName)
 #				sw.write(')')
 #			top = eb.varName and '%s = %s;\n'%(eb.varName,helperName) or ''
-#			eb.block.genCS(out, top=top)
+#			eb.block.writeSharpDef(sw, top=top)
 
 
 class CatchBlock
@@ -777,7 +777,7 @@ class ThrowStmt
 		assert false
 #		sw.write('throw ')
 #		if _expr:
-#			_expr.genCS(out, genParens=false)
+#			_expr.writeSharpDef(sw, genParens=false)
 #		sw.write(';\n')
 
 
@@ -819,9 +819,9 @@ class UsingStmt
 #		var = self.var
 #		sw.write('// using\n')
 #		sw.write('%s = ' % var.asCS())
-#		self.initExpr.genCS(out)
+#		self.initExpr.writeSharpDef(sw)
 #		sw.write(';\ntry')
-#		self.block.genCS(out)
+#		self.block.writeSharpDef(sw)
 #		sw.write('finally {\n')
 #		sw.indent()
 #		name = var.asCS()
@@ -852,18 +852,16 @@ class WhileStmt
 		base._bindImp()
 		_expr.bindImp()
 		.noAssignmentAllowed(_expr)
-# TODO: truthfulness
-#		if _expr.type is not tbool
-#			_expr = TruthExpr(_expr).bindImp()
+		if _expr.type is not .compiler.boolType
+			_expr = TruthExpr(_expr).bindImp() to TruthExpr  # CC: axe when I have "as this"
 		_block.bindImp()
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		assert false
-#		sw.write('while (')
-#		_expr.genCS(out, genParens=false)
-#		sw.write(')')
-#		_stmts.genCS(out)
+		sw.write('while (')
+		_expr.writeSharpDef(sw, false)
+		sw.write(')')
+		_block.writeSharpDef(sw)
 
 
 class PostWhileStmt
@@ -874,10 +872,9 @@ class PostWhileStmt
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		assert false
-#		sw.write('do')
-#		_stmts.genCS(out, close=false)
-#		sw.dedent()
-#		sw.write('} while (')
-#		_expr.genCS(out)
-#		sw.write(');\n')
+		sw.write('do')
+		_block.writeSharpDef(sw, false)
+		sw.dedent()
+		sw.write('} while (')
+		_expr.writeSharpDef(sw, false)
+		sw.write(');\n')
