@@ -177,11 +177,20 @@ class BlockStmt
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		.writeSharpDef(sw, true)
+		.writeSharpDef(sw, true, nil)
 
 	def writeSharpDef(sw as SharpWriter, close as bool)
+		.writeSharpDef(sw, close, nil)
+
+	def writeSharpDef(sw as SharpWriter, top as String?)
+		.writeSharpDef(sw, true, top)
+
+	def writeSharpDef(sw as SharpWriter, close as bool, top as String?)
+		sw.node(this)
 		sw.write(' {\n')
 		sw.indent()
+		if top
+			sw.write(top)
 		for stmt in _stmts
 			stmt.writeSharpStmt(sw)
 		if close
@@ -400,14 +409,15 @@ class ForEnumerableStmt
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		assert false
-#		# in a C# foreach, (1) you must declare a new variable, (2) you cannot reassign it and (3) you cannot access it after the loop
-#		# these constraints don't exist in Cobra
-#		helperName = '_lh_for_%s_%s' % (_var.name, _varNumber)
-#		sw.write('foreach (%s %s in ' % (_var.type.asCS(), helperName))
-#		.what.writeSharpDef(sw, genParens=false)
-#		sw.write(')')
-#		_block.writeSharpDef(sw, top='%s = %s;\n' % (_var.asCS(), helperName))
+		# in a C# foreach, (1) you must declare a new variable, (2) you cannot reassign it and (3) you cannot access it after the loop
+		# these constraints don't exist in Cobra
+		helperName = '_lh_for_[_var.name]_[_varNumber]'
+		sw.write('foreach (')
+		_var.type.writeSharpRef(sw)
+		sw.write(' [helperName] in ')
+		_what.writeSharpDef(sw, false)
+		sw.write(')')  ###
+		_block.writeSharpDef(sw, top='[_var.csName] = [helperName];\n')
 
 
 class IfStmt
