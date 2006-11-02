@@ -818,7 +818,7 @@ class UsingStmt
 		base._bindImp()
 		_initExpr.bindImp()
 		varr = _var
-		if _var.type is nil
+		if varr.type is .compiler.unspecifiedType
 			t = _initExpr.type
 			if t
 				varr.type = t
@@ -835,21 +835,19 @@ class UsingStmt
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		assert false
-#		var = self.var
-#		sw.write('// using\n')
-#		sw.write('%s = ' % var.asCS())
-#		self.initExpr.writeSharpDef(sw)
-#		sw.write(';\ntry')
-#		self.block.writeSharpDef(sw)
-#		sw.write('finally {\n')
-#		sw.indent()
-#		name = var.asCS()
-#		if var.type.isReference:
-#			sw.write('if (%s!=null) { ((IDisposable)%s).Dispose(); %s = null; }\n' % (name, name, name))
-#		else:
-#			sw.write('((IDisposable)%s).Dispose();\n')
-#		sw.dedentAndWrite('}\n')
+		name = _var.csName
+		sw.write('// using\n')
+		sw.write('[name] = ')
+		_initExpr.writeSharpDef(sw)
+		sw.write(';\ntry')
+		_block.writeSharpDef(sw)
+		sw.write('finally {\n')
+		sw.indent()
+		if _var.type.isReference
+			sw.write('if ([name]!=null) { ((IDisposable)[name]).Dispose(); [name] = null; }\n')
+		else
+			sw.write('((IDisposable)[name]).Dispose();\n')
+		sw.dedentAndWrite('}\n')
 
 
 class WhileStmt
