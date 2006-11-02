@@ -14,11 +14,18 @@ class EnumDecl
 			.addDecl(em)
 			em.enumDecl = this
 
+	get defaultAccessLevel as String is override
+		return 'public'
+
 	get englishName as String is override
 		return 'enumeration type'
 
 	get isShared as bool
 		return true
+
+	get isReference as bool is override
+		# enums are not reference types
+		return false
 
 	get typeForIdentifier as IType is override
 		return .compiler.typeType
@@ -39,24 +46,28 @@ class EnumDecl
 	get csInit as String is override
 		return _name + '.' + _declsInOrder[0].name
 
-#	def genCS(sw as SharpWriter)
-#		sw.write('%senum %s' % (_isNamesCS(), _name))
-#		storageType = _storageType
-#		if storageType is not nil and storageType is not tint
-#			sw.write(' %s' % storageType.asCS())
-#		sw.write(' {\n')
-#		sw.indent()
-#		i = 0
-#		for em in _enumMembers
-#			sw.write(capped(em.name))
-#			if em.value is not nil
-#				sw.write(' = %s' % em.value)
-#			if i<len(_enumMembers)-1
-#				sw.write(',')
-#			sw.write('\n')
-#			i += 1
-#		sw.dedent()
-#		sw.write('}\n\n')
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		.writeSharpIsNames(sw)
+		sw.write('enum [_name]')
+		storageType = _storageType
+		if storageType is not nil and storageType is not .compiler.intType
+			sw.write(' ')
+			storageType.writeSharpRef(sw)
+		sw.write(' {\n')
+		sw.indent()
+		sep = ''
+		i = 0
+		for em as EnumMember in .declsInOrder
+			sw.write(sep)
+			sw.write(Utils.capped(em.name))
+			if em.value is not nil
+				sw.write(' = [em.value]')
+			sw.write('\n')
+			i += 1
+			sep = ', '
+		sw.dedent()
+		sw.write('}\n\n')
 
 
 class EnumMember
@@ -94,3 +105,5 @@ class EnumMember
 	get resultType as IType
 		require _enumDecl
 		return _enumDecl to IType # CC: axe typecast
+
+	get value from var

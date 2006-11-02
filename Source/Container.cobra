@@ -52,6 +52,7 @@ class Container
 	var _declsByName as Dictionary<of String, IMember>
 	var _declsByNameCI as Dictionary<of String, IMember>
 	var _docString as String
+	var _isNames as List<of String>
 
 	def construct(token as IToken, name as String, docString as String?)
 		base.construct(token, name)
@@ -201,6 +202,45 @@ class Container
 	get csInit as String
 		throw OverrideException(.getType())
 		return ''
+
+	# TODO: _isNames, writeSharpIsNames() and defaultAccessLevel should be moved out to a mixin since NameSpace, a subclass of Container, has no isNames. Box and Enum do. So does ClassMember which duplicates this.
+
+	get defaultAccessLevel as String
+		throw OverrideException(.getType())
+		return ''
+
+	def writeSharpIsNames(sw as SharpWriter)
+		# TODO: cache this somewhere
+		accessLevels = ['public', 'protected', 'internal', 'protected internal', 'private']
+		# CC: accessLevels = 'public,protected,internal,protected internal,private'.split(c',')
+			# same names in both Cobra and C#
+
+		# TODO:
+		# if isNames is nil
+		#	isNames = _isNames
+		isNames = List<of String>()
+		if _isNames
+			isNames.addRange(_isNames)
+		if .defaultAccessLevel
+			found = false
+			for level as String in accessLevels  # CC: axe as
+				if level in isNames
+					found = true
+			if not found
+				isNames.insert(0, .defaultAccessLevel)
+		isNameCS = {
+			# only have to specify the ones that are different
+			'shared': 'static',
+			'nonvirtual': '',
+		}
+		sep = ''
+		for name in isNames
+			name = Utils.getSS(isNameCS to passthrough, name, name) to String # CC: to !
+			sw.write(sep)
+			sw.write(name)
+			sep = ' '
+		if sep
+			sw.write(' ')
 
 	## Other
 
