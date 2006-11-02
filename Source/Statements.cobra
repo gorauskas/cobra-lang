@@ -672,50 +672,50 @@ class TryStmt
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		assert false
-#		if .successBlock
-#			# C# has no "success" (or in Python, "else") block for the "try" statement
-#			# so it has to be simulated
-#			helperName = '_lh_success_%s' % .varNumber  # lh => "local helper"
-#			sw.write('bool %s = false;\n' % helperName)
-#			if .finallyBlock
-#				sw.write('try {\n')
-#				sw.indent()
-#			sw.write('try')
-#			.tryBlock.writeSharpDef(sw, close=false)
-#			sw.write('%s = true;\n' % helperName)
-#			sw.dedent()
-#			sw.write('}\n')
-#			if .catchBlocks
-#				.writeCatchBlocks(sw)
-#			else
-#				sw.write('finally { }\n')  # syntactically necessary
-#			sw.write('if (%s)' % helperName)
-#			.successBlock.writeSharpDef(sw)
-#			if .finallyBlock
-#				sw.dedent()
-#				sw.write('}\n')
-#				sw.write('finally')
-#				.finallyBlock.writeSharpDef(sw)
-#		else
-#			sw.write('try')
-#			.tryBlock.writeSharpDef(sw)
-#			.writeCatchBlocks(sw)
-#			if .finallyBlock
-#				sw.write('finally')
-#				.finallyBlock.writeSharpDef(sw)
+		if _successBlock
+			# C# has no "success" (or in Python, "else") block for the "try" statement
+			# so it has to be simulated
+			helperName = '_lh_success_[_varNumber]'
+			sw.write('bool [helperName] = false;\n')
+			if _finallyBlock
+				sw.write('try {\n')
+				sw.indent()
+			sw.write('try')
+			_tryBlock.writeSharpDef(sw, false)
+			sw.write('[helperName] = true;\n')
+			sw.dedent()
+			sw.write('}\n')
+			if _catchBlocks
+				.writeCatchBlocks(sw)
+			else
+				sw.write('finally { }\n')  # syntactically necessary
+			sw.write('if ([helperName])')
+			_successBlock.writeSharpDef(sw)
+			if _finallyBlock
+				sw.dedent()
+				sw.write('}\n')
+				sw.write('finally')
+				_finallyBlock.writeSharpDef(sw)
+		else
+			sw.write('try')
+			_tryBlock.writeSharpDef(sw)
+			.writeCatchBlocks(sw)
+			if _finallyBlock
+				sw.write('finally')
+				_finallyBlock.writeSharpDef(sw)
 
-#	def writeCatchBlocks(sw)
-#		for eb in .catchBlocks
-#			sw.write('catch')
-#			if eb.type
-#				sw.write(' (%s' % eb.type.name)
-#				if eb.varName
-#					helperName = eb.csHelperName
-#					sw.write(' %s' % helperName)
-#				sw.write(')')
-#			top = eb.varName and '%s = %s;\n'%(eb.varName,helperName) or ''
-#			eb.block.writeSharpDef(sw, top=top)
+	def writeCatchBlocks(sw as SharpWriter)
+		for eb in _catchBlocks
+			sw.write('catch')
+			if eb.type
+				sw.write(' (')
+				eb.type.writeSharpRef(sw)
+				if eb.varName
+					helperName = eb.csHelperName
+					sw.write(' [helperName]')
+				sw.write(')')
+			top = if(eb.varName, '[eb.varName] = [helperName];\n', '')
+			eb.block.writeSharpDef(sw, top)
 
 
 class CatchBlock
@@ -743,6 +743,12 @@ class CatchBlock
 		_varName = if(varr, varr.name, nil)
 		_block = block
 
+	get block from var
+
+	get type from var
+
+	get varName from var
+
 	def _bindImp is override
 		base._bindImp()
 		if _var
@@ -761,6 +767,10 @@ class CatchBlock
 				assert _type
 		_csHelperName = '_lh_catch_[.compiler.curBox.makeNextPrivateSerialNumber()]'
 		_block.bindImp()
+
+	## Code gen
+
+	get csHelperName from var
 
 
 class ThrowStmt
@@ -783,11 +793,10 @@ class ThrowStmt
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		assert false
-#		sw.write('throw ')
-#		if _expr:
-#			_expr.writeSharpDef(sw, genParens=false)
-#		sw.write(';\n')
+		sw.write('throw ')
+		if _expr
+			_expr.writeSharpDef(sw, false)
+		sw.write(';\n')
 
 
 class UsingStmt
