@@ -1391,6 +1391,55 @@ class OneCodeBlockMember
 		#sw.indentAndWrite('}\n')
 
 
+
+class Constructor
+	inherits OneCodeBlockMember
+	implements ICodePart  # TODO: should OneCodeBlockMember inherit ICodePart
+
+	def construct(token as IToken, box as Box, paramsList as List<of Param>, isNames as List<of String>, docString as String)
+		base.construct(token, box, 'construct', docString, paramsList)
+		_isNames = isNames
+		_stmts = List<of Stmt>()
+
+	get englishName as String is override
+		return 'method'
+
+	get hasVariArgs as bool
+		assert false, 'TODO: complete Method.hasVariArgs'
+		return false
+
+	get isCallable as bool is override
+		return true
+
+	def defaultToVirtual is override
+		pass
+
+	## Code gen
+
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		first = if(_stmts, _stmts[0], nil)
+		callConstructor as String? = nil
+		if first inherits DotExpr
+			if (first.left inherits ThisLit or first.left inherits BaseLit) and (first.right to CallExpr).name=='construct'
+				callConstructor = (first.left to AtomicLiteral).asSharp
+				args = (first.right to CallExpr).args
+		.writeSharpIsNames(sw)
+		sw.write(' [.box.name]')
+		.writeSharpParams(sw)
+		if callConstructor
+			sw.writeAndIndent('\n')
+			sw.write(': [callConstructor](')
+			sep = ''
+			for arg in args
+				sw.write(sep)
+				arg.writeSharpDef(sw)
+				sep = ', '
+			sw.write(') ')
+		.writeSharpImp(sw, if(callConstructor, true, false))
+		.writeSharpTest(sw)
+
+
 class Method
 	inherits OneCodeBlockMember
 	implements ICodePart
@@ -1409,7 +1458,7 @@ class Method
 		return 'method'
 
 	get hasVariArgs as bool
-		print 'TODO: complete Method.hasVariArgs'
+		assert false, 'TODO: complete Method.hasVariArgs'
 		return false
 
 	get isCallable as bool is override
@@ -1539,6 +1588,24 @@ class ProperDexer
 			return 'public'
 		else
 			return ''
+
+	def _bindInt is override
+		base._bindInt()
+		if _returnType is nil
+			if _coverVar
+				_coverVar.bindInt()
+				assert _coverVar.resultType, _coverVar
+				_returnType = _coverVar.resultType
+			else
+				assert _returnTypeNode
+				_returnTypeNode.bindInt()
+				_returnType = _returnTypeNode.namedType
+		_returnType.bindInt()
+		assert _returnType  # properties always have a return type
+		if _getPart
+			_getPart.bindInt()
+		if _setPart
+			_setPart.bindInt()
 
 	def _bindImp is override
 		base._bindImp()

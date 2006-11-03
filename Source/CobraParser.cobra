@@ -885,7 +885,7 @@ class Parser
 		assert isNames is not nil
 		return ClassVar(tok, .curBox, identifier, type, isNames, initExpr, docString)
 
-	def declareMethod as Method?
+	def declareMethod as OneCodeBlockMember?
 		require _typeProvider
 		token = .expect('DEF')
 		opener = .grab()
@@ -925,32 +925,33 @@ class Parser
 			returnType = _typeProvider.voidType
 		assert returnType
 
+		method as OneCodeBlockMember?
+
 		if curClass inherits Class or curClass inherits Struct
 			isNames = .indentIsDeclNames()
 			implementsType = if(.optional('IMPLEMENTS'), .type(), nil)
 			if implementsType
 				.oneOrMore('EOL')
 			docString = .docString()
-
-#			assert returnType
-#			if name=='construct'
-#				if returnType is not tvoid
-#					.error('Cannot declare a return type for construct.')
-#				defMethod = DefConstruct(token, .curBox, paramsList, isNames, docString)
-#			else if name=='destruct'
-#				if returnType is not tvoid
-#					.error('Cannot declare a return type for destruct.')
-#				if paramsList
-#					.error('Cannot declare parameters for destruct.')
-#				if 'shared' in isNames
-#					.error('Cannot declare a shared destructor.')
-#				defMethod = DefDestruct(token, .curBox, isNames, docString)
-#			else
-#				if name=='constructor'
-#					.warning('Did you mean to say `construct`?')
-#				else if name=='destructor'
-#					.warning('Did you mean to say `destruct`?')
-			if true
+			assert returnType
+			if name=='construct'
+				if returnType is not .typeProvider.voidType
+					_error('Cannot declare a return type for construct.')
+				method = Constructor(token, .curBox, paramsList, isNames, docString)
+			else if name=='destruct'
+				if returnType is not .typeProvider.voidType
+					_error('Cannot declare a return type for destruct.')
+				if paramsList
+					_error('Cannot declare parameters for destruct.')
+				if 'shared' in isNames
+					_error('Cannot declare a shared destructor.')
+				assert false
+				# CC: method = Destructor(token, .curBox, isNames, docString)
+			else
+				if name=='constructor'
+					_warning('Did you mean to say `construct`?')
+				else if name=='destructor'
+					_warning('Did you mean to say `destruct`?')
 				method = Method(token, .curBox, name, paramsList, returnType, isNames, implementsType, docString)
 			.statementsFor(method)
 		else if curClass inherits Interface
@@ -971,7 +972,7 @@ class Parser
 			throw Exception('Unhandled containing type [curClass]')
 		assert method
 		if overload
-			overload.addMember(method)
+			overload.addMember(method to ClassMember)  # CC: axe cast when above assert is recoginzed as making method non-null
 			return nil
 		else
 			return method
