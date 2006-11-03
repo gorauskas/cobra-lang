@@ -4,6 +4,8 @@ class Module
 	var _fileName as String
 	var _csFileName as String?
 	var _declsInOrder as List<of IMember>
+	var _declsByName as Dictionary<of String, IMember>
+	var _declsByNameCI as Dictionary<of String, IMember>
 	var _docString as String?
 
 	def construct(fileName as String, verbosity as int, docString as String)
@@ -11,6 +13,8 @@ class Module
 		base.construct()
 		_fileName = fileName
 		_declsInOrder = List<of IMember>()
+		_declsByName = Dictionary<of String, IMember>()
+		_declsByNameCI = Dictionary<of String, IMember>()
 		_docString = docString
 		# TODO: what's going on with verbosity?
 
@@ -24,6 +28,19 @@ class Module
 		return _declsInOrder
 
 	def addDecl(decl as IMember)
+		require decl.name
+		if decl in _declsInOrder
+			# happens with double "namespace Foo" in the same module
+			assert decl inherits NameSpace
+			return
+		if _declsByName.containsKey(decl.name)
+			_error('The name "[decl.name]" was already declared.')
+		else
+			if _declsByNameCI.containsKey(decl.name.toLower())
+				# TODO: give the line number of the other declaration
+				_error('The name "[decl.name]" was already declared. Declaration names must be unique (beyond just case).')
+			_declsByName[decl.name] = decl
+			_declsByNameCI[decl.name.toLower()] = decl
 		_declsInOrder.add(decl)
 
 	get csSource as String
