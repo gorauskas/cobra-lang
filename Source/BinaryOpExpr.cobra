@@ -468,8 +468,22 @@ class DotExpr
 			return nil
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		_left.writeSharpDef(sw, false)  # TODO: is false okay here?
-		sw.write('.')
+		# don't write 'this' for shared members
+		writeThis = true
+		if _left inherits ThisLit
+			if _right inherits CallExpr
+				defi = _right.definition
+				if defi inherits IMember
+					writeThis = not defi.isShared
+				else
+					# TODO: compiler bug stimulated by following line:
+					# throw FallThroughException({'right': _right, 'defi': defi})
+					throw FallThroughException(defi)
+			else if _right inherits MemberExpr
+				writeThis = not _right.definition.isShared
+		if writeThis
+			_left.writeSharpDef(sw, false)  # TODO: is false okay here?
+			sw.write('.')
 		_right.writeSharpDef(sw, false)
 
 
