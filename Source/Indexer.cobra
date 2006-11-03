@@ -2,17 +2,11 @@ class Indexer
 	inherits ProperDexer
 
 	var _params as List<of Param>
-	var _getPart as IndexerGetter?
-	var _setPart as IndexerSetter?
-	var _coverVar as ClassMember  # TODO: should be ClassVar
-	var _coverAccess as String
-	var _returnType as IType?
-	var _returnTypeNode as INode?
 
 	# TODO: add implements support. constructor param will be:
 	# implementsList as List<of INode>,
 
-	def construct(token as IToken, box as Box, name as String, paramsList as List<of Param>, isNames as List<of String>, coverVar as ClassMember, coverAccess as String, docString as String)
+	def construct(token as IToken, box as Box, name as String, paramsList as List<of Param>, isNames as List<of String>, coverVar as ClassVar, coverAccess as String, docString as String)
 		base.construct(token, box, name, docString)
 		_params = paramsList
 		_coverVar = coverVar
@@ -37,45 +31,6 @@ class Indexer
 
 	get params as List<of Param> is override
 		return _params
-
-	get returnType from var
-
-	get returnTypeNode from var
-
-	get resultType as IType is override
-		assert .didBindInt
-		assert _returnType
-		return _returnType to IType  # CC: axe when code flow understands the assert
-
-	get getPart from var
-
-	get setPart from var
-
-	def addRefFields is override
-		base.addRefFields()
-		if _coverVar
-			.addField('coverVar', _coverVar)
-		if _returnType
-			.addField('returnType', _returnType)
-		else
-			.addField('returnTypeNode', _returnTypeNode)
-
-	def addSubFields is override
-		base.addSubFields()
-		if _getPart
-			.addField('getPart', _getPart)
-		if _setPart
-			.addField('setPart', _setPart)
-
-	def defaultToVirtual is override
-		if .isClassMember
-			base.defaultToVirtual()
-
-	get defaultAccessLevel as String is override
-		if .isClassMember
-			return 'public'
-		else
-			return ''
 
 	get isCallable as bool is override
 		return false
@@ -103,13 +58,6 @@ class Indexer
 		if _setPart
 			_setPart.bindInt()
 
-	def _bindImp is override
-		base._bindImp()
-		if _getPart
-			_getPart.bindImp()
-		if _setPart
-			_setPart.bindImp()
-
 	def makeGetPart(token as IToken) as OneCodeBlockMember is override
 		require .getPart is nil
 		ensure .getPart!
@@ -122,86 +70,38 @@ class Indexer
 		_setPart = IndexerSetter(token, this)
 		return _setPart to IndexerSetter  # CC: to ! | CC: shouldn't need because of assignment
 
-#	def genCS(out)
-#		if .params
-#			assert .name=='[]'
-#			out.write('\n%s %s this' % (.isNamesCS(), .returnType.asCS()))
-#			.genCSParams(out, parens='[]')
-#			out.write(' {\n')
-#		else
-#			out.write('\n%s %s %s {\n' % (.isNamesCS(), .returnType.asCS(), capped(.name)))
-#		out.indent()
-#		if .coverVar
-#			if .coverAccess in ('getset', 'get')
-#				out.write('get { return %s; }' % .coverVar.csName)
-#			if .coverAccess in ('getset', 'set')
-#				out.write('set { %s = value; }' % .coverVar.csName)
-#		else
-#			if .getPart
-#				if .isClassMember
-#					.getPart.genCS(out)
-#				else if .isInterfaceMember
-#					out.write('\tget;\n')
-#				else
-#					throw FallThroughException()
-#			if .setPart
-#				if .isClassMember
-#					.setPart.genCS(out)
-#				else if .isInterfaceMember
-#					out.write('\tset;\n')
-#				else
-#					throw FallThroughException()
-#		out.dedent()
-#		out.write('}\n')
-#		.genCSTest(out)
-
-
-class IndexerXetter
-	inherits OneCodeBlockMember
-	"""
-	Base class for IndexerGetter and IndexerSetter.
-	"""
-
-	var _indexer as Indexer
-
-	def construct(token as IToken, indexer as Indexer)
-		base.construct(token, indexer.box, indexer.name, '', List<of Param>())
-		_name = indexer.name + '.' + .indexerPartName  # CC: somewhat awkward. belongs in the base.construct() call
-		_indexer = indexer
-
-	get indexer from _indexer
-
-	get indexerPartName as String
-		throw OverrideException(.getType())
-		return '(override indexerPartName)'
-
-	get isShared as bool is override
-		return _indexer.isShared
-
-#	def genCS(out)
-#		out.write(self.indexerPartName)
-#		self.genCSImp(out)
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		assert _name==r'[]'
+		sw.write('\n')
+		.writeSharpIsNames(sw)
+		sw.write(' ')
+		_returnType.writeSharpRef(sw)
+		sw.write(' this')
+		.writeSharpParams(sw, r'[]')
+		.writeSharpBody(sw)
+		.writeSharpTest(sw)
 
 
 class IndexerGetter
-	inherits IndexerXetter
+	inherits ProperDexerXetter
 
 	def construct(token as IToken, indexer as Indexer)
 		base.construct(token, indexer)
 
-	get indexerPartName as String is override
+	get xetPartName as String is override
 		return 'get'
 
 	def _bindInt is override
 		base._bindInt()
-		_returnType = _indexer.returnType
+		_returnType = .parent.returnType
 		assert _returnType
-		for param in _indexer.params
+		for param in .parent.params
 			_params.add(param)
 
 
 class IndexerSetter
-	inherits IndexerXetter
+	inherits ProperDexerXetter
 
 	def construct(token as IToken, indexer as Indexer)
 		base.construct(token, indexer)
@@ -220,7 +120,7 @@ class IndexerSetter
 			throw FallThroughException(indexer)
 		_params.add(p)
 
-	get indexerPartName as String is override
+	get xetPartName as String is override
 		return 'set'
 
 	def _bindInt is override

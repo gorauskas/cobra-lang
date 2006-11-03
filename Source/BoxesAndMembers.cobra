@@ -924,8 +924,11 @@ class ClassMember  # TODO: rename to BoxMember
 		if _testMethod
 			sw.write('[_testMethod.name]();\n')
 
-	def writeSharpParams(sw as SharpWriter) # TODO: could this be pushed down to OneCodeBlockMember
-		parens = '()'
+	def writeSharpParams(sw as SharpWriter)
+		.writeSharpParams(sw, '()')
+
+	def writeSharpParams(sw as SharpWriter, parens as String) # TODO: could this be pushed down to OneCodeBlockMember
+		require parens.length==2
 		sw.write(parens[0])
 		sep = ''
 		for param in .params
@@ -1464,6 +1467,13 @@ class ProperDexer
 	unless we also defined an IClassMember.
 	"""
 
+	var _getPart as ProperDexerXetter?
+	var _setPart as ProperDexerXetter?
+	var _coverVar as ClassVar
+	var _coverAccess as String
+	var _returnType as IType?
+	var _returnTypeNode as INode?
+
 	def construct(token as IToken, box as Box, name as String, docString as String)
 		base.construct(token, box, name, docString)
 
@@ -1476,6 +1486,108 @@ class ProperDexer
 		throw OverrideException()
 		# CC: shouldn't need a return:
 		return OneCodeBlockMember(token, Box(), '', '', List<of Param>())
+
+	def addRefFields is override
+		base.addRefFields()
+		if _coverVar
+			.addField('coverVar', _coverVar)
+		if _returnType
+			.addField('returnType', _returnType)
+		else
+			.addField('returnTypeNode', _returnTypeNode)
+
+	def addSubFields is override
+		base.addSubFields()
+		if _getPart
+			.addField('getPart', _getPart)
+		if _setPart
+			.addField('setPart', _setPart)
+
+	get returnType from var
+
+	get returnTypeNode from var
+
+	get resultType as IType is override
+		assert .didBindInt
+		assert _returnType
+		return _returnType to IType  # CC: axe when code flow understands the assert
+
+	get getPart from var
+
+	get setPart from var
+
+	def defaultToVirtual is override
+		if .isClassMember
+			base.defaultToVirtual()
+
+	get defaultAccessLevel as String is override
+		if .isClassMember
+			return 'public'
+		else
+			return ''
+
+	def _bindImp is override
+		base._bindImp()
+		if _getPart
+			_getPart.bindImp()
+		if _setPart
+			_setPart.bindImp()
+
+	## Code gen
+
+	def writeSharpBody(sw as SharpWriter)
+		sw.write(' {\n')
+		sw.indent()
+		if _coverVar
+			if _coverAccess in ['getset', 'get']
+				sw.write('get { return [_coverVar.csName]; }')
+			if _coverAccess in ['getset', 'set']
+				sw.write('set { [_coverVar.csName] = value; }')
+		else
+			if _getPart
+				if .isClassMember
+					_getPart.writeSharpDef(sw)
+				else if .isInterfaceMember
+					sw.write('\tget;\n')
+				else
+					throw FallThroughException(this)
+			if _setPart
+				if .isClassMember
+					_setPart.writeSharpDef(sw)
+				else if .isInterfaceMember
+					sw.write('\tset;\n')
+				else
+					throw FallThroughException(this)
+		sw.dedent()
+		sw.write('}\n')
+
+
+class ProperDexerXetter
+	inherits OneCodeBlockMember
+	"""
+	Base class for IndexerGetter, IndexerSetter, PropertyGetter and PropertySetter.
+	"""
+
+	var _parent as ProperDexer
+
+	def construct(token as IToken, parent as ProperDexer)
+		base.construct(token, parent.box, parent.name, '', List<of Param>())
+		_name = parent.name + '.' + .xetPartName  # CC: somewhat awkward. belongs in the base.construct() call
+		_parent = parent
+
+	get parent from var
+
+	get xetPartName as String  # CC: make abstract
+		throw OverrideException(.getType())
+		return '(override indexerPartName)'
+
+	get isShared as bool is override
+		return _parent.isShared
+
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		sw.write(.xetPartName)
+		.writeSharpImp(sw, false)
 
 
 class MemberOverload
