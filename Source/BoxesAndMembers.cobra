@@ -796,13 +796,15 @@ class ClassMember  # TODO: rename to BoxMember
 	var _overloadGroup as MemberOverload?
 	var _testMethod as TestMethod?
 
-	def construct(token as IToken, box as Box, name as String)
-		this.construct(token, box, name, nil)
+	def construct(token as IToken, box as Box, name as String, isNames as List<of String>)
+		this.construct(token, box, name, isNames, nil)
 
-	def construct(token as IToken, box as Box, name as String, docString as String?)
+	def construct(token as IToken, box as Box, name as String, isNames as List<of String>, docString as String?)
 		base.construct(token, name)
+		_isNames = isNames
 		_box = box
 		_docString = docString
+		.defaultToVirtual()
 
 	## Properties
 
@@ -869,13 +871,10 @@ class ClassMember  # TODO: rename to BoxMember
 
 	def defaultToVirtual
 		"""
-		Self utility method.
+		A hook for subclasses to add the virtual keyword to _isNames, if appropriate.
 		"""
 		require _isNames is not nil
-		for name in ['nonvirtual', 'virtual', 'shared', 'override']
-			if name in _isNames
-				return
-		_isNames.add('virtual')
+		pass
 
 	## INamedNode
 
@@ -986,8 +985,7 @@ class ClassVar
 	var _useCSNameStack as Stack<of String>
 
 	def construct(token as IToken, box as Box, name as String, typeNode as INode, isNames as List<of String>, initExpr as Expr?, docString as String)
-		base.construct(token, box, name, docString)
-		_isNames = isNames  # TODO: move this up to ClassMember
+		base.construct(token, box, name, isNames, docString)
 		_typeNode = typeNode
 		_initExpr = initExpr
 		_ifInheritsStack = Stack<of IType>()
@@ -1151,8 +1149,8 @@ class OneCodeBlockMember
 	var _hasReturnStmt as bool
 	var _csResultVarName as String?
 
-	def construct(token as IToken, box as Box, name as String, docString as String, paramsList as List<of Param>)
-		base.construct(token, box, name, docString)
+	def construct(token as IToken, box as Box, name as String, paramsList as List<of Param>, isNames as List<of String>, docString as String)
+		base.construct(token, box, name, isNames, docString)
 		_params = paramsList
 		_oldExprs = List<of OldExpr>()
 		_locals = List<of LocalVar>()
@@ -1166,6 +1164,12 @@ class OneCodeBlockMember
 
 	get defaultAccessLevel as String is override
 		return 'public'
+
+	def defaultToVirtual
+		for name in ['nonvirtual', 'virtual', 'shared', 'override']
+			if name in _isNames
+				return
+		_isNames.add('virtual')
 
 	get isCallable as bool is override
 		return true
@@ -1401,7 +1405,7 @@ class Constructor
 	implements ICodePart  # TODO: should OneCodeBlockMember inherit ICodePart
 
 	def construct(token as IToken, box as Box, paramsList as List<of Param>, isNames as List<of String>, docString as String)
-		base.construct(token, box, 'construct', docString, paramsList)
+		base.construct(token, box, 'construct', paramsList, isNames, docString)
 		_isNames = isNames
 		_stmts = List<of Stmt>()
 
@@ -1451,13 +1455,11 @@ class Method
 	var _implementsTypeNode as ISyntaxNode?
 	var _implementsType as IType?
 
-	def construct(token as IToken, box as Box, name as String, paramsList as List<of Param>, returnTypeNode as INode, isNames as List<of String>, implementsTypeNode as ISyntaxNode?, docString as String)
-		base.construct(token, box, name, docString, paramsList)
+	def construct(token as IToken, box as Box, name as String, paramsList as List<of Param>, returnTypeNode as INode, implementsTypeNode as ISyntaxNode?, isNames as List<of String>, docString as String)
+		base.construct(token, box, name, paramsList, isNames, docString)
 		_returnTypeNode = returnTypeNode
-		_isNames = isNames
 		_implementsTypeNode = implementsTypeNode
 		_stmts = List<of Stmt>()
-		.defaultToVirtual()
 
 	get englishName as String is override
 		return 'method'
@@ -1528,11 +1530,11 @@ class ProperDexer
 	var _returnType as IType?
 	var _returnTypeNode as INode?
 
-	def construct(token as IToken, box as Box, name as String, docString as String)
-		base.construct(token, box, name, docString)
+	def construct(token as IToken, box as Box, name as String, isNames as List<of String>, docString as String)
+		base.construct(token, box, name, isNames, docString)
 
 	def construct(token as IToken, box as Box, name as String, returnTypeOrNode as INode, isNames as List<of String>, docString as String)
-		.construct(token, box, name, docString)
+		.construct(token, box, name, isNames, docString)
 		if returnTypeOrNode
 			if returnTypeOrNode inherits IType
 				_returnType = returnTypeOrNode
@@ -1542,18 +1544,16 @@ class ProperDexer
 				_returnTypeNode = returnTypeOrNode
 			else
 				throw FallThroughException(returnTypeOrNode)
-		_isNames = isNames
-		.defaultToVirtual()
 
 	def makeGetPart(token as IToken) as OneCodeBlockMember
 		throw OverrideException()
 		# CC: shouldn't need a return:
-		return OneCodeBlockMember(token, Box(), '', '', List<of Param>())
+		return nil to passthrough
 
 	def makeSetPart(token as IToken) as OneCodeBlockMember
 		throw OverrideException()
 		# CC: shouldn't need a return:
-		return OneCodeBlockMember(token, Box(), '', '', List<of Param>())
+		return nil to passthrough
 
 	def addRefFields is override
 		base.addRefFields()
@@ -1656,8 +1656,8 @@ class ProperDexerXetter
 
 	var _parent as ProperDexer
 
-	def construct(token as IToken, parent as ProperDexer)
-		base.construct(token, parent.box, parent.name, '', List<of Param>())
+	def construct(token as IToken, parent as ProperDexer, isNames as List<of String>)
+		base.construct(token, parent.box, parent.name, List<of Param>(), isNames, '')  # TODO: should be docString, right?
 		_name = parent.name + '.' + .xetPartName  # CC: somewhat awkward. belongs in the base.construct() call
 		_parent = parent
 
@@ -1686,7 +1686,7 @@ class MemberOverload
 			member.name
 			member.box
 		code
-			base.construct(member.token, member.box, member.name)
+			base.construct(member.token, member.box, member.name, member.isNames)
 			member.overloadGroup = this
 			_members = [member]
 			_isNames = member.isNames  # pick up 'shared' for example
@@ -1756,7 +1756,7 @@ class TestMethod
 		code
 			# CC: shouldn't the .getCompiler() work? C# code gen puts a "this" in there even though it's shared and C# chokes on it
 			#base.construct(token, member.box, 'test_'+Utils.capped(member.name), List<of Param>(), .getCompiler().voidType, List<of String>(), nil, '')
-			base.construct(token, member.box, 'test_'+Utils.capped(member.name), List<of Param>(), voidType, List<of String>(), nil, '')
+			base.construct(token, member.box, 'test_'+Utils.capped(member.name), List<of Param>(), voidType, nil, List<of String>(), '')
 			_forMember = member
 
 	def construct(token as IToken, box as Box, voidType as IType)
@@ -1765,7 +1765,7 @@ class TestMethod
 		code
 			# CC: shouldn't the .getCompiler() work? C# code gen puts a "this" in there even though it's shared and C# chokes on it
 			# base.construct(token, box, 'test_class_'+Utils.capped(box.name), List<of Param>(), .getCompiler().voidType, List<of String>(), List<of INode>(), '')
-			base.construct(token, box, 'test_class_'+Utils.capped(box.name), List<of Param>(), voidType, List<of String>(), nil, '')
+			base.construct(token, box, 'test_class_'+Utils.capped(box.name), List<of Param>(), voidType, nil, List<of String>(), '')
 			_forBox = box
 
 
