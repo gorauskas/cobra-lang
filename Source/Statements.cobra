@@ -247,21 +247,26 @@ class ExpectStmt
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		assert false
-#		gotWriteExceptionVarName = '_lh_expect_%s' % (_varNumber-1)  # lh => "local helper"
-#		sw.write('bool %s = false;\n' % gotWriteExceptionVarName)
-#		sw.write('try ')
-#		_block.writeSharpDef(sw)
-#		sw.writeAndIndent('catch (%s) {\n' % _exceptionType.asCS())
-#		sw.write('// exactly what is expected\n')
-#		sw.write('%s = true;\n' % gotWriteExceptionVarName)
-#		sw.dedentAndWrite('}\n')
-#		wrongExceptionVarName = '_lh_expect_%s' % _varNumber
-#		assert gotWriteExceptionVarName!=wrongExceptionVarName
-#		sw.writeAndIndent('catch (Exception %s) {\n' % wrongExceptionVarName)
-#		sw.write('throw new ExpectException(typeof(%s), %s);\n' % (_exceptionType.asCS(), wrongExceptionVarName))
-#		sw.dedentAndWrite('}\n')
-#		sw.write('if (!%s) throw new ExpectException(typeof(%s), null);\n' % (gotWriteExceptionVarName, _exceptionType.asCS()))
+		gotWriteExceptionVarName = '_lh_expect_[_varNumber-1]'  # lh => "local helper"
+		sw.write('bool [gotWriteExceptionVarName] = false;\n')
+		sw.write('try ')
+		_block.writeSharpDef(sw)
+		sw.writeAndIndent('catch (')
+		_exceptionType.writeSharpRef(sw)
+		sw.write(') {\n')
+		sw.write('// exactly what is expected\n')
+		sw.write('[gotWriteExceptionVarName] = true;\n')
+		sw.dedentAndWrite('}\n')
+		wrongExceptionVarName = '_lh_expect_[_varNumber]'
+		assert gotWriteExceptionVarName<>wrongExceptionVarName
+		sw.writeAndIndent('catch (Exception [wrongExceptionVarName]) {\n')
+		sw.write('throw new ExpectException(typeof(')
+		_exceptionType.writeSharpRef(sw)
+		sw.write('), [wrongExceptionVarName]);\n')
+		sw.dedentAndWrite('}\n')
+		sw.write('if (![gotWriteExceptionVarName]) throw new ExpectException(typeof(')
+		_exceptionType.writeSharpRef(sw)
+		sw.write('), null);\n')
 
 
 class ForStmt
