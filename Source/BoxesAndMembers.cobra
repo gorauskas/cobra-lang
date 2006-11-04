@@ -334,6 +334,23 @@ class Box
 	get csKeyWord as String
 		throw OverrideException(.getType())
 
+	def writeSharpRef(sw as SharpWriter) is override
+		if _params
+			# generic
+			name = .name
+			if name.indexOf('<')  # List<of>, Dictionary<of,>
+				name = name.substring(0, name.indexOf('<'))
+			sw.write(name)
+			sw.write('<')
+			sep = ''
+			for param in _params
+				sw.write(sep)
+				param.writeSharpRef(sw)
+				sep = ', '
+			sw.write('>')
+		else
+			sw.write(.name)
+
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
 		if .isFake
@@ -622,8 +639,10 @@ class GenericParam
 
 	pro index from var
 
-# TODO:	def isReference()
-#		return true
+	get isReference as bool is override
+		# Well, it's hard to say if a GenericParam is a reference or value type, but CompareExpr() influences us to say "true".
+		# TODO: if there are constraints examine them
+		return true
 
 	def addMinFields is override
 		base.addMinFields()
