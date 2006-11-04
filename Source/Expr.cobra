@@ -190,6 +190,7 @@ class CallExpr
 	var _args as List<of Expr>
 	var _definition as INamedNode?
 	var _isNew as bool  # "Exception('foo')" would be a CallExpr that isNew
+	var _isCallOnSystemType as bool  # "t()" where t is of System.Type would be a CallExpr that isCallOnSystemType
 
 	def construct(token as IToken, name as String, args as List<of Expr>)
 		base.construct(token)
@@ -258,6 +259,7 @@ class CallExpr
 					definition = .compiler.findLocal(_name)
 				if definition is nil
 					_error('Cannot find "[_name]".')
+				_isCallOnSystemType = not definition inherits Box and not definition inherits Method
 			if definition is not nil
 				if definition inherits IVar
 					# such as having:
@@ -344,6 +346,16 @@ class CallExpr
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		name = .name
+		if _isCallOnSystemType
+			defi = _definition
+			what = if(defi inherits Class, 'typeof([_definition.name])', defi.sharpName)
+			sw.write('Activator.CreateInstance([what]')
+			sep = ', '
+			for arg in _args
+				sw.write(sep)
+				arg.writeSharpDef(sw, false)
+			sw.write(')')
+			return
 		if _isNew
 			if parens
 				sw.write('(')
@@ -463,11 +475,19 @@ class IdentifierExpr
 		assert .didBindImp, this
 		assert .definition, this
 		assert not .type inherits UnspecifiedType
-		return if(.definition, .definition.sharpName, _text)
+		if .superNode
+			if .superNode inherits DotExpr
+				assert this is not (.superNode to DotExpr).right  # should be a CallExpr or MemberExpr instead  # CC: shouldn't need that cast
+		defi = .definition
+		if defi inherits Box and _type.isDescendantOf(.compiler.libraryType('System', 'Type'))  # TODO: is the "and ..." part even necessary?
+			# C# often requires typeof(Foo) instead of just plain Foo
+			if .superNode is nil or (.superNode inherits AssignExpr and (.superNode to AssignExpr).right is this)
+				if not defi.sharpName.startsWith('_lh')  # TODO: I forget why this has to be guarded against... figure out and put a comment here
+					return 'typeof(' + defi.sharpName + ')'
+		return defi.sharpName
 
-	# TODO?
-#	def genCSStatement(self, out):
-#		assert 0, 'not expecting to be called'
+	def writeSharpStmt(sw as SharpWriter) is override
+		assert false, 'not expecting to be called'
 
 	# TODO?
 #	@property
