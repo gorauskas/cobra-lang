@@ -194,8 +194,18 @@ class BlockStmt
 		sw.indent()
 		if top
 			sw.write(top)
+		if _ifInheritsVar
+			name = _ifInheritsVar.name
+			strw = StringWriter()
+			_ifInheritsType.writeSharpRef(SharpWriter(strw))
+			typeName = strw.toString()
+			newName = '_lh_' + name + '_' + typeName.replace('.', '_').replace('<', '_').replace('>', '_')  # replace() is needed for qualified types and generics
+			sw.write('[typeName] [newName] = ([typeName])[name];\n')
+			_ifInheritsVar.useCSNameStack.push(newName)
 		for stmt in _stmts
 			stmt.writeSharpStmt(sw)
+		if _ifInheritsVar
+			_ifInheritsVar.useCSNameStack.pop()
 		if close
 			sw.dedent()
 			sw.write('}\n')
@@ -209,7 +219,9 @@ interface IVar
 
 	pro ifInheritsStack as Stack<of IType>
 
-	get csName as String
+	get sharpName as String
+
+	get useCSNameStack as Stack<of String>
 
 
 class ExpectStmt
@@ -362,7 +374,7 @@ class ForNumericStmt
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		csVar = _var.csName
+		csVar = _var.sharpName
 		sw.write('for ([csVar]=')
 		_start.writeSharpDef(sw)
 		sw.write('; [csVar]')
@@ -425,7 +437,7 @@ class ForEnumerableStmt
 		sw.write(' [helperName] in ')
 		_what.writeSharpDef(sw, false)
 		sw.write(')')  ###
-		_block.writeSharpDef(sw, top='[_var.csName] = [helperName];\n')
+		_block.writeSharpDef(sw, top='[_var.sharpName] = [helperName];\n')
 
 
 class IfStmt
@@ -840,7 +852,7 @@ class UsingStmt
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		name = _var.csName
+		name = _var.sharpName
 		sw.write('// using\n')
 		sw.write('[name] = ')
 		_initExpr.writeSharpDef(sw)

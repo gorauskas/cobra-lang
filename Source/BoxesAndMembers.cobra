@@ -682,22 +682,18 @@ class GenericParam
 		for constraint in _constraints
 			constraint.bindInt()
 
-# TODO:
-#	def asCS()
-#		return _name
-#
-#	def csInit()
-#		return 'default(%s)' % _name
-#
-#	def writeSharpConstraint(sw)
-#		if _constraints
-#			sw.write('where %s  ' % _name)
-#			sep = ''
-#			for constraint in _constraints
-#				sw.write(sep)
-#				constraint.writeSharp(sw)
-#				sep = ', '
-#			sw.write('\n')
+	get csInit as String is override
+		return 'default([_name])'
+
+	def writeSharpConstraint(sw as SharpWriter)
+		if _constraints
+			sw.write('where [_name] :  ')
+			sep = ''
+			for constraint in _constraints
+				sw.write(sep)
+				constraint.writeSharpDef(sw)
+				sep = ', '
+			sw.write('\n')
 
 
 class GenericConstraint
@@ -723,8 +719,9 @@ class GenericConstraint
 
 	def _bindInt is override
 		base._bindInt()
-		# TODO
 
+	def writeSharpConstraint(sw as SharpWriter)  # CC: is abstract
+		pass
 
 class GenericClassConstraint
 	inherits GenericConstraint
@@ -735,8 +732,8 @@ class GenericClassConstraint
 	def construct(token as IToken)
 		base.construct(token)
 
-#	def writeSharp(sw)
-#		sw.write('class')
+	def writeSharpConstraint(sw as SharpWriter)
+		sw.write('class')
 
 
 class GenericStructConstraint
@@ -748,8 +745,8 @@ class GenericStructConstraint
 	def construct(token as IToken)
 		base.construct(token)
 
-#	def writeSharp(sw)
-#		sw.write('struct')
+	def writeSharpConstraint(sw as SharpWriter)
+		sw.write('struct')
 
 
 class GenericCallableConstraint
@@ -761,8 +758,8 @@ class GenericCallableConstraint
 	def construct(token as IToken)
 		base.construct(token)
 
-#	def writeSharp(sw)
-#		sw.write('new')
+	def writeSharpConstraint(sw as SharpWriter)
+		sw.write('new')
 
 
 class GenericTypeConstraint
@@ -800,8 +797,8 @@ class GenericTypeConstraint
 		if not _representedType inherits Class and not _representedType inherits Interface
 			_error('A generic type constraint must be a class or an interface. "[_representedType.name]" is not.')
 
-#	def writeSharp(sw)
-#		sw.write(_representedType.asCS())
+	def writeSharpConstraint(sw as SharpWriter)
+		_representedType.writeSharpRef(sw)
 
 
 
@@ -1040,6 +1037,8 @@ class ClassVar
 	get requiresDotPrefix as bool
 		return _box is not nil and not _name.startsWith('_')
 
+	get useCSNameStack from var
+
 	# TODO @@@ who calls this and when?
 	def symbolForName(name as String, canBeMember as bool) as IMember?
 		t as IType? = if(_ifInheritsStack, _ifInheritsStack.peek() to passthrough, _type)  # CC: get rid of cast and 'as'
@@ -1113,7 +1112,7 @@ class ClassVar
 			_initExpr.writeSharpDef(sw)
 		sw.write(';\n')
 
-	get csName as String
+	get sharpName as String is override
 		return if(_useCSNameStack, _useCSNameStack.peek(), .name)
 
 
@@ -1661,9 +1660,9 @@ class ProperDexer
 		sw.indent()
 		if _coverVar
 			if _coverAccess in ['getset', 'get']
-				sw.write('get { return [_coverVar.csName]; }')
+				sw.write('get { return [_coverVar.sharpName]; }')
 			if _coverAccess in ['getset', 'set']
-				sw.write('set { [_coverVar.csName] = value; }')
+				sw.write('set { [_coverVar.sharpName] = value; }')
 		else
 			if _getPart
 				if .isClassMember
@@ -1930,6 +1929,8 @@ class AbstractLocalVar
 
 	pro isTracked from var
 
+	get useCSNameStack from var
+
 	def addMinFields is override
 		base.addMinFields()
 		if _isImplicit
@@ -1996,7 +1997,7 @@ class AbstractLocalVar
 	def csAssignmentNames as List<of String>
 		return List<of String>(_useCSNameStack)
 
-	get csName as String
+	get sharpName as String is override
 		return if(_useCSNameStack, _useCSNameStack.peek(), .name)
 
 
