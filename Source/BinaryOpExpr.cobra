@@ -603,7 +603,37 @@ class ToQExpr
 			_type = NilableType(_type).bindAll() to NilableType  # CC: axe cast when 'as this' is supported
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		assert false
+		# x to? int     --> ((x is int || x is int?) ? (int?)x : (int?)null)
+		# x to? int?    --> ((x is int || x is int?) ? (int?)x : (int?)null)
+		# ^ but this would cause multiple evaluation of x, so...
+		# x to? int?	--> (int?)CobraImp.ToOrNil(x)
+
+		# x to? string  --> (x as String)
+		# x to? string? --> (x as String)
+		right = .right
+		if right inherits TypeExpr
+			t = right.containedType to IType
+		else if right inherits IdentifierExpr
+			t = right.definition to IType
+		# TODO?: t = t.namedType
+		assert t inherits IType
+		if t inherits NilableType
+			# t = t.theWrappedType to IType  # TODO: revisit if theWrappedType should return nil or not
+			$sharp('t = ((NilableType)t).TheWrappedType;')
+		if t.isReference
+			sw.write('((')
+			.left.writeSharpDef(sw)
+			sw.write(') as ')
+			t.writeSharpRef(sw)
+			sw.write(')')
+		else
+			sw.write('(')
+			t.writeSharpRef(sw)
+			sw.write('?)CobraImp.ToOrNil<')
+			t.writeSharpRef(sw)
+			sw.write('>(')
+			.left.writeSharpDef(sw)
+			sw.write(')')
 
 
 class CoalesceExpr
