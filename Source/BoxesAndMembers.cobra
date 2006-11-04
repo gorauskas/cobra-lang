@@ -349,7 +349,6 @@ class Box
 				sep = ', '
 			sw.write('>')
 
-		sw.write(' : ')
 		.writeSharpInheritance(sw)
 
 		sep = ''
@@ -526,6 +525,7 @@ class Class
 		return 'class'
 
 	def writeSharpInheritance(sw as SharpWriter) is override
+		sw.write(' : ')
 		if _baseClass
 			_baseClass.writeSharpRef(sw)
 			if _baseInterfaces
@@ -571,6 +571,10 @@ class Interface
 
 	get csKeyWord as String is override
 		return 'interface'
+
+	def writeSharpInheritance(sw as SharpWriter) is override
+		if _baseInterfaces
+			sw.write(' : ')
 
 
 class Struct
@@ -860,6 +864,9 @@ class ClassMember  # TODO: rename to BoxMember
 
 	get isInterfaceMember as bool
 		return _box inherits Interface
+
+	get isStructMember as bool
+		return _box inherits Struct
 
 	get requiresThis as bool
 		return not _name.startsWith('_')
@@ -1167,7 +1174,12 @@ class OneCodeBlockMember
 		return _params
 
 	get defaultAccessLevel as String is override
-		return 'public'
+		if .isClassMember or .isStructMember
+			return 'public'
+		else if .isInterfaceMember
+			return ''
+		else
+			throw FallThroughException(this)
 
 	def defaultToVirtual is override
 		for name in ['nonvirtual', 'virtual', 'shared', 'override']
@@ -1731,11 +1743,10 @@ class MemberOverload
 		base._bindInt()
 		# rename the test members of the overload by suffixing them with '_o1' '_o2' etc.
 		i = 1
-# TODO:
-#		for member in _members
-#			if member.testMethod
-#				member.testMethod.name = member.testMethod.name + '_ol' + i.toString()
-#			i += 1
+		for member in _members
+			if member.testMethod
+				member.testMethod.name = member.testMethod.name + '_ol' + i.toString()
+			i += 1
 		# TODO: error if the returnType is different among any members
 		# TODO: error if the two members have the same arguments
 
@@ -1771,6 +1782,18 @@ class TestMethod
 			# base.construct(token, box, 'test_class_'+Utils.capped(box.name), List<of Param>(), .getCompiler().voidType, List<of String>(), List<of INode>(), '')
 			base.construct(token, box, 'test_class_'+Utils.capped(box.name), List<of Param>(), voidType, nil, List<of String>(), '')
 			_forBox = box
+
+	pro name as String
+		"""
+		NamedNode.name does not allow the name to be set because that could mess up dictionaries
+		that index the node by name. However, there are no such dictionaries for TestMethod and
+		MemberOverload() needs to mangle test method names so they don't collide.
+		"""
+		get
+			return base.name
+		set
+			require value
+			_name = value
 
 
 class ConditionPart
