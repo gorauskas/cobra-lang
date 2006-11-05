@@ -1160,6 +1160,8 @@ interface ICodePart
 
 	def addOldExpr(oldExpr as OldExpr)
 
+	get sharpResultVarName as String
+
 
 class OneCodeBlockMember
 	inherits ClassMember
@@ -1185,7 +1187,7 @@ class OneCodeBlockMember
 	var _locals as List<of LocalVar>
 	var _stmts as List<of Stmt>
 	var _hasReturnStmt as bool
-	var _csResultVarName as String?
+	var _sharpResultVarName as String?
 
 	def construct(token as IToken, box as Box, name as String, paramsList as List<of Param>, isNames as List<of String>, docString as String)
 		base.construct(token, box, name, isNames, docString)
@@ -1347,9 +1349,9 @@ class OneCodeBlockMember
 		if _requirePart
 			_requirePart.bindImp()
 		if _ensurePart and _returnType is not nil and _returnType is not .compiler.voidType
-			_csResultVarName = '_lh_result_[_box.makeNextPrivateSerialNumber()]'
+			_sharpResultVarName = '_lh_result_[_box.makeNextPrivateSerialNumber()]'
 		else
-			_csResultVarName = nil
+			_sharpResultVarName = nil
 		for stmt in _stmts
 			stmt.bindImp()
 			stmt.afterStatementBindImp()
@@ -1358,6 +1360,8 @@ class OneCodeBlockMember
 		.compiler.codeMemberStack.pop()
 
 	## Code gen
+
+	get sharpResultVarName from var
 
 	def writeSharpImp(sw as SharpWriter, skipFirst as bool)
 		sw.writeAndIndent('{\n')
@@ -1369,9 +1373,9 @@ class OneCodeBlockMember
 			_requirePart.writeSharpDef(sw)
 		.writeSharpLocals(sw, nil, false)
 		if _ensurePart
-			if _csResultVarName  # set in _bindImp
+			if _sharpResultVarName  # set in _bindImp
 				_returnType.writeSharpRef(sw)
-				sw.write(' [_csResultVarName] = [_returnType.csInit]')
+				sw.write(' [_sharpResultVarName] = [_returnType.csInit];\n')
 			sw.writeAndIndent('try {\n')
 		for stmt in _stmts
 			if skipFirst
@@ -1420,7 +1424,7 @@ class OneCodeBlockMember
 			#	param.name, param.name, param.name))
 
 	def writeSSTHead(sw as SharpWriter)
-		return
+		assert false
 		# TODO
 		#sw.write('CobraImp.PushFrame("%s", "%s"' % (.box.name, .name))
 		#if not .isShared
@@ -1432,7 +1436,7 @@ class OneCodeBlockMember
 		#sw.writeAndIndent('try {\n')
 
 	def writeSSTTail(sw as SharpWriter)
-		return
+		assert false
 		#sw.indentAndWrite('} catch {\n')
 		#sw.indent()
 		#sw.write('CobraImp.CaughtUncaughtException();\n')
@@ -1876,7 +1880,9 @@ class RequirePart
 		base.construct(token, codeMember, exprs)
 		codeMember.requirePart = this
 
-#	def writeSharp(sw)
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		assert false
 #		sw.write('// require\n')
 #		for expr in _exprs
 #			sw.write('if (!')
@@ -1909,17 +1915,17 @@ class EnsurePart
 			finally
 				_codeMember.removeLocal('result')
 
-#	def writeSharp(sw)
-#		for expr in _exprs
-#			sw.write('if (!')
-#			expr.writeSharp(sw)
-#			sw.write(') ')
-#			sw.indent()
-#			s = expr.toCobraSource()
-#			s = _csStringLitFor(s)
-#			sw.write('throw new EnsureException(%s, %s, %s, null);\n' % (
-#				_csStringLitFor(_token.fileName), _token.lineNum, s))
-#			sw.indent()
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		for expr in _exprs
+			sw.write('if (!')
+			expr.writeSharpDef(sw)
+			sw.write(') ')
+			sw.indent()
+			s = expr.toCobraSource()
+			s = Utils.csStringLitFor(s)
+			sw.write('throw new EnsureException([Utils.csStringLitFor(_token.fileName)], [_token.lineNum], [s], null);\n')
+			sw.indent()
 
 
 ## TODO: Move the below items to Vars.cobra. Put IVar in there too.
@@ -2076,16 +2082,16 @@ class ResultVar
 	The implicit variable `result` used in `ensure` blocks.
 	"""
 
-	def construct(token as IToken, codePart as ICodePart)
-		base.construct(_makeToken(token), codePart.resultType, true)
+	var _sharpName as String
 
-	def _makeToken(token as IToken) as IToken is shared
+	def construct(token as IToken, codePart as ICodePart)
+		base.construct(_makeToken(token, codePart), codePart.resultType, true)
+		_sharpName = codePart.sharpResultVarName
+
+	def _makeToken(token as IToken, codePart as ICodePart) as IToken is shared
 		token = token.copy
 		token.text = 'result'
 		return token
 
-	#._asCS = codeMember.csResultVarName
-
-# TODO
-#	def asCS
-#		return ._asCS
+	get sharpName as String is override
+		return _sharpName
