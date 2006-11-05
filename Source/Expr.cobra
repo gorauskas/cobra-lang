@@ -737,10 +737,13 @@ class OldExpr
 	inherits Expr
 
 	var _expr as Expr
+	var _sharpVarName as String
 
 	def construct(token as IToken, expr as Expr)
 		base.construct(token)
 		_expr = expr
+
+	pro sharpVarName from var
 
 	get name as String
 		return 'old'
@@ -753,25 +756,25 @@ class OldExpr
 		base._bindImp()
 		curCodeMember = .compiler.codeMemberStack.peek()
 		assert curCodeMember
-		curCodeMember.addOldExpr(this)  # will set the csVarName
+		curCodeMember.addOldExpr(this)  # will set the sharpVarName
 		_expr.bindImp()
 		_type = _expr.type
 		assert _type
 
-# TODO:
-#	def genCSAssignment(self, out):
-#		assert self.didBindImp
-#		assert self.csVarName
-#		assert self.type
-#		sw.write('%s %s = ' % (self.type.asCS(), self.csVarName))
-#		self.expr.genCS(out)
-#		sw.write(';\n')
+	def writeSharpAssignment(sw as SharpWriter)
+		require
+			.didBindImp
+			.sharpVarName
+			.type
+		code
+			sw.write('[.type.sharpRef] [_sharpVarName] = ')
+			_expr.writeSharpDef(sw)
+			sw.write(';\n')
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		assert false
-#		assert self.csVarName
-#		# this gets called when generating the `ensure` code
-#		sw.write(self.csVarName)
+		assert _sharpVarName
+		# this gets called when generating the `ensure` code
+		sw.write(_sharpVarName)
 
 
 class PostCallExpr
