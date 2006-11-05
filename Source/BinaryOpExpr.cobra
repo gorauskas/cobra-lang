@@ -346,9 +346,11 @@ class BinaryMathExpr
 				throw FallThroughException({'lt': lt, 'rt': rt})
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		intType = .compiler.intType
 		left = _left
 		right = _right
 		op = ''
+		pre = ''
 		sep = ','  # for the method call case
 		branch _op
 			on 'PLUS'
@@ -361,6 +363,8 @@ class BinaryMathExpr
 				op = 'CobraImp.PowerTo('
 			on 'SLASH'
 				op = '/'
+				if _left.isKindOf(intType) and _right.isKindOf(intType)
+					pre = '(decimal)'
 			on 'SLASHSLASH'
 				if left.isKindOf(.compiler.intType) and right.isKindOf(.compiler.intType)
 					op = '/'
@@ -377,6 +381,7 @@ class BinaryMathExpr
 			else
 				throw FallThroughException(_op)
 		assert op
+		sw.write(pre)
 		if op.length==1
 			_left.writeSharpDef(sw)
 			sw.write(op)
