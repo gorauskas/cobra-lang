@@ -550,6 +550,8 @@ class Class
 			_baseClass.writeSharpRef(sw)
 			if _baseInterfaces
 				sw.write(', ')
+			else
+				sw.write(' ')
 
 
 class Interface
@@ -727,8 +729,6 @@ class GenericConstraint
 	def _bindInt is override
 		base._bindInt()
 
-	def writeSharpConstraint(sw as SharpWriter)  # CC: is abstract
-		pass
 
 class GenericClassConstraint
 	inherits GenericConstraint
@@ -739,7 +739,7 @@ class GenericClassConstraint
 	def construct(token as IToken)
 		base.construct(token)
 
-	def writeSharpConstraint(sw as SharpWriter)
+	def writeSharpDef(sw as SharpWriter) is override
 		sw.write('class')
 
 
@@ -752,7 +752,7 @@ class GenericStructConstraint
 	def construct(token as IToken)
 		base.construct(token)
 
-	def writeSharpConstraint(sw as SharpWriter)
+	def writeSharpDef(sw as SharpWriter) is override
 		sw.write('struct')
 
 
@@ -765,7 +765,7 @@ class GenericCallableConstraint
 	def construct(token as IToken)
 		base.construct(token)
 
-	def writeSharpConstraint(sw as SharpWriter)
+	def writeSharpDef(sw as SharpWriter) is override
 		sw.write('new')
 
 
@@ -804,7 +804,7 @@ class GenericTypeConstraint
 		if not _representedType inherits Class and not _representedType inherits Interface
 			_error('A generic type constraint must be a class or an interface. "[_representedType.name]" is not.')
 
-	def writeSharpConstraint(sw as SharpWriter)
+	def writeSharpDef(sw as SharpWriter) is override
 		_representedType.writeSharpRef(sw)
 
 
@@ -1207,10 +1207,11 @@ class OneCodeBlockMember
 			throw FallThroughException(this)
 
 	def defaultToVirtual is override
-		for name in ['nonvirtual', 'virtual', 'shared', 'override']
-			if name in _isNames
-				return
-		_isNames.add('virtual')
+		if .isClassMember
+			for name in ['nonvirtual', 'virtual', 'shared', 'override']
+				if name in _isNames
+					return
+			_isNames.add('virtual')
 
 	get isCallable as bool is override
 		return true
@@ -1626,8 +1627,12 @@ class ProperDexer
 	get setPart from var
 
 	def defaultToVirtual is override
+		# TODO: dup'ed in OneCodeBlockMember
 		if .isClassMember
-			base.defaultToVirtual()
+			for name in ['nonvirtual', 'virtual', 'shared', 'override']
+				if name in _isNames
+					return
+			_isNames.add('virtual')
 
 	get defaultAccessLevel as String is override
 		if .isClassMember
