@@ -1501,6 +1501,9 @@ class Method
 		base.construct(token, box, name, paramsList, isNames, docString)
 		_returnTypeNode = returnTypeNode
 		_implementsTypeNode = implementsTypeNode
+		# TODO: feels kind of hacky:
+		if 'virtual' in _isNames and _implementsTypeNode
+			_isNames.remove('virtual')
 		_stmts = List<of Stmt>()
 
 	get englishName as String is override
@@ -1513,14 +1516,24 @@ class Method
 	get isCallable as bool is override
 		return true
 
+	def addRefFields is override
+		base.addRefFields()
+		.addField('implementsType', _implementsType)
+
 	def addSubFields is override
 		base.addSubFields()
 		if _implementsTypeNode
 			.addField('implementsTypeNode', _implementsTypeNode)
-		.addField('implementsType', _implementsType)
+
+	get defaultAccessLevel as String is override
+		dal = base.defaultAccessLevel
+		if dal and not _implementsType and not _implementsTypeNode
+			return dal
+		else
+			return ''
 
 	def defaultToVirtual is override
-		if .isClassMember and not _implementsTypeNode
+		if .isClassMember and not _implementsTypeNode and not _implementsType
 			base.defaultToVirtual()
 
 	def _bindImp is override
