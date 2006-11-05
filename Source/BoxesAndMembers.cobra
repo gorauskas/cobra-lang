@@ -56,6 +56,12 @@ class Box
 
 	get overloads from var
 
+	get rootName as String
+		name = .name
+		if name.indexOf('<')<>-1  # List<of>, Dictionary<of,>
+			name = name.substring(0, name.indexOf('<'))
+		return name
+
 	pro testMethod from var
 
 	get isFake as bool
@@ -337,9 +343,7 @@ class Box
 	def writeSharpRef(sw as SharpWriter) is override
 		if _params
 			# generic
-			name = .name
-			if name.indexOf('<')  # List<of>, Dictionary<of,>
-				name = name.substring(0, name.indexOf('<'))
+			name = .rootName
 			sw.write(name)
 			sw.write('<')
 			sep = ''
@@ -355,14 +359,13 @@ class Box
 		base.writeSharpDef(sw)
 		if .isFake
 			return
-		sw.write('[.csKeyWord] [.name]')
+		sw.write('[.csKeyWord] [.rootName]')
 		if _params
 			sw.write('<')
 			sep = ''
 			for param in _params
 				sw.write(sep)
-				assert false, 'TODO'
-				# param.writeSharpRef(sw)
+				param.writeSharpDef(sw)
 				sep = ', '
 			sw.write('>')
 
@@ -377,9 +380,9 @@ class Box
 		if _params
 			sw.indent()
 			for param in _params
-				assert false, 'TO DO'
-				# param.writeSharpConstraint(sw)
-			sw.indent()
+				if param inherits GenericParam
+					param.writeSharpConstraint(sw)
+			sw.dedent()
 
 		sw.writeAndIndent('{\n')
 		if _testMethod
@@ -684,6 +687,10 @@ class GenericParam
 
 	get csInit as String is override
 		return 'default([_name])'
+
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		sw.write(.name)
 
 	def writeSharpConstraint(sw as SharpWriter)
 		if _constraints
