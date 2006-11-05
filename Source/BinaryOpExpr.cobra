@@ -23,15 +23,13 @@ class BinaryOpExpr
 					return AssignExpr(opToken, op, left, right)
 				on 'DOT'
 					return DotExpr(opToken, op, left, right)
-				on 'IMPLIES'
-					return ImpliesExpr(opToken, op, left, right)
 				on 'INHERITS'
 					return InheritsExpr(opToken, op, left, right)
 				on 'IN', 'NOTIN'
 					return InExpr(opToken, op, left, right)
 				on 'IS', 'ISNOT', 'EQ', 'NE', 'LT', 'GT', 'LE', 'GE'
 					return CompareExpr(opToken, op, left, right)
-				on 'AND', 'OR'
+				on 'AND', 'OR', 'IMPLIES'
 					return BinaryBoolExpr(opToken, op, left, right)
 				on 'PLUS', 'MINUS', 'STAR', 'STARSTAR', 'SLASH', 'SLASHSLASH', 'PERCENT'
 					return BinaryMathExpr(opToken, op, left, right)
@@ -287,7 +285,7 @@ class BinaryBoolExpr
 
 	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.construct(opToken, op, left, right)
-		assert op in ['AND', 'OR']
+		assert op in ['AND', 'OR', 'IMPLIES']
 
 	def _bindImp is override
 		base._bindImp()
@@ -298,13 +296,19 @@ class BinaryBoolExpr
 			_right = TruthExpr(_right).bindImp() to TruthExpr # CC: axe cast after "as this"
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if parens
+			sw.write('(')
+		if _op=='IMPLIES'
+			sw.write('!')
 		_left.writeSharpDef(sw)
 		branch _op
 			on 'AND'
 				sw.write('&&')
-			on 'OR'
+			on 'OR', 'IMPLIES'
 				sw.write('||')
 		_right.writeSharpDef(sw)
+		if parens
+			sw.write(')')
 
 
 class BinaryMathExpr
@@ -535,20 +539,6 @@ class InheritsExpr
 			sw.write(')')
 
 
-class ImpliesExpr
-	inherits BinaryOpExpr
-
-	def construct(opToken as IToken, op as String, left as Expr, right as Expr)
-		base.construct(opToken, op, left, right)
-
-	def _bindImp is override
-		base._bindImp()
-		_type = .compiler.boolType
-
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		assert false
-
-
 class AbstractToExpr
 	inherits BinaryOpExpr
 
@@ -753,13 +743,13 @@ class InverseCoalesceAssignExpr
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		assert false
 		# C# doesn't understand ! either
-#		out.write(left.asCS())
-#		out.write('=(')
+#		sw.write(left.asCS())
+#		sw.write('=(')
 #		left.genCS(out)
-#		out.write('==null ? null : ')
+#		sw.write('==null ? null : ')
 #		if not inherits(right.type, NilableType) and not inherits(right.type, NilType):
-#			out.write('(')
+#			sw.write('(')
 #			right.type.genCS(out)
-#			out.write('?)')
+#			sw.write('?)')
 #		right.genCS(out)
-#		out.write(')')
+#		sw.write(')')
