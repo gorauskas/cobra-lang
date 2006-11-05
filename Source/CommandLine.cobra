@@ -58,6 +58,8 @@ class CobraCommandLine
 
 	var _testifyCount as int
 
+	var _failureCount as int
+
 	def handle_testify
 		.handle_testifyPaths([.testPath])
 
@@ -82,6 +84,8 @@ class CobraCommandLine
 		duration = DateTime.now.subtract(_startTime)
 		print
 		print '[_testifyCount] Tests in [duration].'
+		if _failureCount
+			print '[_failureCount] Runtime Failures.'
 		print
 		print message
 
@@ -229,21 +233,30 @@ class CobraCommandLine
 		print 'Compile C#:'
 		c.compileCS()
 
-#		print bar
-#		print 'Run:'
-#		childIn, childOut = os.popen4(c.exeFilename)
-#		output = childOut.read()
-#		sys.stdout.write(output)
-#		if output.lower().find('unhandled exception')!=-1:
-#			print
-#			print
-#			if 0:
-#				# from Module.compile(); not yet adapted:
-#				errors = []
-#				for line in output.split('\n'):
-#					if line.find(' error ')!=-1:
-#						errors.append(line)
-#			raise ExecutionError
+		print bar
+		print 'Run:'
+		p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
+		p.startInfo.fileName = c.exeFileName
+		# TODO: axe p.startInfo.arguments = options + ' ' + csFileNames + ' ' + cobraLangPath
+		#if _verbosity >= 2  # TODO: restore
+		if true
+			print '[p.startInfo.fileName] [p.startInfo.arguments]'
+		p.startInfo.redirectStandardOutput = true
+		p.startInfo.redirectStandardError = true
+		p.startInfo.useShellExecute = false
+		# p.WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
+		p.start()
+		p.waitForExit()
+		output = p.standardOutput.readToEnd()
+		output += p.standardError.readToEnd()
+
+		print 'Output:'
+		print output
+		if output.toLower().indexOf('unhandled exception')<>-1
+			print
+			print
+			print 'RUNTIME TEST FAILURE. SEE ABOVE.'
+			_failureCount += 1
 		print bar
 
 		return 1
