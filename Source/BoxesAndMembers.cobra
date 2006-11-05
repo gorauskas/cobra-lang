@@ -403,28 +403,28 @@ class Box
 		pass
 
 	def writeSharpTest(sw as SharpWriter)
-		# TODO:
-		pass
-#		sw.write('\nstatic %s() { RunTestsIfNeeded(); }\n' % self.name);
-#		sw.write('\nprivate static bool __didStartTests = false;\n');
-#		newWord = not self.baseClass.isFake and ' new' or ''
-#		sw.write('\npublic static%s void RunTestsIfNeeded() { if (!__didStartTests) RunTests(); }\n' % newWord);
-#		sw.write('\npublic static%s void RunTests()' % newWord)
-#		sw.writeAndIndent('{\n')
-#		sw.write('__didStartTests = true;\n');
-#		sw.write('CobraImp.TestBegan("%s");\n' % self.name);
-#		if self.testMethod:
-#			self.testMethod.genCSTestInvocation(sw)
-#		for decl in self.declsInOrder:
-#			decl.genCSTestInvocation(sw)
-#		# TODO: include a class level test
-#		sw.write('CobraImp.TestEnded("%s");\n' % self.name);
-#		sw.indentAndWrite('}\n')
+		sw.write('\nstatic [.rootName]() { RunTestsIfNeeded(); }\n')
+		sw.write('\nprivate static bool __didStartTests = false;\n')
+		newWord = .newForSharpTest
+		sw.write('\npublic static[newWord] void RunTestsIfNeeded() { if (!__didStartTests) RunTests(); }\n')
+		sw.write('\npublic static[newWord] void RunTests()')
+		sw.writeAndIndent(' {\n')
+		sw.write('__didStartTests = true;\n')
+		sw.write('CobraImp.TestBegan("[.name]");\n')
+		if _testMethod
+			sw.write('[_testMethod.sharpName]();\n')
+		for decl in _declsInOrder
+			decl.writeSharpTestInvocation(sw)
+		sw.write('CobraImp.TestEnded("[.name]");\n')
+		sw.dedentAndWrite('}\n')
 
-#	def writeSharpTestInvocation(self, out):
-#		# used by the test option
-#		if not self.isFake:
-#			sw.write('\t\t%s.RunTestsIfNeeded();\n' % self.name)
+	def writeSharpTestInvocation(sw as SharpWriter) is override
+		# used by the test option
+		if not .isFake
+			sw.write('\t\t[.rootName].RunTestsIfNeeded();\n')
+
+	get newForSharpTest as String
+		return ''
 
 
 class Class
@@ -554,6 +554,9 @@ class Class
 				sw.write(', ')
 			else
 				sw.write(' ')
+
+	get newForSharpTest as String is override
+		return if(not _baseClass.isFake, ' new', '')
 
 
 class Interface
@@ -961,7 +964,7 @@ class ClassMember  # TODO: rename to BoxMember
 
 	def writeSharpTestInvocation(sw as SharpWriter)
 		if _testMethod
-			sw.write('[_testMethod.name]();\n')
+			sw.write('[_testMethod.sharpName]();\n')
 
 	def writeSharpParams(sw as SharpWriter)
 		.writeSharpParams(sw, '()')
@@ -1557,7 +1560,7 @@ class Method
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		name = Utils.capped(.name)
+		name = .sharpName
 		returnType = _returnType ? .compiler.voidType to IType  # CC: axe cast
 		if _implementsType
 			name = _implementsType.name + '.' + name  # TODO: is name sufficient?
@@ -1570,6 +1573,9 @@ class Method
 		else
 			.writeSharpImp(sw, false)
 			.writeSharpTest(sw)
+
+	get sharpName as String is override
+		return Utils.capped(.name)
 
 
 class ProperDexer
@@ -1832,7 +1838,7 @@ class TestMethod
 			base.construct(token, box, 'test_class_'+Utils.capped(box.name), List<of Param>(), voidType, nil, List<of String>(), '')
 			_forBox = box
 
-	pro name as String
+	pro name as String # CC: is new
 		"""
 		NamedNode.name does not allow the name to be set because that could mess up dictionaries
 		that index the node by name. However, there are no such dictionaries for TestMethod and
@@ -1843,6 +1849,9 @@ class TestMethod
 		set
 			require value
 			_name = value
+
+	def defaultToVirtual is override
+		_isNames.add('shared')
 
 
 class ConditionPart
