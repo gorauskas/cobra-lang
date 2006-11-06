@@ -819,10 +819,12 @@ class QualifiedType
 			_boundNodes = List<of Container>()  # set by _bindInt()
 			_dottedParentNames = nil
 
+	def addRefFields is override
+		base.addRefFields()
+		.addField('boundNodes', _boundNodes)
+
 	def addSubFields is override
 		base.addSubFields()
-		if _boundNodes
-			.addField('boundNodes', _boundNodes)
 		.addField('initNodes', _initNodes)
 		if _dottedParentNames
 			.addField('dottedParentNames', _dottedParentNames)
@@ -884,7 +886,7 @@ class QualifiedType
 				else
 					assert false, node
 			else
-				node = prevNode.memberForName(initNode.name)
+				node = initNode.memberFrom(prevNode to Container)  # CC: axe cast if "else" is smart about "not nil"
 				if node is nil
 					_error('Cannot find "[initNode.name]" in [prevNode].')
 				if node inherits Container
@@ -907,7 +909,8 @@ class QualifiedType
 	## Code gen
 
 	def writeSharpRef(sw as SharpWriter) is override
-		sw.write('[_dottedParentNames].[_wrappedType.name]')
+		sw.write('[_dottedParentNames].')
+		_wrappedType.writeSharpRef(sw)
 
 	get csInit as String is override
 		cs = _wrappedType.csInit
@@ -998,6 +1001,18 @@ class AbstractTypeIdentifier
 
 	def getHashCode as int is override
 		return _name.getHashCode()
+
+	def memberFrom(container as Container) as IMember?
+		"""
+		Used to get the real member represented by this type identifier in container.
+		Used for qualified types such as:
+			System.Windows.Forms.Control
+			System.Collections.Generic.List<of String>
+		The default implementation is:
+			return container.memberForName(.name)
+		Generics have to do more work, though.
+		"""
+		return container.memberForName(.name)
 
 	def _bindInt is override
 		base._bindInt()
@@ -1125,7 +1140,7 @@ class GenericTypeIdentifier
 
 	var _rootName as String  # ex: 'List'
 	var _fullName as String  # ex: 'List<of String>'
-	var _exactName as String # ex: 'List<of>' 'IDictionary<of,>' -- matches the actual box
+	var _typeRefName as String # ex: 'List<of>' 'IDictionary<of,>' -- matches the actual box
 
 	var _typeNodes as List<of ISyntaxNode>
 
@@ -1139,15 +1154,23 @@ class GenericTypeIdentifier
 			_rootName = rootName
 			_typeNodes = typeNodes
 			_fullName = fullName
-			_exactName = _rootName + '<of'
+			_typeRefName = _rootName + '<of'
 			for i = 0 .. _typeNodes.count-1
-				_exactName += ','
-			_exactName += '>'
+				_typeRefName += ','
+			_typeRefName += '>'
+
+	def memberFrom(container as Container) as IMember? is override
+		genericType = container.memberForName(_typeRefName)
+		_resolveType(genericType)
+		return _actualType
 
 	def _resolveType is override
-		genericType = .compiler.symbolForName(_exactName, Utils.isCapped(_name), false)
+		genericType = .compiler.symbolForName(_typeRefName, Utils.isCapped(_name), false)
+		_resolveType(genericType)
+
+	def _resolveType(genericType as IMember?)
 		if genericType is nil
-			_error('Cannot find a generic type named "[_rootName]".')
+			_error('Cannot find a generic type named "[_typeRefName]".')
 		if genericType inherits IType
 			gt as IType = genericType to IType  # CC: shouldn't need this local. if-inherits looks broken for interfaces
 			if not gt.isGeneric
