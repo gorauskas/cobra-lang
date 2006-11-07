@@ -681,6 +681,7 @@ class WrappedType
 	var _wrappedType as IType?
 	var _wrappedTypeNode as INode?
 	var _hashCode as int?
+	var _didResolveType as bool
 
 	def construct(wrappedType as IType)
 		base.construct()  # TODO: ? pass wrappedType.superType
@@ -692,10 +693,16 @@ class WrappedType
 		_wrappedType = nil
 		_wrappedTypeNode = wrappedTypeNode
 
+	def addMinFields is override
+		base.addMinFields()
+		.addField('didResolveType', _didResolveType)
+
 	def addRefFields is override
 		base.addRefFields()
 		.addField('wrappedTypeNode', _wrappedTypeNode)
 		.addField('wrappedType', _wrappedType)
+
+	get didResolveType from var
 
 	def equals(obj as Object) as bool is override
 		if base.equals(obj)
@@ -726,7 +733,12 @@ class WrappedType
 		return _wrappedType
 
 	get innerType as IType? is override
-		require .didBindImp
+		# TODO: why doesn't this require work?
+		# require .didResolveType
+		# doing this instead
+		if not .didResolveType
+			_resolveType()
+			_wrappedType.bindInt()
 		return _wrappedType.innerType
 
 	def _bindInt is override
@@ -747,6 +759,7 @@ class WrappedType
 		_wrappedType = _wrappedTypeNode.bindAll().namedType
 		if _wrappedType is nil
 			_error('Cannot resolve type.')  # TODO: add the name of the wrappedTypeNode or something
+		_didResolveType = true
 
 	get csInit as String is override
 		return _wrappedType.csInit
@@ -1017,6 +1030,7 @@ class AbstractTypeIdentifier
 	def _bindInt is override
 		base._bindInt()
 		_resolveType()
+		_actualType.bindInt()
 
 	def _bindImp is override
 		base._bindImp()
@@ -1033,6 +1047,7 @@ class AbstractTypeIdentifier
 		"""
 		Subclasses must override. No need to invoke base.
 		"""
+		ensure .actualType
 		pass
 
 
