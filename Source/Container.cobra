@@ -138,6 +138,8 @@ class Container
 			.compiler
 		code
 			# TODO: some code dup with IType
+			if .serialNum==type.serialNum
+				assert Object.referenceEquals(this, type)
 			if this is type
 				return true
 			if type is .compiler.passThroughType
@@ -152,7 +154,24 @@ class Container
 				if not type.didBindInt  # TODO: shouldn't need this
 					type.bindInt()
 				return .isAssignableTo(type.theWrappedType to passthrough)  # CC: weird cast
-			return .isDescendantOf(type)
+			result = .isDescendantOf(type)
+			# TODO: lameness follows. all revolves around generics and constructed types
+			if not result
+				if .name==type.name
+					# Tests\400-generics\100-use-generics-collections\320-pass-generic-return-value.cobra
+					result = true
+				else if this inherits Class and type inherits Interface and .isGeneric and type.isGeneric
+					if .name.toLower() in type.name.toLower()
+						# \Tests\400-generics\100-use-generics-collections\300-use-ilist.cobra
+						result = true
+				if false
+					print
+					print '<> isAssignableTo'
+					print '...this = ' stop
+					.writeDeepString()
+					print '...type = ' stop
+					type.writeDeepString()
+			return result
 
 	def isDescendantOf(type as IType) as bool
 		require

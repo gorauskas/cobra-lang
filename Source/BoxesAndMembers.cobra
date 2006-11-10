@@ -11,6 +11,7 @@ class Box
 	# TODO: need to override greatestCommonDenominatorWith() to handle base interfaces
 
 	var _params as List<of IType>  # as in generic parameters
+	var _genericTypeDef as Box?
 	var _constructedTypes as Dictionary<of String, IType>?
 
 	var _baseInterfaceNodes as List<of INode>
@@ -45,6 +46,10 @@ class Box
 		base.addMinFields()
 		.addField('isGeneric', .isGeneric)
 		.addField('isGenericDef', .isGenericDef)
+
+	def addRefFields is override
+		base.addRefFields()
+		.addField('genericTypeDef', _genericTypeDef)
 
 	def addSubFields is override
 		base.addSubFields()
@@ -278,9 +283,16 @@ class Box
 		require .isGeneric
 		return _params
 
+	get genericTypeDef from var
+		"""
+		Returns the generic type definition that this box was created from, if any.
+		"""
+
 	def constructedTypeFor(typeArgs as List<of IType>) as IType is override
 		require  # TODO: inherit this from the interface instead
 			.isGeneric
+			.isGenericDef
+			.containsGenericParameters
 			typeArgs.count==.params.count
 		code
 			if _constructedTypes is nil
@@ -301,14 +313,33 @@ class Box
 				return c[key]
 
 			t = .memberwiseClone() to Box
-			t.cloneCollections()
-			for i = 0 .. typeArgs.count
-				#t.params[i] = typeArgs[i]
-				$sharp(r't.Params[i] = typeArgs[i]')
-			# TODO: should be cloning the declarations to also incorporate the typeArgs where they happen to refer to generic params
+			t._completeConstruction(this, typeArgs, key)
 			# CC: _contructedTypes[key] = t
 			c[key] = t
 			return t
+
+	def _completeConstruction(genericDef as Box, typeArgs as List<of IType>, key as String)
+		require
+			genericDef.isGeneric
+		code
+			_serialNum = _nextNodeSerialNum
+			_nextNodeSerialNum += 1
+			_name = '[.rootName]<of [key]>'
+			_genericTypeDef = genericDef
+			.cloneCollections()
+			for i = 0 .. typeArgs.count
+				#t.params[i] = typeArgs[i]
+				$sharp(r'_params[i] = typeArgs[i]')
+			for i = 0 .. _baseInterfaces.count
+				if _baseInterfaces[i].isGenericDef
+					_baseInterfaces[i] = _baseInterfaces[i].constructedTypeFor(typeArgs) to Interface
+
+			# TODO: ? should be cloning the declarations to also incorporate the typeArgs where they happen to refer to generic params
+			# ^ or this already covered by DotExpr._bindExpr()?
+
+			#newDecls = List<of IMember>()
+			#for decl in _declsInOrder
+			#	decl = decl.constructedTypeFor(
 
 	def cloneCollections is override
 		base.cloneCollections()
