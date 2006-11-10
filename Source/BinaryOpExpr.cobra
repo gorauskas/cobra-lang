@@ -196,7 +196,10 @@ class NumericPromoExpr
 		tpassthrough = .compiler.passThroughType
 		tstring = .compiler.libraryType('System', 'String')
 		cannotMix = false
-		if _left.isKindOf(tint)
+		leftType = _left.type
+		if leftType inherits NilableType
+			$sharp('leftType = ((NilableType)leftType).TheWrappedType;')
+		if leftType.isDescendantOf(tint)
 			if _right.isKindOf(tint)
 				# special case: true division
 				# if both sides are ints, the type becomes decimal
@@ -208,7 +211,7 @@ class NumericPromoExpr
 				_type = tdecimal
 			else if _right.isKindOf(tfloat)
 				_type = tfloat
-		else if _left.isKindOf(tdecimal)
+		else if leftType.isDescendantOf(tdecimal)
 			if _right.isKindOf(tdecimal)
 				_type = tdecimal
 			else if _right.isKindOf(tint)
@@ -217,7 +220,7 @@ class NumericPromoExpr
 				cannotMix = true
 			else
 				cannotMix = true
-		else if _left.isKindOf(tfloat)
+		else if leftType.isDescendantOf(tfloat)
 			if _right.isKindOf(tfloat)
 				_type = tfloat
 			else if _right.isKindOf(tint)
@@ -226,7 +229,7 @@ class NumericPromoExpr
 				cannotMix = true
 			else
 				cannotMix = true
-		else if _left.isKindOf(tstring)
+		else if leftType.isDescendantOf(tstring)
 			if _right.isKindOf(tstring)
 				_type = tstring
 			else
@@ -236,6 +239,13 @@ class NumericPromoExpr
 				_type = tpassthrough
 			else
 				_error('Cannot mix types [_left.type.name] and [_right.type.name] for arithmetic.')
+
+		# enable for superstacktrace
+		#left = _left
+		#leftType = _left.type
+		#right = _right
+		#rightType = _right.type
+
 		assert _type
 
 
