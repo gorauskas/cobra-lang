@@ -28,6 +28,12 @@ static public class CobraCore {
 		}
 	}
 
+	static public bool HasSuperStackTrace {
+		get {
+			return CobraImp.HasSuperStackTrace;
+		}
+	}
+
 	static public void DumpStack() {
 		CobraImp.DumpStack();
 	}
@@ -479,6 +485,12 @@ static public class CobraImp {
 
 
 	/// Super Stack Trace!
+
+	static public bool HasSuperStackTrace {
+		get {
+			return _badStackCopy!=null;
+		}
+	}
 
 	static private Stack<CobraFrame> _superStack = new Stack<CobraFrame>();
 	static private Stack<CobraFrame> _badStackCopy = null;
