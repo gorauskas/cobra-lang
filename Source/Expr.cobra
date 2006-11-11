@@ -543,11 +543,29 @@ class IfExpr
 		base._bindImp()
 		tpart = _tpart
 		fpart = _fpart
-		_cond.bindImp()
-		if not _cond.type.isDescendantOf(.compiler.boolType)
+		hadError = false
+		try
+			_cond.bindImp()
+		catch ne as NodeException
+			if .compiler.recordErrorAndThrow(ne)
+				throw
+			hadError = true
+		if not hadError and not _cond.type.isDescendantOf(.compiler.boolType)
 			_cond = TruthExpr(_cond).bindAll() to TruthExpr  # CC: axe cast when "as this"
-		_tpart.bindImp()
-		_fpart.bindImp()
+		try
+			_tpart.bindImp()
+		catch ne as NodeException
+			if .compiler.recordErrorAndThrow(ne)
+				throw
+			hadError = true
+		try
+			_fpart.bindImp()
+		catch ne as NodeException
+			if .compiler.recordErrorAndThrow(ne)
+				throw
+			hadError = true
+		if hadError
+			return
 		# @@ TODO: use greatest common denominator between the 2 types. Right now if() expects that one inherits the other or one of them is nil.
 		assert tpart.type
 		assert fpart.type
@@ -592,7 +610,11 @@ class IndexExpr
 		base._bindImp()
 		_target.bindImp()
 		for arg in _args
-			arg.bindImp()  # TODO: error recovery
+			try
+				arg.bindImp()
+			catch ne as NodeException
+				if .compiler.recordErrorAndThrow(ne)
+					throw
 		if _type is nil
 			# CC: use a list comprehension to get the types
 			# _target.type.indexType(for arg in _args get arg.type)
@@ -823,7 +845,11 @@ class PostCallExpr
 	def _bindImp is override
 		base._bindImp()
 		for arg in _args
-			arg.bindImp()
+			try
+				arg.bindImp()
+			catch ne as NodeException
+				if .compiler.recordErrorAndThrow(ne)
+					throw
 		_expr.bindImp()
 		if _expr inherits TypeExpr
 			assert _expr.containedType
@@ -1238,7 +1264,11 @@ class StringSubstLit
 	def _bindImp is override
 		base._bindImp()
 		for item in _items
-			item.bindImp()
+			try
+				item.bindImp()
+			catch ne as NodeException
+				if .compiler.recordErrorAndThrow(ne)
+					throw
 		if not _type
 			_type = .compiler.libraryType('System', 'String')
 
@@ -1382,8 +1412,16 @@ class ListLit
 
 	def _bindImp is override
 		base._bindImp()
+		hadError = false
 		for expr in _exprs
-			expr.bindImp()
+			try
+				expr.bindImp()
+			catch ne as NodeException
+				if .compiler.recordErrorAndThrow(ne)
+					throw
+				hadError = true
+		if hadError
+			return
 		if _type is nil
 			exprs = _exprs
 			if exprs.count==0
@@ -1445,9 +1483,22 @@ class DictLit
 
 	def _bindImp is override
 		base._bindImp()
+		hadError = false
 		for entry in _entries
-			entry[0].bindImp()
-			entry[1].bindImp()
+			try
+				entry[0].bindImp()
+			catch ne as NodeException
+				if .compiler.recordErrorAndThrow(ne)
+					throw
+				hadError = true
+			try
+				entry[1].bindImp()
+			catch ne as NodeException
+				if .compiler.recordErrorAndThrow(ne)
+					throw
+				hadError = true
+		if hadError
+			return
 		if .type is nil
 			entries = _entries
 			if _entries.count==0
