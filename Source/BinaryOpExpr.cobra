@@ -121,6 +121,18 @@ class BinaryOpExpr
 		.addField('left', _left)
 		.addField('right', _right)
 
+	def toCobraSource as String is override
+		return '[_left.toCobraSource()] [_op] [_right.toCobraSource()]'
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if parens
+			sw.write('(')
+		_writeSharpDef(sw)
+		if parens
+			sw.write(')')
+
+	def _writeSharpDef(sw as SharpWriter)
+		pass
 
 class AssignExpr
 	inherits BinaryOpExpr
@@ -160,9 +172,7 @@ class AssignExpr
 					if _right.definition inherits ClassVar
 						.compiler.warning(this, 'Setting a parameter to a class variable is often a mistake. You may want to reverse the assignment.')
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		if parens
-			sw.write('(')
+	def _writeSharpDef(sw as SharpWriter) is override
 		# TODO:
 		# if trackLocal:
 		#	out.write('CobraImp.SetLocal("%s", ' % self.left.name)
@@ -176,11 +186,12 @@ class AssignExpr
 					sw.write(sharpNames[i])
 				handled = true
 		if not handled
-			_left.writeSharpDef(sw)
+			# for something like "p.total = 0", cannot generate "(p.Total)=0" because then C# sees
+			# the left hand side as an r-value instead an l-value/target. hence the false below.
+			_left.writeSharpDef(sw, false)
 		sw.write('=')
 		_right.writeSharpDef(sw)
-		if parens
-			sw.write(')')
+
 
 class NumericPromoExpr
 	inherits BinaryOpExpr
@@ -267,7 +278,7 @@ class AugAssignMathExpr
 		base._bindImp()
 		# TODO: does NumericPromoExpr cover everything we need?
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def _writeSharpDef(sw as SharpWriter) is override
 		left = _left
 		right = _right
 		op = ''
@@ -317,9 +328,7 @@ class BinaryBoolExpr
 		if _right.type is not .compiler.boolType
 			_right = TruthExpr(_right).bindImp() to TruthExpr # CC: axe cast after "as this"
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		if parens
-			sw.write('(')
+	def _writeSharpDef(sw as SharpWriter) is override
 		if _op=='IMPLIES'
 			sw.write('!')
 		_left.writeSharpDef(sw)
@@ -329,8 +338,6 @@ class BinaryBoolExpr
 			on 'OR', 'IMPLIES'
 				sw.write('||')
 		_right.writeSharpDef(sw)
-		if parens
-			sw.write(')')
 
 
 class BinaryMathExpr
@@ -367,7 +374,7 @@ class BinaryMathExpr
 			else
 				throw FallThroughException({'lt': lt, 'rt': rt})
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def _writeSharpDef(sw as SharpWriter) is override
 		intType = .compiler.intType
 		left = _left
 		right = _right
@@ -439,9 +446,7 @@ class CompareExpr
 		base._bindImp()
 		_type = .compiler.boolType
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		if parens
-			sw.write('(')
+	def _writeSharpDef(sw as SharpWriter) is override
 		left = _left
 		right = _right
 		op = _op
@@ -473,8 +478,6 @@ class CompareExpr
 			left.writeSharpDef(sw)
 			sw.write(',')
 			right.writeSharpDef(sw)
-			sw.write(')')
-		if parens
 			sw.write(')')
 
 
@@ -512,7 +515,7 @@ class DotExpr
 		else
 			return nil
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def _writeSharpDef(sw as SharpWriter) is override
 		# don't write 'this' for shared members
 		writeThis = true
 		if _left inherits ThisLit
@@ -527,7 +530,7 @@ class DotExpr
 			else if _right inherits MemberExpr
 				writeThis = not _right.definition.isShared
 		if writeThis
-			_left.writeSharpDef(sw, false)  # TODO: is false okay here?
+			_left.writeSharpDef(sw, not _left inherits DotExpr)
 			sw.write('.')
 		_right.writeSharpDef(sw, false)
 
@@ -565,14 +568,10 @@ class InheritsExpr
 		base._bindImp()
 		_type = .compiler.boolType
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		if parens
-			sw.write('(')
+	def _writeSharpDef(sw as SharpWriter) is override
 		_left.writeSharpDef(sw, false)  # TODO: is false okay here?
 		sw.write(' is ')
 		_right.writeSharpDef(sw, false)
-		if parens
-			sw.write(')')
 
 
 class AbstractToExpr
@@ -606,20 +605,16 @@ class ToExpr
 		if _left inherits NilLiteral and not (_type inherits NilableType or _type inherits PassThroughType)
 			_error('Cannot cast nil to a non-nil type.')
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def _writeSharpDef(sw as SharpWriter) is override
 		if _right inherits TypeExpr
 			if _right.containedType is .compiler.passThroughType
 				_left.writeSharpDef(sw)
 				return
 		parens = true
-		if parens
-			sw.write('(')
 		sw.write('(')
-		_right.writeSharpDef(sw)
+		_right.writeSharpDef(sw, false)  # double parens would be pointless and also causes a C# error
 		sw.write(')')
 		_left.writeSharpDef(sw)
-		if parens
-			sw.write(')')
 
 
 class ToQExpr
@@ -633,7 +628,7 @@ class ToQExpr
 		if not _type inherits NilableType
 			_type = NilableType(_type).bindAll() to NilableType  # CC: axe cast when 'as this' is supported
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def _writeSharpDef(sw as SharpWriter) is override
 		# x to? int     --> ((x is int || x is int?) ? (int?)x : (int?)null)
 		# x to? int?    --> ((x is int || x is int?) ? (int?)x : (int?)null)
 		# ^ but this would cause multiple evaluation of x, so...
@@ -652,19 +647,16 @@ class ToQExpr
 			# t = t.theWrappedType to IType  # TODO: revisit if theWrappedType should return nil or not
 			$sharp('t = ((NilableType)t).TheWrappedType;')
 		if t.isReference
-			sw.write('((')
+			sw.write('(')
 			.left.writeSharpDef(sw)
 			sw.write(') as ')
 			t.writeSharpRef(sw)
-			sw.write(')')
 		else
-			sw.write('(')
 			t.writeSharpRef(sw)
 			sw.write('?)CobraImp.ToOrNil<')
 			t.writeSharpRef(sw)
 			sw.write('>(')
 			.left.writeSharpDef(sw)
-			sw.write(')')
 
 
 class CoalesceExpr
@@ -690,14 +682,10 @@ class CoalesceExpr
 			# the catch all case
 			_type = _left.type  # TODO: should be greatest common denominator between the two
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		if parens
-			sw.write('(')
+	def _writeSharpDef(sw as SharpWriter) is override
 		_left.writeSharpDef(sw)
 		sw.write(' ?? ')
 		_right.writeSharpDef(sw)
-		if parens
-			sw.write(')')
 
 
 class InverseCoalesceExpr
@@ -724,9 +712,7 @@ class InverseCoalesceExpr
 			# the catch all case
 			_type = _left.type  # TODO: should be greatest common denominator between the two
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		if parens
-			sw.write('(')
+	def _writeSharpDef(sw as SharpWriter) is override
 		_left.writeSharpDef(sw)
 		sw.write('==null ? null : ')
 		if not _right.type inherits NilableType and not _right.type inherits NilType
@@ -734,8 +720,6 @@ class InverseCoalesceExpr
 			_right.type.writeSharpRef(sw)
 			sw.write('?)')
 		_right.writeSharpDef(sw)
-		if parens
-			sw.write(')')
 
 
 class CoalesceAssignExpr
@@ -753,7 +737,7 @@ class CoalesceAssignExpr
 		# TODO: error check that the right hand type is not nilable?
 		_type = _right.type
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def _writeSharpDef(sw as SharpWriter) is override
 		# L = L * R
 		_left.writeSharpDef(sw)
 		sw.write(' = ')
@@ -776,7 +760,7 @@ class InverseCoalesceAssignExpr
 		# TODO: any error checks here?
 		_type = _left.type
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def _writeSharpDef(sw as SharpWriter) is override
 		assert false
 		# C# doesn't understand ! either
 #		sw.write(left.asCS())
