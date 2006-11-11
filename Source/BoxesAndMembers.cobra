@@ -219,9 +219,17 @@ class Box
 				param.bindInt()
 			for decl in _declsInOrder
 				assert not decl is this, this
-				decl.bindInt()
+				try
+					decl.bindInt()
+				catch ce as CobraException
+					if .recordErrorAndThrow(ce)
+						throw
 			for ol in _overloads
-				ol.bindInt()
+				try
+					ol.bindInt()
+				catch ce as CobraException
+					if .recordErrorAndThrow(ce)
+						throw
 			if _testMethod
 				_testMethod.bindInt()
 		finally
@@ -231,25 +239,29 @@ class Box
 		# structs, classes and interfaces can all have 0 or more interfaces they inherit/implement
 		assert _baseInterfaceNodes is not nil, this
 		for node in _baseInterfaceNodes
-			baseWhat = node.bindInt().namedType
-			# TODO: strongly consider getting rid of QualifiedType and using TypeIdentifier in its place
-			if baseWhat inherits QualifiedType
-				baseWhat.bindInt()
-			if baseWhat is nil
-				assert false, 'When does this happen?'
-				_error('Cannot locate [node].')
-			else if baseWhat inherits Interface
-				_baseInterfaces.add(baseWhat)
-				_baseInterfaceTypes.add(baseWhat)
-			else if baseWhat inherits QualifiedType
-				if baseWhat.theWrappedType inherits Interface
-					_baseInterfaces.add(baseWhat.theWrappedType to Interface)
+			try
+				baseWhat = node.bindInt().namedType
+				# TODO: strongly consider getting rid of QualifiedType and using TypeIdentifier in its place
+				if baseWhat inherits QualifiedType
+					baseWhat.bindInt()
+				if baseWhat is nil
+					assert false, 'When does this happen?'
+					_error('Cannot locate [node].')
+				else if baseWhat inherits Interface
+					_baseInterfaces.add(baseWhat)
 					_baseInterfaceTypes.add(baseWhat)
+				else if baseWhat inherits QualifiedType
+					if baseWhat.theWrappedType inherits Interface
+						_baseInterfaces.add(baseWhat.theWrappedType to Interface)
+						_baseInterfaceTypes.add(baseWhat)
+					else
+						assert baseWhat.theWrappedType<>nil, baseWhat.toTechString()
+						_error('Cannot inherit "[baseWhat.theWrappedType.name]" which is a [baseWhat.theWrappedType.englishName].')
 				else
-					assert baseWhat.theWrappedType<>nil, baseWhat.toTechString()
-					_error('Cannot inherit "[baseWhat.theWrappedType.name]" which is a [baseWhat.theWrappedType.englishName].')
-			else
-				_badInterfaceError(baseWhat to IType)  # CC: axe type cast
+					_badInterfaceError(baseWhat to IType)  # CC: axe type cast
+			catch ce as CobraException
+				if .recordErrorAndThrow(ce)
+					throw
 
 	def _badInterfaceError(type as IType)
 		_error('Cannot inherit "[type.name]" which is a [type.englishName].')
@@ -261,9 +273,17 @@ class Box
 		try
 			for decl in _declsInOrder
 				assert not decl is this, this
-				decl.bindImp()
+				try
+					decl.bindImp()
+				catch ce as CobraException
+					if .recordErrorAndThrow(ce)
+						throw
 			for ol in _overloads
-				ol.bindImp()
+				try
+					ol.bindImp()
+				catch ce as CobraException
+					if .recordErrorAndThrow(ce)
+						throw
 			if _testMethod
 				_testMethod.bindImp()
 		finally
@@ -1411,8 +1431,12 @@ class OneCodeBlockMember
 		else
 			_sharpResultVarName = nil
 		for stmt in _stmts
-			stmt.bindImp()
-			stmt.afterStatementBindImp()
+			try
+				stmt.bindImp()
+				stmt.afterStatementBindImp()  # to let expressions know when they are used as statements
+			catch ne as NodeException
+				if .compiler.recordErrorAndThrow(ne)
+					throw
 		if _ensurePart
 			_ensurePart.bindImp()
 		.compiler.codeMemberStack.pop()
@@ -1602,8 +1626,8 @@ class Method
 			base.defaultToVirtual()
 
 	def _bindImp is override
-		base._bindImp()
 		numErrors = .compiler.errors.count
+		base._bindImp()
 		if _implementsTypeNode is not nil
 			_implementsTypeNode.bindAll()
 			assert _implementsTypeNode.namedType

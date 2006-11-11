@@ -104,6 +104,18 @@ class Compiler
 		else
 			return false
 
+	def recordErrorAndThrow(ce as CobraException) as bool
+		"""
+		Node call this to record errors which will actually be thrown if .whenError is ErrorActionEnum.Exit.
+		"""
+		_errors.add(ce)
+		if _whenError==ErrorActionEnum.Exit
+			if _verbosity>1
+				print 'About to throw node error: [ce]'
+			return true
+		else
+			return false
+
 	get cobraExeDir as String
 		"""
 		Returns the directory where cobra.exe is residing.
@@ -144,11 +156,17 @@ class Compiler
 					assert _globalNS
 					parser.globalNS = _globalNS
 					# @@ TODO: assert _globalNS is parser.nameSpaceStack[0]
-					module = parser.parseFileNamed(filename)
+					try
+						module = parser.parseFileNamed(filename)
+					catch ce as CobraException
+						if .recordErrorAndThrow(ce)
+							throw
 					assert module
 					modules.add(module)
 			assert modules
 			_modules.addRange(modules)
+			if _errors
+				_exitFromErrors()
 			return modules
 
 
@@ -281,12 +299,18 @@ class Compiler
 			Node.setCompiler(this)
 			try
 				for module in _modules  # CC: make that _curModule and axe following assignment statement
-					_curModule = module
-					_curModule.bindInt()
+					try
+						_curModule = module
+						_curModule.bindInt()
+					catch ce as CobraException
+						if .recordErrorAndThrow(ce)
+							throw
 			finally
 				Node.setCompiler(nil)
 		finally
 			_isBindingInt = false
+		if _errors
+			_exitFromErrors()
 
 	def bindImp
 		# TODO: bindImp to all existing types
@@ -295,12 +319,18 @@ class Compiler
 			Node.setCompiler(this)
 			try
 				for module in _modules  # CC: make that _curModule and axe following assignment statement
-					_curModule = module
-					_curModule.bindImp()
+					try
+						_curModule = module
+						_curModule.bindImp()
+					catch ce as CobraException
+						if .recordErrorAndThrow(ce)
+							throw
 			finally
 				Node.setCompiler(nil)
 		finally
 			_isBindingImp = false
+		if _errors
+			_exitFromErrors()
 
 	def symbolForName(name as String, canBeMember as bool, haveThis as bool) as IMember?
 		"""
@@ -352,6 +382,12 @@ class Compiler
 				module.writeDeepString(output)
 		finally
 			output.dedent()
+
+	def _exitFromErrors
+		require _errors
+		for error in _errors
+			print error
+		throw CobraException(_errors[0].message)  # CommandLine's testify may want the first error message
 
 
 	##
