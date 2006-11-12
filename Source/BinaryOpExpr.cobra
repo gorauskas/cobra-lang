@@ -134,8 +134,43 @@ class BinaryOpExpr
 	def _writeSharpDef(sw as SharpWriter)
 		pass
 
-class AssignExpr
+class AbstractAssignExpr
 	inherits BinaryOpExpr
+	"""
+	The abstract base class for AssignExpr and AugAssignExpr.
+	"""
+
+	var _trackLocal as bool  # for the super stack trace
+	var _trackName as String?
+
+	def init(opToken as IToken, op as String, left as Expr, right as Expr)
+		base.init(opToken, op, left, right)
+		# CC: axe when constructors are inherited
+
+	def _bindImp is override
+		base._bindImp()
+		if .compiler.hasSuperStackTraceOption
+			if _left inherits AsExpr
+				_trackLocal = _left.definition inherits AbstractLocalVar
+				if _trackLocal
+					_trackName  = (_left.definition to INamedNode).name
+			else if _left inherits IdentifierExpr
+				_trackLocal = _left.definition inherits AbstractLocalVar
+				if _trackLocal
+					_trackName  = (_left.definition to INamedNode).name
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if _trackLocal
+			sw.write('CobraImp.SetLocal("[_trackName]", ')
+		else if parens
+			sw.write('(')
+		_writeSharpDef(sw)
+		if _trackLocal or parens
+			sw.write(')')
+
+
+class AssignExpr
+	inherits AbstractAssignExpr
 
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
@@ -269,6 +304,8 @@ class AugAssignMathExpr
 		someInt / someInt
 	gives a decimal?
 	"""
+
+	# TODO: does not inherit AbstractAssignExpr. Does not participate in super stack trace
 
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
