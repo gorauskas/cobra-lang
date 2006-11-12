@@ -49,13 +49,18 @@ class CobraCommandLine
 	def handle_compile(paths as List<of String>) as Compiler
 		# paths = paths or self.fileList  # TODO
 		c = Compiler(.verbosity)
-		c.whenError = ErrorActionEnum.Exit  # CC: use extended syntax
+		c.whenError = ErrorActionEnum.Record  # CC: use extended init syntax
 		# c.options = _optionDict    # CC: use extended syntax  # TODO
-		c.parseFilesNamed(paths)
-		c.bindInt()
-		c.bindImp()
-		c.writeSharp()
-		c.compileCS()
+		try
+			c.parseFilesNamed(paths)
+			c.bindInt()
+			c.bindImp()
+			c.writeSharp()
+			c.compileCS()
+		catch ce as CobraException  # TODO: have Compiler._exitFromErrors throw a StopCompilationException instead
+			# Each phase of the compiler may throw an exception to stop compilation.
+			# Before doing so, it prints its errors.
+			pass
 		return c
 
 	var _testifyCount as int
@@ -146,7 +151,7 @@ class CobraCommandLine
 			index = firstLine.indexOf('.error.')
 			error = firstLine.substring(index+7).trim().toLower()
 			try
-				c = Compiler(_verbosity, ErrorActionEnum.Throw, WarningActionEnum.Print)
+				c = Compiler(_verbosity, ErrorActionEnum.Exit, WarningActionEnum.Print)
 				c.parseFilesNamed([baseName])
 				c.dumpModulesForTestify(_output, 'Modules after parsing')
 				c.bindInt()
@@ -176,7 +181,7 @@ class CobraCommandLine
 			warning = firstLine.substring(index+9).trim().toLower()
 			# TODO: the following code both checks for warnings to be thrown as well as going through a list of warnings. Seems like it should just need to do one or the other.
 			try
-				c = Compiler(_verbosity, ErrorActionEnum.Throw, WarningActionEnum.Throw)
+				c = Compiler(_verbosity, ErrorActionEnum.Exit, WarningActionEnum.Throw)
 				c.parseFilesNamed([baseName])
 				c.dumpModulesForTestify(_output, 'Modules after parsing')
 				c.bindInt()
