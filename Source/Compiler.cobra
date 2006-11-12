@@ -568,13 +568,15 @@ class Compiler
 			output = p.standardOutput.readToEnd()
 			p.waitForExit()
 
-			print output
-			if output.indexOf('error ')<>-1
-				errors = List<of String>()
-				for line as String in output.split(c'\n')  # CC: axe as
-					if line.indexOf('error ')<>-1
-						errors.add(line)
-				throw CompilationError(errors)
+			hadError = false
+			for line as String in output.split(c'\n')  # CC: axe as
+				if line.indexOf('error ')<>-1
+					_errors.add(SharpCompilationError(line))
+					hadError = true
+				else if line.indexOf('Unreachable code detected')<>-1  # because Cobra forces you to put in a "return" stmt even though you have a "throw" and then C# warns about that  TODO: fix
+					print line
+			if hadError
+				_exitFromErrors()
 
 			# remove C#
 			if Utils.getSO(_options, 'deletegen', 0)
@@ -582,11 +584,26 @@ class Compiler
 					File.delete(csFileName)
 
 
-class CompilationError
+class SharpCompilationError
 	inherits CobraException
 
-	def init(error as List<of String>)
-		base.init('C# compilation error')
+	var _msg as String
+
+	def init(line as String)
+		base.init(line)
+		line = line.trim()
+		i = line.indexOf(': error')
+		if i<>-1
+			# kill the " error CS0234" part
+			j = line.indexOf(':', i+1)
+			line = line.substring(0, i) + line.substring(j) + ' (sharp)'
+			# kill the ".cs"
+			line = line.replace('.cs', '')
+			# translate the line number
+		_msg = line
+
+	get message as String is override
+		return _msg
 
 
 namespace System
