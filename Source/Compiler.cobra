@@ -490,13 +490,17 @@ class Compiler
 	## Generating C#
 	##
 
+	var _moduleFileName_to_sharpToCobraLineNum as Dictionary<of String, Dictionary<of int, int> >
+
 	def writeSharp
 		Node.setCompiler(this)
 		try
+			_moduleFileName_to_sharpToCobraLineNum = Dictionary<of String, Dictionary<of int, int> >()
 			for module in _modules  # CC: make that _curModule and axe following assignment statement
 				if not module.fileName.endsWith('SystemInterfaces.cobra')
 					_curModule = module
-					_curModule.writeSharpDef()
+					sharpToCobraLineNum = _curModule.writeSharpDef()
+					_moduleFileName_to_sharpToCobraLineNum[module.fileName] = sharpToCobraLineNum
 		finally
 			Node.setCompiler(nil)
 
@@ -571,7 +575,7 @@ class Compiler
 			hadError = false
 			for line as String in output.split(c'\n')  # CC: axe as
 				if line.indexOf('error ')<>-1
-					_errors.add(SharpCompilationError(line))
+					_errors.add(SharpCompilationError(line, this))
 					hadError = true
 				else if line.indexOf('Unreachable code detected')<>-1  # because Cobra forces you to put in a "return" stmt even though you have a "throw" and then C# warns about that  TODO: fix
 					print line
@@ -583,23 +587,41 @@ class Compiler
 				for csFileName in csFileNameList
 					File.delete(csFileName)
 
+	def cobraLineNumForSharp(fileName as String, lineNum as int) as int
+		"""
+		Returns the source cobra line number given a filename (sans ".cs") and line number in the
+		generated C#. Used by SharpCompilationError.
+		"""
+		return _moduleFileName_to_sharpToCobraLineNum[fileName][lineNum]
+
 
 class SharpCompilationError
 	inherits CobraException
 
 	var _msg as String
 
-	def init(line as String)
+	def init(line as String, compiler as Compiler)
 		base.init(line)
 		line = line.trim()
 		i = line.indexOf(': error')
 		if i<>-1
 			# kill the " error CS0234" part
 			j = line.indexOf(':', i+1)
-			line = line.substring(0, i) + line.substring(j) + ' (sharp)'
+			line = line.substring(0, i+': error'.length) + line.substring(j)
 			# kill the ".cs"
 			line = line.replace('.cs', '')
 			# translate the line number
+			i = line.indexOf('(')
+			fileName = line.substring(0, i)
+			j = line.indexOf(',', i)
+			lineStr = line.substring(i+1, j-i-1)
+			lineNum as int = int.parse(lineStr)  # CC: axe cast
+			lineNum = compiler.cobraLineNumForSharp(fileName, lineNum)
+			end = line.indexOf(')', j)
+			line = line.substring(0, i+1) + lineNum.toString() + line.substring(end)
+			# add (sharp)
+			if compiler.verbosity
+				line += ' (sharp)'
 		_msg = line
 
 	get message as String is override
