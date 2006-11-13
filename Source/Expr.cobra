@@ -28,6 +28,9 @@ class Expr
 		base.addRefFields()
 		.addField('type', _type)
 
+	get hasError as bool
+		return if(.recordedError, true, false)
+
 	pro type from var
 
 	get receiverType as IType?  # TODO: consider renaming to typeForReceiver.
@@ -100,7 +103,8 @@ class Expr
 		This is broken out because in rare cases, it doesn't apply. (Those classes override this to
 		do nothing.)
 		"""
-		assert .type, this
+		if not .hasError
+			assert .type, this
 
 	def _bindImp is override
 		base._bindImp()
@@ -213,6 +217,14 @@ class CallExpr
 		base.addSubFields()
 		.addField('args', _args)
 
+	get hasError as bool is override
+		if base.hasError
+			return true
+		for arg in _args
+			if arg.hasError
+				return true
+		return false
+
 	get name from var
 
 	get args from var
@@ -321,10 +333,10 @@ class CallExpr
 									for i = 0 .. args.count
 										arg = args[i]
 										paramx = paramsx[i]  # CC: rename paramx to param
-										if arg.recordedError is not nil
+										if arg.hasError
 											break
-										assert arg.didBindImp
-										assert paramx.didBindInt
+										assert arg.didBindImp, arg
+										assert paramx.didBindInt, paramx
 										if not arg.canBeAssignedTo(paramx.type)
 		# TODO
 		#									if paramx.type.__class__.__name__.startswith('GenericParam')
@@ -541,6 +553,17 @@ class IfExpr
 		.addField('tpart', _tpart)
 		.addField('fpart', _fpart)
 
+	get hasError as bool is override
+		if base.hasError
+			return true
+		if _cond.hasError
+			return true
+		if _tpart.hasError
+			return true
+		if _fpart.hasError
+			return true
+		return false
+
 	def _bindImp is override
 		base._bindImp()
 		tpart = _tpart
@@ -608,6 +631,16 @@ class IndexExpr
 		.addField('target', _target)
 		.addField('args', _args)
 
+	get hasError as bool is override
+		if base.hasError
+			return true
+		if _target.hasError
+			return true
+		for arg in _args
+			if arg.hasError
+				return true
+		return false
+
 	def _bindImp is override
 		base._bindImp()
 		_target.bindImp()
@@ -663,6 +696,13 @@ class IsNilExpr
 		base.init(token)
 		_expr = expr
 
+	get hasError as bool is override
+		if base.hasError
+			return true
+		if _expr.hasError
+			return true
+		return false
+
 	def _bindImp is override
 		base._bindImp()
 		_expr.bindImp()
@@ -687,6 +727,13 @@ class IsNotNilExpr
 	def init(token as IToken, expr as Expr)
 		base.init(token)
 		_expr = expr
+
+	get hasError as bool is override
+		if base.hasError
+			return true
+		if _expr.hasError
+			return true
+		return false
 
 	def _bindImp is override
 		base._bindImp()
@@ -793,6 +840,13 @@ class OldExpr
 	get name as String
 		return 'old'
 
+	get hasError as bool is override
+		if base.hasError
+			return true
+		if _expr.hasError
+			return true
+		return false
+
 	def addSubFields is override
 		base.addSubFields()
 		.addField('expr', _expr)
@@ -843,6 +897,16 @@ class PostCallExpr
 		base.addSubFields()
 		.addField('expr', _expr)
 		.addField('args', _args)
+
+	get hasError as bool is override
+		if base.hasError
+			return true
+		if _expr.hasError
+			return true
+		for arg in _args
+			if arg.hasError
+				return true
+		return false
 
 	def _bindImp is override
 		base._bindImp()
@@ -904,6 +968,13 @@ class SharpExpr
 		else
 			assert false, expr
 
+	get hasError as bool is override
+		if base.hasError
+			return true
+		if _expr.hasError
+			return true
+		return false
+
 	def _bindImp is override
 		base._bindImp()
 		_type = .compiler.passThroughType
@@ -939,6 +1010,13 @@ class TruthExpr
 		.addField('expr', _expr)
 
 	get expr from var
+
+	get hasError as bool is override
+		if base.hasError
+			return true
+		if _expr.hasError
+			return true
+		return false
 
 	def _bindImp is override
 		base._bindImp()
@@ -1023,6 +1101,13 @@ class UnaryOpExpr
 		base.init(token)
 		_op = op
 		_expr = expr
+
+	get hasError as bool is override
+		if base.hasError
+			return true
+		if _expr.hasError
+			return true
+		return false
 
 	def _bindImp is override
 		base._bindImp()
@@ -1268,6 +1353,14 @@ class StringSubstLit
 		base.addSubFields()
 		.addField('items', _items)
 
+	get hasError as bool is override
+		if base.hasError
+			return true
+		for item in _items
+			if item.hasError
+				return true
+		return false
+
 	def _bindImp is override
 		base._bindImp()
 		for item in _items
@@ -1322,6 +1415,13 @@ class FormattedExpr
 	get expr from var
 
 	get format from var
+
+	get hasError as bool is override
+		if base.hasError
+			return true
+		if _expr.hasError
+			return true
+		return false
 
 	def _bindImp is override
 		base._bindImp()
@@ -1417,6 +1517,14 @@ class ListLit
 		base.addSubFields()
 		.addField('exprs', _exprs)
 
+	get hasError as bool is override
+		if base.hasError
+			return true
+		for expr in _exprs
+			if expr.hasError
+				return true
+		return false
+
 	def _bindImp is override
 		base._bindImp()
 		hadError = false
@@ -1487,6 +1595,15 @@ class DictLit
 	def addSubFields is override
 		base.addSubFields()
 		.addField('_entries', _entries)
+
+	get hasError as bool is override
+		if base.hasError
+			return true
+		for entry in _entries
+			for expr in entry
+				if expr.hasError
+					return true
+		return false
 
 	def _bindImp is override
 		base._bindImp()
