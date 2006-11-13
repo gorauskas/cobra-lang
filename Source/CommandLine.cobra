@@ -26,15 +26,19 @@ class CommandLine  # TODO: rename to CommandLine
 
 	"""
 
-	get versionString as String
+	get versionString as String is shared
 		return '0.2'
 
 	var _optionSpecs = [
 		{
+			'name': 'about',
+			'description': 'Print the name, copyright, etc. but no usage.',
+			'type': 'main',
+		},
+		{
 			'name': 'compile',
 			'description': 'Compile the library (to DLL) or the program (to EXE) without running the code.',
-			'type': 'bool',
-			'excludes': ['run', 'test'],
+			'type': 'main',
 		},
 		{
 			'name': 'debug',
@@ -61,8 +65,7 @@ class CommandLine  # TODO: rename to CommandLine
 		{
 			'name': 'run',
 			'description': 'Runs the Cobra program. This is the default behavior if specify any Cobra source files.',
-			'type': 'bool',
-			'excludes': ['compile', 'test'],
+			'type': 'main',
 		},
 		{
 			'name': 'superstacktrace',
@@ -73,15 +76,13 @@ class CommandLine  # TODO: rename to CommandLine
 		{
 			'name': 'test',
 			'description': 'Run the unit tests in the code.',
-			'type': 'bool',
-			'excludes': ['compile', 'run'],
+			'type': 'main',
 		},
 		{
 			'name': 'testify',
 			'description': '...',
-			'type': 'bool',
+			'type': 'main',
 			'hidden': true,
-			'excludes': ['run', 'compile', 'test'],
 		},
 		{
 			'name': 'timeit',
@@ -96,6 +97,11 @@ class CommandLine  # TODO: rename to CommandLine
 			'min': 0,
 			'max': 1,
 			'description': 'Enable extra output from Cobra. Mostly useful for debugging Cobra.',
+		},
+		{
+			'name': 'version',
+			'description': 'Print just the version number ([.versionString]).',
+			'type': 'main',
 		},
 	]
 
@@ -137,6 +143,7 @@ class CommandLine  # TODO: rename to CommandLine
 		.parseArgs(args)
 		d = _optionDict
 		paths = _pathList
+		# TODO: use reflection here?
 		if _getOne(d, 'testify')
 			.doTestify(paths)
 		else if _getOne(d, 'run')
@@ -147,6 +154,10 @@ class CommandLine  # TODO: rename to CommandLine
 			.doCompile(paths)
 		else if _getOne(d, 'help')
 			.doHelp()
+		else if _getOne(d, 'version')
+			.doVersion()
+		else if _getOne(d, 'about')
+			.doAbout()
 		else
 			.doRun(paths)
 
@@ -211,6 +222,7 @@ class CommandLine  # TODO: rename to CommandLine
 		# TODO: remove: optionValueList = Dictionary<of String, List<of Object>>()
 		fileList = List<of String>()
 		value = "no-value" to Object  # for typing
+		mainOptions = List<of String>()
 		for arg in args
 			if arg.startsWith(optionPrefix)
 				isOption = true
@@ -249,6 +261,9 @@ class CommandLine  # TODO: rename to CommandLine
 				else
 					cannotProcess = false
 					branch spec['type'] to String
+						on 'main'
+							mainOptions.add(name)
+							value = true
 						on 'bool'
 							if valueStr.toLower() in ['', '+', 'on', 'true', 'yes']
 								value = true
@@ -284,13 +299,15 @@ class CommandLine  # TODO: rename to CommandLine
 
 		# TODO: make the option names case-insensitive
 
-		# TODO: enforce excludes
-
 		# handle synonyms
 		for syn2 in synList  # CC: change syn2 to syn
 			if valueDict.containsKey(syn2)
 				valueDict[synToName[syn2]] = valueDict[syn2]
 				valueDict.remove(syn2)
+
+		# check for more than one main option
+		if mainOptions.count > 1
+			.error('Cannot have these main options at the same time: [Utils.join(", ", mainOptions)]')
 
 		# unpack certain options into specific class fields
 		if valueDict.containsKey('verbosity')
@@ -341,12 +358,7 @@ class CommandLine  # TODO: rename to CommandLine
 
 	def doHelp
 		# CC: multiline string
-		print 'The Cobra Programming Language [.versionString]'
-		print 'Copyright (C) 2003-[DateTime.now.year] by Cobra Language LLC.  All Rights Reserved.'
-		print ''
-		print 'On the net:  http://CobraLang.com/'
-		print 'License:     See License.text in Docs or'
-		print '             http://CobraLang.com/Docs/License.text'
+		.doAbout()
 		print ''
 		print 'Usage:'
 		print ''
@@ -373,6 +385,18 @@ class CommandLine  # TODO: rename to CommandLine
 #    --debug=(full|pdbonly) -- Specify debugging type ('full' is default and enables attaching
 #                              a debugger to a running program)
 #    --reference=Some.dll or -r=Some.dll -- Reference a DLL.
+
+	def doAbout
+		# CC: multiline string
+		print 'The Cobra Programming Language [.versionString]'
+		print 'Copyright (C) 2003-[DateTime.now.year] by Cobra Language LLC.  All Rights Reserved.'
+		print ''
+		print 'On the net:  http://CobraLang.com/'
+		print 'License:     See License.text in Docs or'
+		# TODO: print '             http://CobraLang.com/Docs/License.text'
+
+	def doVersion
+		print .versionString
 
 	## Self Services
 
