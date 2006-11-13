@@ -1,0 +1,159 @@
+"""
+BlindWatchMaker1.cobra
+
+The book is "The Blind Watchmaker" by Richard Dawkins. In Chapter 3,
+"Accumulating Small Changes", Dawkins distinguishes between "single-step
+selection" and "cumulative selection". This doc string is a poor substitute for
+reading the book, but here we go:
+
+Suppose you wish to randomly generate a desired line from Shakespeare:
+
+	Methinks it is like a weasel
+
+Using a "single-step selection", you would generate 28 fresh, random letters at
+a time like so:
+
+	Attempt 1: oufswgonxgjsqvfwlpmhhkhfcrxe
+	Attempt 2: eqnhydvqghckpyzrvayjepnvzbbd
+	Attempt 3: m qekjigucvn pqemcsjmqlbuo q
+	Attempt 4: dsiwcrdgrz fqtytgljqziixjtsw
+	Attempt 5: pplxjtccuzkilknocmtutsvjekrw
+	Attempt 6: jmmj hrbndxyqw iabepvvvx ydy
+	Attempt 7: vbs bgtimbidtmazqwdxtnjdfcap
+	Attempt 8: rqjceuhlmyxjcswztawjuwheugfh
+	Attempt 9: tpu gerxtg  eqnt uvarklegsvv
+
+...until you hit upon the desired line. The odds of success are astronomical.
+You would die before it happened.
+
+But using "cumulative selection", you would only *start* with 28 random letters.
+Thereafter, you reproduce the string with a slight mutation, evaluate its
+fitness with respect to the goal and choose between it or the original. The
+fittest survives and the weakest is cast aside. In this way, progress
+accumulates to reach the goal in seconds even though the micro-engineering was
+still random (mutating the string). That's because the macro-engineering was not
+(selection and reproduction).
+
+This Cobra program demonstrates the above.
+"""
+
+
+class BlindWatchMaker1
+
+	var _random as Random
+
+	def main is shared
+		BlindWatchMaker1().run()
+
+	def init
+		_random = Random()
+
+	def run
+		goal = 'methinks it is like a weasel'
+		alphabet = 'abcdefghijklmnopqrstuvwxyz '
+		duration1 = .runCumulativeSelection(goal, alphabet)
+		duration2 = .runSingleStepSelection(goal, alphabet)
+		factor = duration2 / duration1
+		print 'Single step selection took [Math.round(factor)] times longer than cumulative selection and *still* failed.'
+
+	def runCumulativeSelection(goal as String, alphabet as String) as float
+		ensure
+			result>0
+		body
+			print 'Cumulative Selection:'
+			start = DateTime.now
+			# wip stands for "work in progress"
+			wip = .randomString(goal.length, alphabet)
+			showAttempt = true
+			generation = 1
+			while true
+				score = .score(wip,goal)  # 0..100
+				if showAttempt
+					print '    attempt [generation.toString().padLeft(4)] [wip] ==> [score]%'
+				if score>=100
+					break
+				mutantChar = alphabet[_random.next(alphabet.length)]
+				mutantIndex = _random.next(wip.length)
+				firstPart = wip.substring(0, mutantIndex)
+				secondPart = wip.substring(mutantIndex+1, wip.length-mutantIndex-1)
+				offspring = '[firstPart][mutantChar][secondPart]'
+				if .score(offspring, goal) > .score(wip, goal)
+					# we have a new, improved string
+					showAttempt = true
+					wip = offspring
+				else
+					# the offspring is no better than the parent (and possibly worse)
+					showAttempt = false
+				generation += 1
+			duration = DateTime.now.subtract(start)
+			print '    duration: [duration]'
+			return duration.totalSeconds
+
+	def runSingleStepSelection(goal as String, alphabet as String) as float
+		ensure
+			result>0
+		body
+			print 'Single Step Selection:'
+			start = DateTime.now
+			maxAttempts = 1_000_000
+			reportInterval = 100_000
+			maxScore = 0
+			for i = 0 .. maxAttempts
+				s = .randomString(goal.length, alphabet)
+				if s==goal
+					# this could theoretically happen, but never does
+					print '    !!! SUCCESS !!!'
+					print '    On attempt [i+1], a randomly generated string matched:'
+					print '    [s]'
+					break
+				if .score(s, goal)>maxScore
+					maxScore = .score(s, goal)
+				if (i+1)%reportInterval==0
+					print '    [i+1]...'
+			if s<>goal
+				print '    Giving up after [i] attempts of single step selection.'
+				print '    Maximum score was [maxScore]%.'
+			duration = DateTime.now.subtract(start)
+			print '    duration: [duration]'
+			return duration.totalSeconds
+
+	def randomString(length as int, alphabet as String) as String
+		require
+			length > 0
+			alphabet<>""
+		ensure
+			result.length==length
+		test
+			x = BlindWatchMaker1()
+			assert x.randomString(5, 'ab').length==5
+			s = x.randomString(1000, 'a')
+			for c in s
+				assert c==c'a'
+		body
+			sb = StringBuilder()
+			for i = 0 .. length
+				c = alphabet[_random.next(alphabet.length)]
+				sb.append(c)
+			return sb.toString()
+
+	def score(candidate as String, goal as String) as int
+		"""
+		Returns the score of the candidate string with regards to how closely it
+		matches the goal.
+		"""
+		require
+			candidate.length==goal.length
+		ensure
+			result>=0 and result<=100
+		test
+			bwcc = BlindWatchMaker1()
+			assert bwcc.score('aoeu', 'aoeu')==100
+			assert bwcc.score('aabb', 'aacc')==50
+			assert bwcc.score('a b ', 'axbx')==50
+		body
+			score = 0
+			for i = 0 .. goal.length
+				if candidate[i]==goal[i]
+					score += 1
+			value = (score / goal.length * 100) to int
+			return value
