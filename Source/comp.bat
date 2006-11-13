@@ -1,2 +1,3 @@
 cls
-cobra-stable --editor=uedit32_FILE/LINE --compile --sst cobra.cobra Utils.cobra CommandLine.cobra Compiler.cobra IndentedWriter.cobra Tokenizer.cobra CobraTokenizer.cobra Misc.cobra Enums.cobra OperatorSpecs.cobra Node.cobra Container.cobra NameSpace.cobra Module.cobra BoxesAndMembers.cobra Property.cobra Indexer.cobra Types.cobra Expr.cobra BinaryOpExpr.cobra Statements.cobra CobraParser.cobra SharpWriter.cobra
+rem --editor=uedit32_FILE/LINE --compile --sst
+cobra-new --compile %* cobra Utils CommandLine Compiler IndentedWriter Tokenizer CobraTokenizer Misc Enums OperatorSpecs Node Container NameSpace Module BoxesAndMembers Property Indexer Types Expr BinaryOpExpr Statements CobraParser SharpWriter
