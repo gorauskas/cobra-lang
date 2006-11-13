@@ -31,30 +31,10 @@ class CommandLine  # TODO: rename to CommandLine
 
 	var _optionSpecs = [
 		{
-			'name': 'reference',
-			'synonyms': ['r'],
-			'isAccumulator': true,
-			'description': 'Add a DLL reference.',
-		},
-		{
-			'name': 'superstacktrace',
-			'synonyms': ['sst'],
+			'name': 'compile',
+			'description': 'Compile the library (to DLL) or the program (to EXE) without running the code.',
 			'type': 'bool',
-			'description': 'Enable super stack trace which gives great postmortem information for uncaught exceptions, but slows execution.',
-		},
-		{
-			'name': 'verbosity',
-			'synonyms': ['verbose', 'v'],
-			'type': 'int',
-			'min': 0,
-			'max': 1,
-			'description': 'Enable extra output from Cobra. Mostly useful for debugging Cobra.',
-		},
-		{
-			'name': 'help',
-			'synonyms': ['h'],
-			'type': 'bool',
-			'description': 'Display this help message.',
+			'excludes': ['run', 'test'],
 		},
 		{
 			'name': 'debug',
@@ -67,17 +47,28 @@ class CommandLine  # TODO: rename to CommandLine
 			'example': 'uedit32_FILE/LINE',
 		},
 		{
-			'name': 'testify',
-			'description': '...',
+			'name': 'help',
+			'synonyms': ['h'],
 			'type': 'bool',
-			'hidden': true,
-			'excludes': ['run', 'compile', 'test'],
+			'description': 'Display this help message.',
 		},
 		{
-			'name': 'compile',
-			'description': 'Compile the library (to DLL) or the program (to EXE) without running the code.',
+			'name': 'reference',
+			'synonyms': ['r'],
+			'isAccumulator': true,
+			'description': 'Add a DLL reference.',
+		},
+		{
+			'name': 'run',
+			'description': 'Runs the Cobra program. This is the default behavior if specify any Cobra source files.',
 			'type': 'bool',
-			'excludes': ['run', 'test'],
+			'excludes': ['compile', 'test'],
+		},
+		{
+			'name': 'superstacktrace',
+			'synonyms': ['sst'],
+			'type': 'bool',
+			'description': 'Enable super stack trace which gives great postmortem information for uncaught exceptions, but slows execution.',
 		},
 		{
 			'name': 'test',
@@ -86,10 +77,25 @@ class CommandLine  # TODO: rename to CommandLine
 			'excludes': ['compile', 'run'],
 		},
 		{
-			'name': 'run',
-			'description': 'Runs the Cobra program. This is the default behavior if specify any Cobra source files.',
+			'name': 'testify',
+			'description': '...',
 			'type': 'bool',
-			'excludes': ['compile', 'test'],
+			'hidden': true,
+			'excludes': ['run', 'compile', 'test'],
+		},
+		{
+			'name': 'timeit',
+			'description': 'Gives the total duration of running cobra (including the target program, if it is to be run). This is "wall time", not "cpu time".',
+			# although this option is implied by 'testify', the description does not say so, since 'testify' is a hidden option
+			'type': 'bool',
+		},
+		{
+			'name': 'verbosity',
+			'synonyms': ['verbose', 'v'],
+			'type': 'int',
+			'min': 0,
+			'max': 1,
+			'description': 'Enable extra output from Cobra. Mostly useful for debugging Cobra.',
 		},
 	]
 
@@ -276,11 +282,9 @@ class CommandLine  # TODO: rename to CommandLine
 				else
 					.error('Cannot find "[arg]" as a file.')
 
-		# TODO give an error for unknown command line options
+		# TODO: make the option names case-insensitive
 
-		# TODO: remove: # TODO is the options list really needed?
-
-		# TODO make the option names case-insensitive
+		# TODO: enforce excludes
 
 		# handle synonyms
 		for syn2 in synList  # CC: change syn2 to syn
@@ -288,15 +292,17 @@ class CommandLine  # TODO: rename to CommandLine
 				valueDict[synToName[syn2]] = valueDict[syn2]
 				valueDict.remove(syn2)
 
-		_optionDict = valueDict
-		_pathList = fileList
-
 		# unpack certain options into specific class fields
 		if valueDict.containsKey('verbosity')
 			_verbosity = valueDict['verbosity'] to int
+		if not valueDict.containsKey('timeit') and valueDict.containsKey('testify')
+			valueDict['timeit'] = true
+		if valueDict.containsKey('timeit')
+			CobraMain.setTimeIt(valueDict['timeit'] to bool)
 
-		# TODO: enforce excludes
-
+		# set the class vars
+		_optionDict = valueDict
+		_pathList = fileList
 
 	def doCompile(paths as List<of String>) as Compiler
 		# paths = paths or self.fileList  # TODO
