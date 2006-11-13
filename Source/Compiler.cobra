@@ -563,8 +563,7 @@ class Compiler
 			p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
 			p.startInfo.fileName = _cscExecPath
 			p.startInfo.arguments = options + ' ' + csFileNames + ' ' + cobraLangPath
-			#if _verbosity >= 2  # TODO: restore
-			if true
+			if _verbosity >= 2
 				print '[p.startInfo.fileName] [p.startInfo.arguments]'
 			p.startInfo.redirectStandardOutput = true
 			p.startInfo.useShellExecute = false
@@ -577,7 +576,9 @@ class Compiler
 				if line.indexOf('error ')<>-1
 					_errors.add(SharpCompilationError(line, this))
 					hadError = true
-				else if line.indexOf('Unreachable code detected')<>-1  # because Cobra forces you to put in a "return" stmt even though you have a "throw" and then C# warns about that  TODO: fix
+				else if line.indexOf('Unreachable code detected')==-1
+					# ^ TODO: try 'string' in line
+					# because Cobra forces you to put in a "return" stmt even though you have a "throw" and then C# warns about that  TODO: fix
 					print line
 			if hadError
 				_exitFromErrors()
@@ -595,12 +596,14 @@ class Compiler
 		# for some reason the C# filenames come in with a lower case drive letter,
 		# and in 2006 strings are *still* case sensitive.
 		# *sigh*
-		fileName = Utils.capped(fileName)
+		if fileName.length>=2 and fileName[1]==c':'
+			fileName = Utils.capped(fileName)
 
 		# TODO: take out next 3 lines someday. was put in 2006-11-12
 		if not _moduleFileName_to_sharpToCobraLineNum.containsKey(fileName)
+			print '<> Cannot find fileName "[fileName]" in:'
 			for obj in _moduleFileName_to_sharpToCobraLineNum
-				print obj
+				print '   [obj]'
 		sharpToCobraLineNum = _moduleFileName_to_sharpToCobraLineNum[fileName]
 		if sharpToCobraLineNum.containsKey(lineNum)
 			return sharpToCobraLineNum[lineNum]
