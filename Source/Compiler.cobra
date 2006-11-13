@@ -534,15 +534,9 @@ class Compiler
 				for refer in thing to List<of String>
 					options += ' /r:' + refer
 			debug = Utils.getSO(_options, 'debug', nil) to String
-			if debug is nil
-				pass
-			else if debug==1
-				options += ' /debug'
-			else if debug==0
-				options += ' /debug-'
-			else
-				assert debug in ['full', 'pdbonly'], debug
-				options += ' /debug: [debug]'
+			if debug
+				assert debug in ['-', '+', 'full', 'pdbonly'], debug
+				options += ' /debug' + if(debug.length==1, debug, ':[debug]')
 
 			options += ' /out:' + exe
 
@@ -621,8 +615,11 @@ class Compiler
 
 class SharpCompilationError
 	inherits CobraException
+	implements ISourceError
 
 	var _msg as String
+	var _fileName as String?
+	var _lineNum as int?
 
 	def init(line as String, compiler as Compiler)
 		base.init(line)
@@ -646,10 +643,22 @@ class SharpCompilationError
 			# add (sharp)
 			if compiler.verbosity
 				line += ' (sharp)'
+			_fileName = fileName
+			_lineNum = lineNum
 		_msg = line
+
 
 	get message as String is override
 		return _msg
+
+	get hasSourceInfo as bool
+		return _fileName is not nil
+
+	get fileName as String
+		return _fileName to String  # CC: to !
+
+	get lineNum as int
+		return _lineNum to int  # CC: to !
 
 
 namespace System

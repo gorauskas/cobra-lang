@@ -44,7 +44,7 @@ class CommandLine  # TODO: rename to CommandLine
 		},
 		{
 			'name': 'debug',
-			'type': 'bool',
+			'type': 'string',
 			'description': 'Turn on system debugging information. The value 1 implies full, which enables attaching a debugger to a running program.',
 			'args': r'[=0|1|pdbonly|full]'
 		},
@@ -269,29 +269,39 @@ class CommandLine  # TODO: rename to CommandLine
 						valueDict[name] = [valueStr]
 				else
 					cannotProcess = false
-					branch spec['type'] to String
-						on 'main'
-							mainOptions.add(name)
-							value = true
-						on 'bool'
-							if valueStr.toLower() in ['', '+', 'on', 'true', 'yes']
-								value = true
-							else if valueStr.toLower() in ['-', 'off', 'false', 'no']
-								value = false
-							else
-								cannotProcess = true
-						on 'int'
+					if name=='debug'
+						# special case
+						if valueStr=='pdbonly' or valueStr=='full'
+							value = valueStr
+						else
 							try
-								value = int.parse(valueStr)
+								value = .boolForString(valueStr)
 							catch fe as FormatException
 								cannotProcess = true
-							catch oe as OverflowException
-								cannotProcess = true
-							# TODO: check min and max
-						on 'string'
-							if valueStr.length==0
-								cannotProcess = true
-							value = valueStr
+							success
+								value = if(value, '+', '-')
+					else
+						branch spec['type'] to String
+							on 'main'
+								mainOptions.add(name)
+								value = true
+							on 'bool'
+								try
+									value = .boolForString(valueStr)
+								catch fe as FormatException
+									cannotProcess = true
+							on 'int'
+								try
+									value = int.parse(valueStr)
+								catch fe as FormatException
+									cannotProcess = true
+								catch oe as OverflowException
+									cannotProcess = true
+								# TODO: check min and max
+							on 'string'
+								if valueStr.length==0
+									cannotProcess = true
+								value = valueStr
 					if cannotProcess
 						.error('Cannot process value "[value]" for option "[name]".')
 					valueDict[name] = value
@@ -456,12 +466,6 @@ class CommandLine  # TODO: rename to CommandLine
 					print '[leftMarginStr][sub]'
 			if spec.containsKey('example')
 				print '        Example: -[spec["name"]]=[spec["example"]]'
-		# TODO: complete this
-#    --verbosity=N -- choose 0 to 5 for N. synonyms: -v=N, --verbose=N
-#    --debug[=0|1] -- Emit debugging information.
-#    --debug=(full|pdbonly) -- Specify debugging type ('full' is default and enables attaching
-#                              a debugger to a running program)
-#    --reference=Some.dll or -r=Some.dll -- Reference a DLL.
 
 	def doAbout
 		# CC: multiline string
@@ -474,6 +478,14 @@ class CommandLine  # TODO: rename to CommandLine
 
 	def doVersion
 		print .versionString
+
+	def boolForString(s as String) as bool
+		if s.toLower() in ['', '+', 'on', 'true', 'yes']
+			return true
+		else if s.toLower() in ['-', 'off', 'false', 'no']
+			return false
+		else
+			throw FormatException()
 
 	## Self Services
 
