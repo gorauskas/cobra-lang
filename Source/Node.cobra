@@ -28,6 +28,38 @@ class NodeException
 		_message = s + _message
 
 
+interface ISourceError
+	"""
+	All exceptions that represent errors in the Cobra source code being compiled implement ISourceError.
+	"""
+
+	get fileName as String
+
+	get lineNum as int
+
+
+class SyntaxNodeException
+	inherits NodeException
+	implements ISourceError
+
+	var _synNode as ISyntaxNode
+
+	def init(node as ISyntaxNode, msg as String)
+		require
+			node.token
+			node.token.fileName
+			node.token.lineNum
+		body
+			base.init(node, msg)
+			_synNode = node
+
+	get fileName as String
+		return _synNode.token.fileName
+
+	get lineNum as int
+		return _synNode.token.lineNum
+
+
 interface INode
 	"""
 	Just about everything in the Cobra compiler that forms a data
@@ -492,6 +524,11 @@ class SyntaxNode
 	def addMinFields is override
 		base.addMinFields()
 		.addField('token', .token.toTechString())
+
+	def _error(msg as String) is override
+		ne = SyntaxNodeException(this, msg)
+		_recordedError = ne
+		throw ne
 
 	## Code gen
 
