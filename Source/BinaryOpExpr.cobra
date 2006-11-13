@@ -71,7 +71,7 @@ class BinaryOpExpr
 		base.bindImp()
 		assert .didBindImp
 		# TODO: maybe check() should only be invoked if left and right were bound without error
-		.check()  # TODO: rename this to checkFoo()
+		.checkAfterBindImp()
 		.checkForVoids()
 		return this
 
@@ -84,12 +84,13 @@ class BinaryOpExpr
 		assert _left.didBindImp
 		assert _right.didBindImp
 
-	def check
+	def checkAfterBindImp
 		"""
 		Invoked after bindImp() in order to do more error checking.
 		So this is a hook for subclasses to do error checking after
 		left and right have been successfully bound.
 		"""
+		require .didBindImp
 		pass
 
 	def checkForVoids
@@ -147,8 +148,10 @@ class AbstractAssignExpr
 		base.init(opToken, op, left, right)
 		# CC: axe when constructors are inherited
 
-	def _bindImp is override
-		base._bindImp()
+	def checkAfterBindImp is override
+		base.checkAfterBindImp()
+		# can't do the following in a _bindImp() override since type inference is implemented in
+		# a subclass (_left may not have its _definition until after that executes)
 		if .compiler.hasSuperStackTraceOption
 			if _left inherits AsExpr
 				_trackLocal = _left.definition inherits AbstractLocalVar
@@ -198,8 +201,8 @@ class AssignExpr
 			_error('Incompatible types. Cannot assign value of type [right.type.name] on the right to [left.type.name] on the left.')
 		_type = left.type
 
-	def check is override
-		base.check()
+	def checkAfterBindImp is override
+		base.checkAfterBindImp()
 		if _left inherits IdentifierExpr
 			assert _left.definition
 			if _left.definition inherits Param
