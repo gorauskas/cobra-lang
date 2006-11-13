@@ -29,7 +29,9 @@ class CommandLine  # TODO: rename to CommandLine
 	get versionString as String is shared
 		return '0.2'
 
-	var _optionSpecs = [
+	var _optionSpecs as List<of Dictionary<of String, Object> >
+
+	var _rawOptionSpecs = [
 		{
 			'name': 'about',
 			'description': 'Print the name, copyright, etc. but no usage.',
@@ -43,17 +45,19 @@ class CommandLine  # TODO: rename to CommandLine
 		{
 			'name': 'debug',
 			'type': 'bool',
-			'description': 'Turn on system debugging information.',
+			'description': 'Turn on system debugging information. The value 1 implies full, which enables attaching a debugger to a running program.',
+			'args': r'[=0|1|pdbonly|full]'
 		},
 		{
 			'name': 'editor',
 			'description': 'Specify an editor and command line options to invoke if there is a compile-time error. Use underscore (_) for space in the specification.',
 			'example': 'uedit32_FILE/LINE',
+			'args': 'editor_spec_with_FILE_LINE',
 		},
 		{
 			'name': 'help',
 			'synonyms': ['h'],
-			'type': 'bool',
+			'type': 'main',
 			'description': 'Display this help message.',
 		},
 		{
@@ -61,6 +65,7 @@ class CommandLine  # TODO: rename to CommandLine
 			'synonyms': ['r'],
 			'isAccumulator': true,
 			'description': 'Add a DLL reference.',
+			'args': 'Some.dll',
 		},
 		{
 			'name': 'run',
@@ -95,8 +100,9 @@ class CommandLine  # TODO: rename to CommandLine
 			'synonyms': ['verbose', 'v'],
 			'type': 'int',
 			'min': 0,
-			'max': 1,
-			'description': 'Enable extra output from Cobra. Mostly useful for debugging Cobra.',
+			'max': 5,
+			'args': 'N',
+			'description': 'Enable extra output from Cobra. Mostly useful for debugging Cobra. Values 0 - 5.',
 		},
 		{
 			'name': 'version',
@@ -116,6 +122,23 @@ class CommandLine  # TODO: rename to CommandLine
 		_startTime = DateTime.now
 		_output = IndentedWriter(Console.out)
 		_output.indentString = '    '
+		# prep the option specs
+		_optionSpecs = List<of Dictionary<of String, Object> >()
+		for specObj in _rawOptionSpecs
+			# since some _optionSpecs are Dictionary<of String, Object> and others are
+			# Dictionary<of String, String> then _optionSpecs ends up being
+			# Dictionary<of String, Object>
+
+			# CC: if foo is Dictionary<of String, Object>  ... does not seem to work
+			if specObj inherits Dictionary<of String, Object>
+				d = specObj
+			else if specObj inherits Dictionary<of String, String>
+				d = Dictionary<of String, Object>()
+				for key in $sharp('((Dictionary<String, String>)specObj).Keys')
+					d[key to String] = $sharp(r'((Dictionary<String, String>)specObj)[(String)key]')
+			else
+				throw FallThroughException(specObj.getType())
+			_optionSpecs.add(d)
 
 	get cobraTestsPath as String
 		"""
@@ -192,29 +215,15 @@ class CommandLine  # TODO: rename to CommandLine
 		synToName = Dictionary<of String, String>()
 			# ^ maps synonyms to their full names
 		synList = List<of String>()
-		for specObj in _optionSpecs
-			# since some _optionSpecs are Dictionary<of String, Object> and others are
-			# Dictionary<of String, String> then _optionSpecs ends up being
-			# Dictionary<of String, Object>
-
-			# CC: if foo is Dictionary<of String, Object>  ... does not seem to work
-			if specObj inherits Dictionary<of String, Object>
-				d = specObj
-			else if specObj inherits Dictionary<of String, String>
-				d = Dictionary<of String, Object>()
-				for key in $sharp('((Dictionary<String, String>)specObj).Keys')
-					d[key to String] = $sharp(r'((Dictionary<String, String>)specObj)[(String)key]')
-			else
-				throw FallThroughException(specObj.getType())
+		for d in _optionSpecs
 			specDict[d['name'] to String] = d
 			if d.containsKey('synonyms')
 				syns = d['synonyms']
-				if true
-					for syn as String in (syns to System.Collections.IList) # CC: shouldn't need either cast
-						assert not specDict.containsKey(syn), key
-						specDict[syn] = d
-						synToName[syn] = d['name'] to String
-						synList.add(syn)
+				for syn as String in (syns to System.Collections.IList) # CC: shouldn't need either cast
+					assert not specDict.containsKey(syn), syn
+					specDict[syn] = d
+					synToName[syn] = d['name'] to String
+					synList.add(syn)
 			if not d.containsKey('type')
 				d.add('type', 'string')
 
@@ -364,21 +373,62 @@ class CommandLine  # TODO: rename to CommandLine
 		print ''
 		print '  cobra <options> <filename>'
 		print '    * run filename'
-		print '    * compile if necessary'
+		print '    * compile if needed'
 		print '    * .cobra extension is optional'
 		print ''
-		print '  cobra <options> <command> <path>'
-		print '    * path commands are:'
-		print '      --compile ......... compile only'
-		print '      --run ............. run the program (compile if necessary)'
-		print '      --test ............ run the unit tests of a library'
+		print '  cobra <options> <command> <path(s)>'
+		print '    * commands that operate on path(s) are:'
+		print '      -compile ... Compile only.'
+		print '      -run ....... Run the program (compile if necessary).'
+		print '      -test ...... Run the unit tests of a library.'
 		print ''
 		print '  cobra <options> <command>'
 		print '    * standalone commands are:'
-		print '      --about ........... print name, copyright, etc. no usage'
-		print '      --version ......... print just the version number (0.1.4)'
+		print '      -help ...... Print full help information.'
+		print '      -about ..... Print name, copyright, etc. no usage.'
+		print '      -version ... Print just the version number ([.versionString]).'
 		print ''
 		print '  <options> can be:'
+
+		# print options from their specs (but not the main ones which are covered above)
+		leftMargin = 8
+		leftMarginStr = '        '
+		totalWidth = 78  # TODO: get the console width?
+		width = totalWidth - leftMargin
+		for spec in _optionSpecs
+			if spec.containsKey('type') and spec['type']=='main' # CC: spec.get('main', '')
+				continue
+			print
+			print '    -[spec["name"]]' stop
+			if spec.containsKey('args')
+				print '=[spec["args"]]'
+			else if spec['type']=='bool'
+				print r'[=0|1]'
+			else
+				print
+			if spec.containsKey('synonyms')
+				print '    ' stop
+				sep = ''
+				for syn as String in (spec['synonyms'] to System.Collections.IList) # CC: shouldn't need either cast
+					print '[sep]-[syn]' stop
+					sep = ', '
+				print
+			s = spec['description'] to String
+			while s
+				if s.length < width
+					print '[leftMarginStr][s]'
+					s = ''
+				else
+					j = width+1
+					if j >= s.length
+						j = s.length - 1
+					while s[j]<>' '
+						j -= 1
+					sub = s.substring(0, j)
+					s = s.substring(j+1)
+					print '[leftMarginStr][sub]'
+			if spec.containsKey('example')
+				print '        Example: -[spec["name"]]=[spec["example"]]'
 		# TODO: complete this
 #    --verbosity=N -- choose 0 to 5 for N. synonyms: -v=N, --verbose=N
 #    --debug[=0|1] -- Emit debugging information.
