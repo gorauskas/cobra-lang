@@ -4,25 +4,344 @@ Cobra Command Line Program (compiler and more)
 """
 
 
-class CobraCommandLine
+class CobraCommandLine  # TODO: rename to CommandLine
+
+	get versionString as String
+		return '0.2'
+
+	var _optionSpecs = [
+		{
+			'name': 'reference',
+			'synonyms': ['r'],
+			'isAccumulator': true,
+			'description': 'Add a DLL reference.',
+		},
+		{
+			'name': 'superstacktrace',
+			'synonyms': ['sst'],
+			'type': 'bool',
+			'description': 'Enable super stack trace which gives great postmortem information for uncaught exceptions, but slows execution.',
+		},
+		{
+			'name': 'verbosity',
+			'synonyms': ['verbose', 'v'],
+			'type': 'int',
+			'min': 0,
+			'max': 1,
+			'description': 'Enable extra output from Cobra. Mostly useful for debugging Cobra.',
+		},
+		{
+			'name': 'help',
+			'synonyms': ['h'],
+			'type': 'bool',
+			'description': 'Display this help message.',
+		},
+		{
+			'name': 'debug',
+			'type': 'bool',
+			'description': 'Turn on system debugging information.',
+		},
+		{
+			'name': 'editor',
+			'description': 'Specify an editor and command line options to invoke if there is a compile-time error. Use underscore (_) for space in the specification.',
+			'example': 'uedit32_FILE/LINE',
+		},
+		{
+			'name': 'testify',
+			'description': '...',
+			'type': 'bool',
+			'hidden': true,
+			'excludes': ['run', 'compile', 'test'],
+		},
+		{
+			'name': 'compile',
+			'description': 'Compile the library (to DLL) or the program (to EXE) without running the code.',
+			'type': 'bool',
+			'excludes': ['run', 'test'],
+		},
+		{
+			'name': 'test',
+			'description': 'Run the unit tests in the code.',
+			'type': 'bool',
+			'excludes': ['compile', 'run'],
+		},
+		{
+			'name': 'run',
+			'description': 'Runs the Cobra program. This is the default behavior if specify any Cobra source files.',
+			'type': 'bool',
+			'excludes': ['compile', 'test'],
+		},
+	]
 
 	var _startTime as DateTime
 	var _verbosity = 0
 	var _output as IndentedWriter
+
+	var _optionDict as Dictionary<of String, Object>
+	var _pathList as List<of String>
 
 	def init
 		_startTime = DateTime.now
 		_output = IndentedWriter(Console.out)
 		_output.indentString = '    '
 
-	get testPath as String
+	get cobraTestsPath as String
+		"""
+		Only used when --testify is passed with no path.
+		--testify is an "internal" feature of the cobra command line front end.
+		"""
 		return r'C:\All\echuck\Projects\Cobra\Cobra\Tests'
-
-	get versionString as String
-		return '0.2'
 
 	get verbosity as int
 		return _verbosity
+
+	def run
+		"""
+		Run the command line using the command line arguments.
+		"""
+		args = CobraCore.commandLineArgs # CC: [1:] and then axe next line
+		args = args.getRange(1, args.count-1)
+		.run(args)
+
+	def run(args as List<of String>)
+		"""
+		Run the command line using the given arguments.
+		The `args` should include only the arguments and not the executable/program name.
+		"""
+		.parseArgs(args)
+		d = _optionDict
+		paths = _pathList
+		if _getOne(d, 'testify')
+			.doTestify(paths)
+		else if _getOne(d, 'run')
+			.doRun(paths)
+		else if _getOne(d, 'test')
+			.doTest(paths)
+		else if _getOne(d, 'compile')
+			.doCompile(paths)
+		else if _getOne(d, 'help')
+			.doHelp()
+		else
+			.doRun(paths)
+
+	def _getOne(d as Dictionary<of String, Object>, name as String) as bool
+		if d.containsKey(name)
+			value = d[name]
+			if value inherits bool
+				return value
+			else
+				throw FallThroughException(value)
+		else
+			return false
+
+	def parseArgs(args as List<of String>)
+		"""
+		Parse command line arguments.
+		The `args` should include only the arguments and not the executable/program name.
+		Sets _optionDict and _pathList.
+		"""
+		optionPrefix = '-'
+		valuePrefix = c'='
+		# TODO: support a valuePrefix of :
+		# TODO: support an optionPrefix of / on Windows, but not posix
+		if not args
+			.doHelp()
+			return
+
+		specDict = Dictionary<of String, Dictionary<of String, Object> >()
+			# ^ will contain keys for all spec names and their synonyms
+		synToName = Dictionary<of String, String>()
+			# ^ maps synonyms to their full names
+		synList = List<of String>()
+		for specObj in _optionSpecs
+			# since some _optionSpecs are Dictionary<of String, Object> and others are
+			# Dictionary<of String, String> then _optionSpecs ends up being
+			# Dictionary<of String, Object>
+
+			# CC: if foo is Dictionary<of String, Object>  ... does not seem to work
+			if specObj inherits Dictionary<of String, Object>
+				d = specObj
+			else if specObj inherits Dictionary<of String, String>
+				d = Dictionary<of String, Object>()
+				for key in $sharp('((Dictionary<String, String>)specObj).Keys')
+					d[key to String] = $sharp(r'((Dictionary<String, String>)specObj)[(String)key]')
+			else
+				throw FallThroughException(specObj.getType())
+			specDict[d['name'] to String] = d
+			if d.containsKey('synonyms')
+				syns = d['synonyms']
+				if true
+					for syn as String in (syns to System.Collections.IList) # CC: shouldn't need either cast
+						assert not specDict.containsKey(syn), key
+						specDict[syn] = d
+						synToName[syn] = d['name'] to String
+						synList.add(syn)
+			if not d.containsKey('type')
+				d.add('type', 'string')
+
+		valueDict = Dictionary<of String, Object>()
+		# TODO: remove: optionValueList = Dictionary<of String, List<of Object>>()
+		fileList = List<of String>()
+		value = "no-value" to Object  # for typing
+		for arg in args
+			if arg.startsWith(optionPrefix)
+				isOption = true
+				while arg.startsWith(optionPrefix)
+					arg = arg.substring(1)
+			else
+				isOption = false
+			if isOption
+				parts = List<of String>(arg.split($sharp(r'new char[] {valuePrefix}'), 1))  # CC: should not need the List<of String() call
+				if parts.count==1
+					name = parts[0] to String
+					if name.endsWith('+')
+						name = name.substring(0, name.length-1) # [..-1]
+						valueStr = 'on'
+					else if name.endsWith('-')
+						name = name.substring(0, name.length-1) # [..-1]
+						valueStr = 'off'
+					else
+						valueStr = 'on'
+				else
+					assert parts.count==2
+					name = parts[0]
+					valueStr = parts[1]
+				assert name, parts
+				assert valueStr, parts
+				name = Utils.getSS($sharp('synToName'), name, name) to String
+				spec as Dictionary<of String, Object>?
+				if specDict.containsKey(name)
+					spec = specDict[name]
+				if spec and Utils.getSO(spec to passthrough, 'isAccumulator', false)
+					# accumulators are always treated as strings. TODO: assert that
+					if valueDict.containsKey(name)
+						(valueDict[name] to System.Collections.IList).add(valueStr to passthrough)
+					else
+						valueDict[name] = [valueStr]
+				else
+					cannotProcess = false
+					branch spec['type'] to String
+						on 'bool'
+							if valueStr.toLower() in ['', '+', 'on', 'true', 'yes']
+								value = true
+							else if valueStr.toLower() in ['-', 'off', 'false', 'no']
+								value = false
+							else
+								cannotProcess = true
+						on 'int'
+							try
+								value = int.parse(valueStr)
+							catch fe as FormatException
+								cannotProcess = true
+							catch oe as OverflowException
+								cannotProcess = true
+							# TODO: check min and max
+						on 'string'
+							if valueStr.length==0
+								cannotProcess = true
+					if cannotProcess
+						.error('Cannot process value "[value]" for option "[name]".')
+					valueDict[name] = value
+				# TODO: remove: optionValueList.add((name, value))
+			else # not isOption
+				if File.exists(arg)
+					fileList.add(arg)
+				else if File.exists(arg+'.cobra')
+					fileList.add(arg+'.cobra')
+				else if Directory.exists(arg)
+					fileList.add(arg)
+				else
+					.error('Cannot find "[arg]" as a file.')
+
+		# TODO give an error for unknown command line options
+
+		# TODO: remove: # TODO is the options list really needed?
+
+		# TODO make the option names case-insensitive
+
+		# handle synonyms
+		for syn2 in synList  # CC: change syn2 to syn
+			if valueDict.containsKey(syn2)
+				valueDict[synToName[syn2]] = valueDict[syn2]
+				valueDict.remove(syn2)
+
+		# TODO: remove
+		#if 0
+		#	if len(optionList)<>len(optionDict)
+		#		print '<> list = %r' % optionList
+		#		print '<> dict = %r' % optionDict
+		#		assert len(optionList)==len(optionDict)
+		_optionDict = valueDict
+		# TODO: remove: _optionList = optionList
+		_pathList = fileList
+
+		# unpack certain options into specific class fields
+		if valueDict.containsKey('verbosity')
+			_verbosity = valueDict['verbosity'] to int
+
+		# TODO: enforce excludes
+
+
+	def doCompile(paths as List<of String>) as Compiler
+		# paths = paths or self.fileList  # TODO
+		c = Compiler(.verbosity)
+		c.whenError = ErrorActionEnum.Record  # CC: use extended syntax
+		c.options = _optionDict    # CC: use extended syntax  # TODO
+		try
+			c.parseFilesNamed(paths)
+			c.bindInt()
+			c.bindImp()
+			c.writeSharp()
+			c.compileCS()
+		catch ce as CobraException  # TODO: have Compiler._exitFromErrors throw a StopCompilationException instead
+			# Each phase of the compiler may throw an exception to stop compilation.
+			# Before doing so, it prints its errors.
+			pass
+		return c
+
+	def doTestify
+		.doTestify([.cobraTestsPath])
+
+	def doTest(paths as List<of String>)
+		.error('TEST: NOT IMPLEMENTED YET.')
+
+	def doRun(paths as List<of String>)
+		.error('RUN: NOT IMPLEMENTED YET.')
+
+	def doHelp
+		# CC: multiline string
+		print 'The Cobra Programming Language [.versionString]'
+		print 'Copyright (C) 2003-[DateTime.now.year] by Cobra Language LLC.  All Rights Reserved.'
+		print ''
+		print 'On the net:  http://CobraLang.com/'
+		print 'License:     See License.text in Docs or'
+		print '             http://CobraLang.com/Docs/License.text'
+		print ''
+		print 'Usage:'
+		print ''
+		print '  cobra <options> <filename>'
+		print '    * run filename'
+		print '    * compile if necessary'
+		print '    * .cobra extension is optional'
+		print ''
+		print '  cobra <options> <command> <path>'
+		print '    * path commands are:'
+		print '      --compile ......... compile only'
+		print '      --run ............. run the program (compile if necessary)'
+		print '      --test ............ run the unit tests of a library'
+		print ''
+		print '  cobra <options> <command>'
+		print '    * standalone commands are:'
+		print '      --about ........... print name, copyright, etc. no usage'
+		print '      --version ......... print just the version number (0.1.4)'
+		print ''
+		print '  <options> can be:'
+		# TODO: complete this
+#    --verbosity=N -- choose 0 to 5 for N. synonyms: -v=N, --verbose=N
+#    --debug[=0|1] -- Emit debugging information.
+#    --debug=(full|pdbonly) -- Specify debugging type ('full' is default and enables attaching
+#                              a debugger to a running program)
+#    --reference=Some.dll or -r=Some.dll -- Reference a DLL.
 
 	## Self Services
 
@@ -37,46 +356,22 @@ class CobraCommandLine
 		.testifyFinish('Failure.')
 		Environment.exit(codee)
 
-	def run
-		args = CobraCore.commandLineArgs
-		if args.count>1
-			# TODO: resolve:
-			.handle_compile(args.getRange(1, args.count-1))
-			#.handle_testifyPaths([args[1]])
-		else
-			.handle_testify()
 
-	def handle_compile(paths as List<of String>) as Compiler
-		# paths = paths or self.fileList  # TODO
-		c = Compiler(.verbosity)
-		c.whenError = ErrorActionEnum.Record  # CC: use extended init syntax
-		# c.options = _optionDict    # CC: use extended syntax  # TODO
-		try
-			c.parseFilesNamed(paths)
-			c.bindInt()
-			c.bindImp()
-			c.writeSharp()
-			c.compileCS()
-		catch ce as CobraException  # TODO: have Compiler._exitFromErrors throw a StopCompilationException instead
-			# Each phase of the compiler may throw an exception to stop compilation.
-			# Before doing so, it prints its errors.
-			pass
-		return c
+	## Testify
 
 	var _testifyCount as int
 
 	var _failureCount as int
 
-	def handle_testify
-		.handle_testifyPaths([.testPath])
-
-	def handle_testifyPaths(paths as List<of String>)
+	def doTestify(paths as List<of String>)
 		"""
 		Used internally for testing cobra during development.
 		Why not just 'test'? because that is reserved for regular developers to run true unit tests.
 		"""
 		# TODO Console.error = Console.out
-		# TODO: respect command line args: paths = _fileList
+		# TODO: respect command line args: paths = _pathList
+		if paths.count==0
+			paths = [.cobraTestsPath]
 		_testifyCount = 0
 		for pathName in paths
 			if Directory.exists(pathName)
@@ -158,16 +453,9 @@ class CobraCommandLine
 				c.bindImp()
 				c.dumpModulesForTestify(_output, 'Modules after binding')
 			catch ce as CobraException
-				assert c.errors.count>0, ce
-				if c.errors[0].message.toLower().indexOf(error)==-1
+				if ce.message.toLower().indexOf(error)==-1
 					print 'Expecting error substring: **[error]**'
 					print 'Actual error is: **[ce.message]**'
-					if c.errors.count>0
-						print 'All [c.errors.count] errors follows:'
-						errorNum = 1
-						for eachError in c.errors
-							print '[errorNum]. [eachError]'
-							errorNum += 1
 					.exit(1)
 			success
 				print 'Expecting error substring: [error]'
