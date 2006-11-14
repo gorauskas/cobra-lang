@@ -1,0 +1,183 @@
+"""
+sizes.cobra
+
+The most effective technique to free up disk space on a drive is to look in the
+directories that consume the most space. You may find entire directories that
+can be deleted or excessively large files that are no longer needed. The first
+time you do this, you might downsize the space consumed by a large factor with
+only a few minutes of effort. Credit goes to the old "Dark Forest" application
+on the old NeXTstep platform for introducing me to this approach.
+
+This command line utility scans the current directory and its files for their
+sizes, including all subdirectories. It then reports the total size and shows
+the largest directories and files first. You can use this report to look for
+large things to delete and rerun it as you progress. To run:
+
+> cd \to\path\of\interest
+> cobra \path\to\sizes.cobra
+
+Unix users get a similar effect with something like "du -k | sort -nr"
+"""
+
+class FileNode
+	implements IComparable
+	"""
+	One of these will be created for every directory and file, and put into a
+	list that can be sorted.
+	"""
+
+	test
+		a = FileNode('a', 100)
+		assert a.pathName=='a'
+		assert a.numBytes==100
+		assert a.compareTo(nil)==1
+		b = FileNode('b', 200)
+		assert a.compareTo(b)<0
+		assert b.compareTo(a)>0
+		c = FileNode('c', 100)
+		assert a.compareTo(c)==0
+
+	var _pathName as String
+	var _numBytes as decimal
+
+	def init(pathName as String, numBytes as decimal)
+		_pathName = pathName
+		_numBytes = numBytes
+
+	get pathName from _pathName
+
+	get numBytes from _numBytes
+
+	def compareTo(obj as Object?) as int
+		require
+			obj is nil  or  obj inherits FileNode
+		body
+			if obj is nil
+				return 1
+			else if obj inherits FileNode
+				return _numBytes.compareTo(obj.numBytes)
+			else
+				throw FallThroughException(obj)
+
+
+class Dir
+	"""
+	Dir does the work of scanning the files and subdirectories.
+	This results in a tree-like structure that matches the file system.
+	"""
+
+	shared
+		var _sep	as char   # Path.directorySeparatorChar
+
+	var _di			as DirectoryInfo
+	var _dir		as Dir?  # parent directory
+	var _baseName	as String
+	var _pathName	as String
+
+	var _files		as List<of FileInfo>
+	var _subdirs	as List<of Dir>
+
+	var _count		as int
+	var _numBytes 	as decimal  # using 'decimal' because FileInfo.length returns int64
+
+	def init(pathName as String)
+		"""
+		Creates a Dir from a filesystem path string. Scans all subdirs.
+		"""
+		_di = DirectoryInfo(pathName)
+		_pathName = pathName
+		_baseName = pathName
+		_init(nil)
+
+	def init(di as DirectoryInfo, parentDir as Dir)
+		"""
+		Creates a Dir from a parent Dir. Scans all subdirs.
+		"""
+		_di = di
+		_baseName = di.name
+		_pathName = di.fullName
+		_init(parentDir)
+
+	get count from _count
+
+	get numBytes from _numBytes
+
+	def _init(parentDir as Dir?)
+		assert _baseName
+		_sep = Path.directorySeparatorChar
+		_dir = parentDir
+		if _dir
+			_pathName = '[_dir._pathName][_sep][_baseName]'
+		_files = List<of FileInfo>()
+		_subdirs = List<of Dir>()
+		.scan()
+
+	def scan
+		assert _pathName
+
+		for fi as FileInfo in DirectoryInfo(_pathName).getFiles()
+			_files.add(fi)
+			_count += 1
+			_numBytes += fi.length
+
+		for di as DirectoryInfo in DirectoryInfo(_pathName).getDirectories()
+			d = Dir(di, this)
+			_subdirs.add(d)
+			_count += d.count
+			_numBytes += d.numBytes
+
+	get toList as List<of FileNode>
+		"""
+		Returns a flat list containing self, all files and all subdirs (recursively).
+		"""
+		t = List<of FileNode>()
+		.populateList(t)
+		return t
+
+	def populateList(t as List<of FileNode>) is protected
+		ensure
+			t.count > old t.count
+		body
+			t.add(FileNode(_pathName, _numBytes))
+			for fi in _files
+				t.add(FileNode(fi.fullName, fi.length))
+			for subdir in _subdirs
+				subdir.populateList(t)
+
+
+class Sizes
+
+	test
+		assert _topPercent>0.0 and _topPercent<=1.0, _topPercent
+		assert _divisor>0.0, _divisor
+		assert _minSize>=0.0, _minSize
+
+	shared
+		var _topPercent = 0.1
+		var _divisor = 1024 * 1024.0  # megabyte
+		var _minSize = 1.0  # expressed in terms of _divisor
+
+		def main
+			print 'Scanning...'
+			Console.out.flush()
+			start = DateTime.now
+			topDir = Dir(Directory.getCurrentDirectory())
+			duration = DateTime.now.subtract(start)
+			print
+			print '[topDir.count] directories and files read'
+			print '[duration.totalSeconds:N] seconds to read'
+			print '[topDir.numBytes] bytes'
+			print
+			files = topDir.toList
+			files.sort()
+			files.reverse()
+			n = (files.count*_topPercent) to int
+			for i = 0 .. n
+				f = files[i]
+				size = f.numBytes / _divisor
+				if size < _minSize
+					break  # small files are uninteresting
+				#print '%4i %7.1f %s' % (i+1, size, f.pathname)
+				istr = (i+1).toString().padLeft(4)
+				sizestr = size.toString('0.0').padLeft(7)
+				print '[istr] [sizestr] [f.pathName]'
