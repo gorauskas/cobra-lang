@@ -79,6 +79,14 @@ class CommandLine  # TODO: rename to CommandLine
 			'description': 'Enable super stack trace which gives great postmortem information for uncaught exceptions, but slows execution.',
 		},
 		{
+			'name': 'target',
+			'description': 'Build a specific target.',
+			'type': 'menu',
+			'choices': ['exe', 'winexe', 'lib', 'module'],
+			'args': 'exe|winexe|lib|module',
+			'synonyms': ['t'],
+		},
+		{
 			'name': 'test',
 			'description': 'Run the unit tests in the code.',
 			'type': 'main',
@@ -259,7 +267,10 @@ class CommandLine  # TODO: rename to CommandLine
 				assert valueStr, parts
 				name = Utils.getSS($sharp('synToName'), name, name) to String
 				if not specDict.containsKey(name)
-					.error('No such option "[name]".')
+					msg = 'No such option "[name]".'
+					if name.contains(':')
+						msg += ' If you meant to specify an option value, use equals (=) instead of colon (:).'
+					.error(msg)
 				spec = specDict[name]
 				if Utils.getSO(spec to passthrough, 'isAccumulator', false)
 					# accumulators are always treated as strings. TODO: assert that
@@ -302,8 +313,15 @@ class CommandLine  # TODO: rename to CommandLine
 								if valueStr.length==0
 									cannotProcess = true
 								value = valueStr
+							on 'menu'
+								if valueStr.length==0
+									cannotProcess = true
+								if not (spec['choices'] to System.Collections.IList).contains(valueStr)
+									cannotProcess = true
+								else
+									value = valueStr
 					if cannotProcess
-						.error('Cannot process value "[value]" for option "[name]".')
+						.error('Cannot process value "[valueStr]" for option "[name]".')
 					valueDict[name] = value
 				# TODO: remove: optionValueList.add((name, value))
 			else # not isOption
@@ -314,7 +332,10 @@ class CommandLine  # TODO: rename to CommandLine
 				else if Directory.exists(arg)
 					fileList.add(arg)
 				else
-					.error('Cannot find "[arg]" as a file.')
+					msg = 'Cannot find "[arg]" as a file.'
+					if arg.startsWith('/')
+						msg += ' If you meant to specify an option, use dash (-) instead of slash (/).'
+					.error(msg)
 
 		# TODO: make the option names case-insensitive
 

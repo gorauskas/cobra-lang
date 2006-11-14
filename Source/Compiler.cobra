@@ -539,29 +539,45 @@ class Compiler
 		body
 			# exe names
 			# CC: exe = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName, _modules[1].csFileName)
-			exe = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName to passthrough, _modules[1].csFileName to passthrough) to String
-			if exe.endsWith('.cs')
-				exe = exe.substring(0, exe.length-3) # CC: [..-3]
-			if exe.endsWith('.cobra')
-				exe = exe.substring(0, exe.length-6) # CC: [..-6]
-			exe += '.exe'
-			_exeFileName = exe
+			outName = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName to passthrough, _modules[1].csFileName to passthrough) to String
+			if outName.endsWith('.cs')
+				outName = outName.substring(0, outName.length-3) # CC: [..-3]
+			if outName.endsWith('.cobra')
+				outName = outName.substring(0, outName.length-6) # CC: [..-6]
+			_exeFileName = outName
 
 			# options
 			options = ''
+
+			target = Utils.getSO(_options, 'target', nil) to String
+			if target
+				if target=='lib'
+					target = 'library'
+				options += ' /target:[target]'
+				# TODO: what is the output for a module?
+				branch target
+					on 'exe', 'winexe': outName += '.exe'
+					on 'library': outName += '.dll'
+					on 'module': outName += '.netmodule'  # http://msdn2.microsoft.com/en-us/library/58scf68s(VS.80).aspx
+					else: throw FallThroughException(target)
+			else
+				outName += '.exe'
+
 			# CC: cleanup
 			thing = Utils.getSO(_options, 'reference', [])
 			if thing
 				for refer in thing to List<of String>
-					options += ' /r:' + refer
+					options += ' /r:[refer]'
+
 			debug = Utils.getSO(_options, 'debug', nil) to String
 			if debug
 				assert debug in ['-', '+', 'full', 'pdbonly'], debug
 				options += ' /debug' + if(debug.length==1, debug, ':[debug]')
 
-			options += ' /out:' + exe
+			options += ' /out:[outName]'
 
-			options += ' /nologo'
+			if _verbosity<3
+				options += ' /nologo'
 
 			# .cs files
 			csFileNameList = List<of String>()
@@ -574,7 +590,7 @@ class Compiler
 			assert File.exists(cobraLangPath), cobraLangPath
 
 			if _verbosity
-				print 'Compiling to produce [exe]'
+				print 'Compiling to produce [outName]'
 			p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
 			p.startInfo.fileName = _cscExecPath
 			p.startInfo.arguments = options + ' ' + csFileNames + ' ' + cobraLangPath
