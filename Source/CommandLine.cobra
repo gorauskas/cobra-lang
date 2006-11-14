@@ -362,6 +362,9 @@ class CommandLine  # TODO: rename to CommandLine
 		_pathList = fileList
 
 	def doCompile(paths as List<of String>) as Compiler
+		return .doCompile(paths, false)
+
+	def doCompile(paths as List<of String>, writeTestInvocation as bool) as Compiler
 		# paths = paths or self.fileList  # TODO
 		c = Compiler(.verbosity)
 		c.whenError = ErrorActionEnum.Record  # CC: use extended syntax
@@ -371,6 +374,8 @@ class CommandLine  # TODO: rename to CommandLine
 			c.bindInt()
 			c.bindImp()
 			c.writeSharp()
+			if writeTestInvocation
+				c.writeSharpTestInvocation()
 			c.compileCS()
 			c.printMessages()
 		catch ce as CobraException  # TODO: have Compiler._exitFromErrors throw a StopCompilationException instead
@@ -403,11 +408,32 @@ class CommandLine  # TODO: rename to CommandLine
 						break
 		return c
 
+	def doTest(paths as List<of String>)
+		c = .doCompile(paths, true)
+		if c.errors
+			print 'Not running tests due to errors above.'
+			return
+		testInvoker = c.modules[c.modules.count-1]  # CC: [-1]
+		assert testInvoker inherits SharpModule, testInvoker
+		File.delete(testInvoker.fileName)
+		try
+			p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
+			p.startInfo.fileName = c.exeFileName
+			# TODO: support args to the program with a - or -- separator
+			# p.startInfo.arguments = ...
+			if _verbosity >= 3
+				print 'About to run: [p.startInfo.fileName] [p.startInfo.arguments]'
+			p.startInfo.useShellExecute = false
+			p.start()
+			p.waitForExit()
+		catch
+			File.delete(c.exeFileName)
+			throw
+		success
+			File.delete(c.exeFileName)
+
 	def doTestify
 		.doTestify([.cobraTestsPath])
-
-	def doTest(paths as List<of String>)
-		.error('TEST: NOT IMPLEMENTED YET.')
 
 	def doRun(paths as List<of String>)
 		c = .doCompile(paths)

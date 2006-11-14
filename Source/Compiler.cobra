@@ -131,7 +131,7 @@ class Compiler
 	def parseFilesNamed(filenames as List<of String>) as List<of Module>
 		"""
 		Returns the modules for the newly parsed files.
-		Also, extends self.modules with those modules.
+		Also, extends _modules with those modules.
 		"""
 		require
 			filenames
@@ -525,6 +525,37 @@ class Compiler
 					_moduleFileName_to_sharpToCobraLineNum[module.fileName] = sharpToCobraLineNum
 		finally
 			Node.setCompiler(nil)
+
+	def writeSharpTestInvocation
+		dt = DateTime.now
+		fileName = 'test-[dt.year][dt.month][dt.day][dt.hour][dt.minute].cs'  # TODO: format the numbers to have leading zeros
+		using f = SharpWriter(File.createText(fileName))
+			print to f
+				print 'using System;'
+				print 'using Cobra.Lang;'
+				print ''
+				print 'class RunTests {'
+				print ''
+				print '	public static void Main() {'
+				print '		CobraImp.ShowTestProgress = true;'
+				if .hasSuperStackTraceOption
+					print '		bool success = false;'
+					print '		try {'
+				for module in _modules
+					module.writeSharpTestInvocation(f)
+				if .hasSuperStackTraceOption
+					print '		success = true;'
+					print '		} catch (Exception e) {'
+					print '			CobraCore.DumpStack();'
+					print '			CobraImp.PrintLine(string.Format("\\nUncaught: {0}: {1}", e.GetType().Name, e.Message));'
+					print '			if (e.InnerException!=null)'
+					print '				CobraImp.PrintLine(string.Format("InnerException: {0}: {1}", e.InnerException.GetType().Name, e.InnerException.Message));'
+					print '		}'
+					print '		if (success)'
+				print '		CobraImp.TestProgressWriter.WriteLine("\\nSuccess!  All tests pass.\\n");'
+				print '	}'
+				print '}'
+		_modules.add(SharpModule(fileName, _verbosity))
 
 	var _exeFileName as String
 
