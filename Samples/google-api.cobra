@@ -1,0 +1,125 @@
+"""
+google-api.cobra
+
+
+This command line program demonstates how to programmatically execute Google searches.
+
+BUT on Apr 19, 2006, I can get no search results for it. When I visited the
+Google Group that discusses this API (google.public.web-apis) I found some
+disturbing complaints:
+
+* One poster is getting no search results.
+* The API results are very different from the human interface results.
+* Another poster was informed by Google that requests to use the API in production
+  applications are no longer being accepted, and the poster points out that the API
+  has not been moved out of its original "Beta" status from 2002. It may not have
+  even been updated since then.
+
+
+HOW TO RUN
+
+- Using the Google Web APIs requires a license key which you can get for free here:
+    http://www.google.com/apis/
+
+> cd path\to\Cobra\Examples
+
+- Create a google-key.text file with your Google Web APIs license key.
+
+> google-api "stock tips"
+
+
+HOW TO BUILD FROM SCRATCH
+
+> cd path\to\Cobra\Examples
+
+- Launch a .NET SDK prompt and issue:
+> wsdl.exe http://api.google.com/GoogleSearch.wsdl
+
+- Open GoogleSearchService.cs and:
+  - Add a capitalized method version of doGoogleSearch():
+    public GoogleSearchResult DoGoogleSearch(string key, string q, int start, int maxResults, bool filter, string restrict, bool safeSearch, string lr, string ie, string oe) {
+    	return doGoogleSearch(key, q, start, maxResults, filter, restrict, safeSearch, lr, ie, oe);
+    }
+  - Capitalize the properties of class GoogleSearchResult
+  - Capitalize the properties of class ResultElement
+
+> cobra --compile google-api.cobra GoogleSearchService.cs
+
+- Then go to HOW TO RUN above
+
+
+TODO
+	[ ] parameterize some of the Google options
+	[ ] add MSN support
+	[ ] number the results
+	[ ] Handle this with some retries:
+Unhandled Exception: System.Net.WebException: Unable to connect to the remote server ---> System.Net.Sockets.SocketException: A connect
+ion attempt failed because the connected party did not properly respond after a period of time, or established connection failed becaus
+e connected host has failed to respond
+
+"""
+
+
+class WebSearch
+
+	def main
+		is shared
+		args = CobraCore.commandLineArgs
+
+		# Get the Google Web APIs license key.
+		if File.exists('google-key.text')
+			googleKey = File.readAllText('google-key.text')
+		else if File.exists('google-key.txt')
+			googleKey = File.readAllText('google-key.txt')
+		else
+			print 'Get a free Google Web APIs license key at http://www.google.com/apis/ and'
+			print 'put it in a file named google-key.text'
+			return
+		googleKey = googleKey.trim()
+		assert googleKey
+
+		# Take the query from the command line.
+		if args.count<2
+			print 'usage: google-api <query>'
+			return
+		query = args[1]
+
+		googleSearch = GoogleSearchService()
+
+		# Run the query.
+		results = googleSearch.doGoogleSearch(googleKey, query, 0, 10, false, '', false, '', '', '')
+
+		if results.resultElements is nil
+			print 'The call was made, but no results were returned.'
+			print 'As of April 19, 2006, numerous problems with the Google API have been reported.'
+			return
+
+		for result as ResultElement in results.resultElements
+			print
+			print result.title
+			print result.url
+			print result.snippet
+			print
+
+
+# tell Cobra what is in GoogleSearchService.cs:
+
+class GoogleSearchService
+	is fake
+	def doGoogleSearch(key as String, q as String, start as int, maxResults as int, filter as bool, restrict as String, safeSearch as bool, lr as String, ie as String, oe as String) as GoogleSearchResult
+		pass
+
+class GoogleSearchResult
+	is fake
+	def resultElements as List<of ResultElement>
+		pass
+
+class ResultElement
+	is fake
+	get snippet as String
+		pass
+	get title as String
+		pass
+	get url as String
+		pass
+
