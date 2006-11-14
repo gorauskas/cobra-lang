@@ -1,0 +1,175 @@
+"""
+MakeAClassHierarchy.cobra
+
+This HowTo shows the syntax for classes, inheritance, initors, properties,
+defining toString, unit tests and so forth.
+
+The class hierarchy is:
+
+Object
+	Vehicle
+		Aircraft
+			Plane
+		Train
+		Automobile
+"""
+
+
+enum Medium
+	"""
+	Defines the various mediums that a vehicle can travel through.
+	"""
+	belowWater
+	aboveWater
+	land
+	air
+	space
+
+
+class Vehicle
+
+	test
+		v = Vehicle()
+		assert not v.isMoving
+		assert not v.hasMoved
+		assert v.serialNum > 0
+
+		v.startMoving()
+		assert v.isMoving
+		assert not v.hasMoved  # because no miles accumulated
+
+		v.move(5)
+		assert v.isMoving
+		assert v.hasMoved
+		assert v.numMiles==5
+
+		v.move(3)
+		assert v.numMiles==8
+
+		v.stopMoving()
+		assert not v.isMoving
+		assert v.hasMoved
+
+		w = Vehicle()
+		assert v.serialNum<>w.serialNum
+
+
+	shared
+		var _nextSerialNum = 1001  # TODO: start with double underscore
+
+	var _serialNum as int
+	var _isMoving = false
+	var _numMiles = 0.0
+
+	def init
+		_serialNum = _nextSerialNum
+		_nextSerialNum += 1
+
+	get serialNum from var
+		# `get` defines a read-only property.
+		# `from var` is a shortcut syntax to cover
+		# the variable with the matching name.
+
+	get hasMoved as bool
+		return _numMiles > 0
+
+	get isMoving from var
+
+	get numMiles from var
+
+	def startMoving
+		assert not _isMoving, 'Already moving.'
+		_isMoving = true
+
+	def move(distance as decimal)
+		assert _isMoving, 'Invoke startMoving first.'
+		assert distance>0
+		_numMiles += distance
+
+	def stopMoving
+		assert _isMoving, 'Not moving.'
+		_isMoving = false
+
+	def canTravelIn(medium as Medium) as bool
+		"""
+		Returns true if the given medium is the primary medium that the vehicle
+		normally travels through.
+		"""
+		return false
+
+	def toString as String is override
+		test
+			v = Vehicle()
+			sn = v.serialNum
+			assert v.toString()=='Vehicle([sn])'
+		body
+			sb = StringBuilder()
+			sb.append('[.getType().name]([_serialNum]')  # example: 'Foo(1001'
+			.buildString(sb)  # so subclasses can add their fields
+			sb.append(')')
+			return sb.toString()
+
+	def buildString(sb as StringBuilder)
+		"""
+		Invoked by `toString` so that subclasses can add their information.
+		Subclasses should normally invoke base.
+		"""
+		pass
+
+
+class Aircraft
+	inherits Vehicle
+
+	def canTravelIn(medium as Medium) as bool
+		is override
+		return medium==Medium.air
+
+
+class Plane
+	inherits Aircraft
+
+
+class Train
+	inherits Vehicle
+
+	var _numUnits = 0
+		"""
+		The number of locomotives and railroad cars in the train.
+		"""
+
+	def init(numUnits as int)
+		base.init()
+		assert numUnits>0
+		_numUnits = numUnits
+
+	def canTravelIn(medium as Medium) as bool
+		is override
+		return medium==Medium.land
+
+	def buildString(sb as StringBuilder)
+		is override
+		base.buildString(sb)
+		sb.append(', [_numUnits] units')
+
+
+class Automobile
+	inherits Vehicle
+
+	def canTravelIn(medium as Medium) as bool
+		is override
+		return medium==Medium.land
+
+
+class Program
+
+	def main is shared
+		# create some vehicles
+		p = Plane()
+		t = Train(5)
+		a = Automobile()
+
+		vehicles = [p, t, a]  # a list
+
+		for v in vehicles
+			assert v.serialNum > 0
+			print v
