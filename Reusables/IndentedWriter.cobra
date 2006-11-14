@@ -1,0 +1,98 @@
+class IndentedWriter
+	inherits TextWriter
+	"""
+	Provides for indented writing which can be useful for:
+
+	* debugging output such as a manually implemented trace of your code
+
+	* HTML source code to indent the contents of containing tags such as <body>
+	  and <td>
+	"""
+
+	test
+		iw = IndentedWriter(StringWriter())
+		assert iw.toString()=='', iw.toString()
+		nl = iw.newLine
+		tab = '\t'
+		iw.writeLine('one')
+		assert iw.toString()=='one[nl]', iw.toString()
+		iw.indent()
+		iw.writeLine('two')
+		assert iw.toString()=='one[nl][tab]two[nl]'
+		iw.dedent()
+		iw.writeLine('three')
+		assert iw.toString()=='one[nl][tab]two[nl]three[nl]'
+
+	var _innerWriter as TextWriter
+	var _lastChar = ''  # use a string because _innerWriter.NewLine is a string
+	var _indentString = '\t'
+	var _indentLevel = 0
+	var _totalIndentString = ''
+	var _isWritingIndent = false
+
+	def init(tw as TextWriter)
+		_innerWriter = tw
+
+	def indent
+		_indentLevel += 1
+		_setTotalIndentString()
+
+	def dedent
+		_indentLevel -= 1
+		_setTotalIndentString()
+
+	pro indentString from var
+		"""
+		Returns the string used for one level of indentation.
+		Default value is "\t".
+		"""
+
+	get newLine2 as String
+		return '\n'  # because NewLine is "\r\n" but we don't require the \r
+
+
+	# *** Being a TextWriter ***
+
+	def write(value as char)
+		is override
+		if _isWritingIndent
+			_innerWriter.write(value)
+			return
+		if _lastChar==_innerWriter.newLine or _lastChar==.newLine2
+			_isWritingIndent = true
+			try
+				.write(_totalIndentString)
+			finally
+				_isWritingIndent = false
+		_innerWriter.write(value)
+		_lastChar = value.toString()
+
+
+	def write(value as String)
+		is override
+		if _isWritingIndent
+			_innerWriter.write(value)
+		else
+			base.write(value)
+
+	get encoding as Encoding
+		is override
+		return _innerWriter.encoding
+
+	def toString as String
+		is override
+		return _innerWriter.toString()
+
+
+	# *** Private Util ***
+
+	def _setTotalIndentString
+		is protected
+		sb = StringBuilder()
+		for i = 0 .. _indentLevel
+			sb.append(_indentString)
+		_totalIndentString = sb.toString()
+
+	#def main
+	#	is shared
+	#	pass

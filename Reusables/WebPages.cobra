@@ -1,0 +1,764 @@
+"""
+webpages.cobra
+
+This is the beginning of a framework for generating or serving web content.
+Initially, its only aim is to spit out static HTML files while saving work by
+making use of OO inheritance to share common page parts.
+
+It's partly inspired by "Webware for Python", an open source project that was
+founded in 2000 by the author of Cobra.
+
+The current code is informative and can be extended. But currently this
+"program" isn't doing anything.
+
+TODO
+[ ] Finish Page class
+[ ] Make something for the typical page format of header, sidebar, content and footer. DeluxePage
+[ ] Get a real example going
+[ ] Consider a way to use these classes on non-Cobra content that a non-programer could author
+[ ] Incorporate extras.web.PageExtrasMixIn
+
+
+Weaknesses of Cobra revealed by writing this program:
+
+[ ] Cannot make an abstract method.
+[ ] Does not read .NET DLLs for their symbols.
+"""
+
+use System.Web
+
+
+interface IToHtml
+	"""
+	Exposes a `toHtml` property which returns a string containing HTML source
+	body representing the object that received the message.
+
+	Implementations should incorporate the HTML of their "subobjects" as
+	appropriate.
+
+	If a property is inappropriate for your class because the HTML source could
+	be potentially voluminous and/or take a long time to compute then implement
+	IWriteHtml instead. The "Cobra Web Pages" framework supports both.
+
+	See also: HtmlUtils
+	"""
+	get toHtml as String
+
+
+interface IWriteHtml
+	"""
+	Exposes a `writeHtml` method whose duty is to write HTML source that represents the object, to a TextWriter.
+
+	Implementations should incorporate the HTML of their "subobjects" as
+	appropriate.
+
+	If the HTML source is likely to be small, or you simply wish to return a
+	string rather than write to a TextWriter then implement IWriteHtml. The
+	"Cobra Web Pages" framework supports both.
+
+	See also: HtmlUtils
+	"""
+	def writeHtml(dest as TextWriter)
+
+
+class HtmlUtils
+
+	shared
+		def toHtml(obj as Object?) as String
+			"""
+			Returns the HTML source for the given object.
+			Recognizes objects that implement IToHtml and IWriteHtml.
+			"""
+			if obj?
+				return 'nil'
+			else if obj inherits IToHtml
+				return obj.toHtml
+			else if obj inherits IWriteHtml
+				sw = StringWriter()
+				obj.writeHtml(sw)
+				return sw.toString()
+			else
+				return obj.toString()
+
+		def writeHtml(dest as TextWriter, obj as Object?)
+			"""
+			Writes the HTML source for the given object.
+			Recognizes objects that implement IToHtml and IWriteHtml.
+			"""
+			if obj?
+				dest.write('nil')
+			else if obj inherits IWriteHtml
+				obj.writeHtml(dest)
+			else if obj inherits IToHtml
+				dest.write(obj.toHtml)
+			else
+				dest.write(obj.toString())
+
+
+class HtmlWriter
+	inherits WebObject
+	implements IWriteHtml
+	"""
+	HtmlWriter provides a concrete implementation of IWriteHtml with some
+	conveniences that you can inherit and make use of.
+
+	Subclasses should override `writeHtml`.
+	"""
+
+	var _dest as TextWriter?
+
+	get dest from _dest
+
+	def writeHtml(dest as TextWriter)
+		_dest = dest
+		try
+			.writeHtml()
+		finally
+			_dest = nil
+
+	def writeHtml
+		pass
+
+	## Self util ##
+
+	def writeLine(s as String)
+		_dest.writeLine(s)
+
+	def htmlEncode(s as String) as String
+		return HttpUtility.htmlEncode(s)
+
+	def htmlDecode(s as String) as String
+		return HttpUtility.htmlDecode(s)
+
+	def urlEncode(s as String) as String
+		return HttpUtility.urlEncode(s)
+
+	def urlDecode(s as String) as String
+		return HttpUtility.urlDecode(s)
+
+
+class WebObject
+	"""
+	A base class common to all the classes in this framework.
+	May come in handy down the road.
+	"""
+	pass
+
+class Transaction
+	inherits WebObject
+	"""
+	This class would hold the request, response, session, application and
+	servlet references.
+	"""
+	pass
+
+
+class EndResponse
+	inherits Exception
+	"""
+	Used internally by Servlet. When subclassing servlets, invoke .endResponse
+	to do so.
+	"""
+	pass
+
+
+class Servlet
+	inherits WebObject
+
+	test
+		s = Servlet()
+		assert s.name=='Servlet'
+		s.name = 'foo'
+		assert s.name=='foo'
+		s.run(nil)
+		assert not s.didEndResponse
+
+	var _name			as String?
+	var _txn			as Transaction?
+	var _dest			as TextWriter?
+	var _didEndResponse	as bool
+
+	def init
+		pass
+
+	pro name as String
+		"""
+		Returns the name of the servlet, which is its class name by default.
+		"""
+		get
+			return _name ? .getType().name
+		set
+			_name = value
+
+	get dest from _dest
+
+	def run(txn as Transaction?)
+		_txn = txn
+		_dest = Console.out  # TODO: take from _txn if possible
+		_didEndResponse = false
+		try
+			try
+				.setUp()
+				.respond()
+			catch er as EndResponse
+				_didEndResponse = true
+			.tearDown()
+		finally
+			_dest = nil
+			_txn  = nil
+
+	def setUp
+		pass
+
+	def respond
+		pass
+
+	def tearDown
+		pass
+
+	get didEndResponse from var
+
+	def log(message as String)
+		"""
+		Log important messages from the developer.
+		These go to the console.
+		"""
+		.log(Console.out, message)
+
+	def log(tw as TextWriter, message as String)
+		message = '([.name]) ([DateTime.now]) [message]'
+		tw.writeLine(message)
+
+	def write(stuff as vari Object)
+		for item in stuff
+			_dest.write(.itemToString(item))
+
+	def itemToString(item as Object) as String
+		"""
+		Used by `write` to convert objects to strings.
+		Returns 'nil' for `nil`.
+		"""
+		if item?
+			return 'nil'
+		return item.toString()
+
+	def writeLine(s as String)
+		_dest.writeLine(s)
+
+	def urlEncode(s as String) as String
+		return HttpUtility.urlEncode(s)
+
+	def urlDecode(s as String) as String
+		return HttpUtility.urlDecode(s)
+
+	def endResponse
+		"""
+		When this method is called during `setUp` or `respond`, servlet
+		processing will end immediately, and the accumulated response will be
+		sent.
+
+		Note that `tearDown` will still be called, providing a chance to clean
+		up or free any resources. Also, it can check the boolean .didEndResponse
+		to see if that took place.
+		"""
+		throw EndResponse()
+
+
+class HTTPServlet
+	inherits Servlet
+	"""
+	This would get fleshed out if this class hierarchy became part of an application server.
+	See "Webware for Python".
+	"""
+	pass
+
+
+class Page
+	inherits HTTPServlet
+	implements IWriteHtml
+	"""
+	Page is a type of HTTPServlet that is more convenient for servlets which
+	represent HTML pages generated in response to GET and POST requests. In
+	fact, this is the most common type of servlet.
+
+	Subclasses typically override `writeHeader`, `writeBody` or
+	`writeBodyParts`, and `writeFooter`.
+
+	They might also choose to override `writeHtml` entirely.
+
+	When developing a full-blown website, it's common to create a subclass of
+	`Page` called `SitePage` which defines the common look and feel of the
+	website and provides site-specific convenience methods. Then all other pages
+	in your application inherit from `SitePage`.
+	"""
+
+	test
+		p = Page()
+		assert p.name=='Page'
+		assert p.title=='Page', p.title
+		assert p.htTitle=='Page', p.htTitle
+		sw = StringWriter()
+		p.writeHtml(sw)
+		s = sw.toString().trim()
+		assert s.contains('<html>')
+		assert s.contains('<body>')
+		assert s.contains('</body>')
+		assert s.endsWith('</html>')
+
+	get title as String
+		"""
+		Returns the title of the page absent any HTML tags.
+		Subclasses often override this method to provide a custom title.
+		This implementation returns .name.
+		"""
+		return .name
+
+	get htTitle as String
+		"""
+		Returns the page title as HTML.
+
+		Subclasses sometimes override this to provide an HTML enhanced version
+		of the title. This is the property that should be used when including
+		the page title in the actual page contents.
+
+		This implementation returns .title.
+		"""
+		return .title
+
+	get bodyArgs as MLArgs?
+		return nil
+
+	def writeHtml
+		"""
+		Writes all the HTML for the page.
+
+		Subclasses may override this method (which is invoked by `respond`)
+		or more commonly its constituent methods, `writeDocType`, `writeHead`
+		and `writeBody`.
+
+		You will want to override this method if:
+		* you want to format the entire HTML page yourself
+		* if you want to send an HTML page that has already
+		  been generated
+		* if you want to use a template that generates the entire
+		  page
+		* if you want to send non-HTML content (be sure to
+		  call ``.response.setHeader('Content-type',
+		  'mime/type')`` in this case).
+		"""
+		.writeDocType()
+		.writeLine('<html>')
+		.writeHead()
+		.writeBody()
+		.writeLine('</html>')
+
+	get docTypeTransitional as String
+		"""
+		Returns <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+		"""
+		return '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">'
+
+	def writeDocType
+		"""
+		Writes the DOCTYPE tag.
+
+		Invoked by `writeHtml` to write the ``<!DOCTYPE ...>`` tag.
+
+		By default this gives the HTML 4.01 Transitional DOCTYPE, which is a
+		good guess for what most people send.  Be warned, though, that some
+		browsers render HTML differently based on the DOCTYPE (particular newer
+		browsers, like Mozilla, do this).
+
+		Subclasses may override to specify something else.
+
+		You can find out more about doc types by searching for DOCTYPE on the
+		web, or visiting:
+		http://www.toHtmlhelp.com/tools/validator/doctype.toHtml
+		"""
+		.writeLine(.docTypeTransitional)
+
+	def writeHead
+		"""
+		Writes the ``<head>`` portion of the page by writing the
+		``<head>...</head>`` tags and invoking `writeHeadParts` in between.
+		"""
+		.writeLine('<head>')
+		.writeHeadParts()
+		.writeLine('</head>')
+
+	def writeHeadParts
+		"""
+		Writes the parts inside the ``<head>...</head>`` tags. Invokes
+		`writeTitle` and `writeStyleSheet`. Subclasses can override this to add
+		additional items and should invoke super.
+		"""
+		.writeTitle()
+		.writeStyleSheet()
+
+	def writeTitle
+		"""
+		Writes the ``<title>`` portion of the page.
+		Uses `.title`, which is what you should override.
+		"""
+		.writeLine('\t<title>[.title]</title>')
+
+	def writeStyleSheet
+		"""
+		Write the style sheet for the page.
+
+		This default implementation will write:
+			'\t<link rel="stylesheet" href="[.styleSheetUrl]" type="text/css">'
+		...if ``.styleSheetUrl`` returns a non-blank string.
+
+		Subclasses can also override if necessary.
+		"""
+		url = .styleSheetUrl
+		if url
+			.writeLine('\t<link rel="stylesheet" href="[url]" type="text/css">')
+
+	get styleSheetUrl as String?
+		"""
+		Returns the stylesheet URL for this page. Used by writeStyleSheet.
+		This default implementation returns nil.
+		Subclasses can override. For example:
+			return 'styles.css'
+		"""
+		return nil
+
+	def writeBody
+		"""
+		Writes the ``<body>`` portion of the page by writing the
+		``<body>...</body>`` (making use of `.bodyArgs`) and
+		invoking `.writeBodyParts` in between.
+		"""
+		bodyArgs = .bodyArgs
+		.writeLine(if(bodyArgs, '<body [bodyArgs]>', '<body>'))
+		.writeBodyParts()
+		.writeLine('</body>')
+
+	def writeBodyParts
+		"""
+		Write the parts included in the <body> element.
+
+		Invokes `writeContent`. Subclasses should only override this method to
+		provide additional page parts such as a header, sidebar and footer, that
+		a subclass doesn't normally have to worry about writing.
+
+		For writing page-specific content, subclasses should override
+		`writeContent` instead. This method is intended to be overridden by your
+		SitePage.
+
+		See `DeluxePage` for an example override of this method.
+
+		Invoked by `writeBody`.
+		"""
+		.writeContent()
+
+	def writeContent
+		"""
+		Write the unique, central content for the page.
+
+		Subclasses should override this method (not invoking base) to write
+		their unique page content.
+
+		Invoked by `writeBodyParts`.
+		"""
+		.writeLine('<p> This page has not yet customized its content. </p>')
+
+	def htmlEncode(s as String) as String
+		return HttpUtility.htmlEncode(s)
+
+	def htmlDecode(s as String) as String
+		return HttpUtility.htmlDecode(s)
+
+	## implements IWriteHtml ##
+
+	def writeHtml(dest as TextWriter)
+		_dest = dest
+		try
+			.writeHtml()
+		finally
+			_dest = nil
+
+	def saveHtml(fileName as String)
+		using f = File.createText(fileName)
+			.writeHtml(f)
+
+
+class MLArgs
+	inherits WebObject
+	implements ICount, IToHtml
+	"""
+	An MLArgs instance is a dictionary of named arguments, that when printed
+	(toString) yield an argument string suitable for HTML, XML, SGML, et al:
+		href="http://foo.com" class="menuLink"
+
+	The motiviation for MLArgs is that if you store these arguments as Strings:
+		'href="http://foo.com" class="menuLink"'
+
+	...then inspecting and updating individual arguments requires extra effort.
+	For example, if a subclass wishes to set the 'class' argument, after its
+	base class has initialized the arguments, it may need to parse the string.
+	Using MLArgs, the subclass can simply say:
+		.linkArgs['class'] = 'submenuLink'
+
+	And outputing MLArgs is just as convenient as using a string:
+		dest.write('<a [.linkArgs]>')
+
+	You can do the same thing with:
+		dest.write(.linkArgs.tag('a'))
+
+	Markup languages don't have a concept of nil while Cobra does. Consequently,
+	key/value pairs whose values are nil are not included in the output. Also,
+	setting a key to nil deletes it. These policies can be useful when merging
+	arguments via copyAndSet() and copyIfSet().
+
+	See also: Tag
+	"""
+
+	test
+		args = MLArgs()
+		assert not args
+		assert args.count==0
+		args['width'] = 50
+		assert args
+		assert args.count==1
+		assert args['width']==50
+		assert args.toString()=='width="50"'
+		args['color'] = 'blue'
+		assert args.toString()=='color="blue" width="50"'
+
+	shared
+		var _willSortKeysDefault = true
+		pro willSortKeysDefault from var
+
+	var _values as Dictionary<of String, Object>  # TODO: Make this IDictionary
+	var _willSortKeys as bool
+
+	def init
+		_init()
+
+	def init(d as IDictionary<of String, String>)
+		test
+			args = MLArgs(Dictionary<of String, String>())
+			assert not args
+			args = MLArgs({'x': '1', 'y': '2'})
+			assert args.count==2
+			assert args['y']=='2'
+		body
+			_init()
+			for key as String in d.keys
+				.put(key, d[key])
+
+	def init(keyValues as vari Object)
+		test
+			args = MLArgs('x', 1)
+			assert args['x']==1
+			args = MLArgs('x', 1, 'y', 2)
+			assert args.count==2
+			assert args['y']==2
+		body
+			_init()
+			.set(keyValues)
+
+	def init(keyValues as String)
+		test
+			args = MLArgs('width=100 height=200')
+			assert args['width']=='100'
+			assert args['height']=='200'
+		body
+			_init()
+			# TODO: does not parse correctly if values have spaces in them
+			for part as String in keyValues.split(nil)
+				i = part.indexOf('=')
+				key = part.substring(0, i)
+				value = part.substring(i+1)
+				if value.startsWith('"') and value.endsWith('"')
+					value = value.substring(1, value.length-2)
+				# TODO: parse int
+				this[key] = value
+
+	def _init
+		_values = Dictionary<of String, Object>()
+		_willSortKeys = _willSortKeysDefault
+
+	pro [key as String] as Object
+		"""
+		This indexer will never return nil (nor can you pass nil to it).
+		See also: remove, put, set
+		"""
+		get
+			return _values[key]
+		set
+			_values[key] = value
+
+	def put(key as String, value as Object)
+		# TODO: requires
+		assert key, 'key cannot be blank'
+		assert value is not this, 'cannot put this, or any MLArgs, into MLArgs'
+		assert not value inherits MLArgs, 'cannot put an MLArgs in an MLArgs'
+		_values[key] = value
+
+	def get(key as String) as Object
+		return _values[key]
+
+	def containsKey(key as String) as bool
+		return _values.containsKey(key)
+
+	def set(keyValues as vari Object) as MLArgs
+		"""
+		Sets the args key value pairs as passed in the arguments.
+		Returns `this` as a convenience.
+		"""
+		test
+			args = MLArgs()
+			args.set('key', 'value')
+			assert args['key']=='value'
+			args.set('key', 'value2', 'anotherKey', 5)
+			assert args['key']=='value2'
+			assert args['anotherKey']==5
+
+			assert args.containsKey('anotherKey')
+			args.set('anotherKey', nil)
+			assert not args.containsKey('anotherKey')
+		body
+			for i = 0 .. keyValues.length ++ 2
+				key = keyValues[i] to String
+				value = keyValues[i+1]
+				if value?
+					.remove(key)
+				else
+					.put(key, value)
+			return this
+
+	def remove(key as String) as bool
+		return _values.remove(key)
+
+	get count as int
+		return _values.count
+
+	pro willSortKeys from var
+
+	def clear
+		_values.clear()
+		assert .count==0  # ensure
+
+	def toString as String
+		is override
+		# @@ 2001-05-05 CE: Obviously, we need better quoting here and potentially some escaping specific to *ML
+		parts = List<of String>()
+		for key as String in _values.keys  # TODO: axe "as String"
+			value = _values[key]
+			if value!
+				parts.add('[key]="[value]"')
+		if _willSortKeys
+			parts.sort()
+		s as String = String.join(',', parts.toArray())
+		return String.join(' ', parts.toArray())
+
+	get toHtml as String
+		return .toString()
+
+	def tag(tagName as String) as String
+		test
+			args = MLArgs('href', 'http://cobralang.com/')
+			assert args.tag('a')=='<a href="http://cobralang.com/">'
+		body
+			return '<[tagName] [this]>'
+
+	def copyAndSet(keyValues as vari Object) as MLArgs  # TODO: should be ...as same
+		"""
+		Copies the arguments, sets the values in the copy and returns that copy.
+		Example: args = args.copyAndSet('width', '100%')
+		"""
+		test
+			args = MLArgs('x', 1)
+			args = args.copyAndSet('x', 2, 'y', 3)
+			assert args['x']==2
+			assert args['y']==3
+			args = args.copyAndSet('__replace__', 1, 'x', 3)
+			assert args.count==1
+			assert args['x']==3
+		body
+			# check for __replace__
+			for i = 0 .. keyValues.length ++ 2
+				if '__replace__'==keyValues[i]
+					args = .memberwiseClone() to MLArgs
+					args.clear()
+					args.set(keyValues).remove('__replace__')
+					return args
+
+			# in the future, the above would be:
+			#if '__replace__' in keyValues.even
+			#	args = .getType()()
+			#	args.set(keyValues).remove('__replace__')
+			#	return args
+
+			copy = .memberwiseClone() to MLArgs
+			return copy.set(keyValues)
+
+	def copyIfSet(keyValues as vari Object) as MLArgs
+		"""
+		Like `copyAndSet` but returns this if there are no keyValues.
+		"""
+		if keyValues
+			return .copyAndSet(keyValues)
+		else
+			return this
+
+
+class Tag
+	inherits MLArgs
+
+	test
+		t = Tag('br')
+		assert t.toHtml=='<br>'
+		assert t.toHtml==t.toString()
+
+		t = Tag('input', 'type', 'submit', 'value', 'Ok')
+		assert t.toHtml=='<input type="submit" value="Ok">'
+		assert t.toHtml==t.toString()
+
+		t = Tag('input', 'type', 'text', 'name', 'username', 'size', '20')
+		assert t.toHtml=='<input name="username" size="20" type="text">'
+
+	var _tagName as String
+
+	def init(tagName as String)
+		base.init()
+		_tagName = tagName
+
+	def init(tagName as String, keyValues as String)
+		base.init(keyValues)
+		_tagName = tagName
+
+	def init(tagName as String, keyValues as vari Object)
+		base.init(keyValues)
+		_tagName = tagName
+
+	pro tagName from var
+
+	def toString() as String
+		is override
+		args = base.toString()
+		if args
+			return '<[_tagName] [args]>'
+		else
+			return '<[_tagName]>'
+
+
+#class Program
+#
+#	def main is shared
+#		p = Page()  # to kick start the tests
+#		m = MLArgs()
+#		t = Tag('a', 'href', 'http://cobralang.com/')
+#		p = MyPage()
+#		p.writeHtml(Console.out)
+
+
+# fake classes are a crutch to help out until Cobra reads .NET DLLs #
+
+class KeyCollection
+	is fake
+	pass

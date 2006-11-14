@@ -1,0 +1,297 @@
+"""
+DeluxePage.cobra
+
+This is a continuation of the framework found in webpages.cobra.
+
+python ..\cobra.py webpages.cobra DeluxePage.cobra > deluxe.html
+
+"""
+
+
+class DeluxePage
+	inherits Page
+	"""
+	DeluxePage adds these capabilities:
+
+	* A more sophisticated page structure with header, left sidebar, right
+	  sidebar, content well and footer. This more closely reflects the structure
+	  of typical web pages. All parts are optional.
+
+	* Word-wrapped output with a left and right margin and indent/dedent
+	  capability.
+	"""
+
+	test
+		dp = DeluxePage()
+		sw = StringWriter()
+		dp.writeHtml(sw)
+
+	var _writer as DeluxeWriter?
+
+	get rightHtmlSourceMargin as int
+		"""
+		The HTML source code that is output is actually wrapped at a
+		right hand margin. This often makes it easier to read the
+		source.
+		"""
+		return 100
+
+	def indent
+		_writer.indent()
+
+	def indent(s as String)
+		"""
+		While the name .writeLineAndIndent() is explicit, it's also annoyingly
+		long. This shorter named method does the same thing.
+		"""
+		.writeLineAndIndent(s)
+
+	def dedent
+		_writer.dedent()
+
+	def dedent(s as String)
+		"""
+		While the name .dedentAndWriteLine() is explicit, it's also annoyingly
+		long. This shorter named method does the same thing.
+		"""
+		.dedentAndWriteLine(s)
+
+	def writeLineAndIndent(s as String)
+		.writeLine(s)
+		.indent()
+
+	def dedentAndWriteLine(s as String)
+		.dedent()
+		.writeLine(s)
+
+	def begin(name as String, tag as Object)
+		.writeLine('<!-- >> begin [name] -->')
+		.indent()
+		.writeLine('[HtmlUtils.toHtml(tag)]\n')
+		.indent()
+
+	def end(name as String, tag as Object)
+		.dedent()
+		didWrite = false
+		if tag inherits String
+			if not tag.startsWith('<')
+				.writeLine('</[tag]>')
+				didWrite = true
+		if not didWrite
+			.writeLine('[HtmlUtils.toHtml(tag)]')
+		.dedent()
+		.writeLine('<!-- << end [name] -->\n')
+
+	def writeHtml(tw as TextWriter)
+		is override
+		_writer = writer = DeluxeWriter(tw, .rightHtmlSourceMargin)
+		try
+			base.writeHtml(writer)  # TODO: axe writer local and use "_writer to !" when it's available
+		finally
+			_writer = nil
+
+	var _wholePageTableTag = Tag('table', 'class=wholePage border=0 cellpadding=0 cellspacing=0')
+	var _leftBarTdTag = Tag('td', 'class', 'leftBar', 'valign', 'top', 'width', 0)
+
+	get numCols as int
+		return 1 + if(.hasLeftBar,1,0) + if(.hasRightBar,1,0)
+
+	def writeBodyParts
+		is override
+		numCols = .numCols
+		.indent()
+		.begin('whole page', _wholePageTableTag)
+		if .hasPageHeader
+			.writePageHeader()
+		.begin('page row', '<tr class=pageRow>')
+		if .hasLeftBar
+			.begin('left bar', _leftBarTdTag)
+			.writeLine('<div class=leftBar>')
+			.writeLeftBar()
+			.writeLine('</div>')
+			.end('left bar', 'td')
+		.begin('page content', '<td class=pageContent valign=top width=0> <div class=pageContent>')
+		.writeContent()
+		.end('page content', '</div> </td>')
+		if .hasRightBar
+			.begin('right bar', '<td class=rightBar valign=top width=0>')
+			.writeRightBar()
+			.end('right bar', 'td')
+		if .hasPageFooter
+			.begin('page footer', '<tr class=pageFooter>')
+			.indent('<td class=pageFooter colSpan=[numCols]>\n')
+			.writePageFooter()
+			.dedent('\n</td>\n')
+			.end('page footer', 'tr')
+		.end('page row', 'tr')
+		.end('whole page', 'table')
+		.dedent()
+
+	def writePageHeader
+		.begin('page header', '<tr class=pageHeader>')
+		.indent('<td class=pageHeader colSpan=[.numCols]>\n')
+		.innerWritePageHeader()
+		.dedent('\n</td>\n')
+		.end('page header', 'tr')
+
+	def innerWritePageHeader
+		.writeLine(.htTitle)
+
+	def writeLeftBar
+		pass
+
+	def writeRightBar
+		pass
+
+	def writePageFooter
+		.writeLine('Copyright &copy; [DateTime.now.year]. All Rights Reserved.')
+
+	get hasPageHeader as bool
+		return true
+
+	get hasLeftBar as bool
+		return true
+
+	get hasRightBar as bool
+		return true
+
+	get hasPageFooter as bool
+		return true
+
+
+
+class MyPage
+	inherits DeluxePage
+
+	get styleSheetUrl as String
+		is override
+		return 'styles.css'
+
+	def writeLeftBar
+		is override
+		.writeLine('<a href=nav1.html>Nav 1</a>')
+
+	def writeContent
+		is override
+		.writeLine('Added unit testing as a language level feature. You can now write test sections for methods, properties and classes. Because these unit tests can be specified next to what they actually test, they are more likely to be kept up to date. Also, because they are a natural part of the source code, they benefit from development environment features such as syntax highlighting and autocompletion. Finally, more programmers may be encouraged to write unit tests when it is this easy.')
+
+
+class DeluxeWriter
+	inherits TextWriter
+	"""
+	Provides:
+
+	* indented writing (useful for structured HTML pages)
+
+	* right margin (useful for yielding easy-to-read HTML)
+
+	Used internally by DeluxePage although you are free to use DeluxeWriter if
+	you have a need for it.
+	"""
+
+	test
+		iw = DeluxeWriter(StringWriter())
+		assert iw.toString()=='', iw.toString()
+		nl = iw.newLine
+		tab = '    '
+		iw.writeLine('one')
+		assert iw.toString()=='one[nl]', iw.toString()
+		iw.indent()
+		iw.writeLine('two')
+		assert iw.toString()=='one[nl][tab]two[nl]'
+		iw.dedent()
+		iw.writeLine('three')
+		assert iw.toString()=='one[nl][tab]two[nl]three[nl]'
+
+	var _innerWriter as TextWriter
+	var _lastChar = ''  # use a string because _innerWriter.NewLine is a string
+	var _indentString = '    '
+	var _indentLevel = 0
+	var _totalIndentString = ''
+	var _isWritingIndent = false
+	var _column = 1
+	var _rightMargin = 80
+
+	def init(tw as TextWriter)
+		_innerWriter = tw
+
+	def init(tw as TextWriter, rightMargin as int)
+		this.init(tw)
+		# TODO: require
+		assert rightMargin>10
+		_rightMargin = rightMargin
+
+	def indent
+		_indentLevel += 1
+		_setTotalIndentString()
+
+	def dedent
+		_indentLevel -= 1
+		_setTotalIndentString()
+
+	pro indentString from var
+		"""
+		Returns the string used for one level of indentation.
+		Default value is "\t".
+		"""
+
+	get newLine2 as String
+		return '\n'  # because NewLine is "\r\n" but we don't require the \r
+
+
+	# *** Being a TextWriter ***
+
+	def write(value as char)
+		is override
+		if _isWritingIndent
+			_innerWriter.write(value)
+			_column += 1
+			return
+		if _lastChar==_innerWriter.newLine or _lastChar==.newLine2
+			_column = 1
+			_isWritingIndent = true
+			try
+				.write(_totalIndentString)
+				_column += _totalIndentString.length
+			finally
+				_isWritingIndent = false
+		_innerWriter.write(value)
+		_column += 1
+		_lastChar = value.toString()
+		if _column>_rightMargin and _lastChar==' '
+			# TODO: need a better word wrapping algorithm that doesn't allow words to poke out of the right hand margin
+			# but this is good enough for now
+			.write(_innerWriter.newLine)
+
+	def write(value as String)
+		is override
+		if _isWritingIndent
+			_innerWriter.write(value)
+		else
+			base.write(value)
+
+	get encoding as Encoding
+		is override
+		return _innerWriter.encoding
+
+	def toString as String
+		is override
+		return _innerWriter.toString()
+
+
+	# *** Private Util ***
+
+	def _setTotalIndentString
+		is protected
+		sb = StringBuilder()
+		for i = 0 .. _indentLevel
+			sb.append(_indentString)
+		_totalIndentString = sb.toString()
+
+
+#class Program
+#
+#	def main
+#		is shared
+#		p = MyPage()
+#		p.writeHtml(Console.out)
