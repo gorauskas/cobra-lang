@@ -1,0 +1,170 @@
+"""
+wordcount.cobra
+
+> cd \path\to\directory\of\wordcount.cobra
+> cobra --compile wordcount.cobra
+> wordcount \path\to\some\textfile
+..\Docs\ReleaseNotes\Cobra-0.0.2.text:
+chars       = 1258
+words       = 180
+sentences   = 18
+lines       = 61
+blank lines = 20
+"""
+
+class WordCounter
+	"""
+	This class stores the counts accumulated, in other words, the number of:
+		characters
+		words
+		sentences
+		lines
+		blank lines
+
+	Several `countFoo` methods provide the ability to count:
+		* a file with a given name
+		* the contents of a TextReader
+		* any string
+		* a line at a time
+
+	The count methods can be invoked as many times as you like.
+
+	A word counter can be reused by invoking `reset`.
+	"""
+
+	test
+		assert WordCounter().countText('').numWords==0
+
+		c = WordCounter().countText('aoeu')
+		assert c.numWords==1
+		assert c.numSentences==0
+		assert c.numLines==1
+
+		c = WordCounter().countText('aoeu qwerty')
+		assert c.numWords==2
+		assert c.numSentences==0
+		assert c.numLines==1
+
+		c = WordCounter().countText('aoeu\nqwerty')
+		assert c.numWords==2
+		assert c.numSentences==0
+		assert c.numLines==2
+
+		c.reset()
+		assert c.numWords==0
+		assert c.numLines==0
+
+		sw = StringWriter()
+		print to sw
+			c.dump()
+		s = sw.toString()
+		assert s.contains('words')
+		assert s.contains('lines')
+
+	var _numChars = 0
+	var _numWords = 0
+	var _numSentences = 0
+
+	var _numLines = 0  # all lines, even blank
+	var _numBlankLines = 0
+
+	def init
+		pass
+
+	get numChars from var
+
+	get numWords from var
+
+	get numSentences from var
+
+	get numLines from var
+
+	get numBlankLines from var
+
+	def dump
+		print 'chars       = [.numChars]'
+		print 'words       = [.numWords]'
+		print 'sentences   = [.numSentences]'
+		print 'lines       = [.numLines]'
+		print 'blank lines = [.numBlankLines]'
+
+	def countText(text as String) as WordCounter
+		"""
+		Counts the chars, words, etc. of any arbitrary string.
+		"""
+		text = text.replace('\r\n', '\n')  # windows
+		text = text.replace('\r', '\n')    # mac
+		for line as String in text.split(c'\n')
+			.countLine(line)
+		return this
+
+	def countLine(line as String) as WordCounter
+		"""
+		Counts a single line of text.
+		"""
+		_numChars += line.length
+		line = line.trim()
+		_numLines += 1
+		if not line
+			_numBlankLines += 1
+		else
+			while line.indexOf('..')<>-1
+				line = line.replace('..', '.')  # so '...' does not make for 3 sentences
+			while line.indexOf('!!')<>-1
+				line = line.replace('!!', '!')
+			while line.indexOf('??')<>-1
+				line = line.replace('??', '?')
+			_numSentences += ._countChars(line, c'.') + ._countChars(line, c'!') + ._countChars(line, c'?')
+			_numWords += line.split(nil).length
+		return this
+
+	def countTextReader(tr as TextReader) as WordCounter
+		while true
+			line as String = tr.readLine()
+			if line is nil
+				break
+			.countLine(line)
+		return this
+
+	def countFileNamed(fileName as String) as WordCounter
+		tr = File.openText(fileName)
+		try
+			.countTextReader(tr)
+		finally
+			tr.close()
+		return this
+
+	def reset
+		_numChars = 0
+		_numWords = 0
+		_numSentences = 0
+		_numLines = 0
+		_numBlankLines = 0
+
+	def _countChars(s as String, c as char) as int
+		test
+			wc = WordCounter()
+			assert wc._countChars('', c'x')==0
+			assert wc._countChars('x', c'x')==1
+			assert wc._countChars('X', c'x')==0  # case sensitive
+			assert wc._countChars(' ! ! ', c'!')==2
+		body
+			count = 0
+			for ch in s
+				if c==ch
+					count += 1
+			return count
+
+	def main is shared
+		args = CobraCore.commandLineArgs
+		if args.count<2
+			print ns'usage: wordcount FILES'
+			return
+
+		wc = WordCounter()
+		for i = 1 .. args.count
+			fileName = args[i]
+			print '[fileName]:'
+			wc.countFileNamed(fileName)
+			wc.dump()
+			wc.reset()
