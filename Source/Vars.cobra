@@ -1,0 +1,164 @@
+class AbstractLocalVar
+	inherits NamedNode
+	implements IVar
+	"""
+	The base class for Param and LocalVar.
+	"""
+
+	var _type as IType?
+	var _typeNode as INode?
+	var _isImplicit as bool
+	var _isTracked as bool
+	var _ifInheritsStack = Stack<of IType>()
+	var _useCSNameStack = Stack<of String>()  # for if-inherits
+
+	def init(token as IToken, type as IType, isImplicit as bool)
+		base.init(token, token.text)
+		_type = type
+		_isImplicit = isImplicit
+		_isTracked = false
+
+	def init(token as IToken, typeNode as INode, isImplicit as bool)
+		base.init(token, token.text)
+		_typeNode = typeNode
+		_isImplicit = isImplicit
+		_isTracked = false
+
+	pro ifInheritsStack from var
+
+	get isImplicit from var
+
+	pro isTracked from var
+
+	get useCSNameStack from var
+
+	def addMinFields is override
+		base.addMinFields()
+		if _isImplicit
+			.addField('isImplicit', _isImplicit)
+		.addField('isTracked', _isTracked)
+
+	def addRefFields is override
+		base.addRefFields()
+		.addField('typeNode', _typeNode)
+		.addField('type', _type)
+
+	def toString as String is override
+		type = if(_type, .type.name, "(no type)")
+		return '[.getType().name]([.serialNum], [.token], [.name], [type])'
+
+# TODO
+#	def symbolForName(name, canBeMember=false)
+#		t = .ifInheritsStack and .ifInheritsStack.peek() or .type
+#		return t.symbolForName(name, true)  # TODO is "true" the correct value here?
+
+#	def dumpName(sw)
+#		sw.write('%s as %s  (%s)\n' % (.name, .type.name, .__class__.__name__))
+
+	def _bindInt is override
+		base._bindInt()
+		_resolveType()
+		assert _type
+		_type.bindInt()
+
+	def _bindImp is override
+		base._bindImp()
+		_resolveType()
+
+	def _resolveType
+		require _type! or _typeNode!
+		if _type!
+			return
+		if _typeNode inherits IType
+			_type = _typeNode to passthrough   # CC: shouldn't need the cast here
+			return
+		_type = _typeNode.bindAll().namedType
+		if _type is nil
+			_error('Cannot resolve type.')  # TODO: add the name of the wrappedTypeNode or something
+
+	pro type as IType
+		get
+			require _type
+			return if(_ifInheritsStack, _ifInheritsStack.peek(), _type to IType)  # CC: change last "to IType" to "to !" or make if() smarter
+		set
+			require .compiler
+			assert _type is nil or _type is .compiler.unspecifiedType
+			assert not _ifInheritsStack
+			_type = value
+
+	get typeNode from var
+
+	get typeForIdentifier as IType is override
+		return .type
+
+	get typeForReceiver as IType is override
+		assert _type
+		return if(_ifInheritsStack, _ifInheritsStack.peek(), _type to IType)
+
+	get sharpAssignmentNames as List<of String>
+		return List<of String>(_useCSNameStack)
+
+	get sharpName as String is override
+		return if(_useCSNameStack, _useCSNameStack.peek(), .name)
+
+
+
+class Param
+	inherits AbstractLocalVar
+
+	def init(token as IToken, type as IType)
+		.init(token, type, false)
+
+	def init(token as IToken, typeNode as INode)
+		.init(token, typeNode, false)
+
+	def init(token as IToken, type as IType, isImplicit as bool)
+		base.init(token, type, isImplicit)
+
+	def init(token as IToken, typeNode as INode, isImplicit as bool)
+		base.init(token, typeNode, isImplicit)
+
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		sw.write('[.type.sharpRef] [.name]')
+
+
+class LocalVar
+	inherits AbstractLocalVar
+
+	def init(token as IToken, type as IType)
+		.init(token, type, false)
+
+	def init(token as IToken, typeNode as INode)
+		.init(token, typeNode, false)
+
+	def init(token as IToken, type as IType, isImplicit as bool)
+		base.init(token, type as IType, isImplicit)
+
+	def init(token as IToken, typeNode as INode, isImplicit as bool)
+		base.init(token, typeNode, isImplicit)
+
+	def addMinFields is override
+		base.addMinFields()
+		.addField('isTracked', _isTracked)
+
+
+class ResultVar
+	inherits LocalVar
+	"""
+	The implicit variable `result` used in `ensure` blocks.
+	"""
+
+	var _sharpName as String
+
+	def init(token as IToken, codePart as ICodePart)
+		base.init(_makeToken(token, codePart), codePart.resultType, true)
+		_sharpName = codePart.sharpResultVarName
+
+	def _makeToken(token as IToken, codePart as ICodePart) as IToken is shared
+		token = token.copy
+		token.text = 'result'
+		return token
+
+	get sharpName as String is override
+		return _sharpName
