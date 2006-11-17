@@ -206,6 +206,7 @@ class Tokenizer
 	var _verbosity as int
 	var _willAlwaysEndWithNewLine = true
 	var _didReset = false
+	var _didStart = false
 
 	var _fileName as String?
 	var _stream as TextReader?
@@ -269,6 +270,10 @@ class Tokenizer
 
 	get lastToken from var
 
+	get didStart from var
+
+	get fileName from var
+
 
 	## Other
 
@@ -315,10 +320,32 @@ class Tokenizer
 		"""
 # TODO: re-enable this		ensure .lastToken == result
 		#assert .readLine, 'Not started.'
+		_didStart = true
 		_lastToken = _nextToken
 		if _verbosity>=1
 			print '<> nextToken() returning [_lastToken]'
 		return _lastToken
+
+	shared
+		var _cachedTokens = Dictionary<of String, List<of IToken> >()
+
+	def allCachedTokens as List<of IToken>
+		"""
+		Returns all tokens, possibly from a cache.
+		Useful for the regression test suite so that SystemInterfaces isn't reprocessed each time.
+		"""
+		require
+			not .didStart
+			.fileName
+		body
+			fileName = .fileName to String
+			if not fileName.endsWith('SystemInterfaces.cobra')  # being conservative
+				return .allTokens()
+			# below, we make a copy of the list to keep the cache safe from mods
+			if _cachedTokens.containsKey(fileName)
+				return List<of IToken>(_cachedTokens[fileName])
+			else
+				return List<of IToken>(_cachedTokens[fileName] = .allTokens())
 
 	def allTokens as List<of IToken>
 		"""
