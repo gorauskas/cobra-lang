@@ -34,14 +34,24 @@ class Module
 			assert decl inherits NameSpace
 			return
 		if _declsByName.containsKey(decl.name)
-			_error('The name "[decl.name]" was already declared.')
+			duplicate = true
+			suffix = ''
+			other = _declsByName[decl.name]
+		else if _declsByNameCI.containsKey(decl.name.toLower())
+			duplicate = true
+			suffix = ' Declaration names must be unique (beyond just case).'
+			other = _declsByNameCI[decl.name.toLower()]
 		else
-			if _declsByNameCI.containsKey(decl.name.toLower())
-				# TODO: give the line number of the other declaration
-				_error('The name "[decl.name]" was already declared. Declaration names must be unique (beyond just case).')
 			_declsByName[decl.name] = decl
 			_declsByNameCI[decl.name.toLower()] = decl
-		_declsInOrder.add(decl)
+		if duplicate
+			msg = 'The name "[decl.name]" was already declared'
+			if other inherits ISyntaxNode
+				msg += ' at line [other.token.lineNum]'
+			msg += '. [suffix]'
+			decl._error(msg)
+		else
+			_declsInOrder.add(decl)
 
 	get csSource as String
 		if _csFileName
