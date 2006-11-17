@@ -295,26 +295,21 @@ class ExpectStmt
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
+		exceptionTypeRef = _exceptionType.sharpRef
 		gotWriteExceptionVarName = '_lh_expect_[_varNumber-1]'  # lh => "local helper"
 		sw.write('bool [gotWriteExceptionVarName] = false;\n')
 		sw.write('try ')
 		_block.writeSharpDef(sw)
-		sw.writeAndIndent('catch (')
-		_exceptionType.writeSharpRef(sw)
-		sw.write(') {\n')
+		sw.writeAndIndent('catch ([exceptionTypeRef]) {\n')
 		sw.write('// exactly what is expected\n')
 		sw.write('[gotWriteExceptionVarName] = true;\n')
 		sw.dedentAndWrite('}\n')
 		wrongExceptionVarName = '_lh_expect_[_varNumber]'
 		assert gotWriteExceptionVarName<>wrongExceptionVarName
 		sw.writeAndIndent('catch (Exception [wrongExceptionVarName]) {\n')
-		sw.write('throw new ExpectException(typeof(')
-		_exceptionType.writeSharpRef(sw)
-		sw.write('), [wrongExceptionVarName]);\n')
+		sw.write('throw new ExpectException(typeof([exceptionTypeRef]), [wrongExceptionVarName]);\n')
 		sw.dedentAndWrite('}\n')
-		sw.write('if (![gotWriteExceptionVarName]) throw new ExpectException(typeof(')
-		_exceptionType.writeSharpRef(sw)
-		sw.write('), null);\n')
+		sw.write('if (![gotWriteExceptionVarName]) throw new ExpectException(typeof([exceptionTypeRef]), null);\n')
 
 
 class ForStmt
@@ -468,11 +463,9 @@ class ForEnumerableStmt
 		# in a C# foreach, (1) you must declare a new variable, (2) you cannot reassign it and (3) you cannot access it after the loop
 		# these constraints don't exist in Cobra
 		helperName = '_lh_for_[_var.name]_[_varNumber]'
-		sw.write('foreach (')
-		_var.type.writeSharpRef(sw)
-		sw.write(' [helperName] in ')
+		sw.write('foreach ([_var.type.sharpRef] [helperName] in ')
 		_what.writeSharpDef(sw, false)
-		sw.write(')')  ###
+		sw.write(')')
 		_block.writeSharpDef(sw, top='[_var.sharpName] = [helperName];\n')
 
 
@@ -764,8 +757,7 @@ class TryStmt
 		for eb in _catchBlocks
 			sw.write('catch')
 			if eb.type
-				sw.write(' (')
-				eb.type.writeSharpRef(sw)
+				sw.write(' ([eb.type.sharpRef]')
 				if eb.varName
 					helperName = eb.csHelperName
 					sw.write(' [helperName]')

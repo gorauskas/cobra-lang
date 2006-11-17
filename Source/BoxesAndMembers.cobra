@@ -408,20 +408,22 @@ class Box
 	get sharpKeyWord as String
 		throw OverrideException(.getType())
 
-	def writeSharpRef(sw as SharpWriter) is override
+	get sharpRef as String is override
 		if _params
+			sb = StringBuilder()
 			# generic
 			name = .rootName
-			sw.write(name)
-			sw.write('<')
+			sb.append(name)
+			sb.append('<')
 			sep = ''
 			for param in _params
-				sw.write(sep)
-				param.writeSharpRef(sw)
+				sb.append(sep)
+				sb.append(param.sharpRef)
 				sep = ', '
-			sw.write('>')
+			sb.append('>')
+			return sb.toString()
 		else
-			sw.write(.name)
+			return .name
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
@@ -442,7 +444,7 @@ class Box
 		sep = ''
 		for inter in _baseInterfaces
 			sw.write(sep)
-			inter.writeSharpRef(sw)
+			sw.write(inter.sharpRef)
 			sep = ', '
 
 		if _params
@@ -614,10 +616,10 @@ class Class
 		sw.write(' : ')
 		if _baseNode inherits TypeIdentifier
 			# needed QualifiedTypes such "inherits System.Collection.ArrayList". See Tests\300-misc\700-use-on-generice-IList
-			_baseNode.actualType.writeSharpRef(sw)
+			sw.write(_baseNode.actualType.sharpRef)
 			didWrite = true
 		else if _baseClass
-			_baseClass.writeSharpRef(sw)
+			sw.write(_baseClass.sharpRef)
 			didWrite = true
 		if didWrite
 			if _baseInterfaces
@@ -886,7 +888,7 @@ class GenericTypeConstraint
 			_error('A generic type constraint must be a class or an interface. "[_representedType.name]" is not.')
 
 	def writeSharpDef(sw as SharpWriter) is override
-		_representedType.writeSharpRef(sw)
+		sw.write(_representedType.sharpRef)
 
 
 
@@ -1182,14 +1184,13 @@ class ClassVar
 	get sharpAssignmentNames as List<of String>
 		return List<of String>(_useCSNameStack)
 
-	def writeSharpRef(sw as SharpWriter) is override
-		name = if(_useCSNameStack, _useCSNameStack.peek(), _name)
-		sw.write(name)
+	get sharpRef as String is override
+		return if(_useCSNameStack, _useCSNameStack.peek(), _name)
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
 		.writeSharpIsNames(sw)
-		_type.writeSharpRef(sw)
+		sw.write(_type.sharpRef)
 		sw.write(' [_name]')
 		if _initExpr
 			sw.write(' = ')
@@ -1456,8 +1457,7 @@ class OneCodeBlockMember
 		.writeSharpLocals(sw, nil, false)
 		if _ensurePart
 			if _sharpResultVarName  # set in _bindImp
-				_returnType.writeSharpRef(sw)
-				sw.write(' [_sharpResultVarName] = [_returnType.csInit];\n')
+				sw.write('[_returnType.sharpRef] [_sharpResultVarName] = [_returnType.csInit];\n')
 			sw.writeAndIndent('try {\n')
 		for stmt in _stmts
 			if skipFirst
@@ -1491,8 +1491,7 @@ class OneCodeBlockMember
 			sw.write('// locals\n')
 			for local in locals
 				if not local.isImplicit
-					local.type.writeSharpRef(sw)
-					sw.write(' [local.name]')
+					sw.write('[local.type.sharpRef] [local.name]')
 					init = local.type.csInit
 					if init
 						sw.write(' = [init]')
@@ -1642,8 +1641,7 @@ class Method
 		if _implementsType
 			name = _implementsType.name + '.' + name  # TODO: is name sufficient?
 		.writeSharpIsNames(sw)
-		returnType.writeSharpRef(sw)
-		sw.write(' [name]')
+		sw.write('[returnType.sharpRef] [name]')
 		.writeSharpParams(sw)
 		if .isInterfaceMember
 			sw.write(';\n')
@@ -2136,8 +2134,7 @@ class Param
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		.type.writeSharpRef(sw)
-		sw.write(' [.name]')
+		sw.write('[.type.sharpRef] [.name]')
 
 
 class LocalVar

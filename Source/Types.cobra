@@ -221,8 +221,6 @@ interface IType
 
 	get csInit as String
 
-	def writeSharpRef(sw as SharpWriter)  # TODO: get rid of this in favor or sharpRef
-
 	get sharpRef as String
 		"""
 		Returns a string that refers to this type.
@@ -381,16 +379,11 @@ class CobraType
 	get csInit as String
 		throw OverrideException(.getType())
 
-	def writeSharpRef(sw as SharpWriter)
-		sw.write(.sharpName)
-
 	get sharpName as String
 		return .name
 
-	get sharpRef as String  # TODO: kill writeSharpRef in favor of this
-		sw = StringWriter()
-		.writeSharpRef(SharpWriter(sw))
-		return sw.toString()
+	get sharpRef as String
+		return .sharpName
 
 	def writeSharpTestInvocation(sw as SharpWriter)
 		pass
@@ -562,10 +555,8 @@ class NilableType
 	get csInit as String is override
 		return 'null'
 
-	def writeSharpRef(sw as SharpWriter) is override
-		_wrappedType.writeSharpRef(sw)
-		if not _wrappedType.isReference
-			sw.write('?')
+	get sharpRef as String is override
+		return _wrappedType.sharpRef + if(not _wrappedType.isReference, '?', '')
 
 
 class NilType
@@ -647,8 +638,9 @@ class PassThroughType
 	get csInit as String is override
 		return 'null'
 
-	def writeSharpRef(sw as SharpWriter) is override
-		sw.write('object')
+	get sharpRef as String is override
+		return 'object'
+
 
 class VoidType
 	inherits ValueType  # TODO: change to CobraType
@@ -802,10 +794,8 @@ class VariType
 		# TODO: should also be assignable to IEnumerable, I think
 		return base.isAssignableTo(type)
 
-	def writeSharpRef(sw as SharpWriter) is override
-		sw.write('params ')
-		_wrappedType.writeSharpRef(sw)
-		sw.write(r'[]')
+	get sharpRef as String is override
+		return 'params [_wrappedType.sharpRef]' + r'[]'
 
 
 class QualifiedType
@@ -922,9 +912,8 @@ class QualifiedType
 
 	## Code gen
 
-	def writeSharpRef(sw as SharpWriter) is override
-		sw.write('[_dottedParentNames].')
-		_wrappedType.writeSharpRef(sw)
+	get sharpRef as String is override
+		return '[_dottedParentNames].[_wrappedType.sharpRef]'
 
 	get csInit as String is override
 		cs = _wrappedType.csInit
