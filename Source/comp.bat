@@ -1,2 +1,2 @@
 cls
-cobra-new --compile %* -files=cobra-files.text
+cobra-new --compile %* -files=files-to-compile.text
