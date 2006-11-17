@@ -49,6 +49,12 @@ class CommandLine  # TODO: rename to CommandLine
 			'args': r'[=0|1|pdbonly|full]'
 		},
 		{
+			'name': 'files',
+			'isAccumulator': true,
+			'description': 'Specify the files for Cobra to process. One per line; # comments respected.',
+			'args': '=filename',
+		},
+		{
 			'name': 'editor',
 			'description': 'Specify an editor and command line options to invoke if there is a compile-time error. Use underscore (_) for space in the specification.',
 			'example': 'uedit32_FILE/LINE',
@@ -358,6 +364,29 @@ class CommandLine  # TODO: rename to CommandLine
 			valueDict['timeit'] = true
 		if valueDict.containsKey('timeit')
 			CobraMain.setTimeIt(valueDict['timeit'] to bool)
+		if valueDict.containsKey('files')
+			for fileName as String in (valueDict['files'] to System.Collections.IList)
+				try
+					for line as String in File.readAllLines(fileName)
+						line = line.trim()
+						if not line or line.startsWith('#')
+							continue
+						# TODO: dup'ed above
+						arg = line
+						if File.exists(arg)
+							fileList.add(arg)
+						else if File.exists(arg+'.cobra')
+							fileList.add(arg+'.cobra')
+						else if Directory.exists(arg)
+							fileList.add(arg)
+						else
+							msg = 'Cannot find "[arg]" as a file.'
+							#if arg.startsWith('/')
+							#	msg += ' If you meant to specify an option, use dash (-) instead of slash (/).'
+							.error(msg)
+						# end dup
+				catch ioe as IOException
+					.error('Cannot open file "[fileName]".')
 
 		# set the class vars
 		_optionDict = valueDict
