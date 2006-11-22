@@ -224,7 +224,7 @@ class Tokenizer
 
 	# Source line and location
 	var _sourceLine as String?
-	var _lastSourceLine as String?
+	var _originalSourceLine as String?  # keep this around since _sourceLine gets chopped down
 	var _sourceLineIndex as int
 	var _lineNum as int
 	var _colNum as int
@@ -283,7 +283,7 @@ class Tokenizer
 		_lastToken = nil
 
 		_sourceLine = nil
-		_lastSourceLine = nil
+		_originalSourceLine = nil
 		_lineNum = 0
 		_colNum  = 1
 		_charNum = 1
@@ -478,7 +478,7 @@ class Tokenizer
 			result implies _sourceLine is not nil
 			result implies _lineNum == old _lineNum + 1
 		body
-			_sourceLine = _stream.readLine()
+			_sourceLine = _originalSourceLine = _stream.readLine()
 			if _sourceLine is nil
 				# end of source
 				return false
@@ -566,9 +566,9 @@ class Tokenizer
 
 				# finished with current line?
 				if _sourceLine.length==0
-					_lastSourceLine = _sourceLine
 					_sourceLine = nil
 					_sourceLineIndex = -1
+					_originalSourceLine = nil
 
 				# handle token skipping
 				if reinvoke
@@ -580,7 +580,9 @@ class Tokenizer
 			_curTokenDef = nil
 
 		# no match
-		_error('Lexical error at [_lineNum]([_sourceLineIndex]) - [_sourceLine[_sourceLineIndex]]')
+		_error('Lexical error: "[_originalSourceLine[_sourceLineIndex]]"')
+		# ^ no source location information is included in the error message as that should be pulled
+		#   from TokenizerError.tokenzier.lastToken.
 		return nil
 
 	def pushTokenDefs(defs as List<of TokenDef>)
