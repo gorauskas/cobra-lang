@@ -372,6 +372,7 @@ class Parser
 			if .optionalIndent()
 				return .isDeclNames()
 			else
+				.expect('INDENT')
 				return List<of String>()
 
 	def optionalIndent as IToken?
@@ -1327,11 +1328,15 @@ class Parser
 		"""
 		Utility method for .statementsFor.
 		"""
+		gotStmt = false
 		while .peek().which<>'DEDENT'
 			stmt = .stmt()
 			if stmt is not nil
 				codePart.addStmt(stmt to Stmt)  # CC: axe "to Stmt"
+				gotStmt = true
 		.dedent()
+		if not gotStmt
+			_error('Missing statements. Use "pass" or other statements.')
 
 	def stmt as Stmt?
 		token = .peek()
@@ -2024,15 +2029,15 @@ class Parser
 		else if peek=='SHARP_OPEN'
 			return .sharpExpr()
 		else
-			return .typeExpr()
-# TODO
-#			try
-#				return TypeExpr(.nonqualifiedType('throw'))
-#			catch ParserError, pe
-#				if pe.errorMessage==.expectingAType
-#					.error('Expecting an expression.')
-#				else
-#					throw
+			try
+				return .typeExpr()
+				# TODO: Return TypeExpr(.nonqualifiedType('throw'))
+			catch pe as ParserException
+				if pe.message.contains('Unrecognized type')
+					_error('Expecting an expression.')
+					throw FallThroughException()
+				else
+					throw
 
 	def callExpr as CallExpr
 		"""
@@ -2247,7 +2252,7 @@ class Parser
 			t = TypeIdentifier(token)
 		else
 			_error('Unrecognized type: [token]')
-			return AbstractTypeIdentifier(Token.empty, '')  # CC: remove
+			return nil to passthrough  # CC: remove
 
 		assert t<>nil
 
