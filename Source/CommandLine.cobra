@@ -581,6 +581,8 @@ class CommandLine  # TODO: rename to CommandLine
 
 	var _failureCount as int
 
+	var _firstAttempt as bool
+
 	# two writers for testify:
 	var _statusWriter as IndentedWriter?
 	var _statusCount as int
@@ -658,17 +660,20 @@ class CommandLine  # TODO: rename to CommandLine
 
 	def testifyFile(baseName as String) as int
 		save = _failureCount
-		result1 = _testifyFile(baseName, false)
+		_firstAttempt = true
+		result1 = _testifyFile(baseName)
 		if _failureCount > save
 			print
 			print
 			print 'DUE TO FAILURE, RERUNNING WITH MORE OUTPUT:'
-			result2 = _testifyFile(baseName, true)
+			_firstAttempt = false
+			result2 = _testifyFile(baseName)
 			if result1 <> result2
 				throw Exception('Result mismatch. result1=[result1], result2=[result2]')
 		return result1
 
-	def _testifyFile(baseName as String, verbose as bool) as int
+	def _testifyFile(baseName as String) as int
+		verbose = not _firstAttempt
 		if Path.pathSeparator in baseName
 			return .testifyFilePath(baseName)
 
@@ -791,7 +796,7 @@ class CommandLine  # TODO: rename to CommandLine
 					fileNames.add(Utils.combinePaths(Path.getDirectoryName(baseName), fileName))
 			print fileNames
 
-		c = Compiler(_verbosity, ErrorActionEnum.Exit)  # not expecting an error
+		c = Compiler(_verbosity, ErrorActionEnum.Record)  # not expecting an error
 
 		try
 			c.parseFilesNamed(fileNames)
@@ -857,11 +862,12 @@ class CommandLine  # TODO: rename to CommandLine
 		Produces output and increments the failure count,
 		but does not throw an exception or exit.
 		"""
-		_statusWriter.writeLine('FAILURE ----------------------------------------------------------------------')
-		print
-		print
-		print 'RUNTIME TEST FAILURE. SEE ABOVE.'
-		_failureCount += 1
+		if _firstAttempt
+			_statusWriter.writeLine('FAILURE ----------------------------------------------------------------------')
+			_failureCount += 1
+			print
+			print
+			print 'RUNTIME TEST FAILURE. SEE BELOW FOR VERBOSE RERUN.'
 
 	def testifyFilePath(pathName as String) as int
 		dirName = Path.getDirectoryName(pathName)
