@@ -127,15 +127,12 @@ class CommandLine  # TODO: rename to CommandLine
 
 	var _startTime as DateTime
 	var _verbosity = 0
-	var _output as IndentedWriter
 
 	var _optionDict as Dictionary<of String, Object>
 	var _pathList as List<of String>
 
 	def init
 		_startTime = DateTime.now
-		_output = IndentedWriter(Console.out)
-		_output.indentString = '    '
 		# prep the option specs
 		_optionSpecs = List<of Dictionary<of String, Object>>()
 		for specObj in _rawOptionSpecs
@@ -585,20 +582,20 @@ class CommandLine  # TODO: rename to CommandLine
 	var _failureCount as int
 
 	# two writers for testify:
-	var _statusWriter as TextWriter?
+	var _statusWriter as IndentedWriter?
 	var _statusCount as int
-	var _resultsWriter as StreamWriter?
+	var _resultsWriter as IndentedWriter?
 
 	def doTestify(paths as List<of String>)
 		"""
 		Used internally for testing cobra during development.
 		Why not just 'test'? because that is reserved for regular developers to run true unit tests.
 		"""
-		_statusWriter = Console.out to passthrough  # TODO: I don't think the cast should be needed
+		_statusWriter = IndentedWriter(Console.out)
+		_statusWriter.indentString = '    '
 		try
 			using resultsWriter = File.createText('r-run')
-				_resultsWriter = resultsWriter
-				_output = IndentedWriter(_resultsWriter) # TODO: merge _output into _resultsWriter
+				_resultsWriter = IndentedWriter(resultsWriter)
 				print to _resultsWriter
 					_innerDoTestify(paths)
 		finally
@@ -638,28 +635,32 @@ class CommandLine  # TODO: rename to CommandLine
 		Returns the number tests that passed.
 		"""
 		_statusWriter.writeLine('[dirName]')
-		print 'Running tests in [dirName]'
-		saveDir = Environment.currentDirectory
-		Directory.setCurrentDirectory(dirName)
+		_statusWriter.indent()
 		try
-			paths = List<of String>(Directory.getFiles('.'))
-			paths.addRange(Directory.getDirectories('.'))
-			paths.sort()
-			for baseName in paths
-				baseName = Utils.normalizePath(baseName)
-				pathName = Utils.combinePaths(dirName, baseName)
-				if baseName.endsWith('.cobra')
-					_testifyCount += .testifyFile(baseName)
-				else if Directory.exists(baseName)
-					.testifyDir(baseName)
+			print 'Running tests in [dirName]'
+			saveDir = Environment.currentDirectory
+			Directory.setCurrentDirectory(dirName)
+			try
+				paths = List<of String>(Directory.getFiles('.'))
+				paths.addRange(Directory.getDirectories('.'))
+				paths.sort()
+				for baseName in paths
+					baseName = Utils.normalizePath(baseName)
+					pathName = Utils.combinePaths(dirName, baseName)
+					if baseName.endsWith('.cobra')
+						_testifyCount += .testifyFile(baseName)
+					else if Directory.exists(baseName)
+						.testifyDir(baseName)
+			finally
+				Directory.setCurrentDirectory(saveDir)
 		finally
-			Directory.setCurrentDirectory(saveDir)
+			_statusWriter.dedent()
 
 	def testifyFile(baseName as String) as int
 		if Path.pathSeparator in baseName
 			return .testifyFilePath(baseName)
 
-		_statusWriter.writeLine('\t([_statusCount]) [baseName]')
+		_statusWriter.writeLine('([_statusCount]) [baseName]')
 		_statusCount += 1
 		assert File.exists(baseName), baseName
 
@@ -690,10 +691,10 @@ class CommandLine  # TODO: rename to CommandLine
 			try
 				c = Compiler(_verbosity, ErrorActionEnum.Record, WarningActionEnum.Print)
 				c.parseFilesNamed([baseName])
-				c.dumpModulesForTestify(_output, 'Modules after parsing')
+				c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
 				c.bindInt()
 				c.bindImp()
-				c.dumpModulesForTestify(_output, 'Modules after binding')
+				c.dumpModulesForTestify(_resultsWriter, 'Modules after binding')
 			catch ce as CobraException
 				assert c.errors
 				expectedErrors = List<of String>(error.split(c'&')) # CC: axe List<of String> instantiation
@@ -731,10 +732,10 @@ class CommandLine  # TODO: rename to CommandLine
 			try
 				c = Compiler(_verbosity, ErrorActionEnum.Exit, WarningActionEnum.Throw)
 				c.parseFilesNamed([baseName])
-				c.dumpModulesForTestify(_output, 'Modules after parsing')
+				c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
 				c.bindInt()
 				c.bindImp()
-				c.dumpModulesForTestify(_output, 'Modules after binding')
+				c.dumpModulesForTestify(_resultsWriter, 'Modules after binding')
 			catch cw as CobraWarning
 				if cw.message.toLower().indexOf(warning)==-1
 					print 'Expecting warning substring: "[warning]"'
@@ -778,13 +779,13 @@ class CommandLine  # TODO: rename to CommandLine
 
 		c.parseFilesNamed(fileNames)
 		assert c.modules
-		c.dumpModulesForTestify(_output, 'Modules after parsing')
+		c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
 
 		print 'Bind interface:'
 		c.bindInt()
 		print 'Bind implementation:'
 		c.bindImp()
-		c.dumpModulesForTestify(_output, 'Modules after binding')
+		c.dumpModulesForTestify(_resultsWriter, 'Modules after binding')
 
 		print bar
 		print 'Generate C#:'
