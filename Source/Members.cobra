@@ -564,6 +564,7 @@ class OneCodeBlockMember
 			_requirePart.writeSharpDef(sw)
 		.writeSharpLocals(sw, nil, false)
 		if _ensurePart
+			sw.write('bool _lh_canEnsure = true;\n')
 			if _sharpResultVarName  # set in _bindImp
 				sw.write('[_returnType.sharpRef] [_sharpResultVarName] = [_returnType.csInit];\n')
 			sw.writeAndIndent('try {\n')
@@ -573,9 +574,15 @@ class OneCodeBlockMember
 				continue
 			stmt.writeSharpStmt(sw)
 		if _ensurePart
+			sw.dedentAndWrite('} catch {\n')
+			sw.indent()
+			sw.write('_lh_canEnsure = false;\n')
+			sw.write('throw;\n')
 			sw.dedentAndWrite('} finally { // ensure\n')
+			sw.indentAndWrite('if (_lh_canEnsure) {\n')
 			sw.indent()
 			_ensurePart.writeSharpDef(sw)
+			sw.dedentAndWrite('}\n')
 			sw.dedentAndWrite('}\n')
 		if .compiler.hasSuperStackTraceOption
 			.writeSSTTail(sw)
