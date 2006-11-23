@@ -46,6 +46,15 @@ class Expr
 	def toCobraSource as String
 		return ''
 
+	get isCalling as bool
+		"""
+		Return true is this expression is making a call.
+		The default implementation returns false.
+		You might think "inherits CallExpr" would suffice, but MemberExpr and IdentifierExpr can
+		also return true when they refer to methods.
+		"""
+		return false
+
 	def isKindOf(type as IType) as bool
 		require
 			.type
@@ -226,6 +235,9 @@ class CallExpr
 			if arg.hasError
 				return true
 		return false
+
+	get isCalling as bool is override
+		return true
 
 	get name from var
 
@@ -428,6 +440,10 @@ class IdentifierExpr
 	pro definition from var
 
 	get text from var
+
+	get isCalling as bool is override
+		assert _definition
+		return _definition.isMethod
 
 	get namedType as IType? is override
 		# overridden to return the type this identifier represents in those cases when it does represent a type such an "int" or a class
@@ -783,6 +799,10 @@ class MemberExpr
 
 	get definition from var
 
+	get isCalling as bool is override
+		assert _definition
+		return _definition.isMethod
+
 	def _bindImp is override
 		require
 			.superNode inherits BinaryOpExpr
@@ -832,7 +852,7 @@ class MemberExpr
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		assert .superNode inherits DotExpr
 		sw.write(Utils.capped(_name))
-		if _definition inherits Method or _definition inherits MemberOverload
+		if _definition.isMethod
 			sw.write('()')
 
 
