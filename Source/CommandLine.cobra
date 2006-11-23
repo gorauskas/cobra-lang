@@ -657,6 +657,18 @@ class CommandLine  # TODO: rename to CommandLine
 			_statusWriter.dedent()
 
 	def testifyFile(baseName as String) as int
+		save = _failureCount
+		result1 = _testifyFile(baseName, false)
+		if _failureCount > save
+			print
+			print
+			print 'DUE TO FAILURE, RERUNNING WITH MORE OUTPUT:'
+			result2 = _testifyFile(baseName, true)
+			if result1 <> result2
+				throw Exception('Result mismatch. result1=[result1], result2=[result2]')
+		return result1
+
+	def _testifyFile(baseName as String, verbose as bool) as int
 		if Path.pathSeparator in baseName
 			return .testifyFilePath(baseName)
 
@@ -675,9 +687,9 @@ class CommandLine  # TODO: rename to CommandLine
 		print '    Test #[_testifyCount+1]'
 		print bar
 		print bar
-		.printSource(source)
-
-		print bar
+		if verbose
+			.printSource(source)
+			print bar
 		# TODO: why doesn't the following line work?
 		# firstLine as String = source.split([c'\n'].toArray(), 1)[0]  # CC: axe "as String"
 		firstLine = source.split(c'\n')[0] to String
@@ -691,10 +703,12 @@ class CommandLine  # TODO: rename to CommandLine
 			try
 				c = Compiler(_verbosity, ErrorActionEnum.Record, WarningActionEnum.Print)
 				c.parseFilesNamed([baseName])
-				c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
+				if verbose
+					c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
 				c.bindInt()
 				c.bindImp()
-				c.dumpModulesForTestify(_resultsWriter, 'Modules after binding')
+				if verbose
+					c.dumpModulesForTestify(_resultsWriter, 'Modules after binding')
 			catch ce as CobraException
 				assert c.errors
 				expectedErrors = List<of String>(error.split(c'&')) # CC: axe List<of String> instantiation
@@ -732,10 +746,12 @@ class CommandLine  # TODO: rename to CommandLine
 			try
 				c = Compiler(_verbosity, ErrorActionEnum.Exit, WarningActionEnum.Throw)
 				c.parseFilesNamed([baseName])
-				c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
+				if verbose
+					c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
 				c.bindInt()
 				c.bindImp()
-				c.dumpModulesForTestify(_resultsWriter, 'Modules after binding')
+				if verbose
+					c.dumpModulesForTestify(_resultsWriter, 'Modules after binding')
 			catch cw as CobraWarning
 				if cw.message.toLower().indexOf(warning)==-1
 					print 'Expecting warning substring: "[warning]"'
@@ -777,29 +793,37 @@ class CommandLine  # TODO: rename to CommandLine
 
 		c = Compiler(_verbosity, ErrorActionEnum.Exit)  # not expecting an error
 
-		c.parseFilesNamed(fileNames)
-		assert c.modules
-		c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
+		try
+			c.parseFilesNamed(fileNames)
+			assert c.modules
+			if verbose
+				c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
 
-		print 'Bind interface:'
-		c.bindInt()
-		print 'Bind implementation:'
-		c.bindImp()
-		c.dumpModulesForTestify(_resultsWriter, 'Modules after binding')
+			print 'Bind interface:'
+			c.bindInt()
+			print 'Bind implementation:'
+			c.bindImp()
+			if verbose
+				c.dumpModulesForTestify(_resultsWriter, 'Modules after binding')
+				print bar
 
-		print bar
-		print 'Generate C#:'
-		c.writeSharp()
-		# CC: shouldn't need to rename to 'module2'
-		for module2 as Module in c.modules.getRange(1, c.modules.count-1)  # CC: axe "as Module"
-			.printSource(module2.csSource)
+			print 'Generate C#:'
+			c.writeSharp()
+			if verbose
+				# CC: shouldn't need to rename to 'module2'
+				for module2 as Module in c.modules.getRange(1, c.modules.count-1)  # CC: axe "as Module"
+					.printSource(module2.csSource)
+				print bar
 
-		print bar
-		print 'Compile C#:'
-		c.compileCS()
-		c.printMessages()
+			print 'Compile C#:'
+			c.compileCS()
+			if verbose
+				c.printMessages()
+				print bar
+		catch ce as CobraException
+			.failed()
+			return 0
 
-		print bar
 		print 'Run:'
 		p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
 		if _verbosity > 2
