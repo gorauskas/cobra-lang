@@ -407,11 +407,11 @@ class CommandLine  # TODO: rename to CommandLine
 				c.writeSharpTestInvocation()
 			c.compileCS()
 			c.printMessages()
-		catch ce as CobraException  # TODO: have Compiler._exitFromErrors throw a StopCompilationException instead
+		catch stopComp as StopCompilation # CC: no variable
 			# Each phase of the compiler may throw an exception to stop compilation.
 			# Before doing so, it prints its errors.
 			if _optionDict.containsKey('editor')
-				assert c.errors.count>0, ce
+				assert c.errors.count>0, c
 				spec = _optionDict['editor'] to String
 				if spec.indexOf('_')==-1
 					.error('Missing underscore from editor spec.')
@@ -710,11 +710,13 @@ class CommandLine  # TODO: rename to CommandLine
 				c.parseFilesNamed([baseName])
 				if verbose
 					c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
+					print bar
 				c.bindInt()
 				c.bindImp()
 				if verbose
 					c.dumpModulesForTestify(_resultsWriter, 'Modules after binding')
-			catch ce as CobraException
+					print bar
+			catch stopComp as StopCompilation
 				assert c.errors
 				expectedErrors = List<of String>(error.split(c'&')) # CC: axe List<of String> instantiation
 				for i = 0 .. expectedErrors.count
@@ -753,6 +755,7 @@ class CommandLine  # TODO: rename to CommandLine
 				c.parseFilesNamed([baseName])
 				if verbose
 					c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
+					print bar
 				c.bindInt()
 				c.bindImp()
 				if verbose
@@ -765,6 +768,11 @@ class CommandLine  # TODO: rename to CommandLine
 					return 0
 				print 'Expected warning occurred: "[warning]" in "[cw.message]"'
 				return 1
+			catch stopComp as StopCompilation
+				print 'Expecting warning substring: "[warning]"'
+				print 'But got errors.'
+				.failed()
+				return 0
 			found = false
 			for cw in c.warnings
 				if cw.message.toLower().indexOf(warning)<>-1
@@ -784,6 +792,8 @@ class CommandLine  # TODO: rename to CommandLine
 			return 0
 
 		if firstLineInsensitive.startsWith('#.multipart.')
+			# .multi. is the one that gets run along with its associated files
+			# the associated files then specify .multipart. and get skipped when encountered
 			print 'Skipping per directive on first line of test source.'
 			return 0
 
@@ -803,6 +813,7 @@ class CommandLine  # TODO: rename to CommandLine
 			assert c.modules
 			if verbose
 				c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
+				print bar
 
 			print 'Bind interface:'
 			c.bindInt()
@@ -825,7 +836,7 @@ class CommandLine  # TODO: rename to CommandLine
 			if verbose
 				c.printMessages()
 				print bar
-		catch ce as CobraException
+		catch stopComp as StopCompilation
 			.failed()
 			return 0
 
