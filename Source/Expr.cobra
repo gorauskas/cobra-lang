@@ -475,11 +475,8 @@ class IdentifierExpr
 			#	self.error('You must refer to non-underscored members with a leading dot (.).')
 
 			if _definition is nil and (not _superNode inherits BinaryOpExpr or .binarySuperNode.op<>'ASSIGN')
-				msg = 'Unknown identifier: "[_text]".'
-				sug = .compiler.suggestionFor(_text)
-				if sug
-					msg += ' Maybe you should try "[sug]".'
-				_error(msg)
+				.errorUnknownId(.text)
+				throw FallThroughException()
 		if _type is nil
 			if _definition
 				_type = _definition.typeForIdentifier
@@ -488,6 +485,16 @@ class IdentifierExpr
 					pass  # let the AssignExpr have its chance at type inference
 				else
 					.errorUnknownId(.text)
+					throw FallThroughException()
+
+	def errorUnknownId(name as String)
+		require name
+		msg = 'Unknown identifier: "[name]".'
+		if .compiler.unknownSuggestions.containsKey(name)
+			sug = .compiler.unknownSuggestions[name]
+		if sug
+			msg += ' Maybe you should try "[sug]".'
+		_error(msg)
 
 	def postBindImpAssertType is override
 		pass

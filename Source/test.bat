@@ -1,3 +1,3 @@
 @cls
-cobra -testify %* > r-run
+cobra -testify %*
 e r-run
