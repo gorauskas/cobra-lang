@@ -579,7 +579,17 @@ class OneCodeBlockMember
 					throw
 		if _ensurePart
 			_ensurePart.bindImp()
+		.checkForUnmarkedOverrideOrNew  # have to do this after statements bind imp since using base can add `override`
 		.compiler.codeMemberStack.pop()
+
+	def checkForUnmarkedOverrideOrNew
+		if 'new' not in _isNames and 'override' not in _isNames
+			if _box inherits Class
+				if _box.baseClass is not nil
+					baseMember = _box.baseClass.memberForName(_name)
+					if baseMember inherits OneCodeBlockMember
+						if .matchesSignature(baseMember)
+							_error('Member "[_name]" also exists in the base class. You must specify "is override" or "is new", or change the name.')
 
 	## Code gen
 
@@ -695,6 +705,10 @@ class Constructor
 
 	def usesBase is override
 		# constructors cannot be virtual
+		pass
+
+	def checkForUnmarkedOverrideOrNew is override
+		# constructors don't say override or new
 		pass
 
 	## Code gen
