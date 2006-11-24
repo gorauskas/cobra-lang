@@ -247,7 +247,6 @@ class ClassVar
 			if _initExpr and not _initExpr.isKindOf(t to IType)  # CC: axe cast when "assert foo" is understood to prove that foo is not nil
 				_error('The expression type of [_initExpr.type] does not match the variable type of [t].')
 			_type = t
-		_type.bindInt  # TODO: is this needed?
 
 	get resultType as IType is override
 		"""
@@ -272,10 +271,6 @@ class ClassVar
 			return if(_ifInheritsStack, _ifInheritsStack.peek, .resultType)  # CC: change last "to IType" to "to !" or make if() smarter
 		set
 			assert false, 'Cannot set the type of a ClassVar.'
-			# TODO: remove
-			#assert _type is nil  # TODO: in [nil, tpassthrough, tunknown)
-			#assert not _ifInheritsStack
-			#_type = value
 
 	## Code Gen
 
@@ -362,7 +357,7 @@ class OneCodeBlockMember
 	var _returnType as IType?
 	var _requirePart as RequirePart
 	var _ensurePart as EnsurePart
-	var _oldExprs as List<of OldExpr>  # TODO: add a doc string for this
+	var _oldExprs as List<of OldExpr>
 	var _params as List<of Param>
 	var _locals as List<of LocalVar>
 	var _stmts as List<of Stmt>
@@ -416,14 +411,11 @@ class OneCodeBlockMember
 		body
 			return _returnType to IType  # CC: to !
 
-	def findLocal(name as String) as AbstractLocalVar?  # TODO: narrow to common base of Param and LocalVar
-		# TODO: does it really matter if a the symbols are traversed in reverse order?
+	def findLocal(name as String) as AbstractLocalVar?
 		# TODO: should this use a dictionary lookup?
-		i = _locals.count - 1
-		while i>=0
-			if _locals[i].name==name
-				return _locals[i]
-			i -= 1
+		for local in _locals
+			if local.name==name
+				return local
 		for param in _params
 			if param.name==name
 				return param
@@ -463,26 +455,6 @@ class OneCodeBlockMember
 				if _locals[i].name==name
 					_locals.removeAt(i)
 					break
-
-#	def dumpName(sw)
-#		name = getattr('name', '(noname)')
-#		returnType = getattr('returnType', '(no return type)')
-#		while iscallable(returnType)
-#			returnType = returnType()
-#		sw.write('%s as %s  (%s)\n' % (name, returnType, .className))
-
-# TODO: is pushName() needed?
-#	def pushName(var)
-#		.addSymbol(var)
-
-#	def dumpNames(sw)
-#		sw.write('%s\n' % .__class__.__name__)
-#		sw.indent
-#		for param in .params
-#			param.dumpName(sw)
-#		for name in .names
-#			name.dumpName(sw)
-#		sw.indent
 
 	def addOldExpr(oldExpr as OldExpr)
 		_oldExprs.add(oldExpr)
