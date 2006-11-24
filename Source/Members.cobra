@@ -14,7 +14,7 @@ class ClassMember  # TODO: rename to BoxMember
 
 	var _box as Box
 	var _docString as String?
-	var _isNames as List<of String>?
+	var _isNames as List<of String>?  # CC: make a Set
 	var _overloadGroup as MemberOverload?
 	var _testMethod as TestMethod?
 
@@ -338,6 +338,12 @@ interface ICodePart
 
 	get resultType as IType
 
+	def usesBase
+		"""
+		Invoked when it's discovered that code part references base. This then implies that the
+		member is an `override` if it is not already marked `new`.
+		"""
+
 	pro requirePart as RequirePart?
 
 	pro ensurePart as EnsurePart?
@@ -505,6 +511,31 @@ class OneCodeBlockMember
 		.addField('locals', _locals)
 		.addField('stmts', _stmts)
 
+	def usesBase
+		if 'new' in _isNames or 'override' in _isNames
+			pass
+		else
+			# using base implies override, but only if the method sig in the base class is the same
+			# (otherwise it's just an override)
+			if _box inherits Class
+				assert _box.baseClass
+				baseMember = _box.baseClass.memberForName(_name)
+				if baseMember inherits OneCodeBlockMember
+					if .matchesSignature(baseMember)
+						_isNames.add('override')
+						_isNames.remove('virtual')  # virtual is the default for properties and methods
+
+	def matchesSignature(member as OneCodeBlockMember) as bool
+		if .name <> member.name
+			return false
+		otherParams = member.params
+		if _params.count <> otherParams.count
+			return false
+		for i = 0 .. _params.count
+			if _params[i].type <> otherParams[i].type
+				return false
+		return true
+
 	def _bindInt is override
 		base._bindInt()
 		.compiler.codeMemberStack.push(this)
@@ -643,7 +674,6 @@ class OneCodeBlockMember
 
 class Constructor
 	inherits OneCodeBlockMember
-	implements ICodePart  # TODO: should OneCodeBlockMember inherit ICodePart
 
 	def init(token as IToken, box as Box, paramsList as List<of Param>, isNames as List<of String>, docString as String)
 		base.init(token, box, 'init', paramsList, isNames, docString)
@@ -661,6 +691,10 @@ class Constructor
 		return true
 
 	def defaultToVirtual is override
+		pass
+
+	def usesBase is override
+		# constructors cannot be virtual
 		pass
 
 	## Code gen
@@ -692,7 +726,6 @@ class Constructor
 
 class Method
 	inherits OneCodeBlockMember
-	implements ICodePart
 
 	var _implementsTypeNode as ISyntaxNode?
 	var _implementsType as IType?
