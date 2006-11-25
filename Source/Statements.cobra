@@ -471,51 +471,56 @@ class IfStmt
 
 	def _bindImp is override
 		base._bindImp()
-		_cond.bindImp()
-		.noAssignmentAllowed(_cond)
-		if _cond.type is not .compiler.boolType
-			_cond = TruthExpr(_cond).bindImp() to TruthExpr  # CC: axe cast when supporting 'as this'
-		cond = _cond
-		ifInherits = false
-		# TODO: handle the "x inherits Y" being part of a string of "and"ed exprs
-		# CC: combine some of the if statements below when "if inherits" can handle complex expressions
-		if cond inherits InheritsExpr
-			left = cond.left
-			if left inherits IdentifierExpr
-				leftVar = left.definition
-				if leftVar inherits IVar  # if-inherits smarts only work on variables
-					# if x inherits y ...
-					assert cond.right.namedType, cond.right
-					leftVar.ifInheritsStack.push(cond.right.namedType to IType)  # CC: to !
-					ifInherits = true
-					_trueStmts.setIfInherits(leftVar, leftVar.ifInheritsStack.peek())
-		if not ifInherits
-			if cond inherits TruthExpr
-				if cond.expr inherits IdentifierExpr
-					leftVar = (cond.expr to IdentifierExpr).definition
-					if leftVar.typeForIdentifier inherits NilableType
-						# if x ...
+		try
+			_cond.bindImp()
+		catch ne as NodeException
+			if .compiler.recordErrorAndThrow(ne)
+				throw
+		success
+			.noAssignmentAllowed(_cond)
+			if _cond.type is not .compiler.boolType
+				_cond = TruthExpr(_cond).bindImp() to TruthExpr  # CC: axe cast when supporting 'as this'
+			cond = _cond
+			ifInherits = false
+			# TODO: handle the "x inherits Y" being part of a string of "and"ed exprs
+			# CC: combine some of the if statements below when "if inherits" can handle complex expressions
+			if cond inherits InheritsExpr
+				left = cond.left
+				if left inherits IdentifierExpr
+					leftVar = left.definition
+					if leftVar inherits IVar  # if-inherits smarts only work on variables
+						# if x inherits y ...
+						assert cond.right.namedType, cond.right
+						leftVar.ifInheritsStack.push(cond.right.namedType to IType)  # CC: to !
+						ifInherits = true
+						_trueStmts.setIfInherits(leftVar, leftVar.ifInheritsStack.peek())
+			if not ifInherits
+				if cond inherits TruthExpr
+					if cond.expr inherits IdentifierExpr
+						leftVar = (cond.expr to IdentifierExpr).definition
+						if leftVar.typeForIdentifier inherits NilableType
+							# if x ...
+							notNil = true
+			if not ifInherits and not notNil
+				if cond inherits CompareExpr
+					if cond.op in ['ISNOT', 'NE'] and cond.left inherits IdentifierExpr and cond.right inherits NilLiteral
+						# if x is not nil ...
+						# if x <> nil ...
+						# TODO: also handle "if nil is not x"
+						# TODO? "if not x is nil"  "if nil is not x"
 						notNil = true
-		if not ifInherits and not notNil
-			if cond inherits CompareExpr
-				if cond.op in ['ISNOT', 'NE'] and cond.left inherits IdentifierExpr and cond.right inherits NilLiteral
-					# if x is not nil ...
-					# if x <> nil ...
-					# TODO: also handle "if nil is not x"
-					# TODO? "if not x is nil"  "if nil is not x"
-					notNil = true
-					leftVar = (cond.left to IdentifierExpr).definition
-		if notNil
-			if leftVar inherits IVar
-				leftVar.ifInheritsStack.push((leftVar.type to WrappedType).theWrappedType to IType)  # CC: to !
-			else
-				throw FallThroughException(leftVar)
-			ifInherits = true
-		if ifInherits
-			if leftVar inherits IVar
-				_trueStmts.setIfInherits(leftVar, leftVar.ifInheritsStack.peek())
-			else
-				throw FallThroughException(leftVar)
+						leftVar = (cond.left to IdentifierExpr).definition
+			if notNil
+				if leftVar inherits IVar
+					leftVar.ifInheritsStack.push((leftVar.type to WrappedType).theWrappedType to IType)  # CC: to !
+				else
+					throw FallThroughException(leftVar)
+				ifInherits = true
+			if ifInherits
+				if leftVar inherits IVar
+					_trueStmts.setIfInherits(leftVar, leftVar.ifInheritsStack.peek())
+				else
+					throw FallThroughException(leftVar)
 		_trueStmts.bindImp()
 		if ifInherits
 			if leftVar inherits IVar  # CC: put with above "if" via "and" once "if inherits" is smart enough
