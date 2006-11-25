@@ -272,7 +272,7 @@ class CallExpr
 					# handle foo.bar() where this is the `bar()` part
 					if not _superNode.left.didBindImp
 						assert _superNode.left.hasError, _superNode.left
-						# we get here for Cobra code like "obj.foo.bar" where "foo" is not found
+						# we get here for Cobra code like "obj.foo.bar(x)" where "foo" is not found
 						_type = .compiler.passThroughType
 						return
 					possibleDefinition = _superNode.left.memberForName(_name)
@@ -422,7 +422,7 @@ class CallExpr
 class IdentifierExpr
 	inherits Expr
 
-	var _text as String
+	var _name as String
 	var _definition as INamedNode?
 		"""
 		In practice, definitions include:
@@ -432,9 +432,9 @@ class IdentifierExpr
 		There may be others, but at least those have been observed in practice.
 		"""
 
-	def init(token as IToken, text as String, definition as INamedNode?)
+	def init(token as IToken, name as String, definition as INamedNode?)
 		base.init(token)
-		_text = text
+		_name = name
 		_definition = definition
 
 	def addRefFields is override
@@ -443,7 +443,7 @@ class IdentifierExpr
 
 	pro definition from var
 
-	get text from var
+	get name from var
 
 	get isCalling as bool is override
 		assert _definition
@@ -474,19 +474,19 @@ class IdentifierExpr
 	def _bindImp is override
 		base._bindImp()
 		if _definition is nil
-			canBeMember = _text.startsWith('_') or Utils.isCapped(_text)  # isCapped could be an enum or, in the future, a nested class
+			canBeMember = _name.startsWith('_') or Utils.isCapped(_name)  # isCapped could be an enum or, in the future, a nested class
 			if canBeMember
 				assert .compiler.boxStack
-				_definition = .compiler.symbolForName(_text, canBeMember, false) to passthrough
+				_definition = .compiler.symbolForName(_name, canBeMember, false) to passthrough
 			else
-				_definition = .compiler.findLocal(_text)
+				_definition = .compiler.findLocal(_name)
 			if _definition is nil and not canBeMember
 				if _superNode inherits BinaryOpExpr
 					if _superNode.right is this
 						curBox = .compiler.boxStack.peek()
-						definition = curBox.symbolForName(_text, true, true)
+						definition = curBox.symbolForName(_name, true, true)
 						if definition is not nil
-							_error('You must refer to non-underscored members with a leading dot (.). Member name is "[_text]".')
+							_error('You must refer to non-underscored members with a leading dot (.). Member name is "[_name]".')
 
 			# TODO: The effect of using symbolForName() just above and the next 3 lines is that class members mask globals of the same name. This will become a problem when module-level functions are supported.
 			#from Module import ClassMemberDecl
@@ -495,7 +495,7 @@ class IdentifierExpr
 			#	self.error('You must refer to non-underscored members with a leading dot (.).')
 
 			if _definition is nil and (not _superNode inherits BinaryOpExpr or .binarySuperNode.op<>'ASSIGN')
-				.errorUnknownId(.text)
+				.errorUnknownId(.name)
 				throw FallThroughException()
 		if _type is nil
 			if _definition
@@ -504,7 +504,7 @@ class IdentifierExpr
 				if .binarySuperNode and .binarySuperNode inherits AssignExpr and this is .binarySuperNode.left
 					pass  # let the AssignExpr have its chance at type inference
 				else
-					.errorUnknownId(.text)
+					.errorUnknownId(.name)
 					throw FallThroughException()
 
 	def errorUnknownId(name as String)
@@ -520,12 +520,12 @@ class IdentifierExpr
 		pass
 
 	def toCobraSource as String is override
-		return _text
+		return _name
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		if .superNode inherits DotExpr and .binarySuperNode.right is this
 			assert false, 'does this happen?'  # TODO: if not, axe this portion
-			sw.write(Utils.capped(_text))
+			sw.write(Utils.capped(_name))
 		else
 			# if this names a type and it's not dotted, then C# requires typeof()
 			if _type inherits TypeType
@@ -551,7 +551,7 @@ class IdentifierExpr
 
 	def writeSharpStmt(sw as SharpWriter) is override
 		assert .isCalling
-		sw.write('[_text]();')
+		sw.write('[_name]();')
 
 	get sharpAssignmentNames as List<of String>?
 		require
