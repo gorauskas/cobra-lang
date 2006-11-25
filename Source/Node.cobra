@@ -5,30 +5,6 @@ class CobraException
 		base.init(msg)
 
 
-class CobraMultiException
-	inherits CobraException
-	"""
-	To provide good error recovery and to fully report all errors, it can be useful for parts of
-	the code to catch exceptions that they then may need to throw all at once. Hence, the
-	CobraMultiException. At least BinaryOpExpr uses it and Compiler.recordErrorAndThrow() checks
-	for it.
-	"""
-
-	var _exceptions as List<of CobraException>
-
-	def init(exceptions as vari CobraException)
-		"""
-		As a convenience to the caller, nil exceptions are quietly ignored.
-		"""
-		base.init('multi exception')
-		_exceptions = List<of CobraException>()
-		for exc in exceptions
-			if $sharp('exc!=null')
-				_exceptions.add($sharp('exc'))
-
-	get exceptions from var
-
-
 class NodeException
 	inherits CobraException
 
@@ -50,6 +26,38 @@ class NodeException
 
 	def prefixMessage(s as String)
 		_message = s + _message
+
+
+class NodeMultiException
+	inherits NodeException
+	"""
+	To provide good error recovery and to fully report all errors, it can be useful for parts of
+	the code to catch exceptions that they then may need to throw all at once. Hence, the
+	NodeMultiException. At least BinaryOpExpr uses it and Compiler.recordErrorAndThrow() checks
+	for it.
+	"""
+
+	var _exceptions as List<of NodeException>
+
+	def init(exceptions as vari NodeException)
+		"""
+		As a convenience to the caller, nil exceptions are quietly ignored and
+		NodeMultiExceptions are recursively processed.
+		"""
+		base.init(Node(), 'multi exception')
+		_exceptions = List<of NodeException>()
+		_addExceptions($sharp('exceptions'))
+		assert _exceptions, 'At least on exception must exist.'
+
+	def _addExceptions(exceptions as IEnumerable<of NodeException>)
+		for exc in exceptions
+			if $sharp('exc!=null')
+				if exc inherits NodeMultiException
+					_addExceptions($sharp('((NodeMultiException)exc).Exceptions'))
+				else
+					_exceptions.add($sharp('exc'))
+
+	get exceptions from var
 
 
 interface ISourceError
