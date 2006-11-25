@@ -270,6 +270,11 @@ class CallExpr
 					if _superNode.left.type inherits Box and checkName and Utils.startsNonLower(checkName)
 						_error('Methods must start with lowercase letters (not counting underscores). The name is \"[_name]\".')
 					# handle foo.bar() where this is the `bar()` part
+					if not _superNode.left.didBindImp
+						assert _superNode.left.hasError, _superNode.left
+						# we get here for Cobra code like "obj.foo.bar" where "foo" is not found
+						_type = .compiler.passThroughType
+						return
 					possibleDefinition = _superNode.left.memberForName(_name)
 					if possibleDefinition is nil
 						if _superNode.left.receiverType is .compiler.passThroughType or _superNode.left.receiverType inherits PrimitiveType  # TODO: lame: bailing out on PrimitiveType so float.parse() will work. See Tests\150-basics-two\510-number-parse.cobra
@@ -800,6 +805,11 @@ class MemberExpr
 		body
 			base._bindImp()
 			if _definition is nil or _type is nil
+				if not .binarySuperNode.left.didBindImp
+					assert .binarySuperNode.left.hasError, .binarySuperNode.left
+					# we get here for Cobra code like "obj.foo.bar" where "foo" is not found
+					_type = .compiler.passThroughType
+					return
 				_definition = .binarySuperNode.left.memberForName(_name)
 				if _definition is nil
 					if .binarySuperNode.left.receiverType is .compiler.passThroughType
