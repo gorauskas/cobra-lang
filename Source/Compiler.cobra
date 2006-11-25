@@ -584,7 +584,13 @@ class Compiler
 
 	var _exeFileName as String
 
-	var _cscExecPath = r'\WINDOWS\Microsoft.NET\Framework\v2.0.50727\csc'
+	var _cscExecPaths = [
+		[r'\WINDOWS\Microsoft.NET\Framework\v2.0.50727\csc', 'ms'],  # common
+		[r'\WINNT\Microsoft.NET\Framework\v2.0.50727\csc', 'ms'],
+		[r'/usr/bin/gmcs', 'novell'],  # common
+		[r'/bin/gmcs', 'novell'],
+		[r'/usr/local/bin/gmcs', 'novell'],
+	]
 
 	get exeFileName from var
 
@@ -594,6 +600,25 @@ class Compiler
 			.modules
 			.modules[0].fileName.endsWith('SystemInterfaces.cobra')
 		body
+			# locate the C# compiler
+			found = false
+			for execPathSpec in _cscExecPaths
+				cscPath = execPathSpec[0]
+				platform = execPathSpec[1]
+				if File.exists(cscPath) or File.exists(cscPath+'.exe')
+					found = true
+					break
+			if not found
+				print 'Looked for C# compiler at:'
+				for execPathSpec in _cscExecPaths
+					cscPath = execPathSpec[0]
+					print '  [cscPath]'
+				print 'But cannot find a C# compiler from Microsoft .NET or Novell Mono.'
+				throw StopCompilation(this)
+
+			assert platform in ['ms', 'novell']
+			optChar = if(platform=='ms', '/', '-')  # option prefix character
+
 			# exe names
 			# CC: exe = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName, _modules[1].csFileName)
 			outName = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName to passthrough, _modules[1].csFileName to passthrough) to String
@@ -610,7 +635,7 @@ class Compiler
 			if target
 				if target=='lib'
 					target = 'library'
-				options += ' /target:[target]'
+				options += ' [optChar]target:[target]'
 				# TODO: what is the output for a module?
 				branch target
 					on 'exe', 'winexe': outName += '.exe'
@@ -624,17 +649,18 @@ class Compiler
 			thing = Utils.getSO(_options, 'reference', [])
 			if thing
 				for refer in thing to List<of String>
-					options += ' /r:[refer]'
+					options += ' [optChar]r:[refer]' # TODO: mono?
 
 			debug = Utils.getSO(_options, 'debug', nil) to String
 			if debug
+				# TODO: mono does not support full and pdbonly afaik
 				assert debug in ['-', '+', 'full', 'pdbonly'], debug
-				options += ' /debug' + if(debug.length==1, debug, ':[debug]')
+				options += ' [optChar]debug' + if(debug.length==1, debug, ':[debug]')
 
-			options += ' "/out:[outName]"'
+			options += ' "[optChar]out:[outName]"'  # TODO: mono?
 
 			if _verbosity<3
-				options += ' /nologo'
+				options += ' [optChar]nologo'  # TODO: mono?
 
 			# .cs files
 			csFileNameList = List<of String>()
@@ -649,7 +675,7 @@ class Compiler
 			if _verbosity
 				print 'Compiling to produce [outName]'
 			p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
-			p.startInfo.fileName = _cscExecPath
+			p.startInfo.fileName = cscPath
 			p.startInfo.arguments = '[options] [csFileNames] "[cobraLangPath]"'
 			if _verbosity >= 2
 				print '[p.startInfo.fileName] [p.startInfo.arguments]'
