@@ -48,7 +48,6 @@ class Compiler
 	var _nextSerialNum as int is shared
 	var _serialNum as int
 	var _verbosity as int
-	var _whenError as ErrorActionEnum
 	var _whenWarning as WarningActionEnum
 	var _options as Dictionary<of String, Object>
 	var _globalNS as NameSpace
@@ -67,17 +66,13 @@ class Compiler
 	var _warnings as List<of CobraWarning>
 
 	def init(verbosity as int)
-		.init(verbosity, ErrorActionEnum.Exit)
+		.init(verbosity, WarningActionEnum.Print)
 
-	def init(verbosity as int, whenError as ErrorActionEnum)
-		.init(verbosity, whenError, WarningActionEnum.Print)
-
-	def init(verbosity as int, whenError as ErrorActionEnum, whenWarning as WarningActionEnum)
+	def init(verbosity as int, whenWarning as WarningActionEnum)
 		_nextSerialNum += 1
 		_serialNum = _nextSerialNum
 		_verbosity = verbosity
 		_modules = List<of Module>()
-		_whenError = whenError
 		_whenWarning = whenWarning
 		_options = Dictionary<of String, Object>()
 		_globalNS = NameSpace(Token.empty, '(global)')
@@ -100,8 +95,6 @@ class Compiler
 	get globalNS from var
 
 	get modules from var
-
-	pro whenError from var
 
 	pro whenWarning from var
 
@@ -132,24 +125,15 @@ class Compiler
 		else
 			return false
 
-	def recordErrorAndThrow(ce as CobraException) as bool
+	def recordError(ce as CobraException)
 		"""
-		Node call this to record errors which will actually be thrown if .whenError is ErrorActionEnum.Exit.
+		Node call this to record errors.
 		"""
 		if ce inherits NodeMultiException
 			for exc in ce.exceptions
 				_addError(exc)
 		else
 			_addError(ce)
-		branch _whenError
-			on ErrorActionEnum.Exit
-				if _verbosity>1
-					print 'About to throw node error: [ce]'
-				return true
-			on ErrorActionEnum.Record
-				return false
-			else
-				throw FallThroughException(_whenError)
 
 	get cobraExeDir as String
 		"""
@@ -183,7 +167,6 @@ class Compiler
 						print 'Parsing [filename]'
 					parser = Parser()
 					parser.verbosity = _verbosity
-					parser.whenError = _whenError
 					parser.whenWarning = _whenWarning
 					parser.typeProvider = this
 					assert _globalNS
@@ -192,8 +175,7 @@ class Compiler
 					try
 						module = parser.parseFileNamed(filename)
 					catch ce as CobraException
-						if .recordErrorAndThrow(ce)
-							throw
+						.recordError(ce)
 					success
 						assert module
 						modules.add(module)
@@ -337,8 +319,7 @@ class Compiler
 						_curModule = module
 						_curModule.bindInt
 					catch ce as CobraException
-						if .recordErrorAndThrow(ce)
-							throw
+						.recordError(ce)
 			finally
 				Node.setCompiler(nil)
 		finally
@@ -357,8 +338,7 @@ class Compiler
 						_curModule = module
 						_curModule.bindImp
 					catch ce as CobraException
-						if .recordErrorAndThrow(ce)
-							throw
+						.recordError(ce)
 			finally
 				Node.setCompiler(nil)
 		finally
@@ -484,8 +464,7 @@ class Compiler
 		body
 			cw = CobraWarning(node.token, msg)
 			_warnings.add(cw)
-			# TODO: shouldn't this take action based on _whenError?
-			print cw
+			print cw  # TODO: seems like the warning should be put out during printMessages instead of here
 
 	var _unknownSuggestions = {
 		# literals

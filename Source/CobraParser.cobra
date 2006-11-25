@@ -57,7 +57,6 @@ class Parser
 		p.typeProvider = BasicTypeProvider()
 		p.parseSource('test2', 'class Test\n\tdef main is shared\n\t\treturn\n')
 
-	var _whenError as ErrorActionEnum
 	var _whenWarning as WarningActionEnum
 
 	var _lowercaseLetters = 'abcdefghijklmnopqrstuvwxyz'
@@ -97,8 +96,6 @@ class Parser
 		_codeParts = Stack<of ICodePart>()
 
 	pro verbosity from var
-
-	pro whenError from var
 
 	pro whenWarning from var
 
@@ -2226,10 +2223,7 @@ class Parser
 			qt = QualifiedType(types)
 			return TypeIdentifier(types[0].token, qt.name, qt)
 
-	def nonqualifiedType as ISyntaxNode
-		return .nonqualifiedType(ErrorActionEnum.Exit)
-
-	def nonqualifiedType(action as ErrorActionEnum) as AbstractTypeIdentifier
+	def nonqualifiedType as AbstractTypeIdentifier
 		token = .grab()
 		assert token
 
@@ -2350,15 +2344,14 @@ class Parser
 			msg = '[token.fileName]([token.lineNum],[token.colNum]): error: [msg]'
 		else
 			msg = '[_fileName](1, 1): error: [msg]'
-		if _whenError==ErrorActionEnum.Exit
-			print msg
-			if _verbosity>=1
-				print 'Last tokens:'
-				print '    ...'
-				for pair in .lastN(9)
-					s = '    [pair.i]. [pair.token]'
-					s = s.padRight(25) + 'line [pair.token.lineNum]'
-					print s
+		if _verbosity>=2
+			print 'PARSER ERROR: [msg]'
+			print 'Last tokens:'
+			print '    ...'
+			for pair in .lastN(9)
+				s = '    [pair.i]. [pair.token]'
+				s = s.padRight(25) + 'line [pair.token.lineNum]'
+				print s
 		if .last is nil
 			throw ParserException(_fileName, msg)
 		else
