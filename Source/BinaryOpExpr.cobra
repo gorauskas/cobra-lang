@@ -197,9 +197,20 @@ class AssignExpr
 		base.init(opToken, op, left, right)
 
 	def _bindImp is override
-		base._bindImp()
 		left = _left
 		right = _right
+		try
+			base._bindImp()
+		catch nme as NodeMultiException
+			# for a type inference situation, process the left hand var as local of type passthrough
+			# to prevent superfluous errors
+			if left inherits IdentifierExpr
+				if left.definition is nil
+					definition = LocalVar(left.token, .compiler.passThroughType).bindAll() to LocalVar  # CC: axe cast when supporting 'this'
+					.compiler.codeMemberStack.peek().addLocal(definition)
+					left.definition = definition
+					left.type = definition.type
+			throw
 		assert right.type
 		if left inherits IdentifierExpr
 			if left.definition is nil
