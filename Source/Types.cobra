@@ -192,6 +192,12 @@ interface IType
 		# TODO: should this be moved down to Box?
 
 	def greatestCommonDenominatorWith(type as IType) as IType
+		"""
+		Return the most specific type that is compatible with both this type and the arg.
+		The worst case scenarious are Object and Object? since all types are compatible
+		with Object. Used for at least if() expressions, list literals and dictionary
+		literals.
+		"""
 
 	def indexType(argTypes as List<of IType>) as IType?
 		"""
@@ -312,6 +318,10 @@ class CobraType
 	def greatestCommonDenominatorWith(type as IType) as IType
 		if this is type
 			return this
+		if type inherits NilableType
+			return type.greatestCommonDenominatorWith(this)
+		if type inherits NilType
+			return NilableType(this)
 		if .isDescendantOf(type)
 			return type
 		if type.isDescendantOf(this)
@@ -555,6 +565,19 @@ class NilableType
 		assert _wrappedType  # TODO: can CobraType require a wrappedType
 		return _wrappedType.memberForName(name)
 
+	def greatestCommonDenominatorWith(type as IType) as IType is override
+		if this is type
+			return this
+		if type inherits NilType
+			return this
+		if type inherits NilableType
+			assert type.theWrappedType
+			if _wrappedType is type.theWrappedType
+				return this
+			else
+				return NilableType(_wrappedType.greatestCommonDenominatorWith(type.theWrappedType to IType)) # CC: to !
+		return NilableType(_wrappedType.greatestCommonDenominatorWith(type))
+
 	get csInit as String is override
 		return 'null'
 
@@ -579,6 +602,14 @@ class NilType
 		if type inherits NilableType
 			return true
 		return false
+
+	def greatestCommonDenominatorWith(type as IType) as IType is override
+		if this is type
+			return this
+		if type inherits NilableType
+			return type
+		else
+			return NilableType(type)
 
 # TODO:
 #	def checkBinaryOp(self, op, right, compiler):
