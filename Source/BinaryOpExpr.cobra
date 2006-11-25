@@ -93,11 +93,16 @@ class BinaryOpExpr
 			_left.bindImp()
 		catch ne1 as NodeException
 			gotError = true
+			if _left.type is nil
+				_left.type = .compiler.passThroughType
 		try
 			_right.bindImp()
 		catch ne2 as NodeException
 			gotError = true
+			if _right.type is nil
+				_right.type = .compiler.passThroughType
 		if gotError
+			_type = .compiler.passThroughType
 			throw NodeMultiException(ne1, ne2)
 		assert _left.didBindImp
 		assert _right.didBindImp
@@ -202,14 +207,16 @@ class AssignExpr
 		try
 			base._bindImp()
 		catch nme as NodeMultiException
-			# for a type inference situation, process the left hand var as local of type passthrough
-			# to prevent superfluous errors
+			# for a type inference situation, create a var of type passthrough for the left hand side
+			# to prevent superfluous errors in subsequent statements
 			if left inherits IdentifierExpr
 				if left.definition is nil
 					definition = LocalVar(left.token, .compiler.passThroughType).bindAll() to LocalVar  # CC: axe cast when supporting 'this'
 					.compiler.codeMemberStack.peek().addLocal(definition)
 					left.definition = definition
 					left.type = definition.type
+			if _type is nil
+				_type = .compiler.passThroughType
 			throw
 		assert right.type
 		if left inherits IdentifierExpr
@@ -217,7 +224,17 @@ class AssignExpr
 				# type inference
 				assert right.type
 				if right.type is .compiler.passThroughType  # TODO: ? change to unspecifiedType
-					_error('Cannot infer type for "[left.text]" because the type of the right hand expression is unknown.')
+					if right.hasError
+						# for a type inference situation, create a var of type passthrough for the left hand side
+						# to prevent superfluous errors in subsequent statements
+						definition = LocalVar(left.token, .compiler.passThroughType).bindAll() to LocalVar  # CC: axe cast when supporting 'this'
+						.compiler.codeMemberStack.peek().addLocal(definition)
+						left.definition = definition
+						left.type = definition.type
+						_type = left.type
+						return
+					else
+						_error('Cannot infer type for "[left.text]" because the type of the right hand expression is unknown.')
 				if left.text.startsWith('_')
 					_error('No class variable named "[left.text]" exists and local variable declarations cannot start with an underscore (_).')
 				definition = LocalVar(left.token, right.type).bindAll() to LocalVar  # CC: axe cast when supporting 'this'
