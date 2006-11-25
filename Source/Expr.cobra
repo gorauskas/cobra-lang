@@ -139,22 +139,66 @@ class Expr
 		sw.write(';\n')
 
 
-class AsExpr
+class NameExpr
 	inherits Expr
+	"""
+	The base class for IdentifierExpr and AsExpr.
+	"""
+	# TODO: is abstract
+
+	var _name as String
+	var _definition as INamedNode?
+		"""
+		In practice, definitions include:
+			* Class, Struct, Interface
+			* NameSpace, EnumDecl
+			* ClassVar, LocalVar, Param
+		There may be others, but at least those have been observed in practice.
+		"""
+
+	def init(token as IToken)
+		base.init(token)
+		_name = token.text
+
+	def addMinFields is override
+		base.addMinFields()
+		.addField('name', _name)
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('definition', _definition)
+
+	get definition from var
+
+	get name from var
+
+	def memberForName(name as String) as IMember? is override
+		require
+			.didBindImp
+			.definition
+		body
+			return _definition.typeForReceiver.memberForName(name)
+
+	get asSharp as String
+		return _name
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		sw.write(.asSharp)
+
+
+class AsExpr
+	inherits NameExpr
 	"""
 	i as int = 5
 	The "i as int" is an AsExpr.
 	"""
 
-	var _name as String
-	var _nameToken as IToken  # the identifier vs. the `as` keyword which is the main token
+	var _asToken as IToken  # the identifier vs. the `as` keyword which is the main token
 	var _typeNode as INode
-	var _definition as INamedNode?
 
 	def init(token as IToken, nameToken as IToken, typeNode as INode)
-		base.init(token)
-		_nameToken = nameToken
-		_name = nameToken.text
+		base.init(nameToken)
+		_asToken = token
 		_typeNode = typeNode
 
 	def addMinFields is override
@@ -164,9 +208,6 @@ class AsExpr
 	def addSubFields is override
 		base.addSubFields()
 		.addField('typeNode', _typeNode)
-		.addField('definition', _definition)
-
-	get definition from var
 
 	def _bindImp is override
 		base._bindImp()
@@ -176,23 +217,19 @@ class AsExpr
 		# make the local var if necessary (usually is)
 		definition = .compiler.findLocal(_name)
 		if definition is nil
-			newVar = LocalVar(_nameToken, _type)
+			newVar = LocalVar(_token, _type)
 			newVar.bindAll()
 			.compiler.codeMemberStack.peek().addLocal(newVar)
 			_definition = newVar
-		# TODO: check for redefinitions that are invalid by comparing .type with definition.type
+		else
+			# TODO: check for redefinitions that are invalid by comparing .type with definition.type
+			_definition = definition
 
 	def afterStatementBindImp is override
 		base.afterStatementBindImp()
 		if not .type inherits NilableType
 			if .type.isReference
 				_error('Must initialize this non-nil object type, or change the type to nilable (suffix a ?).')
-
-	get asSharp as String
-		return _name
-
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		sw.write(.asSharp)
 
 	def writeSharpStmt(sw as SharpWriter) is override
 		# this happens for declarations like "i as int"
@@ -420,30 +457,16 @@ class CallExpr
 
 
 class IdentifierExpr
-	inherits Expr
-
-	var _name as String
-	var _definition as INamedNode?
-		"""
-		In practice, definitions include:
-			* Class, Struct, Interface
-			* NameSpace, EnumDecl
-			* ClassVar, LocalVar, Param
-		There may be others, but at least those have been observed in practice.
-		"""
+	inherits NameExpr
 
 	def init(token as IToken, name as String, definition as INamedNode?)
 		base.init(token)
 		_name = name
 		_definition = definition
 
-	def addRefFields is override
-		base.addRefFields()
-		.addField('definition', _definition)
-
-	pro definition from var
-
-	get name from var
+	def setDefinition(value as INamedNode?)
+		# cannot override definition with a set, because base does not do a set
+		_definition = value
 
 	get isCalling as bool is override
 		assert _definition
@@ -463,13 +486,6 @@ class IdentifierExpr
 				throw FallThroughException(defi)
 		else
 			return nil
-
-	def memberForName(name as String) as IMember? is override
-		require
-			.didBindImp
-			.definition
-		body
-			return _definition.typeForReceiver.memberForName(name)
 
 	def _bindImp is override
 		base._bindImp()
