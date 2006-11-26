@@ -33,6 +33,58 @@ class Stmt
 		.writeSharpSetLine(sw)
 		.writeSharpDef(sw)
 
+	def bindVar(ve as NameExpr) as IVar
+		"""
+		Computes the _var from the _varExpr which is either IdentifierExpr or AsExpr.
+		May call `_error` and `inferredType` as needed.
+		Typical use: _var = .bindVar(_varExpr)
+		"""
+		# TODO: would prefer to do this as a mixin with two class vars:
+		# var _varExpr as NameExpr
+		# var _var as IVar?
+		varr as IVar?
+		if ve inherits IdentifierExpr
+			# find or infer
+			definition as INamedNode?
+			canBeMember = .compiler.canNameBeMember(ve.name)
+			if canBeMember
+				assert .compiler.boxStack
+				definition = .compiler.symbolForName(ve.name, canBeMember, false) to passthrough
+				if definition is nil
+					ve.errorUnknownId(ve.name)
+			else
+				definition = .compiler.findLocal(ve.name)
+				# infer a local var
+				if definition is nil
+					it = .inferredType
+					if it
+						definition = LocalVar(ve.token, it).bindAll() to INamedNode  # CC: axe cast after "as this"
+						.compiler.curCodeMember.addLocal(definition to LocalVar)
+					else
+						_error('Cannot infer the type for "[ve.name]" from the "for" loop.')
+			if definition inherits IVar
+				varr = definition
+			else
+				_error('The definition of "[ve.name]" is not a variable which is what the "for" loop requires.')
+			ve.bindImp
+		else if ve inherits AsExpr
+			ve.bindImp
+			assert ve.definition
+			varr = ve.definition to AbstractLocalVar
+		else
+			throw FallThroughException(ve)
+		if varr is not nil
+			return varr
+		else
+			throw FallThroughException(ve)
+
+	get inferredType as IType?
+		"""
+		Used by .bindVar so that the subclasses can implement their inferred type logic.
+		"""
+		# CC: is abstract
+		return nil to passthrough
+
 
 class AssertStmt
 	inherits Stmt
@@ -342,50 +394,6 @@ class ForStmt
 		#if not varr.isTracked
 		#	.compiler.nameStack.peek().pop()   # TODO should be popSymbol() or popVar()
 
-	def bindVar
-		"""
-		Computes the _var from the _varExpr which is either IdentifierExpr or AsExpr.
-		May call `_error` and `inferredType` as needed.
-		"""
-		ve = _varExpr
-		if ve inherits IdentifierExpr
-			# find or infer
-			definition as INamedNode?
-			canBeMember = .compiler.canNameBeMember(ve.name)
-			if canBeMember
-				assert .compiler.boxStack
-				definition = .compiler.symbolForName(ve.name, canBeMember, false) to passthrough
-				if definition is nil
-					ve.errorUnknownId(ve.name)
-			else
-				definition = .compiler.findLocal(ve.name)
-				# infer a local var
-				if definition is nil
-					it = .inferredType
-					if it
-						definition = LocalVar(ve.token, it).bindAll() to INamedNode  # CC: axe cast after "as this"
-						.compiler.curCodeMember.addLocal(definition to LocalVar)
-					else
-						_error('Cannot infer the type for "[ve.name]" from the "for" loop.')
-			if definition inherits IVar
-				_var = definition
-			else
-				_error('The definition of "[ve.name]" is not a variable which is what the "for" loop requires.')
-			ve.bindImp
-		else if ve inherits AsExpr
-			ve.bindImp
-			assert ve.definition
-			_var = ve.definition to AbstractLocalVar
-		else
-			throw FallThroughException(ve)
-
-	get inferredType as IType?
-		"""
-		Used by .bindVar so that the subclasses can implement their inferred type logic.
-		"""
-		# CC: is abstract
-		return nil to passthrough
-
 
 class ForNumericStmt
 	inherits ForStmt
@@ -423,9 +431,7 @@ class ForNumericStmt
 		if stepp
 			stepp.bindImp()
 		passThrough = .compiler.passThroughType
-		.bindVar
-		assert _var
-		_var.bindImp
+		_var = .bindVar(_varExpr)
 		base._bindImp()
 		_block.bindImp()
 
@@ -476,7 +482,7 @@ class ForEnumerableStmt
 
 	def _bindImp is override
 		_what.bindImp()
-		.bindVar
+		_var = .bindVar(_varExpr)
 		base._bindImp()
 		_varNumber = .compiler.curBox.makeNextPrivateSerialNumber()
 		_block.bindImp()
@@ -883,34 +889,27 @@ class ThrowStmt
 class UsingStmt
 	inherits Stmt
 
-	var _var as AbstractLocalVar
+	var _varExpr as NameExpr
+	var _var as IVar?
 	var _initExpr as Expr
 	var _block as BlockStmt
 
-	def init(token as IToken, varr as AbstractLocalVar, initExpr as Expr, block as BlockStmt)
+	def init(token as IToken, varExpr as NameExpr, initExpr as Expr, block as BlockStmt)
 		base.init(token)
-		_var = varr
+		_varExpr = varExpr
 		_initExpr = initExpr
 		_block = block
 
 	def _bindImp is override
 		base._bindImp()
 		_initExpr.bindImp()
-		varr = _var
-		if varr.type is .compiler.unspecifiedType
-			t = _initExpr.type
-			if t
-				varr.type = t
-			else
-				assert false, 'no type for initExpr [_initExpr]'
+		_var = .bindVar(_varExpr)
 		# TODO: add an error check that the var type and expr type are compatible
-		varr.bindImp()
-		if .compiler.findLocal(varr.name) is not varr
-			if varr inherits LocalVar
-				.compiler.codeMemberStack.peek().addLocal(varr)
-			else
-				assert false, 'expecting varr to be a LocalVar. varr=[varr]'
 		_block.bindImp()
+
+	get inferredType as IType? is override
+		assert _initExpr.type
+		return _initExpr.type
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
