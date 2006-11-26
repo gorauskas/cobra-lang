@@ -342,6 +342,50 @@ class ForStmt
 		#if not varr.isTracked
 		#	.compiler.nameStack.peek().pop()   # TODO should be popSymbol() or popVar()
 
+	def bindVar
+		"""
+		Computes the _var from the _varExpr which is either IdentifierExpr or AsExpr.
+		May call `_error` and `inferredType` as needed.
+		"""
+		ve = _varExpr
+		if ve inherits IdentifierExpr
+			# find or infer
+			definition as INamedNode?
+			canBeMember = .compiler.canNameBeMember(ve.name)
+			if canBeMember
+				assert .compiler.boxStack
+				definition = .compiler.symbolForName(ve.name, canBeMember, false) to passthrough
+				if definition is nil
+					ve.errorUnknownId(ve.name)
+			else
+				definition = .compiler.findLocal(ve.name)
+				# infer a local var
+				if definition is nil
+					it = .inferredType
+					if it
+						definition = LocalVar(ve.token, it).bindAll() to INamedNode  # CC: axe cast after "as this"
+						.compiler.curCodeMember.addLocal(definition to LocalVar)
+					else
+						_error('Cannot infer the type for "[ve.name]" from the "for" loop.')
+			if definition inherits IVar
+				_var = definition
+			else
+				_error('The definition of "[ve.name]" is not a variable which is what the "for" loop requires.')
+			ve.bindImp
+		else if ve inherits AsExpr
+			ve.bindImp
+			assert ve.definition
+			_var = ve.definition to AbstractLocalVar
+		else
+			throw FallThroughException(ve)
+
+	get inferredType as IType?
+		"""
+		Used by .bindVar so that the subclasses can implement their inferred type logic.
+		"""
+		# CC: is abstract
+		return nil to passthrough
+
 
 class ForNumericStmt
 	inherits ForStmt
@@ -379,34 +423,14 @@ class ForNumericStmt
 		if stepp
 			stepp.bindImp()
 		passThrough = .compiler.passThroughType
-		varr.bindImp
-		if varr inherits IdentifierExpr
-			# find or infer
-			definition as INamedNode?
-			canBeMember = .compiler.canNameBeMember(varr.name)
-			if canBeMember
-				assert .compiler.boxStack
-				definition = .compiler.symbolForName(varr.name, canBeMember, false) to passthrough
-				if definition is nil
-					varr.errorUnknownId(varr.name)
-			else
-				definition = .compiler.findLocal(varr.name)
-				# infer a local var
-				if definition is nil
-					definition = LocalVar(varr.token, start.type.greatestCommonDenominatorWith(stopp.type to IType))  # CC: to !
-			if definition inherits IVar
-				_var = definition
-			else
-				_error('The definition of "[varr.name]" is not a variable which is what the "for" loop requires.')
-		else if varr inherits AsExpr
-			assert varr.definition
-			_var = varr.definition to AbstractLocalVar
-		else
-			throw FallThroughException(varr)
+		.bindVar
 		assert _var
 		_var.bindImp
 		base._bindImp()
 		_block.bindImp()
+
+	get inferredType as IType? is override
+		return _start.type.greatestCommonDenominatorWith(_stop.type to IType)
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
@@ -452,16 +476,14 @@ class ForEnumerableStmt
 
 	def _bindImp is override
 		_what.bindImp()
-		varr = _var
-		if varr.type is .compiler.unspecifiedType
-			# type inference
-			t = _what.type.innerType
-			if t is nil
-				_error('Cannot enumerate a [_what.type.name].')
-			varr.type = t
+		.bindVar
 		base._bindImp()
 		_varNumber = .compiler.curBox.makeNextPrivateSerialNumber()
 		_block.bindImp()
+
+	get inferredType as IType? is override
+		assert _what.type
+		return _what.type.innerType
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
