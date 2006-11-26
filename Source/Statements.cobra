@@ -298,21 +298,31 @@ class ForStmt
 	Abstract base class for ForNumericStmt and ForEnumerablebase.
 	"""
 
-	var _var as IVar
+	var _varExpr as NameExpr
+	var _var as IVar?
 	var _block as BlockStmt
 
-	def init(token as IToken, varr as IVar, block as BlockStmt)
+	def init(token as IToken, varr as NameExpr, block as BlockStmt)
 		base.init(token)
-		_var = varr
+		_varExpr = varr
 		_block = block
 
 	def addSubFields is override
 		base.addSubFields()
+		.addField('varExpr', _varExpr)
 		.addField('var', _var)
+		.addField('block', _block)
 
 	def _bindImp is override
 		base._bindImp()
-		varr = _var
+		_varExpr.bindImp()
+		if _varExpr.definition
+			if _varExpr.definition inherits IVar
+				_var = _varExpr.definition to IVar
+			else
+				_error('Expecting a variable not a [_varExpr.definition.getType.name].')  # TODO: what's the best way to report what was found?
+		else
+			assert _varExpr.hasError, _varExpr
 		#if not var.isTracked  TODO disabled this to get tests\200-classes\804-test.cobra working.
 # TODO: check for existing  variables
 #		if 1
@@ -326,7 +336,7 @@ class ForStmt
 #					.error('Cannot redeclare "[varr.name]" as "[varr.type]" because it was declared as "[existingVar.type]" earlier.')
 #			else
 #				.compiler.nameStack.peek().pushName(varr)   # TODO should be pushSymbol() or pushVar()
-		varr.bindAll()  # CallExpr() wants its definition to have bound int, so here we call bindAll() instead of bindImp()
+#		varr.bindAll()  # CallExpr() wants its definition to have bound int, so here we call bindAll() instead of bindImp()
 		_block.bindImp()
 		# TODO axe this
 		#if not varr.isTracked
@@ -341,7 +351,7 @@ class ForNumericStmt
 	var _dir as int
 	var _step as Expr?
 
-	def init(token as IToken, varr as IVar, start as Expr, stopp as Expr, dir as int, stepp as Expr?, block as BlockStmt)
+	def init(token as IToken, varr as NameExpr, start as Expr, stopp as Expr, dir as int, stepp as Expr?, block as BlockStmt)
 		require
 			true # dir==-1 or dir==+1
 		body
@@ -360,7 +370,7 @@ class ForNumericStmt
 		.addField('block', _block)
 
 	def _bindImp is override
-		varr  = _var
+		varr  = _varExpr
 		start = _start
 		stopp = _stop
 		stepp = _step
@@ -369,17 +379,32 @@ class ForNumericStmt
 		if stepp
 			stepp.bindImp()
 		passThrough = .compiler.passThroughType
-		if varr.type is .compiler.unspecifiedType
-			# type inference
-			if start.type is stopp.type
-				varr.type = start.type
-			else if stopp.type is passThrough  and  start.type is not passThrough
-				varr.type = start.type
-			else if start.type is passThrough  and  stopp.type is not passThrough
-				varr.type = stopp.type
+		varr.bindImp
+		if varr inherits IdentifierExpr
+			# find or infer
+			definition as INamedNode?
+			canBeMember = .compiler.canNameBeMember(varr.name)
+			if canBeMember
+				assert .compiler.boxStack
+				definition = .compiler.symbolForName(varr.name, canBeMember, false) to passthrough
+				if definition is nil
+					varr.errorUnknownId(varr.name)
 			else
-				# TODO find the greatest common denominator between two types
-				_error('Cannot determine type of for loop variable "[varr.name]".')
+				definition = .compiler.findLocal(varr.name)
+				# infer a local var
+				if definition is nil
+					definition = LocalVar(varr.token, start.type.greatestCommonDenominatorWith(stopp.type to IType))  # CC: to !
+			if definition inherits IVar
+				_var = definition
+			else
+				_error('The definition of "[varr.name]" is not a variable which is what the "for" loop requires.')
+		else if varr inherits AsExpr
+			assert varr.definition
+			_var = varr.definition to AbstractLocalVar
+		else
+			throw FallThroughException(varr)
+		assert _var
+		_var.bindImp
 		base._bindImp()
 		_block.bindImp()
 
@@ -416,7 +441,7 @@ class ForEnumerableStmt
 	var _what as Expr
 	var _varNumber as int
 
-	def init(token as IToken, varr as IVar, what as Expr, block as BlockStmt)
+	def init(token as IToken, varr as NameExpr, what as Expr, block as BlockStmt)
 		base.init(token, varr, block)
 		_what = what
 

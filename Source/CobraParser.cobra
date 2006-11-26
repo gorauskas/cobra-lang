@@ -1479,7 +1479,7 @@ class Parser
 		enumerable for Customer cust in customers
 		"""
 		token = .expect('FOR')
-		varr = .localVarDecl()
+		varr = .nameExpr()
 		peek = .peek().which
 		if peek=='ASSIGN'
 			return .forNumericStmt(token, varr)
@@ -1489,7 +1489,7 @@ class Parser
 			_error('Expecting "=" or "in".')
 			throw FallThroughException(peek)  # make C# code flow analysis happy
 
-	def forNumericStmt(token as IToken, varr as IVar) as ForNumericStmt
+	def forNumericStmt(token as IToken, varr as NameExpr) as ForNumericStmt
 		.expect('ASSIGN')
 		start = .expression()
 		.expect('DOTDOT')
@@ -1510,7 +1510,7 @@ class Parser
 		stmts = .block()
 		return ForNumericStmt(token, varr, start, stopp, dir, stepp, stmts)
 
-	def forEnumerableStmt(token as IToken, varr as IVar) as ForEnumerableStmt
+	def forEnumerableStmt(token as IToken, varr as NameExpr) as ForEnumerableStmt
 		.expect('IN')
 		what = .expression()
 		stmts = .block()
@@ -2096,7 +2096,7 @@ class Parser
 
 	def identifierExpr as Expr
 		"""
-		Can also return AsExpr if the user says "i as int", for example.
+		Can return an IdentifierExpr or an AsExpr if the user says "i as int", for example.
 		"""
 		nameToken = .expect('ID')
 		name = nameToken.text
@@ -2151,6 +2151,19 @@ class Parser
 			entries.add([key, value])
 			expectComma = true
 		return DictLit(token, entries)
+
+	def nameExpr as NameExpr
+		nameToken = .expect('ID')
+		name = nameToken.text
+		if .peek().which=='AS'
+			if not Utils.startsWithLowerLetter(name)
+				_error('Local variable declarations must start with a lowercase letter. This avoids collisions with other identifiers such as classes and enums.')
+			asToken = .grab()
+			type = .type()
+			assert type
+			return AsExpr(asToken, nameToken, type)
+		else
+			return IdentifierExpr(nameToken, name, nil)
 
 	def sharpExpr as SharpExpr
 		token = .expect('SHARP_OPEN')
