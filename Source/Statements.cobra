@@ -21,11 +21,11 @@ class Stmt
 		"""
 		if expr inherits BinaryOpExpr
 			if expr.op=='ASSIGN'
-				_error('Cannot make an assignment in a flow control expression. Change to == or make the assignment just above.')
+				.throwError('Cannot make an assignment in a flow control expression. Change to == or make the assignment just above.')
 			else if expr.op=='BANG_EQUALS'
-				_error('Cannot use an augmented assignment in a flow control expression. "a != b" means "a = a ! b" where "!" is an operator concerning nil. If you meant "does not equal" then use "<>".')
+				.throwError('Cannot use an augmented assignment in a flow control expression. "a != b" means "a = a ! b" where "!" is an operator concerning nil. If you meant "does not equal" then use "<>".')
 			else if expr.op.endsWith('_EQUALS')
-				_error('Cannot use an augmented assignment in a flow control expression. Change to == or make the assignment just above.')
+				.throwError('Cannot use an augmented assignment in a flow control expression. Change to == or make the assignment just above.')
 
 	def writeSharpStmt(sw as SharpWriter)
 		assert .didBindImp
@@ -61,11 +61,11 @@ class Stmt
 						definition = LocalVar(ve.token, it).bindAll() to INamedNode  # CC: axe cast after "as this"
 						.compiler.curCodeMember.addLocal(definition to LocalVar)
 					else
-						_error('Cannot infer the type for "[ve.name]" from the "for" loop.')
+						.throwError('Cannot infer the type for "[ve.name]" from the "for" loop.')
 			if definition inherits IVar
 				varr = definition
 			else
-				_error('The definition of "[ve.name]" is not a variable which is what the "for" loop requires.')
+				.throwError('The definition of "[ve.name]" is not a variable which is what the "for" loop requires.')
 			ve.bindImp
 		else if ve inherits AsExpr
 			ve.bindImp
@@ -319,7 +319,7 @@ class ExpectStmt
 		excClass = .compiler.libraryType('System', 'Exception')
 		assert excClass
 		if not _exceptionType.isDescendantOf(excClass)
-			_error('Can only use Exception and its descendants for "expect". "[_exceptionType.name]" does not inherit the Exception class.')
+			.throwError('Can only use Exception and its descendants for "expect". "[_exceptionType.name]" does not inherit the Exception class.')
 		# TODO: take out the following stmt. looks like duplicate of statement afterwards
 		.compiler.curBox.makeNextPrivateSerialNumber()
 		_varNumber = .compiler.curBox.makeNextPrivateSerialNumber()
@@ -372,7 +372,7 @@ class ForStmt
 			if _varExpr.definition inherits IVar
 				_var = _varExpr.definition to IVar
 			else
-				_error('Expecting a variable not a [_varExpr.definition.getType.name].')  # TODO: what's the best way to report what was found?
+				.throwError('Expecting a variable not a [_varExpr.definition.getType.name].')  # TODO: what's the best way to report what was found?
 		else
 			assert _varExpr.hasError, _varExpr
 		#if not var.isTracked  TODO disabled this to get tests\200-classes\804-test.cobra working.
@@ -701,10 +701,10 @@ class ReturnStmt
 		if expr
 			_expr.bindImp()
 			if not expr.canBeAssignedTo(curCodeMember.resultType)
-				_error('Cannot return [expr.type.name] because "[curCodeMember.name]" is declared to return a [curCodeMember.resultType.name].')
+				.throwError('Cannot return [expr.type.name] because "[curCodeMember.name]" is declared to return a [curCodeMember.resultType.name].')
 		else
 			if curCodeMember.resultType is not .compiler.voidType
-				_error('Return statement must return a [curCodeMember.resultType.name], or [curCodeMember.name] must have its return type removed.')
+				.throwError('Return statement must return a [curCodeMember.resultType.name], or [curCodeMember.name] must have its return type removed.')
 		curCodeMember.hasReturnStmt = true
 		_sharpResultVarName = curCodeMember.sharpResultVarName
 
@@ -844,7 +844,7 @@ class CatchBlock
 				existingVar = codePart.findLocal(varr.name)
 				if existingVar
 					if existingVar.type is not varr.type
-						_error('Cannot redeclare "[varr.name]" as "[varr.type]" because it was declared as "[existingVar.type]" earlier.')
+						.throwError('Cannot redeclare "[varr.name]" as "[varr.type]" because it was declared as "[existingVar.type]" earlier.')
 				else
 					codePart.addLocal(varr)
 			if _type is nil

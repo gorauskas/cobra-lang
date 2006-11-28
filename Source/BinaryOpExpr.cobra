@@ -127,13 +127,13 @@ class BinaryOpExpr
 				append = ' because "[((left to BinaryOpExpr).right to CallExpr).name]" does not return anything.'  # CC: axe BinaryOp cast
 			else
 				append = '.'
-			_error('There is no type for the left hand side of "[.token.text]"[append] [sugg]')
+			.throwError('There is no type for the left hand side of "[.token.text]"[append] [sugg]')
 		if right.type is voidType and not right.isCalling
 			if right inherits BinaryOpExpr and (right to BinaryOpExpr).op=='DOT' and (right to BinaryOpExpr).right inherits CallExpr  # CC: axe cast
 				append = ' because "[((right to BinaryOpExpr).right to CallExpr).name]" does not return anything.'  # CC: axe BinaryOp cast
 			else
 				append = '.'
-			_error('There is no type for the right hand side of "[.token.text]"[append] [sugg]')
+			.throwError('There is no type for the right hand side of "[.token.text]"[append] [sugg]')
 
 	def addRefFields is override
 		base.addRefFields()
@@ -230,9 +230,9 @@ class AssignExpr
 						_type = left.type
 						return
 					else
-						_error('Cannot infer type for "[left.name]" because the type of the right hand expression is unknown.')
+						.throwError('Cannot infer type for "[left.name]" because the type of the right hand expression is unknown.')
 				if left.name.startsWith('_')
-					_error('No class variable named "[left.name]" exists and local variable declarations cannot start with an underscore (_).')
+					.throwError('No class variable named "[left.name]" exists and local variable declarations cannot start with an underscore (_).')
 				definition = LocalVar(left.token, right.type).bindAll() to LocalVar  # CC: axe cast when supporting 'this'
 				.compiler.codeMemberStack.peek().addLocal(definition)
 				left.setDefinition(definition)
@@ -240,7 +240,7 @@ class AssignExpr
 			if left.definition is nil
 				left.errorUnknownId(left.name)
 		if not right.canBeAssignedTo(left.type to IType)
-			_error('Incompatible types. Cannot assign value of type [right.type.name] on the right to [left.type.name] on the left.')
+			.throwError('Incompatible types. Cannot assign value of type [right.type.name] on the right to [left.type.name] on the left.')
 		_type = left.type
 
 	def checkAfterBindImp is override
@@ -332,7 +332,7 @@ class NumericPromoExpr
 			if _left.isKindOf(tpassthrough) or _right.isKindOf(tpassthrough)
 				_type = tpassthrough
 			else
-				_error('Cannot mix types [_left.type.name] and [_right.type.name] for arithmetic.')
+				.throwError('Cannot mix types [_left.type.name] and [_right.type.name] for arithmetic.')
 
 		# enable for superstacktrace
 		#left = _left
@@ -446,16 +446,16 @@ class BinaryMathExpr
 				_type = lt
 			else if lt.isDescendantOf(.compiler.decimalType)
 				if rt.isDescendantOf(.compiler.floatType)
-					_error('Cannot promote between decimal and float for operator "[_op]". Decimal is more accurate and float has more range.')
+					.throwError('Cannot promote between decimal and float for operator "[_op]". Decimal is more accurate and float has more range.')
 				else
 					# int case already taken care of, so...
-					_error('Cannot promote between decimal and "[rt.name]".')
+					.throwError('Cannot promote between decimal and "[rt.name]".')
 			else if lt.isDescendantOf(.compiler.floatType)
 				if rt.isDescendantOf(.compiler.decimalType)
-					_error('Cannot promote between float and decimal for operator "[_op]". Decimal is more accurate and float has more range.')
+					.throwError('Cannot promote between float and decimal for operator "[_op]". Decimal is more accurate and float has more range.')
 				else
 					# int case already taken care of, so...
-					_error('Cannot promote between decimal and "[rt.name]".')
+					.throwError('Cannot promote between decimal and "[rt.name]".')
 			else
 				throw FallThroughException({'lt': lt, 'rt': rt})
 
@@ -672,7 +672,7 @@ class AbstractToExpr
 		base._bindImp()
 		if not _right.isKindOf(.compiler.typeType) and not _right.type inherits Box
 			assert _right.toCobraSource(), _right
-			_error('The "to" operator does not apply to "[_right.toCobraSource()]". Use a type.')
+			.throwError('The "to" operator does not apply to "[_right.toCobraSource()]". Use a type.')
 		if _right inherits TypeExpr
 			_type = _right.receiverType
 		else if _right inherits IdentifierExpr
@@ -691,7 +691,7 @@ class ToExpr
 	def _bindImp is override
 		base._bindImp()
 		if _left inherits NilLiteral and not (_type inherits NilableType or _type inherits PassThroughType)
-			_error('Cannot cast nil to a non-nil type.')
+			.throwError('Cannot cast nil to a non-nil type.')
 
 	def _writeSharpDef(sw as SharpWriter) is override
 		if _right inherits TypeExpr

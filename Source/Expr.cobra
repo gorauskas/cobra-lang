@@ -223,7 +223,7 @@ class AsExpr
 			_definition = newVar
 		else
 			if definition.type<>_type
-				_error('Cannot redeclare "[.name]" as a different type. Earlier type is "[definition.type.name]".')
+				.throwError('Cannot redeclare "[.name]" as a different type. Earlier type is "[definition.type.name]".')
 				# TODO: would be nice to point to earlier location. definition would need to carry source location info
 			else
 				_definition = definition
@@ -232,7 +232,7 @@ class AsExpr
 		base.afterStatementBindImp()
 		if not .type inherits NilableType
 			if .type.isReference
-				_error('Must initialize this non-nil object type, or change the type to nilable (suffix a ?).')
+				.throwError('Must initialize this non-nil object type, or change the type to nilable (suffix a ?).')
 
 	def writeSharpStmt(sw as SharpWriter) is override
 		# this happens for declarations like "i as int"
@@ -308,7 +308,7 @@ class CallExpr
 					while checkName.startsWith('_')
 						checkName = checkName.substring(1)
 					if _superNode.left.type inherits Box and checkName and Utils.startsNonLower(checkName)
-						_error('Methods must start with lowercase letters (not counting underscores). The name is \"[_name]\".')
+						.throwError('Methods must start with lowercase letters (not counting underscores). The name is \"[_name]\".')
 					# handle foo.bar() where this is the `bar()` part
 					if not _superNode.left.didBindImp
 						assert _superNode.left.hasError, _superNode.left
@@ -323,10 +323,10 @@ class CallExpr
 							else
 								type = .compiler.passThroughType
 						else
-							_error('Cannot find "[_name]" in [_superNode.left.receiverType.name].')
+							.throwError('Cannot find "[_name]" in [_superNode.left.receiverType.name].')
 					else
 						if not possibleDefinition.isCallable
-							_error('Cannot call "[_name]" because it is a "[possibleDefinition.englishName]".')
+							.throwError('Cannot call "[_name]" because it is a "[possibleDefinition.englishName]".')
 						definition = possibleDefinition
 						type = possibleDefinition.resultType
 					handled = true
@@ -341,7 +341,7 @@ class CallExpr
 				else
 					definition = .compiler.findLocal(_name)
 				if definition is nil
-					_error('Cannot find "[_name]".')
+					.throwError('Cannot find "[_name]".')
 				_isCallOnSystemType = not definition inherits Box and not definition inherits Method and not definition inherits MemberOverload
 			if definition is not nil
 				if definition inherits IVar
@@ -352,10 +352,10 @@ class CallExpr
 					if definition.type.isDescendantOf(.compiler.libraryType('System', 'Type'))
 						type = .compiler.libraryType('System', 'Object')  # TODO: should be dynamic type
 					else
-						_error('Cannot call a variable of type [definition.type.name].')
+						.throwError('Cannot call a variable of type [definition.type.name].')
 				else if definition inherits Box
 					if definition inherits Interface
-						_error('Cannot instantiate an interface.')
+						.throwError('Cannot instantiate an interface.')
 					else if definition inherits Class or definition inherits Struct
 						# constructing an instance of a class or struct
 						type = definition
@@ -379,14 +379,14 @@ class CallExpr
 							check = true
 							if not definition.hasParams
 								if args.count
-									_error('The method "[definition.name]" is expecting 0 arguments, but [args.count] are being supplied in this call.')
+									.throwError('The method "[definition.name]" is expecting 0 arguments, but [args.count] are being supplied in this call.')
 							else
 								paramsx = definition.params  # CC: rename paramsx to params
 								if args.count<>paramsx.count
 									if _name=='toString'  # TODO because many structs like Decimal have a toString() overload which cannot currently be expressed in SystemInterfaces.cobra
 										check = false
 									else
-										_error('The method "[definition.name]" is expecting [paramsx.count] arguments, but [args.count] are being supplied in this call.')
+										.throwError('The method "[definition.name]" is expecting [paramsx.count] arguments, but [args.count] are being supplied in this call.')
 								if check
 									for i = 0 .. args.count
 										arg = args[i]
@@ -407,7 +407,7 @@ class CallExpr
 													arg.writeDeepString()
 													print '<> paramx = ' stop
 													paramx.writeDeepString()
-												_error('Argument [i+1] of method "[_name]" expects type [paramx.type.name], but the call is supplying type [arg.type.name].')
+												.throwError('Argument [i+1] of method "[_name]" expects type [paramx.type.name], but the call is supplying type [arg.type.name].')
 				else
 					throw FallThroughException(definition)
 			if type is nil
@@ -505,7 +505,7 @@ class IdentifierExpr
 						curBox = .compiler.boxStack.peek()
 						definition = curBox.symbolForName(_name, true, true)
 						if definition is not nil
-							_error('You must refer to non-underscored members with a leading dot (.). Member name is "[_name]".')
+							.throwError('You must refer to non-underscored members with a leading dot (.). Member name is "[_name]".')
 
 			# TODO: The effect of using symbolForName() just above and the next 3 lines is that class members mask globals of the same name. This will become a problem when module-level functions are supported.
 			#from Module import ClassMemberDecl
@@ -533,7 +533,7 @@ class IdentifierExpr
 			sug = .compiler.unknownSuggestions[name]
 		if sug
 			msg += ' Maybe you should try "[sug]".'
-		_error(msg)
+		.throwError(msg)
 
 	def postBindImpAssertType is override
 		pass
@@ -847,7 +847,7 @@ class MemberExpr
 						sugg = 'If the name is essentially correct, try the lowercase version ("[Utils.uncapped(_name)]") instead.'
 					else
 						sugg = ''
-					_error('Cannot find a definition for "[_name]" in "[.binarySuperNode.left.token.text]" whose type is "[.binarySuperNode.left.receiverType.name]". [sugg]')
+					.throwError('Cannot find a definition for "[_name]" in "[.binarySuperNode.left.token.text]" whose type is "[.binarySuperNode.left.receiverType.name]". [sugg]')
 				assert _definition
 				if _definition inherits IType
 					effectiveType as IType = .compiler.typeType  # namespace, class, interface
@@ -1100,7 +1100,7 @@ class SliceExpr
 			.compiler.recordError(ne)
 		success
 			if not _isSliceable(_target.type to IType)  # to !
-				_error('Cannot slice values of type "[_target.type.name]". You can slice strings, arrays, IList and IList<of>.')
+				.throwError('Cannot slice values of type "[_target.type.name]". You can slice strings, arrays, IList and IList<of>.')
 		if _start is not nil
 			try
 				_start.bindImp
@@ -1661,7 +1661,7 @@ class VarLit
 	def _bindImp is override
 		possible = _propertyMember.parent.box.symbolForName(_name, true, true)
 		if possible is nil
-			_error('Cannot find a class variable named "[_name]".')
+			.throwError('Cannot find a class variable named "[_name]".')
 		else if possible inherits IVar
 			_var = possible
 		else

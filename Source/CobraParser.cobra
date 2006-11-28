@@ -156,7 +156,7 @@ class Parser
 			msg = te.message
 			if _verbosity>=5
 				msg = 'Token error: ' + msg
-			_error(te.tokenizer.lastToken, msg)
+			.throwError(te.tokenizer.lastToken, msg)
 
 		_nextTokenIndex = 0
 
@@ -254,10 +254,10 @@ class Parser
 		if _willShowTokens
 			print 'expect([whatTypes]) --> [t]'
 		if t is nil
-			_error('Expecting [.join(" or ",whatTypes)], but source ended suddenly.')
+			.throwError('Expecting [.join(" or ",whatTypes)], but source ended suddenly.')
 		# CC: support "not in" on vari type
 		#if t.which not in whatTypes
-		#	_error('Expecting [whatTypes], but got [t] instead.')
+		#	.throwError('Expecting [whatTypes], but got [t] instead.')
 		found = false
 		for wt in whatTypes
 			if t.which == wt
@@ -268,7 +268,7 @@ class Parser
 			if whatTypes[0]=='DEF' and t.which=='CUE'
 				t.which = 'DEF'
 			else
-				_error('Expecting [.join(" or ",whatTypes)], but got [t] instead.')
+				.throwError('Expecting [.join(" or ",whatTypes)], but got [t] instead.')
 		return t to IToken  # CC: to !
 
 	def join(sep as String, stuff as vari String) as String
@@ -329,7 +329,7 @@ class Parser
 					on 'DOC_STRING_BODY_TEXT'
 						textParts.add(tok.text)
 					else
-						_error('Expecting more doc string contents or the end of the doc string instead of [tok].')
+						.throwError('Expecting more doc string contents or the end of the doc string instead of [tok].')
 			text = Utils.join('', textParts)
 			return text
 		else
@@ -437,7 +437,7 @@ class Parser
 						what = .nameSpaceDecl()
 						addToNS = false
 					else
-						_error('Expecting use, import, namespace, class, interface or enum, but got [tok]')
+						.throwError('Expecting use, import, namespace, class, interface or enum, but got [tok]')
 						break
 				if what
 					_module.addDecl(what to IMember)  # CC: axe typecast
@@ -477,9 +477,9 @@ class Parser
 			token = .expect('OPEN_GENERIC')
 			name = token.value to String
 		else
-			_error('Expecting a class name.')
+			.throwError('Expecting a class name.')
 		if name[0] not in _uppercaseLetters
-			_error('Class names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
+			.throwError('Class names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 
 		# CC: rename paramsList to params (can't do it now because it's a C# reserved word and Cobra needs to generate IL or 'escape' these)
 		paramsList = .declGenericParams(token)
@@ -564,7 +564,7 @@ class Parser
 			if what in _validIsNames
 				names.add(what)
 			else
-				_error('Not expecting "[what]".')
+				.throwError('Not expecting "[what]".')
 			comma = .optional('COMMA')
 			if comma is nil
 				break
@@ -618,11 +618,11 @@ class Parser
 			token = .expect('OPEN_GENERIC')
 			name = token.value to String
 		else
-			_error('Expecting an interface name.')
+			.throwError('Expecting an interface name.')
 		if name[0] not in _uppercaseLetters
-			_error('Interface names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
+			.throwError('Interface names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 		if not name.startsWith('I')
-			_error('Interfaces must start with a capital "I".')
+			.throwError('Interfaces must start with a capital "I".')
 
 		# CC: rename paramsList to params (can't do it now because it's a C# reserved word and Cobra needs to generate IL or 'escape' these)
 		paramsList = .declGenericParams(token)
@@ -647,7 +647,7 @@ class Parser
 				expectComma = true
 
 		if .optional('IMPLEMENTS')
-			_error('Encountered "implements" in interface declaration. Use "inherits" instead.')
+			.throwError('Encountered "implements" in interface declaration. Use "inherits" instead.')
 
 		# TODO: can an interface be nested in another interface?
 		docString = .docString()
@@ -671,9 +671,9 @@ class Parser
 			token = .expect('OPEN_GENERIC')
 			name = token.value to String
 		else
-			_error('Expecting a class name.')
+			.throwError('Expecting a class name.')
 		if name[0] not in _uppercaseLetters
-			_error('Struct names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
+			.throwError('Struct names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 
 		# CC: rename paramsList to params (can't do it now because it's a C# reserved word and Cobra needs to generate IL or 'escape' these)
 		paramsList = .declGenericParams(token)
@@ -687,7 +687,7 @@ class Parser
 
 		baseName as String?
 		if .optional('INHERITS')
-			_error('Structs cannot inherit. If you mean to implement an interface, use "implements" instead.')
+			.throwError('Structs cannot inherit. If you mean to implement an interface, use "implements" instead.')
 
 		interfaceNodes = List<of INode>()
 		if .optional('IMPLEMENTS')
@@ -719,7 +719,7 @@ class Parser
 		token = .expect('ENUM')
 		name = .expect('ID').value to String
 		if name[0] not in _uppercaseLetters
-			_error('Enum types must start with uppercase letters to avoid collisions with other identifiers such as properties and methods.')
+			.throwError('Enum types must start with uppercase letters to avoid collisions with other identifiers such as properties and methods.')
 		.indent()
 		isNames = .isDeclNames()
 		if .peek().which=='OF'
@@ -741,13 +741,13 @@ class Parser
 			# TODO: check for values that repeat or go backwards
 		.dedent()
 		if not enumMembers
-			_error('Missing enum members.')
+			.throwError('Missing enum members.')
 		return EnumDecl(token, name, isNames, storageType, docString, enumMembers)
 
 	def genericConstraints(token as IToken, paramsList as List<of GenericParam>)
 		while .optional('WHERE')
 			if token.which<>'OPEN_GENERIC'
-				_error('Unexpected where clause for non-generic class.')
+				.throwError('Unexpected where clause for non-generic class.')
 			paramName = .expect('ID').value
 			found = false
 			for param in paramsList
@@ -755,9 +755,9 @@ class Parser
 					found = true
 					break
 			if not found
-				_error('Unknown generic parameter "[paramName]".')
+				.throwError('Unknown generic parameter "[paramName]".')
 			if param.constraints
-				_error('Already specified constraints for "[paramName]".')
+				.throwError('Already specified constraints for "[paramName]".')
 			.expect('MUST')
 			.expect('BE')
 			expectComma = false
@@ -795,7 +795,7 @@ class Parser
 		while true
 			peek = .peek()
 			if peek is nil
-				_error('expecting a namespace member, but source code ended')
+				.throwError('expecting a namespace member, but source code ended')
 			tok = peek to IToken  # CC: to !
 			if tok.which=='DEDENT'
 				break
@@ -805,7 +805,7 @@ class Parser
 				on 'STRUCT': curNameSpace.addDecl(.structDecl())
 				on 'USE': curNameSpace.addDecl(.useDirective())
 				on 'NAMESPACE': .nameSpaceDecl()
-				else: _error('expecting a namespace member but got [tok]')
+				else: .throwError('expecting a namespace member but got [tok]')
 		.dedent()
 		_nameSpaceStack.pop()
 		return curNameSpace
@@ -834,7 +834,7 @@ class Parser
 					on 'SHARED': .bodiedBoxMemberDeclsShared(box)
 					on 'TEST': .testSection(box)
 					else
-						_error('Got [.peek()] when expecting var, def, pro, get, set, enum or shared')
+						.throwError('Got [.peek()] when expecting var, def, pro, get, set, enum or shared')
 				if decl!
 					box.addDecl(decl to IMember)  # CC: axe typecast when if gets smart about not nil
 			.dedent()
@@ -872,22 +872,22 @@ class Parser
 			# TODO: this seems a little fishy as the type may be legit, but not resolved yet due to a forward reference.
 			# The error message should not show '(no type)' or this check should be moved to bindInt
 			reportType = if(other.resultType, other.resultType.name, '(no type)')
-			_error('The name "[identifier]" was already declared earlier as a "[reportType]".')
+			.throwError('The name "[identifier]" was already declared earlier as a "[reportType]".')
 		if identifier[0]<>'_'
 			sugg = '_' + identifier
-			_error('Class variables must start with an underscore to distinguish them from other types of identifiers. Try "[sugg]".')
+			.throwError('Class variables must start with an underscore to distinguish them from other types of identifiers. Try "[sugg]".')
 		numUnderscores = 1
 		s = identifier.substring(1)
 		while s.startsWith('_')
 			s = s.substring(1)
 			numUnderscores += 1
 		if not s
-			_error('A class variable must be made of more than underscores. Try "[identifier]x" or "[identifier]1".')
+			.throwError('A class variable must be made of more than underscores. Try "[identifier]x" or "[identifier]1".')
 		if s[0] not in _lowercaseLetters
 			if s[0] in _uppercaseLetters
 				sugg = String(c'_', numUnderscores) + s[0].toString.toLower() + s.substring(1)
 				sugg = ' Try "[sugg]".'
-			_error('Class variables must start with lowercase letters (after the underscore(s)) to distinguish them from other types of identifiers.[sugg]')
+			.throwError('Class variables must start with lowercase letters (after the underscore(s)) to distinguish them from other types of identifiers.[sugg]')
 		type as INode? = if(.optional('AS'), .type(), TypeIdentifier(varTok, .typeProvider.unspecifiedType))
 		if .optional('ASSIGN')
 			initExpr as Expr? = .expression()  # CC: initExpr = .expression() to ?
@@ -917,29 +917,29 @@ class Parser
 		token = .expect('DEF')
 		opener = .grab()
 		if opener.which not in ['ID', 'OPEN_CALL']
-			_error('Encountered [opener.which] when expecting an identifier.')
+			.throwError('Encountered [opener.which] when expecting an identifier.')
 		name = opener.value to String
 		curClass = .curBox
 		if name==curClass.name or Utils.capped(name)==curClass.name
-			_error('Method names cannot be the same as their enclosing [curClass.englishName]. Use `def init` for creating a constructor or choose another name.')  # TODO list the enclosing types location
+			.throwError('Method names cannot be the same as their enclosing [curClass.englishName]. Use `def init` for creating a constructor or choose another name.')  # TODO list the enclosing types location
 		overload as MemberOverload? = nil
 		other = curClass.symbolForName(name, true, true)
 		if other
 			if name=='destruct'
-				_error('Cannot define more than one destruct method.')  # TODO give reference to the other one
+				.throwError('Cannot define more than one destruct method.')  # TODO give reference to the other one
 			if other inherits MemberOverload
 				overload = other
 			else if other inherits OneCodeBlockMember
 				overload = MemberOverload(other)
 				curClass.registerOverload(overload to MemberOverload)  # CC: axe cast
 			else
-				_error('There is already another class member with the name "[name]".')  # TODO list its location and possibly what it is
+				.throwError('There is already another class member with the name "[name]".')  # TODO list its location and possibly what it is
 		else
 			other = curClass.symbolForName(name, true, false)  # TODO: should be a CI there for case-insensitive
 			if other
-				_error('There is already another class member with the name "[other.name]". You must differentiate member names by more than just case.')
+				.throwError('There is already another class member with the name "[other.name]". You must differentiate member names by more than just case.')
 			if name[0] in _uppercaseLetters
-				_error('Method names must start with lowercase letters. ([name])')
+				.throwError('Method names must start with lowercase letters. ([name])')
 
 		if opener.which=='OPEN_CALL'
 			paramsList = .paramDecls(true)
@@ -963,15 +963,15 @@ class Parser
 			assert returnType
 			if name=='init'
 				if returnType is not .typeProvider.voidType
-					_error('Cannot declare a return type for init.')
+					.throwError('Cannot declare a return type for init.')
 				method = Constructor(token, .curBox, paramsList, isNames, docString)
 			else if name=='destruct'
 				if returnType is not .typeProvider.voidType
-					_error('Cannot declare a return type for destruct.')
+					.throwError('Cannot declare a return type for destruct.')
 				if paramsList
-					_error('Cannot declare parameters for destruct.')
+					.throwError('Cannot declare parameters for destruct.')
 				if 'shared' in isNames
-					_error('Cannot declare a shared destructor.')
+					.throwError('Cannot declare a shared destructor.')
 				assert false
 				# CC: method = Destructor(token, .curBox, isNames, docString)
 			else
@@ -990,9 +990,9 @@ class Parser
 				isNames = List<of String>()
 				docString = ''
 			if name=='init'
-				_error('Cannot declare "init" in an interface.')
+				.throwError('Cannot declare "init" in an interface.')
 			else if name=='destruct'
-				_error('Cannot declare "destruct" in an interface.')
+				.throwError('Cannot declare "destruct" in an interface.')
 			else
 				method = Method(token, .curBox, name, paramsList, returnType, nil, isNames, docString)
 		else
@@ -1089,10 +1089,10 @@ class Parser
 			varName = .expect('ID').text
 		possibleVarDef = .curBox.declForName(varName)
 		if not possibleVarDef inherits ClassVar
-			_error('A property can only cover for variables. [varName] is a [possibleVarDef]')
+			.throwError('A property can only cover for variables. [varName] is a [possibleVarDef]')
 		varDef = possibleVarDef to ClassVar
 		if .curBox inherits Interface
-			_error('Cannot use the "from" form of a property inside an interface declaration.')
+			.throwError('Cannot use the "from" form of a property inside an interface declaration.')
 		if .optionalIndent()
 			docString = .docString()
 			.dedent()
@@ -1315,7 +1315,7 @@ class Parser
 					if _isContractOnSameLine
 						_statementsFor(codePart)
 					else
-						_error('Expecting `body` section.')
+						.throwError('Expecting `body` section.')
 				if not _isContractOnSameLine
 					.dedent()
 			else
@@ -1336,7 +1336,7 @@ class Parser
 				gotStmt = true
 		.dedent()
 		if not gotStmt
-			_error('Missing statements. Use "pass" or other statements.')
+			.throwError('Missing statements. Use "pass" or other statements.')
 
 	def stmt as Stmt?
 		token = .peek()
@@ -1365,7 +1365,7 @@ class Parser
 				s = .ifStmt()
 				expectEOL = false
 			on 'GET'
-				_error('Cannot use "get" for a statement. If you mistakenly started a property above with "def", "get" or "set", then use "pro" instead.')
+				.throwError('Cannot use "get" for a statement. If you mistakenly started a property above with "def", "get" or "set", then use "pro" instead.')
 			on 'PASS'
 				s = .passStmt()
 			on 'POST'
@@ -1429,7 +1429,7 @@ class Parser
 				on 'ON'
 					.grab()
 					if elsePart
-						_error('Cannot have "on" parts after an "else" part.')
+						.throwError('Cannot have "on" parts after an "else" part.')
 					exprs = .commaSepExprs(['COLON', 'EOL'])
 					.undo()
 					block = .branchPartStatements()
@@ -1437,15 +1437,15 @@ class Parser
 				on 'ELSE'
 					.grab()
 					if elsePart
-						_error('Cannot have more than one "else" in a branch.')
+						.throwError('Cannot have more than one "else" in a branch.')
 					if not onParts
-						_error('Cannot have an "else" in a branch without at least one "on".')
+						.throwError('Cannot have an "else" in a branch without at least one "on".')
 					elsePart = .branchPartStatements()
 				on 'DEDENT'
 					.grab()
 					continuee = false  # CC: axe this when we can use break in a branch
 				else
-					_error('Expecting "on", "else" or end of branch statement. Encountered [.peek().which]')
+					.throwError('Expecting "on", "else" or end of branch statement. Encountered [.peek().which]')
 		return BranchStmt(token, e, onParts, elsePart)
 
 	def branchPartStatements() as BlockStmt
@@ -1453,7 +1453,7 @@ class Parser
 			.grab()
 			stmt = .stmt()
 			if stmt is nil
-				_error('Need a statement.')
+				.throwError('Need a statement.')
 			block = BlockStmt(stmt.token, [stmt])
 		else
 			block = .block()
@@ -1486,7 +1486,7 @@ class Parser
 		else if peek=='IN'
 			return .forEnumerableStmt(token, varr)
 		else
-			_error('Expecting "=" or "in".')
+			.throwError('Expecting "=" or "in".')
 			throw FallThroughException(peek)  # make C# code flow analysis happy
 
 	def forNumericStmt(token as IToken, varr as NameExpr) as ForNumericStmt
@@ -1529,7 +1529,7 @@ class Parser
 			else if peek=='IF'
 				falseStmts = BlockStmt(.peek(), [.ifStmt()])
 			else
-				_error('Syntax error. Expecting end-of-line or "if" after an "else".')
+				.throwError('Syntax error. Expecting end-of-line or "if" after an "else".')
 		return IfStmt(token, cond, trueStmts, falseStmts)
 
 	def passStmt as Stmt
@@ -1564,7 +1564,7 @@ class Parser
 			else if peek=='EOL'
 				block = .block()
 			else
-				_error('Expecting a comma and print arguments, or a code block.')
+				.throwError('Expecting a comma and print arguments, or a code block.')
 		if not block
 			args = .commaSepExprs(['EOL', 'STOP'])
 			terminator = .last
@@ -1629,18 +1629,18 @@ class Parser
 		didParseCatchAnyBlock = false  # meaning the catch that specifies no specific type of exception
 		useCatchMsg = 'Use "catch" instead of "except". (Also, use "throw" for throwing exceptions and "raise" for raising events.)'
 		if .peek().which=='EXCEPT'
-			_error(useCatchMsg)
+			.throwError(useCatchMsg)
 		while .peek().which=='CATCH'
 			catchToken = .grab()
 			if .peek().which in ['COLON', 'EOL']
 				if didParseCatchAnyBlock
-					_error('Already encountered the "catch every exception" block.')
+					.throwError('Already encountered the "catch every exception" block.')
 				anyCatchBlock = .block()
 				catchBlocks.add(CatchBlock(catchToken, anyCatchBlock))
 				didParseCatchAnyBlock = true
 			else
 				if didParseCatchAnyBlock
-					_error('Cannot have a specific exception block after the "catch every exception" block.')
+					.throwError('Cannot have a specific exception block after the "catch every exception" block.')
 				varr = .localVarDecl()
 				# TODO Accept type, or id, or "id AS type". See what Boo does.
 				if false
@@ -1653,9 +1653,9 @@ class Parser
 				catchBlock = .block()
 				catchBlocks.add(CatchBlock(catchBlock.token, varr, catchBlock))
 		if .peek().which=='EXCEPT'
-			_error(useCatchMsg)
+			.throwError(useCatchMsg)
 		if .peek().which=='ELSE'
-			_error('There is no "else" for a "try". There is a "success" however.')
+			.throwError('There is no "else" for a "try". There is a "success" however.')
 		successBlock as BlockStmt?  # CC: find a way to remove this decl. possibly by adding "to ?" below
 		if .peek().which=='SUCCESS'
 			.grab()
@@ -1669,7 +1669,7 @@ class Parser
 		else
 			finallyBlock = nil
 		if not catchBlocks and not successBlock and not finallyBlock
-			_error('A try needs at least one "except", "success" or "finally" block.')
+			.throwError('A try needs at least one "except", "success" or "finally" block.')
 		return TryStmt(token, tryBlock, catchBlocks, successBlock, finallyBlock)
 
 	def testSection(codeMember as BoxMember) as TestMethod
@@ -1728,7 +1728,7 @@ class Parser
 			if .peek().which=='DEDENT'
 				break
 		if not stmts
-			_error('Missing statements in block. Add a real statement or a "pass".')
+			.throwError('Missing statements in block. Add a real statement or a "pass".')
 		.dedent()
 		return BlockStmt(token, stmts)
 
@@ -1777,13 +1777,13 @@ class Parser
 					return definition to AbstractLocalVar  # same thing  # CC: axe type cast
 				else
 					# this should probably be moved to the bindImp phase since types can have different names like "int" and "System.Int32"
-					_error('Cannot redeclare "[name]" from "[definition.typeNode]" to "[type]". Previous definition is on line [definition.token.lineNum].')
+					.throwError('Cannot redeclare "[name]" from "[definition.typeNode]" to "[type]". Previous definition is on line [definition.token.lineNum].')
 			else if definition.type
 				if definition.type==type
 					return definition to AbstractLocalVar  # same thing  # CC: axe type cast
 				else
 					# this should probably be moved to the bindImp phase since types can have different names like "int" and "System.Int32"
-					_error('Cannot redeclare "[name]" from "[definition.type]" to "[type]". Previous definition is on line [definition.token.lineNum].')
+					.throwError('Cannot redeclare "[name]" from "[definition.type]" to "[type]". Previous definition is on line [definition.token.lineNum].')
 			else
 				throw FallThroughException(definition)
 
@@ -1975,7 +1975,7 @@ class Parser
 			else if peek=='OPEN_CALL'
 				expr = .callExpr()
 			else
-				_error('Syntax error after "."')
+				.throwError('Syntax error after "."')
 			return BinaryOpExpr.make(token to IToken, 'DOT', ThisLit(token, .curBox), expr)
 		else if peek=='NIL'
 			return NilLiteral(.grab())
@@ -1992,7 +1992,7 @@ class Parser
 			if _curCodePart inherits ProperDexerXetter
 				return VarLit(.grab(), _curCodePart)
 			else
-				_error('Cannot refer to `var` in expressions outside of a property `get` or `set`.')
+				.throwError('Cannot refer to `var` in expressions outside of a property `get` or `set`.')
 				assert false  # stop a warning
 		else if peek=='CHAR_LIT_SINGLE'
 			return CharLit(.grab())
@@ -2032,7 +2032,7 @@ class Parser
 				# TODO: Return TypeExpr(.nonqualifiedType('throw'))
 			catch pe as ParserException
 				if pe.message.contains('Unrecognized type')
-					_error('Expecting an expression.')
+					.throwError('Expecting an expression.')
 					throw FallThroughException()
 				else
 					throw
@@ -2103,7 +2103,7 @@ class Parser
 			return MemberExpr(nameToken, name)
 		if .peek().which=='AS'
 			if not Utils.startsWithLowerLetter(name)
-				_error('Local variable declarations must start with a lowercase letter. This avoids collisions with other identifiers such as classes and enums.')
+				.throwError('Local variable declarations must start with a lowercase letter. This avoids collisions with other identifiers such as classes and enums.')
 			asToken = .grab()
 			type = .type()
 			assert type
@@ -2147,7 +2147,7 @@ class Parser
 							sep = which
 							break
 					if sep is nil
-						_error('Expecting one of: [Utils.join(", ", separators)], but encountered [.peek.which]')
+						.throwError('Expecting one of: [Utils.join(", ", separators)], but encountered [.peek.which]')
 				if sep=='COLON'
 					lastThingWasColon = true
 			if .peek().which=='RBRACKET'
@@ -2155,7 +2155,7 @@ class Parser
 				break
 			if .peek().which=='COLON'
 				if sep=='COMMA'
-					_error('Not expecting a colon.')
+					.throwError('Not expecting a colon.')
 				.grab()
 				exprs.add(nil to passthrough)  # CC: clean up
 				sep = 'COLON'  # because sep could be nil
@@ -2178,7 +2178,7 @@ class Parser
 		if sep=='COLON'
 			assert exprs.count>=2, exprs
 			if exprs.count>3
-				_error('There are [exprs.count] expressions for the slice. There can only be up to three (start, stop and step).')
+				.throwError('There are [exprs.count] expressions for the slice. There can only be up to three (start, stop and step).')
 			start = exprs[0]
 			stopp = exprs[1]
 			stepp = if(exprs.count==3, exprs[2], nil)
@@ -2223,7 +2223,7 @@ class Parser
 		name = nameToken.text
 		if .peek().which=='AS'
 			if not Utils.startsWithLowerLetter(name)
-				_error('Local variable declarations must start with a lowercase letter. This avoids collisions with other identifiers such as classes and enums.')
+				.throwError('Local variable declarations must start with a lowercase letter. This avoids collisions with other identifiers such as classes and enums.')
 			asToken = .grab()
 			type = .type()
 			assert type
@@ -2259,7 +2259,7 @@ class Parser
 			else
 				if _verbosity>=4
 					print '<> stringWithSubstitutionLit([whichStart], [whichPart], [whichStop]), peek=[peek]'
-				_error('Expecting more string contents or the string end after the expression.')
+				.throwError('Expecting more string contents or the string end after the expression.')
 		return StringSubstLit(items)
 
 	def typeExpr as TypeExpr
@@ -2330,7 +2330,7 @@ class Parser
 		else if token.which=='ID'
 			t = TypeIdentifier(token)
 		else
-			_error('Unrecognized type: [token]')
+			.throwError('Unrecognized type: [token]')
 			return nil to passthrough  # CC: remove
 
 		assert t<>nil
@@ -2393,15 +2393,15 @@ class Parser
 	def checkProperty(name as String)
 		box = .curBox
 		if name==box.name
-			_error('Property names cannot be the same as their enclosing type.')  # TODO: list the enclosing types location
+			.throwError('Property names cannot be the same as their enclosing type.')  # TODO: list the enclosing types location
 		other = box.declForName(name)
 		if other
-			_error('There is already another class member with the name "[name]".')  # TODO: list its location and possibly what it is
+			.throwError('There is already another class member with the name "[name]".')  # TODO: list its location and possibly what it is
 		other = box.declForNameCI(name)
 		if other
-			_error('There is already another class member with the name "[other.name]". You must differentiate member names by more than just case.')
+			.throwError('There is already another class member with the name "[other.name]". You must differentiate member names by more than just case.')
 		if Utils.startsNonLower(name)
-			_error('Property names must start with lowercase letters. ([name])')
+			.throwError('Property names must start with lowercase letters. ([name])')
 
 	def checkStartsLowercase(identifier as String, whatName as String)
 		"""
@@ -2413,15 +2413,15 @@ class Parser
 			while sugg
 				sugg = sugg.substring(1, sugg.length-1)
 			sugg = sugg[0].toString.toLower() + sugg.substring(1, sugg.length-1)
-			_error('[whatName] declarations cannot start with an underscore. Those are reserved for class variables. Try "[sugg]".')
+			.throwError('[whatName] declarations cannot start with an underscore. Those are reserved for class variables. Try "[sugg]".')
 		if Utils.startsNonLower(identifier)  # CC: should be char.isLower(identifier[0]), but cannot see members of char at this time
 			sugg = identifier[0].toString.toLower() + identifier.substring(1, identifier.length-1)
-			_error('[whatName] declarations must start with a lowercase letter to distinguish them from other types of identifiers. Try "[sugg]".')
+			.throwError('[whatName] declarations must start with a lowercase letter to distinguish them from other types of identifiers. Try "[sugg]".')
 
-	def _error(msg as String)
-		_error(.last, msg)
+	def throwError(msg as String)
+		.throwError(.last, msg)
 
-	def _error(token as IToken?, msg as String)
+	def throwError(token as IToken?, msg as String)
 		if token
 			msg = '[token.fileName]([token.lineNum],[token.colNum]): error: [msg]'
 		else
