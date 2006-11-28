@@ -345,9 +345,8 @@ class Node
 		Control flow does not return to the caller because the exception is thrown.
 		In practice, this exception will be caught at some level as part of error recovery.
 		"""
-		if _errors is nil
-			_errors = List<of NodeException>()
-		_errors.add(ne)
+		require ne.node is this
+		_recordError(ne)
 		throw ne
 
 	def throwError(msg as String)
@@ -355,23 +354,35 @@ class Node
 
 	def recordError(ne as NodeException)
 		"""
-		Subclasses should invoke this error message as part of the error recovery process--
-		a process that should be implemented in various for..in loops that enumerate over
-		subnodes.
-		"""
-		require .compiler
-		if _errors is nil
-			_errors = List<of NodeException>()
-		_errors.add(ne)
-		.compiler.recordError(ne)
-
-	def recordError(msg as String)
-		"""
 		Record an error for this node with the given message.
 		The error will be noted by the compiler.
 		No exception is thrown and control returns to the caller.
+
+		Note that when catching errors from subobjects, the correct invocation is
+		`.compiler.recordError()` since the caught error would have already been
+		recorded by that object.
 		"""
+		require
+			.compiler
+			ne.node is this
+		body
+			_recordError(ne)
+			.compiler.recordError(ne)
+
+	def recordError(msg as String)
 		.recordError(NodeException(this, msg))
+
+	def _recordError(ne as NodeException)
+		"""
+		Records the error without notifying the compiler or throwing an exception--those are done
+		by the public `throwError` and `recordError` methods.
+		"""
+		require ne.node is this
+		if _errors is nil
+			_errors = List<of NodeException>()
+		else
+			assert ne not in _errors
+		_errors.add(ne)
 
 
 	##
