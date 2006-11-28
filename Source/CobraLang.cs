@@ -383,6 +383,49 @@ static public class CobraImp {
 			return null;
 	}
 
+	static public string GetSlice(string s, int? start, int? stop, int? step) {
+		if (s==null)
+			throw new NullReferenceException("Cannot slice null.");
+		if (start==null)
+			start = 0;
+		if (start<0) {
+			start += s.Length;
+			if (start<0)
+				throw new IndexOutOfRangeException(string.Format("Start is {0} for string of length {1}.", start-s.Length, s.Length));
+		} else if (start>s.Length) {
+			throw new IndexOutOfRangeException(string.Format("Start is {0} for string of length {1}.", start, s.Length));
+		}
+		if (stop==null)
+			stop = s.Length;
+		if (stop<0) {
+			stop += s.Length;
+			if (stop<0)
+				throw new IndexOutOfRangeException(string.Format("Stop is {0} for string of length {1}.", stop-s.Length, s.Length));
+		} else if (stop>s.Length) {
+			throw new IndexOutOfRangeException(string.Format("Stop is {0} for string of length {1}.", stop, s.Length));
+		}
+		if (step==null)
+			step = 1;
+		if (step==0)
+			throw new Exception(string.Format("Cannot use a step of zero for slices."));
+		if (step>0) {
+			if (stop<start)
+				throw new Exception(string.Format("stop={0} is less than start={1} for a positive step.", stop, start));
+			if (step!=1)
+				throw new Exception(string.Format("step={0}, but only a step of 1 is currently supported", step));
+			return s.Substring(start.Value, stop.Value-start.Value);
+		} else {
+			// step is negative
+			if (start>stop)
+				throw new Exception(string.Format("start={0} is less than start={1} for a negative step.", start, stop));
+			throw new Exception(string.Format("step={0}, but only a step of 1 is currently supported.", step));
+		}
+	}
+
+	static public System.Collections.IList GetSlice(System.Collections.IList list, int? start, int? stop, int? step) {
+		throw new Exception("Not implemented yet.");
+	}
+
 	static private Stack<TextWriter> _printToStack;
 
 	static public void PushPrintTo(TextWriter tw) {

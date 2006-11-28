@@ -1038,6 +1038,124 @@ class SharpExpr
 			sw.write(')')
 
 
+class SliceExpr
+	inherits Expr
+	"""
+	Just like Python slices.
+	"""
+
+	var _target as Expr
+	var _start as Expr?
+	var _stop as Expr?
+	var _step as Expr?
+
+	def init(token as IToken, target as Expr, start as Expr?, stopp as Expr?, stepp as Expr?)
+		base.init(token)
+		_target = target
+		_start = start
+		_stop = stopp
+		_step = stepp
+
+	def addSubFields
+		base.addSubFields
+		.addField('target', _target)
+		.addField('start', _start)
+		.addField('stop', _stop)
+		.addField('step', _step)
+
+	get hasError as bool is override
+		if base.hasError
+			return true
+		if _target.hasError
+			return true
+		if _start is not nil and _start.hasError
+			return true
+		if _stop is not nil and _stop.hasError
+			return true
+		if _step is not nil and _step.hasError
+			return true
+		return false
+
+	def _isSliceable(type as IType) as bool
+		if type.isDescendantOf(.compiler.libraryType('System', 'String'))
+			return true
+		if type.isDescendantOf(.compiler.libraryType('System', 'Array'))
+			return true
+		if type.isDescendantOf(.compiler.libraryType('System', 'Collections', 'List'))
+			return true
+		if type.isDescendantOf(.compiler.libraryType('System', 'Collections', 'Generics', 'List'))
+			return true
+		# TODO: type is dynamic
+		# TODO: type has getRange()
+		# TODO: type has getSlice()
+		# TODO: type has [int]
+		return false
+
+	def _bindImp
+		base._bindImp
+		try
+			_target.bindImp
+		catch ne as NodeException
+			_target.recordError(ne)
+		success
+			if not _isSliceable(_target.type to IType)  # to !
+				_error('Cannot slice values of type "[_target.type.name]". You can slice strings, arrays, IList and IList<of>.')
+		if _start is not nil
+			try
+				_start.bindImp
+			catch ne as NodeException
+				_start.recordError(ne)
+		if _stop is not nil
+			try
+				_stop.bindImp
+			catch ne as NodeException
+				_stop.recordError(ne)
+		if _step is not nil
+			try
+				_step.bindImp
+			catch ne as NodeException
+				_stop.recordError(ne)
+		if _target.hasError
+			_type = .compiler.passThroughType
+		else
+			_type = _target.type
+
+	def toCobraSource as String is override
+		sb = StringBuilder()
+		sb.append(_target.toCobraSource)
+		sb.append(r'[')
+		if _start is not nil
+			sb.append(_start.toCobraSource)
+		sb.append(':')
+		if _stop is not nil
+			sb.append(_stop.toCobraSource)
+		if _step is not nil
+			sb.append(':')
+			sb.append(_step.toCobraSource)
+		sb.append(']')
+		return sb.toString
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		sw.write('CobraImp.GetSlice(')
+		_target.writeSharpDef(sw, false)
+		sw.write(',')
+		if _start is nil
+			sw.write('null')
+		else
+			_start.writeSharpDef(sw, false)
+		sw.write(',')
+		if _stop is nil
+			sw.write('null')
+		else
+			_stop.writeSharpDef(sw, false)
+		sw.write(',')
+		if _step is nil
+			sw.write('null')
+		else
+			_step.writeSharpDef(sw, false)
+		sw.write(')')
+
+
 class TruthExpr
 	inherits Expr
 	"""

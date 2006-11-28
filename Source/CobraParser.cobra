@@ -1891,10 +1891,8 @@ class Parser
 				break
 			# continue...
 			if peek=='LBRACKET'
-				# requires special handling - IndexExpr
-				token = .grab()
-				exprs = .commaSepExprs('RBRACKET')
-				return .expression(precedence, IndexExpr(token, left, exprs))
+				# requires special handling - IndexExpr or SliceExpr
+				return .expression(precedence, .indexOrSliceExpr(left to Expr))  # CC: probably shouldn't need this given first two lines of method
 			else if peek=='LPAREN'
 				# requires special handling - PostCallExpr
 				# this happens for something like: foo[i]('x')
@@ -2068,7 +2066,8 @@ class Parser
 			Popular terminators are 'EOL' and 'RPAREN'.
 			The terminator token is consumed, but can be examined with .last().
 		"""
-		expectComma = false
+		expectSep = false
+		sep = 'COMMA'
 		exprs = List<of Expr>()
 		while true
 			if isSpaceAgnostic
@@ -2076,8 +2075,8 @@ class Parser
 			if .peek().which in terminators
 				terminator = .grab()
 				break
-			if expectComma
-				.expect('COMMA')
+			if expectSep
+				.expect(sep)
 			if .peek().which in terminators
 				terminator = .grab()
 				break
@@ -2091,7 +2090,7 @@ class Parser
 				exprs.add(.expression())
 			finally
 				.delOpStack()
-			expectComma = true
+			expectSep = true
 		return exprs
 
 	def identifierExpr as Expr
@@ -2121,6 +2120,73 @@ class Parser
 		fexpr = .expression()
 		.expect('RPAREN')
 		return IfExpr(token, expr, texpr, fexpr)
+
+	def indexOrSliceExpr(left as Expr) as Expr
+		# note: this code is similar to, but not identical to commaSepExprs()
+		# this code has to deal with the case that in slices, expressions can be omitted
+		token = .grab()
+		assert token.which=='LBRACKET'
+		expectSep = false
+		sep as String?
+		exprs = List<of Expr?>()
+		separators = ['COMMA', 'COLON']
+		isSpaceAgnostic = false # TODO: try making true for isSpaceAgnostic
+		while true
+			if isSpaceAgnostic
+				_spaceAgnostic()
+			if .peek().which=='RBRACKET'
+				.grab()
+				break
+			if expectSep
+				if sep is not nil
+					.expect(sep)
+				else
+					for which in separators
+						if .peek().which==which
+							.grab()
+							sep = which
+							break
+					if sep is nil
+						_error('Expecting one of: [Utils.join(", ", separators)], but encountered [.peek.which]')
+				if sep=='COLON'
+					lastThingWasColon = true
+			if .peek().which=='RBRACKET'
+				.grab()
+				break
+			if .peek().which=='COLON'
+				if sep=='COMMA'
+					_error('Not expecting a colon.')
+				.grab()
+				exprs.add(nil to passthrough)  # CC: clean up
+				sep = 'COLON'  # because sep could be nil
+				lastThingWasColon = true
+				continue
+			if isSpaceAgnostic
+				_spaceAgnostic()
+			if .peek().which=='RBRACKET'
+				terminator = .grab()
+				break
+			.newOpStack()
+			try
+				exprs.add(.expression())
+				lastThingWasColon = false
+			finally
+				.delOpStack()
+			expectSep = true
+		if lastThingWasColon
+			exprs.add(nil to passthrough)  # CC: clean up
+		if sep=='COLON'
+			assert exprs.count>=2, exprs
+			if exprs.count>3
+				_error('There are [exprs.count] expressions for the slice. There can only be up to three (start, stop and step).')
+			start = exprs[0]
+			stopp = exprs[1]
+			stepp = if(exprs.count==3, exprs[2], nil)
+			return SliceExpr(token, left, start, stopp, stepp)
+		else
+			for expr in exprs
+				assert expr is not nil, exprs
+			return IndexExpr(token, left, exprs)
 
 	def literalList as ListLit
 		token = .expect('LBRACKET')
@@ -2192,7 +2258,7 @@ class Parser
 				break
 			else
 				if _verbosity>=4
-					print '<> stringWithSubstitutionLit([whichStart], [whichPart], [whichStop])'
+					print '<> stringWithSubstitutionLit([whichStart], [whichPart], [whichStop]), peek=[peek]'
 				_error('Expecting more string contents or the string end after the expression.')
 		return StringSubstLit(items)
 
