@@ -330,31 +330,47 @@ class Node
 	## Errors
 	##
 
-	# TODO: rename _error to throwError and _recordedError to _error
+	var _errors as List<of NodeException>
 
-	def _error(msg as String)
+	get errors from var
+
+	def _error(msg as String)  # TODO: axe this
+		.throwError(msg)
+
+	def throwError(ne as NodeException)
 		"""
 		Subclasses should invoke this method whenever they detect an error during compilation
-		(bindInt and bindImp, but not code gen).
+		(bindInt and bindImp, but not code gen during which no user errors should occur).
+		The error will be recorded by the node, but not explicitly noted by the compiler.
+		Control flow does not return to the caller because the exception is thrown.
+		In practice, this exception will be caught at some level as part of error recovery.
 		"""
-		ne = NodeException(this, msg)
-		_recordedError = ne
+		if _errors is nil
+			_errors = List<of NodeException>()
+		_errors.add(ne)
 		throw ne
 
-	var _recordedError as NodeException?  # TODO: change to a list
+	def throwError(msg as String)
+		.throwError(NodeException(this, msg))
 
-	get recordedError from var
-
-	def recordError(ce as NodeException)  # TODO: change to NodeException
+	def recordError(ne as NodeException)
 		"""
 		Subclasses should invoke this error message as part of the error recovery process--
 		a process that should be implemented in various for..in loops that enumerate over
 		subnodes.
 		"""
 		require .compiler
-		.compiler.recordError(ce)
+		if _errors is nil
+			_errors = List<of NodeException>()
+		_errors.add(ne)
+		.compiler.recordError(ne)
 
 	def recordError(msg as String)
+		"""
+		Record an error for this node with the given message.
+		The error will be noted by the compiler.
+		No exception is thrown and control returns to the caller.
+		"""
 		.recordError(NodeException(this, msg))
 
 
@@ -563,10 +579,11 @@ class SyntaxNode
 		base.addMinFields()
 		.addField('token', .token.toTechString())
 
-	def _error(msg as String) is override
-		ne = SyntaxNodeException(this, msg)
-		_recordedError = ne
-		throw ne
+# TODO: try a "get nodeExceptionClass as Type" technique
+#	def _error(msg as String) is override
+#		ne = SyntaxNodeException(this, msg)
+#		_recordedError = ne
+#		throw ne
 
 	## Code gen
 
