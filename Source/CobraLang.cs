@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -254,6 +255,11 @@ static public class CobraImp {
 	}
 
 	static public new bool Equals(object a, object b) {
+		// Cobra will generate the C# "a==b" when a and b are both primitive types (int, decimal,
+		// etc.) But in the event that a and b are statically typed as "Object", that does not
+		// mean that equality should stop making sense. Hence, below we cover the cases where
+		// a.Equals(b) fails us (there are suprisingly many).
+
 		// decimal is retarded
 		if (a is decimal) {
 			if (b is decimal)
@@ -275,7 +281,8 @@ static public class CobraImp {
 			return Equals((char)a, (string)b);
 		else if (a is string && b is char)
 			return Equals((char)b, (string)a);
-
+		if (a is IList && b is IList)
+			return Equals((IList)a, (IList)b);
 		// what we really want for objects that can handle it:
 		return object.Equals(a, b);
 	}
@@ -286,6 +293,18 @@ static public class CobraImp {
 		if (s.Length==1 && c==s[0])
 			return true;
 		return new string(c, 1) == s;
+	}
+
+	static public bool Equals(IList a, IList b) {
+		if (a.Count!=b.Count)
+			return false;
+		int count = a.Count;
+		for (int i=0; i<count; i++) {
+			if (!CobraImp.Equals(a[i], b[i])) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	static public bool NotEquals(object a, object b) {
