@@ -283,6 +283,8 @@ static public class CobraImp {
 			return Equals((char)b, (string)a);
 		if (a is IList && b is IList)
 			return Equals((IList)a, (IList)b);
+		if (a is IDictionary && b is IDictionary)
+			return Equals((IDictionary)a, (IDictionary)b);
 		// what we really want for objects that can handle it:
 		return object.Equals(a, b);
 	}
@@ -300,9 +302,24 @@ static public class CobraImp {
 			return false;
 		int count = a.Count;
 		for (int i=0; i<count; i++) {
-			if (!CobraImp.Equals(a[i], b[i])) {
+			if (!CobraImp.Equals(a[i], b[i]))
 				return false;
-			}
+		}
+		return true;
+	}
+
+	static public bool Equals(IDictionary a, IDictionary b) {
+		if (a.Count!=b.Count)
+			return false;
+		foreach (object key in a.Keys) {
+			if (!b.Contains(key))
+				return false;
+			if (!CobraImp.Equals(a[key], b[key]))
+				return false;
+		}
+		foreach (object key in b.Keys) {
+			if (!a.Contains(key))
+				return false;
 		}
 		return true;
 	}
