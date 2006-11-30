@@ -101,7 +101,7 @@ public class AssertException : Exception {
 	}
 
 	public AssertException(string fileName, int lineNumber, string conditionSource, object info, Exception innerExc)
-		: base(FixUp(info), innerExc) {
+		: base("assert", innerExc) {
 		_fileName = fileName;
 		_lineNumber = lineNumber;
 		_conditionSource = conditionSource;
@@ -110,8 +110,14 @@ public class AssertException : Exception {
 
 	public override string Message {
 		get {
+			string info = null;
+			try {
+				info = CobraCore.ToTechString(_info);
+			} catch (Exception e) {
+				info = "Exception: " + e.Message;
+			}
 			return string.Format("location={0}:{1}, info={2}, source={3}",
-				_fileName, _lineNumber, _info==null?"nil":_info, _conditionSource);
+				_fileName, _lineNumber, info, _conditionSource);
 		}
 	}
 
@@ -119,22 +125,6 @@ public class AssertException : Exception {
 		get {
 			return _info;
 		}
-	}
-
-	static protected string FixUp(object x) {
-		if (x==null)
-			return "";
-		if (x is string)
-			return (string)x;
-		string s = null;
-		try {
-			s = x.ToString();
-			if (s==null)
-				s = "";
-		} catch (Exception e) {
-			s = "Exception: " + e.Message;
-		}
-		return s;
 	}
 
 }
