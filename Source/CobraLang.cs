@@ -474,6 +474,30 @@ static public class CobraImp {
 		return slice;
 	}
 
+	static public System.Collections.ArrayList GetSlice(System.Collections.ArrayList list, int? start, int? stop, int? step) {
+		if (list==null)
+			throw new NullReferenceException("Cannot slice null.");
+		ProcessGetSliceArgs(list.Count, ref start, ref stop, ref step);
+		return list.GetRange(start.Value, stop.Value-start.Value);
+	}
+
+	static public IList<T> GetSlice<T>(IList<T> list, int? start, int? stop, int? step) {
+		if (list==null)
+			throw new NullReferenceException("Cannot slice null.");
+		ProcessGetSliceArgs(list.Count, ref start, ref stop, ref step);
+		IList<T> slice = (IList<T>)Activator.CreateInstance(list.GetType());
+		for (int i=start.Value; i<stop.Value; i+=step.Value)
+			slice.Add(list[i]);
+		return slice;
+	}
+
+	static public List<T> GetSlice<T>(List<T> list, int? start, int? stop, int? step) {
+		if (list==null)
+			throw new NullReferenceException("Cannot slice null.");
+		ProcessGetSliceArgs(list.Count, ref start, ref stop, ref step);
+		return list.GetRange(start.Value, stop.Value-start.Value);
+	}
+
 	static private Stack<TextWriter> _printToStack;
 
 	static public void PushPrintTo(TextWriter tw) {
