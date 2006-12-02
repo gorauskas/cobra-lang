@@ -1641,17 +1641,14 @@ class Parser
 			else
 				if didParseCatchAnyBlock
 					.throwError('Cannot have a specific exception block after the "catch every exception" block.')
-				varr = .localVarDecl()
-				# TODO Accept type, or id, or "id AS type". See what Boo does.
-				if false
-					catchType as INode?
-					if .peek().which<>'EOL'
-						catchType = .type()
-						if .peek().which=='ID'
-							catchVarToken = .expect('ID')
-							_curCodePart.addLocal(LocalVar(catchVarToken, catchType))
-				catchBlock = .block()
-				catchBlocks.add(CatchBlock(catchBlock.token, varr, catchBlock))
+				if .peek(1).which=='AS'
+					catchVar = .localVarDecl()
+					catchBlock = .block()
+					catchBlocks.add(CatchBlock(catchBlock.token, catchVar, catchBlock))
+				else
+					catchType = .type()
+					catchBlock = .block()
+					catchBlocks.add(CatchBlock(catchBlock.token, catchType, catchBlock))
 		if .peek().which=='EXCEPT'
 			.throwError(useCatchMsg)
 		if .peek().which=='ELSE'
@@ -1738,7 +1735,7 @@ class Parser
 	def localVarDecl(defaultType as IType?) as AbstractLocalVar
 		"""
 		Variable declarations for `using`, `for` and `catch`.
-		Not class vars (see classVarDecl()).
+		Not class vars (see `classVarDecl`) or parameters (see `paramDecl`).
 		Example source:
 			x   # default type is dynamic   # TODO: should be unspecified
 			i as int
