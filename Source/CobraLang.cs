@@ -233,6 +233,15 @@ public class FallThroughException : Exception {
 }
 
 
+public class SliceException : SystemException {
+
+	public SliceException(string msg)
+		: base(msg) {
+	}
+
+}
+
+
 static public class CobraImp {
 
 	// public to Cobra source
@@ -409,47 +418,60 @@ static public class CobraImp {
 			return null;
 	}
 
-	static public string GetSlice(string s, int? start, int? stop, int? step) {
-		if (s==null)
-			throw new NullReferenceException("Cannot slice null.");
+	static private void ProcessGetSliceArgs(int count, ref int? start, ref int? stop, ref int? step) {
 		if (start==null)
 			start = 0;
 		if (start<0) {
-			start += s.Length;
+			start += count;
 			if (start<0)
-				throw new IndexOutOfRangeException(string.Format("Start is {0} for string of length {1}.", start-s.Length, s.Length));
-		} else if (start>s.Length) {
-			throw new IndexOutOfRangeException(string.Format("Start is {0} for string of length {1}.", start, s.Length));
+				throw new IndexOutOfRangeException(string.Format("Start is {0} for string of length {1}.", start-count, count));
+		} else if (start>count) {
+			throw new IndexOutOfRangeException(string.Format("Start is {0} for string of length {1}.", start, count));
 		}
 		if (stop==null)
-			stop = s.Length;
+			stop = count;
 		if (stop<0) {
-			stop += s.Length;
+			stop += count;
 			if (stop<0)
-				throw new IndexOutOfRangeException(string.Format("Stop is {0} for string of length {1}.", stop-s.Length, s.Length));
-		} else if (stop>s.Length) {
-			throw new IndexOutOfRangeException(string.Format("Stop is {0} for string of length {1}.", stop, s.Length));
+				throw new IndexOutOfRangeException(string.Format("Stop is {0} for string of length {1}.", stop-count, count));
+		} else if (stop>count) {
+			throw new IndexOutOfRangeException(string.Format("Stop is {0} for string of length {1}.", stop, count));
 		}
 		if (step==null)
 			step = 1;
 		if (step==0)
-			throw new Exception(string.Format("Cannot use a step of zero for slices."));
+			throw new SliceException(string.Format("Cannot use a step of zero for slices."));
+		// step is negative
+		if (start>stop)
+			throw new SliceException(string.Format("start={0} is less than start={1} for a negative step.", start, stop));
 		if (step>0) {
-			if (stop<start)
-				throw new Exception(string.Format("stop={0} is less than start={1} for a positive step.", stop, start));
 			if (step!=1)
-				throw new Exception(string.Format("step={0}, but only a step of 1 is currently supported", step));
-			return s.Substring(start.Value, stop.Value-start.Value);
+				throw new SliceException(string.Format("step={0}, but only a step of 1 is currently supported", step));
+			if (stop<start)
+				throw new SliceException(string.Format("stop={0} is less than start={1} for a positive step.", stop, start));
 		} else {
-			// step is negative
-			if (start>stop)
-				throw new Exception(string.Format("start={0} is less than start={1} for a negative step.", start, stop));
-			throw new Exception(string.Format("step={0}, but only a step of 1 is currently supported.", step));
+			if (step<0)
+				throw new SliceException(string.Format("step={0}, but only a step of 1 is currently supported.", step));
 		}
+		// at this point start, stop and step or non-null and
+		// stop>=start and step==1
+	}
+
+	static public string GetSlice(string s, int? start, int? stop, int? step) {
+		if (s==null)
+			throw new NullReferenceException("Cannot slice null.");
+		ProcessGetSliceArgs(s.Length, ref start, ref stop, ref step);
+		return s.Substring(start.Value, stop.Value-start.Value);
 	}
 
 	static public System.Collections.IList GetSlice(System.Collections.IList list, int? start, int? stop, int? step) {
-		throw new Exception("Not implemented yet.");
+		if (list==null)
+			throw new NullReferenceException("Cannot slice null.");
+		ProcessGetSliceArgs(list.Count, ref start, ref stop, ref step);
+		IList slice = (IList)Activator.CreateInstance(list.GetType());
+		for (int i=start.Value; i<stop.Value; i+=step.Value)
+			slice.Add(list[i]);
+		return slice;
 	}
 
 	static private Stack<TextWriter> _printToStack;
