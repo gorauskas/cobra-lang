@@ -225,11 +225,7 @@ class Box
 					decl.bindInt()
 				catch ne as NodeException
 					.compiler.recordError(ne)
-			for ol in _overloads
-				try
-					ol.bindInt()
-				catch ne as NodeException
-					.compiler.recordError(ne)
+			_finishOverloads
 			if _testMethod
 				_testMethod.bindInt()
 		finally
@@ -264,6 +260,14 @@ class Box
 
 	def _badInterfaceError(type as IType)
 		.throwError('Cannot inherit "[type.name]" which is a [type.englishName].')
+
+	def _finishOverloads
+		# this method is broken out so Class can override and deal with inheritance and overloads
+		for ol in _overloads
+			try
+				ol.bindInt()
+			catch ne as NodeException
+				.compiler.recordError(ne)
 
 	def _bindImp is override
 		base._bindImp()
@@ -557,16 +561,9 @@ class Class
 		return m
 
 	def _bindInt is override
-		# TODO: the following is a fix for SystemInterfaces.cobra.
-		# Upon reading mscorlib.dll, this won't be necessary
-# @@@@ remove this
-#		if _name=='Object' and .compiler.nameSpaceStack.peek().name=='System'
-#			assert _baseName=='Object'
-#			_baseName = ''
 		if _baseNode
 			_baseNode.bindInt()
 			possible = _baseNode.namedType
-# TODO: remove:			possible = .compiler.symbolForName(_baseName, false, false)  # should canBeMember be true?
 			baseName = _baseNode.toString
 			if possible is nil
 				.throwError('Cannot locate base class named "[baseName]" for class "[_name]".')
@@ -588,6 +585,8 @@ class Class
 					_baseClass = t
 			else
 				throw FallThroughException(t)
+		if _baseClass is not nil
+			_baseClass.bindInt
 		base._bindInt()
 
 	def _badInterfaceError(type as IType) is override
@@ -595,6 +594,30 @@ class Class
 		if type inherits Class
 			msg += ' Use "inherits" instead.'
 		.throwError(msg)
+
+	def _finishOverloads
+		# deal with inheritance and overloads
+		assert _baseClass is not nil or _name=='Object'
+		if _baseClass
+			#assert _baseClass.didBindInt
+			if not _baseClass.didBindInt
+				_baseClass.bindInt
+			for decl in List<of IMember>(_declsInOrder)
+				if decl inherits Method and not decl inherits Constructor
+					other = _baseClass.memberForName(decl.name)
+					if other is not nil
+						if decl inherits MemberOverload
+							overload = decl
+						else if decl inherits BoxMember
+							overload = MemberOverload(decl)
+							.registerOverload(overload)
+						else
+							throw FallThroughException(decl)
+						if other inherits BoxMember
+							overload.addInheritedMember(other)
+						else
+							throw FallThroughException(other)
+		base._finishOverloads
 
 	get englishName as String is override
 		return 'class'
