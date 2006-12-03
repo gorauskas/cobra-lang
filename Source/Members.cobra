@@ -475,17 +475,20 @@ class OneCodeBlockMember
 
 	def usesBase
 		if 'new' in _isNames or 'override' in _isNames
-			pass
-		else
-			# using base implies override, but only if the method sig in the base class is the same
-			# (otherwise it's just an override)
-			if _box inherits Class
-				assert _box.baseClass
-				baseMember = _box.baseClass.memberForName(_name)
-				if baseMember inherits OneCodeBlockMember
-					if .matchesSignature(baseMember)
+			return
+
+		# using base implies override, but only if the method sig in the base class is the same
+		# (otherwise it's just an overload)
+		if _box inherits Class
+			assert _box.baseClass
+			baseMember = _box.baseClass.memberForName(_name)
+			if baseMember inherits OneCodeBlockMember
+				if .matchesSignature(baseMember)
+					if 'nonvirtual' in baseMember.isNames
+						_isNames.add('new')
+					else
 						_isNames.add('override')
-						_isNames.remove('virtual')  # virtual is the default for properties and methods
+					_isNames.remove('virtual')  # virtual is the default for properties and methods
 
 	def matchesSignature(member as OneCodeBlockMember) as bool
 		if .name <> member.name
