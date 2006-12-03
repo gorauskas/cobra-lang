@@ -123,6 +123,35 @@ class BoxMember
 		if _testMethod
 			_testMethod.bindImp
 
+	def usesBase
+		# Needed by OneCodeBlockMember and ProperDexer
+		if 'new' in _isNames or 'override' in _isNames
+			return
+		# using base implies override, but only if the method sig in the base class is the same
+		# (otherwise it's just an overload)
+		if _box inherits Class
+			assert _box.baseClass
+			baseMember = _box.baseClass.memberForName(_name)
+			if baseMember inherits BoxMember
+				if .matchesSignature(baseMember)
+					if 'nonvirtual' in baseMember.isNames
+						_isNames.add('new')
+					else
+						_isNames.add('override')
+					_isNames.remove('virtual')  # virtual is the default for properties and methods
+
+	def matchesSignature(member as BoxMember) as bool
+		if .name <> member.name
+			return false
+		params_ = .params
+		otherParams = member.params
+		if params_.count <> otherParams.count
+			return false
+		for i = 0 .. params_.count
+			if params_[i].type <> otherParams[i].type
+				return false
+		return true
+
 
 	## Fields
 
@@ -473,34 +502,6 @@ class OneCodeBlockMember
 		.addField('locals', _locals)
 		.addField('stmts', _stmts)
 
-	def usesBase
-		if 'new' in _isNames or 'override' in _isNames
-			return
-
-		# using base implies override, but only if the method sig in the base class is the same
-		# (otherwise it's just an overload)
-		if _box inherits Class
-			assert _box.baseClass
-			baseMember = _box.baseClass.memberForName(_name)
-			if baseMember inherits OneCodeBlockMember
-				if .matchesSignature(baseMember)
-					if 'nonvirtual' in baseMember.isNames
-						_isNames.add('new')
-					else
-						_isNames.add('override')
-					_isNames.remove('virtual')  # virtual is the default for properties and methods
-
-	def matchesSignature(member as OneCodeBlockMember) as bool
-		if .name <> member.name
-			return false
-		otherParams = member.params
-		if _params.count <> otherParams.count
-			return false
-		for i = 0 .. _params.count
-			if _params[i].type <> otherParams[i].type
-				return false
-		return true
-
 	def _bindInt is override
 		base._bindInt
 		.compiler.codeMemberStack.push(this)
@@ -672,7 +673,7 @@ class Constructor
 		pass
 
 	def usesBase is override
-		# constructors cannot be virtual
+		# constructors cannot be virtual and don't require "is new"
 		pass
 
 	def checkForUnmarkedOverrideOrNew is override
@@ -948,6 +949,11 @@ class ProperDexerXetter
 
 	get isShared as bool is override
 		return _parent.isShared
+
+	def usesBase is override
+		# it's the property that needs to compute the "is override" or "is new" for itself,
+		# not the get or set part
+		_parent.usesBase
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
