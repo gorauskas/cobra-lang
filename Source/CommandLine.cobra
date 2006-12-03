@@ -251,7 +251,6 @@ class CommandLine  # TODO: rename to CommandLine
 				d.add('type', 'string')
 
 		valueDict = Dictionary<of String, Object>()
-		# TODO: remove: optionValueList = Dictionary<of String, List<of Object>>()
 		fileList = List<of String>()
 		value = "no-value" to Object  # for typing
 		mainOptions = List<of String>()
@@ -728,7 +727,7 @@ class CommandLine  # TODO: rename to CommandLine
 			index = firstLine.indexOf('.error.')
 			error = firstLine.substring(index+7).trim().toLower()
 			try
-				c = Compiler(_verbosity, WarningActionEnum.Print)
+				c = Compiler(_verbosity)
 				c.parseFilesNamed([baseName])
 				if verbose
 					c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
@@ -777,7 +776,7 @@ class CommandLine  # TODO: rename to CommandLine
 			warning = firstLine.substring(index+9).trim().toLower()
 			# TODO: the following code both checks for warnings to be thrown as well as going through a list of warnings. Seems like it should just need to do one or the other.
 			try
-				c = Compiler(_verbosity, WarningActionEnum.Throw)
+				c = Compiler(_verbosity)
 				c.parseFilesNamed([baseName])
 				if verbose
 					c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
@@ -786,14 +785,6 @@ class CommandLine  # TODO: rename to CommandLine
 				c.bindImp()
 				if verbose
 					c.dumpModulesForTestify(_resultsWriter, 'Modules after binding')
-			catch cw as CobraWarning
-				if cw.message.toLower().indexOf(warning)==-1
-					print 'Expecting warning substring: "[warning]"'
-					print 'Actual warning is: "[cw.message]"'
-					.failed()
-					return 0
-				print 'Expected warning occurred: "[warning]" in "[cw.message]"'
-				return 1
 			catch StopCompilation
 				print 'Expecting warning substring: "[warning]"'
 				print 'But got errors.'
@@ -803,19 +794,28 @@ class CommandLine  # TODO: rename to CommandLine
 				print 'Internal exception: [exc]'
 				.failed()
 				return 0
-			found = false
-			for cw in c.warnings
-				if cw.message.toLower().indexOf(warning)<>-1
-					found = true
-					break
-			if found
-				print 'Expected warning occurred: "[warning]" in "[cw.message]"'
-				return 1
-			else
-				print 'Expecting warning substring: "[warning]"'
-				print 'No warning at all.'
+			expectedWarnings = List<of String>(warning.split(c'&')) # CC: axe List<of String> instantiation
+			for i = 0 .. expectedWarnings.count
+				expectedWarning = expectedWarnings[i].trim()
+				print 'Expecting warning substring [i+1] of [expectedWarnings.count]: **[expectedWarning]**'
+				if i >= c.warnings.count
+					print 'Ran out of real warnings.'
+					.failed()
+					return 0
+				actualWarning = c.warnings[i]
+				if actualWarning.message.toLower().indexOf(expectedWarning)==-1
+					print 'Actual warning is: **[actualWarning.message]**'
+					.failed()
+					return 0
+				else
+					print 'Matches: "[actualWarning.message]"'
+			if c.warnings.count > expectedWarnings.count
+				print 'There are more actual warnings than expected warnings:'
+				for j = expectedWarnings.count .. c.warnings.count  # CC: say for i
+					print 'Another actual warning: [c.warnings[j].message]'
 				.failed()
 				return 0
+			return 1
 
 		if firstLineInsensitive.startsWith('#.skip.')
 			print 'Skipping per directive on first line of test source.'

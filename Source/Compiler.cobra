@@ -35,7 +35,7 @@ enum PlatformEnum
 
 
 class Compiler
-	implements ITypeProvider
+	implements ITypeProvider, IWarningRecorder
 	"""
 	General notes:
 
@@ -48,7 +48,6 @@ class Compiler
 	var _nextSerialNum as int is shared
 	var _serialNum as int
 	var _verbosity as int
-	var _whenWarning as WarningActionEnum
 	var _options as Dictionary<of String, Object>
 	var _globalNS as NameSpace
 	var _modules as List<of Module>
@@ -62,18 +61,14 @@ class Compiler
 	var _isBindingImp as bool
 
 	var _errors as List<of CobraException>
-	var _messages as List<of Object>
 	var _warnings as List<of CobraWarning>
+	var _messages as List<of Object>  # all errors and warnings
 
 	def init(verbosity as int)
-		.init(verbosity, WarningActionEnum.Print)
-
-	def init(verbosity as int, whenWarning as WarningActionEnum)
 		_nextSerialNum += 1
 		_serialNum = _nextSerialNum
 		_verbosity = verbosity
 		_modules = List<of Module>()
-		_whenWarning = whenWarning
 		_options = Dictionary<of String, Object>()
 		_globalNS = NameSpace(Token.empty, '(global)')
 		_nameSpaceStack = Stack<of NameSpace>()
@@ -95,8 +90,6 @@ class Compiler
 	get globalNS from var
 
 	get modules from var
-
-	pro whenWarning from var
 
 	pro options from var
 
@@ -167,8 +160,8 @@ class Compiler
 						print 'Parsing [filename]'
 					parser = Parser()
 					parser.verbosity = _verbosity
-					parser.whenWarning = _whenWarning
 					parser.typeProvider = this
+					parser.warningRecorder = this
 					assert _globalNS
 					parser.globalNS = _globalNS
 					# @@ TODO: assert _globalNS is parser.nameSpaceStack[0]
@@ -468,13 +461,12 @@ class Compiler
 			return nil
 
 	def warning(node as ISyntaxNode, msg as String)
-		require
-			node
-			msg
-		body
-			cw = CobraWarning(node.token, msg)
-			_warnings.add(cw)
-			_messages.add(cw)
+		require msg
+		.warning(CobraWarning(node.token, msg))
+
+	def warning(cw as CobraWarning)
+		_warnings.add(cw)
+		_messages.add(cw)
 
 	var _unknownSuggestions = {
 		# literals

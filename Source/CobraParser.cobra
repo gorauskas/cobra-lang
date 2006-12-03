@@ -30,6 +30,11 @@ class ParserException
 	get lineNum from var
 
 
+interface IWarningRecorder
+
+	def warning(we as CobraWarning)
+
+
 class Parser
 	"""
 	Notes:
@@ -56,8 +61,6 @@ class Parser
 		p.globalNS = NameSpace(Token.empty, '(global)')
 		p.typeProvider = BasicTypeProvider()
 		p.parseSource('test2', 'class Test\n\tdef main is shared\n\t\treturn\n')
-
-	var _whenWarning as WarningActionEnum
 
 	var _lowercaseLetters = 'abcdefghijklmnopqrstuvwxyz'
 	var _uppercaseLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -90,14 +93,18 @@ class Parser
 
 	var _typeProvider as ITypeProvider
 
+	# TODO: do this with a callback/delegate instead of this bullshit Java-style interface technique
+	var _warningRecorder as IWarningRecorder
+
+	pro warningRecorder from var
+
+
 	def init
 		_boxStack = Stack<of Box>()
 		_nameSpaceStack = Stack<of NameSpace>()
 		_codeParts = Stack<of ICodePart>()
 
 	pro verbosity from var
-
-	pro whenWarning from var
 
 	pro typeProvider from var
 
@@ -2437,14 +2444,7 @@ class Parser
 
 	def _warning(msg as String)
 		token = .last
-		branch _whenWarning
-			on WarningActionEnum.Print
-				w = CobraWarning(_fileName, token, msg)
-				print w.message
-			on WarningActionEnum.Throw
-				throw CobraWarning(_fileName, token, msg)
-			else
-				throw FallThroughException()
+		_warningRecorder.warning(CobraWarning(_fileName, token, msg))
 
 	def _pushCodePart(codePart as ICodePart)
 		_codeParts.push(codePart)
