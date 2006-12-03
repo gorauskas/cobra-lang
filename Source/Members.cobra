@@ -203,6 +203,7 @@ class ClassVar
 	var _initExpr as Expr?
 	var _ifInheritsStack as Stack<of IType>
 	var _useCSNameStack as Stack<of String>
+	var _isAssignedTo as bool
 
 	def init(token as IToken, box as Box, name as String, typeNode as INode, isNames as List<of String>, initExpr as Expr?, docString as String)
 		base.init(token, box, name, isNames, docString)
@@ -224,6 +225,8 @@ class ClassVar
 
 	get defaultAccessLevel as String is override
 		return 'protected'
+
+	pro isAssignedTo from var
 
 	pro ifInheritsStack from var
 
@@ -536,6 +539,7 @@ class OneCodeBlockMember
 		if _ensurePart
 			_ensurePart.bindImp
 		.checkForUnmarkedOverrideOrNew  # have to do this after statements bind imp since using base can add `override`
+		.checkForUnusedVariables
 		.compiler.codeMemberStack.pop
 
 	def checkForUnmarkedOverrideOrNew
@@ -546,6 +550,11 @@ class OneCodeBlockMember
 					if baseMember inherits OneCodeBlockMember
 						if .matchesSignature(baseMember)
 							.throwError('Member "[_name]" also exists in the base class. You must specify "is override" or "is new", or change the name.')
+
+	def checkForUnusedVariables
+		for local in _locals
+			if not local.isUsed
+				.compiler.warning(local, 'The value of variable "[local.name]" is never used.')
 
 	## Code gen
 

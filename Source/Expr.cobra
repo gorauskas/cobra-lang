@@ -96,7 +96,6 @@ class Expr
 
 	get binarySuperNode as BinaryOpExpr
 		require
-			.superNode
 			.superNode inherits BinaryOpExpr
 		body
 			return .superNode to BinaryOpExpr
@@ -160,11 +159,11 @@ class NameExpr
 		base.init(token)
 		_name = token.text
 
-	def addMinFields is override
+	def addMinFields
 		base.addMinFields()
 		.addField('name', _name)
 
-	def addSubFields is override
+	def addSubFields
 		base.addSubFields()
 		.addField('definition', _definition)
 
@@ -227,6 +226,23 @@ class AsExpr
 				# TODO: would be nice to point to earlier location. definition would need to carry source location info
 			else
 				_definition = definition
+
+	def bindImp as INode
+		base.bindImp
+		# don't want to say isUsed=true if the AsExpr is the left hand side like in:
+		#		x as int = 5
+		# but if it is the right hand side like so:
+		#		_x = x as int = 5
+		# then it is, in fact, being used.
+		if _definition is not nil and .superNode inherits BinaryOpExpr
+			if .binarySuperNode.right is this
+				# case: x = y as int
+				_definition.isUsed = true
+			else if .binarySuperNode.superNode inherits BinaryOpExpr and .binarySuperNode is .binarySuperNode.binarySuperNode.right
+				# case: x = y as int = 5
+				# recall that assign is right-to-left associative
+				_definition.isUsed = true
+		return this
 
 	def afterStatementBindImp is override
 		base.afterStatementBindImp()
@@ -525,6 +541,12 @@ class IdentifierExpr
 				else
 					.errorUnknownId(.name)
 					throw FallThroughException()
+
+	def bindImp as INode
+		base.bindImp
+		if _definition is not nil
+			_definition.isUsed = true
+		return this
 
 	def errorUnknownId(name as String)  # TODO: see if 'name' parameter can be axed
 		require name
