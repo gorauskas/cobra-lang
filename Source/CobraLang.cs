@@ -418,6 +418,27 @@ static public class CobraImp {
 			return null;
 	}
 
+	public delegate T ForGet<T>(T value);
+
+	public delegate bool ForWhereGet<T>(out T value);
+
+	static public IList<T> For<T>(IList<T> list, ForGet<T> forGet) {
+		IList<T> results = (IList<T>)Activator.CreateInstance(list.GetType());
+		foreach (T item in list)
+			results.Add(forGet(item));
+		return results;
+	}
+
+	static public IList<T> For<T>(IList<T> list, ForWhereGet<T> forWhereGet) {
+		IList<T> results = (IList<T>)Activator.CreateInstance(list.GetType());
+		foreach (T item in list) {
+			T value;
+			if (forWhereGet(out value))
+				results.Add(value);
+		}
+		return results;
+	}
+
 	static private void ProcessGetSliceArgs(int count, ref int? start, ref int? stop, ref int? step) {
 		if (start==null)
 			start = 0;

@@ -121,6 +121,34 @@ class Expr
 			# I mean, why does an Expr get created in the first place? Could put an assert in the constructor to trap it.
 			_type = .compiler.passThroughType
 
+	def _isSequence(type as IType) as bool
+		if type.isDescendantOf(.compiler.libraryType('System', 'String'))
+			return true
+		# TODO: Array
+		#if type.isDescendantOf(.compiler.libraryType('System', 'Array'))
+		#	return true
+		if type.isDescendantOf(.compiler.libraryType('System', 'Collections', 'IList'))
+			return true
+		if type.isDescendantOf(.compiler.libraryType('System', 'Collections', 'ArrayList'))
+			return true
+		genericList = .compiler.libraryType('System', 'Collections', 'Generic', 'List<of>')
+		if type.isDescendantOf(genericList)
+			return true
+		if type inherits Box
+			if type.genericTypeDef is genericList
+				return true
+		genericIList = .compiler.libraryType('System', 'Collections', 'Generic', 'IList<of>')
+		if type.isDescendantOf(genericIList)
+			return true
+		if type inherits Box
+			if type.genericTypeDef is genericIList
+				return true
+		# TODO: type is dynamic
+		# TODO: type has getRange()
+		# TODO: type has getSlice()
+		# TODO: type has indexer [int]?
+		return false
+
 	## Code gen
 
 	def writeSharpDef(sw as SharpWriter) is override
@@ -474,6 +502,74 @@ class CallExpr
 		if _isNew and parens
 			sw.write(')')
 
+
+class ForExpr
+	inherits Expr
+
+	var _nameExpr as NameExpr
+	var _var as IVar?
+	var _varNumber as int
+	var _what as Expr
+	var _whereExpr as Expr?
+	var _getExpr as Expr
+
+	def init(token as IToken, nameExpr as NameExpr, what as Expr, whereExpr as Expr?, getExpr as Expr)
+		base.init(token)
+		_nameExpr = nameExpr
+		_what = what
+		_whereExpr = whereExpr
+		_getExpr = getExpr
+
+	def addSubFields
+		base.addSubFields
+		.addField('nameExpr', _nameExpr)
+		.addField('var', _var)
+		.addField('what', _what)
+		.addField('whereExpr', _whereExpr)
+		.addField('getExpr', _getExpr)
+
+	def _bindImp
+		base._bindImp
+		_what.bindImp()  # bind first because it may be needed for type inference
+		if not _isSequence(_what.type to IType)  # to !
+			.throwError('Cannot enumerate values of type "[_what.type.name]". You can enumerate IList<of>.') # TODO: strings, arrays, IList and IList<of>.')
+		_var = .bindVar(_nameExpr)
+		if _nameExpr.definition
+			if _nameExpr.definition inherits IVar
+				_var = _nameExpr.definition to IVar
+			else
+				.throwError('Expecting a variable not a [_nameExpr.definition.getType.name].')  # TODO: what's the best way to report what was found?
+		else
+			assert _nameExpr.hasError, _nameExpr
+		_varNumber = .compiler.curBox.makeNextPrivateSerialNumber
+		if _whereExpr is not nil
+			_whereExpr.bindImp
+		_getExpr.bindImp
+		if _what.hasError
+			_type = .compiler.passThroughType
+		else
+			_type = _what.type
+
+	get inferredType as IType? is override
+		assert _what.type
+		return _what.type.innerType
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		# C#:  CobraImp.For(stuff, delegate(x as int) { return x*x })
+		# C#:  CobraImp.For(stuff, delegate(x as int) { if (x<0) return x*x; })
+		sw.write('CobraImp.For(')
+		_what.writeSharpDef(sw, false)
+		helperName = '_lh_for_[_var.name]_[_varNumber]'
+		sw.write(', delegate([_var.type.sharpRef] [helperName]) {\n')
+		sw.indent
+		sw.write('[_var.sharpName] = [helperName];\n')
+		if _whereExpr is not nil
+			assert false
+		sw.write('return ')
+		_getExpr.writeSharpDef(sw, false)
+		sw.write(';\n')
+		sw.dedent
+		sw.write('})')
 
 class IdentifierExpr
 	inherits NameExpr
@@ -1098,34 +1194,6 @@ class SliceExpr
 			return true
 		return false
 
-	def _isSliceable(type as IType) as bool
-		if type.isDescendantOf(.compiler.libraryType('System', 'String'))
-			return true
-		# TODO: Array
-		#if type.isDescendantOf(.compiler.libraryType('System', 'Array'))
-		#	return true
-		if type.isDescendantOf(.compiler.libraryType('System', 'Collections', 'IList'))
-			return true
-		if type.isDescendantOf(.compiler.libraryType('System', 'Collections', 'ArrayList'))
-			return true
-		genericList = .compiler.libraryType('System', 'Collections', 'Generic', 'List<of>')
-		if type.isDescendantOf(genericList)
-			return true
-		if type inherits Box
-			if type.genericTypeDef is genericList
-				return true
-		genericIList = .compiler.libraryType('System', 'Collections', 'Generic', 'IList<of>')
-		if type.isDescendantOf(genericIList)
-			return true
-		if type inherits Box
-			if type.genericTypeDef is genericIList
-				return true
-		# TODO: type is dynamic
-		# TODO: type has getRange()
-		# TODO: type has getSlice()
-		# TODO: type has indexer [int]?
-		return false
-
 	def _bindImp
 		base._bindImp
 		intType = .compiler.intType
@@ -1134,7 +1202,7 @@ class SliceExpr
 		catch ne as NodeException
 			.compiler.recordError(ne)
 		success
-			if not _isSliceable(_target.type to IType)  # to !
+			if not _isSequence(_target.type to IType)  # to !
 				.throwError('Cannot slice values of type "[_target.type.name]". You can slice strings, arrays, IList and IList<of>.')
 		if _start is not nil
 			try
