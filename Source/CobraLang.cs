@@ -418,22 +418,23 @@ static public class CobraImp {
 			return null;
 	}
 
-	public delegate T ForGet<T>(T value);
+	public delegate TOut ForGet<TIn, TOut>(TIn value);
 
-	public delegate bool ForWhereGet<T>(out T value);
+	public delegate bool ForWhereGet<TIn, TOut>(TIn inValue, out TOut outValue);
 
-	static public IList<T> For<T>(IList<T> list, ForGet<T> forGet) {
-		IList<T> results = (IList<T>)Activator.CreateInstance(list.GetType());
-		foreach (T item in list)
+	static public IList<TOut> For<TIn, TOut>(IList<TIn> list, ForGet<TIn, TOut> forGet) {
+		// TODO: if possible, it might be nice to get the generic type of the list coming in and then make a constructed type from it with TOut.
+		List<TOut> results = new List<TOut>(list.Count);
+		foreach (TIn item in list)
 			results.Add(forGet(item));
 		return results;
 	}
 
-	static public IList<T> For<T>(IList<T> list, ForWhereGet<T> forWhereGet) {
-		IList<T> results = (IList<T>)Activator.CreateInstance(list.GetType());
-		foreach (T item in list) {
-			T value;
-			if (forWhereGet(out value))
+	static public IList<TOut> For<TIn, TOut>(IList<TIn> list, ForWhereGet<TIn, TOut> forWhereGet) {
+		IList<TOut> results = new List<TOut>();
+		foreach (TIn item in list) {
+			TOut value;
+			if (forWhereGet(item, out value))
 				results.Add(value);
 		}
 		return results;

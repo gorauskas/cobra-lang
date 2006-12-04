@@ -544,11 +544,11 @@ class ForExpr
 		_varNumber = .compiler.curBox.makeNextPrivateSerialNumber
 		if _whereExpr is not nil
 			_whereExpr.bindImp
+			if _whereExpr.type is not .compiler.boolType
+				_whereExpr = TruthExpr(_whereExpr).bindAll to TruthExpr  # CC: axe cast when have "as this"
 		_getExpr.bindImp
-		if _what.hasError
-			_type = .compiler.passThroughType
-		else
-			_type = _what.type
+		ilist = .compiler.libraryType('System', 'Collections', 'Generic', 'IList<of>') to Interface
+		_type = ilist.constructedTypeFor([_getExpr.type])
 
 	get inferredType as IType? is override
 		assert _what.type
@@ -557,19 +557,44 @@ class ForExpr
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		# C#:  CobraImp.For(stuff, delegate(x as int) { return x*x })
 		# C#:  CobraImp.For(stuff, delegate(x as int) { if (x<0) return x*x; })
-		sw.write('CobraImp.For(')
+		inType = _var.type
+		outType = _getExpr.type
+		sw.write('CobraImp.For<[inType.sharpRef],[outType.sharpRef]>(')
 		_what.writeSharpDef(sw, false)
+		sw.write(', ')
 		helperName = '_lh_for_[_var.name]_[_varNumber]'
-		sw.write(', delegate([_var.type.sharpRef] [helperName]) {\n')
-		sw.indent
-		sw.write('[_var.sharpName] = [helperName];\n')
-		if _whereExpr is not nil
-			assert false
-		sw.write('return ')
-		_getExpr.writeSharpDef(sw, false)
-		sw.write(';\n')
-		sw.dedent
-		sw.write('})')
+		if _whereExpr is nil
+			sw.write('delegate([inType.sharpRef] [helperName]) {\n')
+			sw.indent
+			sw.write('[_var.sharpName] = [helperName];\n')
+			sw.write('return ')
+			_getExpr.writeSharpDef(sw, false)
+			sw.write(';\n')
+			sw.dedent
+			sw.write('})')
+		else
+			outHelperName = helperName + '_out'
+			sw.write('delegate([inType.sharpRef] [helperName], out [outType.sharpRef] [outHelperName]) {\n')
+			sw.indent
+			sw.write('[_var.sharpName] = [helperName];\n')
+			sw.write('if (')
+			_whereExpr.writeSharpDef(sw, false)
+			sw.write(') {\n')
+			sw.indent
+			sw.write('[outHelperName] = ')
+			_getExpr.writeSharpDef(sw, false)
+			sw.write(';\n')
+			sw.write('return true;\n')
+			sw.dedent
+			sw.write('} else {\n')
+			sw.indent
+			sw.write('[outHelperName] = [outType.csInit];\n')
+			sw.write('return false;\n')
+			sw.dedent
+			sw.write('}\n')
+			sw.dedent
+			sw.write('})')
+
 
 class IdentifierExpr
 	inherits NameExpr
