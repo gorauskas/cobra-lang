@@ -660,14 +660,17 @@ class Constructor
 		_stmts = List<of Stmt>()
 
 	get englishName as String is override
-		return 'method'
+		return 'constructor'
 
 	get hasVariArgs as bool
-		assert false, 'TODO: complete Method.hasVariArgs'
+		assert false, 'TODO: complete Constructor.hasVariArgs'
 		return false
 
 	get isCallable as bool is override
 		return true
+
+	get isMethod as bool is override
+		return true  # because this is needed for "base.init" without ()s
 
 	def defaultToVirtual is override
 		pass
@@ -687,9 +690,16 @@ class Constructor
 		first = if(_stmts, _stmts[0], nil)
 		callConstructor as String? = nil
 		if first inherits DotExpr
-			if (first.left inherits ThisLit or first.left inherits BaseLit) and (first.right to CallExpr).name=='init'
-				callConstructor = (first.left to AtomicLiteral).asSharp
-				args = (first.right to CallExpr).args
+			if first.left inherits ThisLit or first.left inherits BaseLit
+				doIt = false
+				if first.right inherits CallExpr and (first.right to CallExpr).name=='init'
+					doIt = true
+					args = (first.right to CallExpr).args
+				else if first.right inherits MemberExpr and (first.right to MemberExpr).name=='init'
+					doIt = true
+					args = List<of Expr>()
+				if doIt
+					callConstructor = (first.left to AtomicLiteral).asSharp
 		.writeSharpIsNames(sw)
 		sw.write(' [.box.rootName]')
 		.writeSharpParams(sw)
