@@ -1,0 +1,209 @@
+"""
+
+TODO:
+
+***
+For these errors:
+	partsim.cobra(57): Cannot return float because "rand" is declared to return a void.
+	partsim.cobra(75): Incompatible types. Cannot assign value of type void on the right to float on the left.
+Say "nothing" instead of "void" and kill the "a " in the first message since "a nothing" will be awkward.
+
+
+***
+Cannot say:
+	max = +1000
+fix:
+	add + as a unary operator like -
+
+
+***
+The code:
+	.step
+gives:
+	partsim.cobra(40,4): error: Syntax error after "."
+but should give more like:
+	... error: Syntax error after "."--"step" is a keyword.
+or:
+	keywords should be allowed as member names.
+
+
+***
+The code:
+	get foo as double
+gives an error like it should:
+	Cannot find type for "double".
+but there should be a suggestion to use "float" which is 64 bit.
+
+
+***
+The code:
+	def randomizePosition(min as float, max as float)
+		require
+			max > min
+			max - min > 1.0
+should interpret fractional literals such as 1.0 as "float" instead of "decimal" because the args are all "float".
+
+
+***
+For this error message:
+	Operator '>' cannot be applied to operands of type 'double' and 'decimal'
+The typename should be "float" not 'decimal'. Apparently, this dropped through to C#
+
+
+***
+For this error message:
+	Operator '>' cannot be applied to operands of type "float" and "decimal"
+If either of the expressions are literals, it would be nice to tell the programmer to make floats with 1.0f and decimals with 1.0d. This intersects with context sensitive interpretation of fractional literals.
+
+
+***
+For this code:
+	class WorldOptions
+		shared
+			def makeBasic as WorldOptions
+would like to say:
+	class WorldOptions
+		shared
+			def makeBasic as same
+this requires that the implementation not try to return a WorldOptions() but instead something like a ThisClass().
+
+
+***
+Would like interclasses/mixins/whatever and built-in one called SerialNumMixIn to add serial numbers to the particles.
+
+"""
+
+
+class Particle
+
+	var _x as float
+	var _y as float
+	var _z as float
+
+	var _vx as float
+	var _vy as float
+	var _vz as float
+
+	def init
+		pass
+
+	def randomizePosition(min as float, max as float)
+		require
+			max > min
+			max - min > 1.0f
+		body
+			_x = .rand(min, max)
+			_y = .rand(min, max)
+			_z = .rand(min, max)
+
+	def randomizeVelocity(min as float, max as float)
+		require
+			max > min
+			max - min > 1.0f
+		body
+			_vx = .rand(min, max)
+			_vy = .rand(min, max)
+			_vz = .rand(min, max)
+
+	def updatePosition
+		_x += _vx
+		_y += _vy
+		_z += _vz
+
+	def toString as String is override
+		return '[.getType.name](pos=([_x:N1],[_y:N1],[_z:N1]), vel=([_vx:N1],[_vy:N1],[_vz:N1]))'
+
+	shared
+
+		var _rand = Random()
+
+		def rand(min as float, max as float) as float
+			require
+				max > min
+				max - min > 1.0f
+			body
+				return ((max - min) * _rand.nextDouble) + min
+
+
+class WorldOptions
+
+	shared
+
+		def makeBasic as WorldOptions
+			wo = WorldOptions()
+			wo.numParticles = 10
+			wo.minPos = -1000
+			wo.maxPos =  1000
+			wo.minVel = -10
+			wo.maxVel =  10
+			wo.numSteps = 100
+			return wo
+
+	var _numParticles as int
+	var _minPos as float
+	var _maxPos as float
+	var _minVel as float
+	var _maxVel as float
+	var _numSteps as int
+
+	def init
+		pass
+
+	pro numParticles from var
+
+	pro minPos from var
+	pro maxPos from var
+
+	pro minVel from var
+	pro maxVel from var
+
+	pro numSteps from var
+
+
+class World
+
+	var _step as int
+	var _particles = List<of Particle>()
+	var _options as WorldOptions
+
+	def init(wo as WorldOptions)
+		_options = wo
+		minPos = wo.minPos
+		maxPos = wo.maxPos
+		minVel = wo.minVel
+		maxVel = wo.maxVel
+		for i = 0 .. wo.numParticles
+			p = Particle()
+			p.randomizePosition(minPos, maxPos)
+			p.randomizeVelocity(minVel, maxVel)
+			_particles.add(p)
+
+	def printParticles
+		print
+		print 'Particles at step [_step]:'
+		for p in _particles
+			print '  ', p
+
+	def run
+		for i = 0 .. _options.numSteps
+			.stepOne
+
+	def stepOne
+		_step += 1
+		.printParticles
+		.updatePosition
+		.updateDirection
+
+	def updatePosition
+		for p in _particles
+			p.updatePosition
+
+	def updateDirection
+		# TODO: update directional vector of particles based on "gravity"
+		pass
+
+
+class Program
+
+	def main is shared
+		World(WorldOptions.makeBasic).run
