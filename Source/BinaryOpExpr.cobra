@@ -529,9 +529,18 @@ class CompareExpr
 		base._bindImp()
 		_type = .compiler.boolType
 		if _op=='IS'
-			if not _left.type.isAssignableTo(_right.type to IType) and not _right.type.isAssignableTo(_left.type to IType)  # CC: to !
+			# cannot invoke `isAssignableTo` directory on the types because if one is nilable and the other is not, you can get false, even though that doesn't apply for "is". So:
+			leftType = _left.type
+			rightType = _right.type
+			if leftType inherits NilableType
+				# CC: leftType = leftType.theWrappedType
+				$sharp('leftType = ((NilableType)leftType).TheWrappedType')
+			if rightType inherits NilableType
+				# CC: rightType = rightType.theWrappedType
+				$sharp('rightType = ((NilableType)rightType).TheWrappedType')
+			if not leftType.isAssignableTo(rightType to IType) and not rightType.isAssignableTo(leftType to IType)  # CC: to ! or assert above with nil flow analysis
 				if not _right inherits NilLiteral # TODO: axe this. but temp reason for this is due to Tests\150-basics-two\100-using.cobra
-					msg = 'The left and right sides of this "is" expression can never be identical because of their types.'
+					msg = 'The left and right sides of this "is" expression can never be identical because of their types ("[_left.type.name]" and "[_right.type.name]").'
 					if _right.type.isDescendantOf(.compiler.libraryType('System', 'Type'))
 						msg += ' Maybe you should try "inherits" instead of "is".'
 					.throwError(msg)
