@@ -13,13 +13,13 @@ static public class CobraCore {
 
 	static public Version Version {
 		get {
-			return new Version(0, 2, 0);
+			return new Version(0, 3, 0);
 		}
 	}
 
 	static public int ReleaseNum {
 		get {
-			return 15;  // increment by exactly one with each release, no matter how big or small
+			return 16;  // increment by exactly one with each release, no matter how big or small
 		}
 	}
 
