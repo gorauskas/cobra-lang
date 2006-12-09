@@ -191,8 +191,8 @@ class NameExpr
 		base.addMinFields()
 		.addField('name', _name)
 
-	def addSubFields
-		base.addSubFields()
+	def addRefFields
+		base.addRefFields()
 		.addField('definition', _definition)
 
 	get definition from var
@@ -811,6 +811,10 @@ class IndexExpr
 		.addField('target', _target)
 		.addField('args', _args)
 
+	get target from var
+
+	get args from var
+
 	get hasError as bool is override
 		if base.hasError
 			return true
@@ -854,7 +858,13 @@ class IndexExpr
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		if parens
 			sw.write('(')
-		_target.writeSharpDef(sw)
+		if _target inherits IdentifierExpr
+			if _target.isKindOf(.compiler.libraryType('System', 'Type'))
+				# here we're favoring "Foo[]" being an array type rather than a shared indexer
+				sw.write(_target.name)
+				handled = true
+		if not handled
+			_target.writeSharpDef(sw)
 		sw.write(r'[')
 		sep = ''
 		for expr in _args
@@ -1077,6 +1087,7 @@ class PostCallExpr
 	"""
 	Covers cases like:
 		obj[i]('x')
+		String[](10)
 	For "bar.foo('x')" that's a binary dot expression with a CallExpr on the right hand side.
 	For "Car()" or "someType()" that's also a CallExpr.
 	"""
@@ -1113,8 +1124,16 @@ class PostCallExpr
 				.compiler.recordError(ne)
 		_expr.bindImp()
 		if _expr inherits TypeExpr
+			# instantiation
 			assert _expr.containedType
 			_type = _expr.containedType
+		else if _expr inherits IndexExpr
+			# could be array instantiation or calling the result of stuff[i] which could be System.Type, a delegate or what-have-you
+			if _expr.target.isKindOf(.compiler.libraryType('System', 'Type'))
+				_type = _expr.target.namedType
+				assert _type
+			else
+				assert false, 'what is this? _expr=[_expr]'
 		else
 			assert false, 'what is this? _expr=[_expr]'
 
@@ -1135,32 +1154,36 @@ class PostCallExpr
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		if parens
 			sw.write('(')
-		#sw.write('(')
+		isArrayCreation = false
 		if _expr inherits TypeExpr
-			sw.write('new ')
+			sw.write('new ')  # TODO: move down?
 			at = _expr.containedType
 			if at inherits ArrayType
 				# arrays are a very different case
+				# example: int[](10)
 				sw.write(at.theWrappedType.sharpRef)
-				sw.write(r'[')
-				sep = ''
-				for arg in _args
-					sw.write(sep)
-					arg.writeSharpDef(sw, false)
-					sep = ','
-				sw.write(']')
-				if parens
-					sw.write(')')
-				return
-		_expr.writeSharpDef(sw)
-		#sw.write(')')
-		sw.write('(')
+				isArrayCreation = true
+		if not isArrayCreation  # CC: combine next if when if-inherits gets smarter
+			if _expr inherits IndexExpr
+				subExpr = _expr.target
+				if subExpr.isKindOf(.compiler.libraryType('System', 'Type'))
+					# example: String[](10)
+					sw.write('new ')
+					if subExpr inherits IdentifierExpr
+						# special case to avoid IdentifierExpr from generating: typeof(Foo)
+						sw.write(subExpr.name)
+					else
+						subExpr.writeSharpDef(sw, false)
+					isArrayCreation = true
+		if not isArrayCreation
+			_expr.writeSharpDef(sw)
+		sw.write(if(isArrayCreation, r'[', '('))
 		sep = ''
 		for arg in _args
 			sw.write(sep)
 			arg.writeSharpDef(sw, false)
 			sep = ','
-		sw.write(')')
+		sw.write(if(isArrayCreation, r']', ')'))
 		if parens
 			sw.write(')')
 
