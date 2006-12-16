@@ -17,6 +17,7 @@ class BoxMember
 	var _isNames as List<of String>?  # CC: make a Set
 	var _overloadGroup as MemberOverload?
 	var _testMethod as TestMethod?
+	var _matchingBaseMember as BoxMember?
 
 	def init(token as IToken, box as Box, name as String, isNames as List<of String>)
 		this.init(token, box, name, isNames, nil)
@@ -42,6 +43,9 @@ class BoxMember
 
 	get isCallable as bool
 		return false
+
+	get isOverride as bool
+		return 'override' in _isNames
 
 	get isShared as bool
 		return 'shared' in _isNames
@@ -81,6 +85,8 @@ class BoxMember
 
 	get isStructMember as bool
 		return _box inherits Struct
+
+	pro matchingBaseMember from var
 
 	get requiresThis as bool
 		return not _name.startsWith('_')
@@ -328,18 +334,22 @@ class ClassVar
 
 interface ICodePart
 	"""
-	A code part responds to addStmt(stmt).
+	TODO: axe this interface in favor of using OneCodeBlockMember and rename that to AbstractMethod.
 
-	It is the common interface to:
+	ICodePart is the common interface to:
 		- methods
 		- inits (special methods)
-		- property getter
-		- property setter
+		- getter of a property or indexer
+		- setter of a property or indexer
 		- nested method
 		- anonymous method
 	"""
 
 	get name as String
+
+	get box as Box
+
+	get isNames as List<of String>
 
 	def addStmt(stmt as Stmt)
 
@@ -353,6 +363,8 @@ interface ICodePart
 
 	pro hasReturnStmt as bool
 
+	get isOverride as bool
+
 	get resultType as IType
 
 	def usesBase
@@ -361,13 +373,21 @@ interface ICodePart
 		member is an `override` if it is not already marked `new`.
 		"""
 
+	get matchingBaseMember as BoxMember
+
 	pro requirePart as RequirePart?
 
 	pro ensurePart as EnsurePart?
 
 	def addOldExpr(oldExpr as OldExpr)
 
+	get errors as List<of NodeException>
+
 	get sharpResultVarName as String
+
+	def writeSharpParams(sw as SharpWriter)
+
+	def writeSharpPassArgs(sw as SharpWriter)
 
 
 class OneCodeBlockMember
@@ -542,18 +562,36 @@ class OneCodeBlockMember
 				.compiler.recordError(ne)
 		if _ensurePart
 			_ensurePart.bindImp
+		.computeMatchingBaseMember
 		.checkForUnmarkedOverrideOrNew  # have to do this after statements bind imp since using base can add `override`
 		.checkForUnusedVariables
 		.compiler.codeMemberStack.pop
 
+	def computeMatchingBaseMember
+		if _box inherits Class
+			if _box.baseClass is not nil
+				baseMember = _box.baseClass.memberForName(_name)
+				if baseMember is nil
+					pass
+				else if baseMember inherits OneCodeBlockMember
+					if .matchesSignature(baseMember)
+						_matchingBaseMember = baseMember
+				else if baseMember inherits MemberOverload
+					if baseMember.members[0] inherits OneCodeBlockMember
+						for member in baseMember.members
+							if .matchesSignature(member)
+								_matchingBaseMember = member
+					else
+						cannotRedeclare = true
+				else
+					cannotRedeclare = true
+				if cannotRedeclare
+					.recordError('Cannot declare a [.englishName] named "[.name]" because the base member "[.name]" is a [.englishName]. this=[.getType.name], baseMember=[baseMember.getType.name]')
+
 	def checkForUnmarkedOverrideOrNew
-		if 'new' not in _isNames and 'override' not in _isNames
-			if _box inherits Class
-				if _box.baseClass is not nil
-					baseMember = _box.baseClass.memberForName(_name)
-					if baseMember inherits OneCodeBlockMember
-						if .matchesSignature(baseMember)
-							.throwError('Member "[_name]" also exists in the base class. You must specify "is override" or "is new", or change the name.')
+		# require called computeMatchingBaseMember  # CC:? TODO?
+		if 'new' not in _isNames and 'override' not in _isNames and _matchingBaseMember is not nil
+			.throwError('Member "[_name]" also exists in the base class. You must specify "is override" or "is new", or change the name.')
 
 	def checkForUnusedVariables
 		for local in _locals
@@ -599,6 +637,15 @@ class OneCodeBlockMember
 		sw.dedent
 		sw.write('}\n')
 		sw.write('\n')
+
+	def writeSharpPassArgs(sw as SharpWriter)
+		sw.write('(')
+		sep = ''
+		for param in _params
+			sw.write(sep)
+			sw.write(param.name)
+			sep = ', '
+		sw.write(')')
 
 	# TODO: axe?
 #	def writeSharpLocals(sw as SharpWriter)
@@ -648,7 +695,6 @@ class OneCodeBlockMember
 		sw.indent
 		sw.write('CobraImp.PopFrame();\n')
 		sw.dedentAndWrite('}\n')
-
 
 
 class Constructor
@@ -714,6 +760,8 @@ class Constructor
 			sw.write(') ')
 			sw.dedent()
 		.writeSharpImp(sw, if(callConstructor, true, false))
+		if _requirePart
+			_requirePart.writeSharpMethod(sw)
 		.writeSharpTest(sw)
 
 
@@ -791,6 +839,8 @@ class Method
 			sw.write(';\n')
 		else
 			.writeSharpImp(sw, false)
+			if _requirePart
+				_requirePart.writeSharpMethod(sw)
 			.writeSharpTest(sw)
 
 	get sharpName as String is override
@@ -803,7 +853,7 @@ class ProperDexer
 	The abstract base class for Property and Indexer.
 
 	This captures some of the common interface between them--whatever happens to be needed
-	(currenty by the parser only).
+	(currently by the parser only).
 
 	Why not do an IProperDexer interface? Because it wouldn't be compatible with a ClassMember
 	unless we also defined an IClassMember.
@@ -1104,19 +1154,32 @@ class ConditionPart
 	The abstract base class for RequirePart and EnsurePart.
 	"""
 
+	var _connectToken as IToken?
 	var _codeMember as ICodePart
 	var _exprs as List<of Expr>
 
-	def init(token as IToken, codeMember as ICodePart, exprs as List<of Expr>)
-		base.init(token)
+	def init(connectToken as IToken?, mainToken as IToken, codeMember as ICodePart, exprs as List<of Expr>)
+		base.init(mainToken)
+		_connectToken = connectToken
 		_codeMember = codeMember
 		_exprs = exprs
 
+	get connectWord as String
+		return ''  # TODO: make abstract instead
+
 	def _bindImp is override
 		base._bindImp
+		isNames = _codeMember.isNames
+		if _connectToken
+			if 'override' not in isNames and 'new' not in isNames
+				.recordError('The contract was specified with "[_connectToken.text]", but the code member is neither an "override" or "new".')
+		else
+			if 'override' in isNames or 'new' in isNames
+				what = if('override' in isNames, 'override', 'new')
+				.recordError('The contract requires an "[.connectWord]" because the code member is "[what]".')
 		i = 0
 		for expr as Expr in _exprs.toArray  # CC: axe as
-			expr.bindImp
+			expr.bindImp  # TODO: error recovery
 			assert expr.type
 			if expr.type is not .compiler.boolType
 				expr = TruthExpr(expr).bindAll to Expr # CC: axe cast when Cobra supports "as this"
@@ -1124,17 +1187,63 @@ class ConditionPart
 				_exprs[i] = expr
 			i += 1
 
+	def writeSharpMethod(sw as SharpWriter)  # TODO: is abstract
+		pass
+
 
 class RequirePart
 	inherits ConditionPart
 
-	def init(token as IToken, codeMember as ICodePart, exprs as List<of Expr>)
-		base.init(token, codeMember, exprs)
+	def init(connectToken as IToken?, mainToken as IToken, codeMember as ICodePart, exprs as List<of Expr>)
+		base.init(connectToken, mainToken, codeMember, exprs)
 		codeMember.requirePart = this
+
+	get connectWord as String is override
+		return 'or'
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		sw.write('// require\n')
+		if _codeMember.isOverride
+			codeMember = _codeMember
+			assert codeMember is not nil
+			n = 1
+			while codeMember is not nil  # CC: make 'post'
+				sw.write('try {\n')
+				sw.indent
+				sw.write('[codeMember.requirePart.sharpMethodName]')
+				codeMember.writeSharpPassArgs(sw)
+				sw.write(';\n')
+				sw.dedent
+				sw.write('} catch (RequireException re[n]) {\n')
+				sw.indent
+				if n>1
+					sw.write('re[n-1].Next = re[n];\n')
+				codeMember = codeMember.matchingBaseMember to ICodePart  # TODO: maybe matchingBaseMember should return ICodePart?
+				n += 1
+			# at this point in C# code, all requirements have failed
+			# TODO: chain all the failures together
+			sw.write('throw re1;\n')
+			for m = 1 .. n
+				sw.dedent
+				sw.write('}\n')
+		else
+			sw.write('[.sharpMethodName]')
+			_codeMember.writeSharpPassArgs(sw)
+			sw.write(';\n')
+
+	get sharpMethodName as String
+		name = _codeMember.name
+		if name==r'[]' # indexer
+			name = 'Item'  # TODO: maybe Indexer should return 'Item' in the first place
+		else
+			name = name.replace('.', '_')  # happens for properindexers, ex: "name.get"
+		return 'require_[name]_[_codeMember.box.name]'
+
+	def writeSharpMethod(sw as SharpWriter) is override
+		sw.write('protected void [.sharpMethodName]')
+		_codeMember.writeSharpParams(sw)
+		sw.write(' {\n')
+		sw.indent
 		for expr in _exprs
 			sw.write('if (!')
 			expr.writeSharpDef(sw)
@@ -1144,15 +1253,18 @@ class RequirePart
 			s = Utils.csStringLitFor(s)
 			sw.write('throw new RequireException([Utils.csStringLitFor(expr.token.fileName)], [expr.token.lineNum], [s], null);\n')
 			sw.dedent
-		sw.write('// end require\n')
-
+		sw.dedent
+		sw.write('}\n')
 
 class EnsurePart
 	inherits ConditionPart
 
-	def init(token as IToken, codeMember as ICodePart, exprs as List<of Expr>)
-		base.init(token, codeMember, exprs)
+	def init(connectToken as IToken?, mainToken as IToken, codeMember as ICodePart, exprs as List<of Expr>)
+		base.init(connectToken, mainToken, codeMember, exprs)
 		codeMember.ensurePart = this
+
+	get connectWord as String is override
+		return 'and'
 
 	def _bindImp is override
 		assert _codeMember.resultType

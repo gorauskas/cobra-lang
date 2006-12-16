@@ -1301,13 +1301,13 @@ class Parser
 		if codePartContainingTest is nil
 			codePartContainingTest = codePart to BoxMember  # TODO: figure out better typing for this assignement and the method sig of this method
 		try
-			if .peek().which in ['BODY', 'TEST', 'REQUIRE', 'ENSURE']
+			if .peek().which in ['BODY', 'TEST', 'REQUIRE', 'ENSURE', 'OR', 'AND']
 				# sectional
 				# not flexible. sequence is signature, contract, test, implementation
 				_isContractOnSameLine = false
-				if .peek().which=='REQUIRE'
+				if .peek().which in ['REQUIRE', 'OR']
 					.requireSection(codePart)
-				if .peek().which=='ENSURE'
+				if .peek().which in ['ENSURE', 'AND']
 					.ensureSection(codePart)
 				if .peek().which=='TEST'
 					.testSection(codePartContainingTest to BoxMember)  # CC: axe typecast
@@ -1590,13 +1590,14 @@ class Parser
 		return ReturnStmt(token, expr)
 
 	def requireSection(codeMember as ICodePart) as ConditionPart
-		return _requireOrEnsure(codeMember, 'REQUIRE', RequirePart)
+		return _requireOrEnsure(codeMember, 'OR', 'REQUIRE', RequirePart)
 
 	def ensureSection(codeMember as ICodePart) as ConditionPart
-		return _requireOrEnsure(codeMember, 'ENSURE', EnsurePart)
+		return _requireOrEnsure(codeMember, 'AND', 'ENSURE', EnsurePart)
 
-	def _requireOrEnsure(codeMember as ICodePart, whichToken as String, theClass as Type) as ConditionPart
-		token = .expect(whichToken)
+	def _requireOrEnsure(codeMember as ICodePart, connectWhich as String, mainWhich as String, theClass as Type) as ConditionPart
+		connectToken = .optional(connectWhich)
+		mainToken = .expect(mainWhich)
 		if .peek().which in ['EOL', 'COLON']
 			.indent()
 			exprs = List<of Expr>()
@@ -1614,7 +1615,7 @@ class Parser
 			exprs = [.expression()]
 			.expect('EOL')
 			_isContractOnSameLine = true
-		return theClass(token, codeMember, exprs) to ConditionPart
+		return theClass(connectToken, mainToken, codeMember, exprs) to ConditionPart
 
 	def throwStmt as Stmt
 		token = .expect('THROW')

@@ -132,12 +132,23 @@ public class AssertException : Exception {
 
 public class RequireException : AssertException {
 
+	RequireException _next;
+
 	public RequireException(string fileName, int lineNumber, string conditionSource, object info)
 		: this(fileName, lineNumber, conditionSource, info, null) {
 	}
 
 	public RequireException(string fileName, int lineNumber, string conditionSource, object info, Exception innerExc)
 		: base(fileName, lineNumber, conditionSource, info, innerExc) {
+	}
+
+	public RequireException Next {
+		get {
+			return _next;
+		}
+		set {
+			_next = value;
+		}
 	}
 
 }
