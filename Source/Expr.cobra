@@ -115,11 +115,15 @@ class Expr
 			assert .type, this
 
 	def _bindImp is override
-		base._bindImp()
-		if _type is nil and .getType.name=='Expr'  # CC: cannot say ... and .getType is Expr
-			# TODO: this happens with formatted strings, but why?
-			# I mean, why does an Expr get created in the first place? Could put an assert in the constructor to trap it.
-			_type = .compiler.passThroughType
+# TODO:
+#		ensure
+#			.type  # CC: should really be the ensure of Expr
+		body
+			base._bindImp()
+			if _type is nil and .getType.name=='Expr'  # CC: cannot say ... and .getType is Expr
+				# TODO: this happens with formatted strings, but why?
+				# I mean, why does an Expr get created in the first place? Could put an assert in the constructor to trap it.
+				_type = .compiler.passThroughType
 
 	def _isSequence(type as IType) as bool
 		if type.isDescendantOf(.compiler.libraryType('System', 'String'))
@@ -201,7 +205,6 @@ class NameExpr
 
 	def memberForName(name as String) as IMember? is override
 		require
-			.didBindImp
 			.definition
 		body
 			return _definition.typeForReceiver.memberForName(name)
@@ -970,56 +973,52 @@ class MemberExpr
 	get name from var
 
 	def _bindImp is override
-		require
-			.superNode inherits BinaryOpExpr
-			.binarySuperNode.op == 'DOT'
-			.binarySuperNode.right is this
-		ensure
-			.type  # CC: should really be the ensure of Expr
-		body
-			base._bindImp()
-			if _definition is nil or _type is nil
-				if not .binarySuperNode.left.didBindImp
-					assert .binarySuperNode.left.hasError, .binarySuperNode.left
-					# we get here for Cobra code like "obj.foo.bar" where "foo" is not found
+		base._bindImp()
+		assert .superNode inherits BinaryOpExpr
+		assert .binarySuperNode.op == 'DOT'
+		assert .binarySuperNode.right is this
+		if _definition is nil or _type is nil
+			if not .binarySuperNode.left.didBindImp
+				assert .binarySuperNode.left.hasError, .binarySuperNode.left
+				# we get here for Cobra code like "obj.foo.bar" where "foo" is not found
+				_type = .compiler.passThroughType
+				return
+			_definition = .binarySuperNode.left.memberForName(_name)
+			if _definition is nil
+				if .binarySuperNode.left.receiverType is .compiler.passThroughType
 					_type = .compiler.passThroughType
 					return
-				_definition = .binarySuperNode.left.memberForName(_name)
-				if _definition is nil
-					if .binarySuperNode.left.receiverType is .compiler.passThroughType
-						_type = .compiler.passThroughType
-						return
-					if _name=='length'
-						# TODO get rid of this total hack to support the vari type (and possibly arrays in general)
-						_type = .compiler.intType
-						.binarySuperNode.type = .type
-						return
-					if _name=='toString'
-						_type = .compiler.libraryType('System', 'String')
-						.binarySuperNode.type = .type
-						return
-					if Utils.isCapped(_name)
-						sugg = 'If the name is essentially correct, try the lowercase version ("[Utils.uncapped(_name)]") instead.'
-					else
-						sugg = ''
-					.throwError('Cannot find a definition for "[_name]" in "[.binarySuperNode.left.token.text]" whose type is "[.binarySuperNode.left.receiverType.name]". [sugg]')
-				assert _definition
-				if _definition inherits IType
-					effectiveType as IType = .compiler.typeType  # namespace, class, interface
-					receiverType as IType? = _definition to IType  # TODO: should not need "as IType". Type inference is not respecting the if-inherits stack
+				if _name=='length'
+					# TODO get rid of this total hack to support the vari type (and possibly arrays in general)
+					_type = .compiler.intType
+					.binarySuperNode.type = .type
+					return
+				if _name=='toString'
+					_type = .compiler.libraryType('System', 'String')
+					.binarySuperNode.type = .type
+					return
+				if Utils.isCapped(_name)
+					sugg = 'If the name is essentially correct, try the lowercase version ("[Utils.uncapped(_name)]") instead.'
 				else
-					effectiveType = _definition.resultType
-					receiverType = nil
-				assert effectiveType
-				_type = effectiveType
-				_type.bindInt()
-				# TODO: there should be a subclass of BinaryOpExpr called DotExpr and it should do the following work and maybe even the work above.
-				# TODO: _receiverType = receiverType
-				.binarySuperNode.definition = _definition  # TODO: is this needed?
-				.binarySuperNode.type = .type  # the type of foo.bar is what bar returns. A MemberExpr is the "bar" part.
-				.binarySuperNode.setReceiverType(receiverType)
-			assert _type
+					sugg = ''
+				.throwError('Cannot find a definition for "[_name]" in "[.binarySuperNode.left.token.text]" whose type is "[.binarySuperNode.left.receiverType.name]". [sugg]')
+			assert _definition
+			if _definition inherits IType
+				effectiveType as IType = .compiler.typeType  # namespace, class, interface
+				receiverType as IType? = _definition to IType  # TODO: should not need "as IType". Type inference is not respecting the if-inherits stack
+			else
+				effectiveType = _definition.resultType
+				receiverType = nil
+			assert effectiveType
+			_type = effectiveType
 			_type.bindInt()
+			# TODO: there should be a subclass of BinaryOpExpr called DotExpr and it should do the following work and maybe even the work above.
+			# TODO: _receiverType = receiverType
+			.binarySuperNode.definition = _definition  # TODO: is this needed?
+			.binarySuperNode.type = .type  # the type of foo.bar is what bar returns. A MemberExpr is the "bar" part.
+			.binarySuperNode.setReceiverType(receiverType)
+		assert _type
+		_type.bindInt()
 
 	def toCobraSource as String is override
 		return _name
