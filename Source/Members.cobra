@@ -351,6 +351,8 @@ interface ICodePart
 
 	get isNames as List<of String>
 
+	get isShared as bool
+
 	def addStmt(stmt as Stmt)
 
 	def addLocal(local as LocalVar)
@@ -1175,10 +1177,10 @@ class ConditionPart
 		base._bindImp
 		isNames = _codeMember.isNames
 		if _connectToken
-			if 'override' not in isNames and 'new' not in isNames
+			if 'override' not in isNames
 				.recordError('The contract was specified with "[_connectToken.text]", but the code member is neither an "override" or "new".')
 		else
-			if 'override' in isNames or 'new' in isNames
+			if 'override' in isNames
 				what = if('override' in isNames, 'override', 'new')
 				.recordError('The contract requires an "[.connectWord]" because the code member is "[what]".')
 		i = 0
@@ -1214,7 +1216,8 @@ class RequirePart
 			while codeMember is not nil  # CC: make 'post'
 				sw.write('try {\n')
 				sw.indent
-				sw.write('[codeMember.requirePart.sharpMethodName]')
+				if codeMember.requirePart is not nil
+					sw.write('[codeMember.requirePart.sharpMethodName]')
 				codeMember.writeSharpPassArgs(sw)
 				sw.write(';\n')
 				sw.dedent
@@ -1244,7 +1247,8 @@ class RequirePart
 		return 'require_[name]_[_codeMember.box.name]'
 
 	def writeSharpMethod(sw as SharpWriter) is override
-		sw.write('protected void [.sharpMethodName]')
+		static_ = if(_codeMember.isShared, 'static ', '')
+		sw.write('[static_]protected void [.sharpMethodName]')
 		_codeMember.writeSharpParams(sw)
 		sw.write(' {\n')
 		sw.indent
