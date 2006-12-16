@@ -130,7 +130,7 @@ class BoxMember
 			_testMethod.bindImp
 
 	def usesBase
-		# Needed by OneCodeBlockMember and ProperDexer
+		# Needed by AbstractMethod and ProperDexer
 		if 'new' in _isNames or 'override' in _isNames
 			return
 		# using base implies override, but only if the method sig in the base class is the same
@@ -332,69 +332,8 @@ class ClassVar
 		return if(_useCSNameStack, _useCSNameStack.peek, .name)
 
 
-interface ICodePart
-	"""
-	TODO: axe this interface in favor of using OneCodeBlockMember and rename that to AbstractMethod.
-
-	ICodePart is the common interface to:
-		- methods
-		- inits (special methods)
-		- getter of a property or indexer
-		- setter of a property or indexer
-		- nested method
-		- anonymous method
-	"""
-
-	get name as String
-
-	get box as Box
-
-	get isNames as List<of String>
-
-	get isShared as bool
-
-	def addStmt(stmt as Stmt)
-
-	def addLocal(local as LocalVar)
-
-	def findLocal(name as String) as AbstractLocalVar?
-
-	def findLocalCI(name as String) as AbstractLocalVar?
-
-	def removeLocal(name as String)
-
-	pro hasReturnStmt as bool
-
-	get isOverride as bool
-
-	get resultType as IType
-
-	def usesBase
-		"""
-		Invoked when it's discovered that code part references base. This then implies that the
-		member is an `override` if it is not already marked `new`.
-		"""
-
-	get matchingBaseMember as BoxMember
-
-	pro requirePart as RequirePart?
-
-	pro ensurePart as EnsurePart?
-
-	def addOldExpr(oldExpr as OldExpr)
-
-	get errors as List<of NodeException>
-
-	get sharpResultVarName as String
-
-	def writeSharpParams(sw as SharpWriter)
-
-	def writeSharpPassArgs(sw as SharpWriter)
-
-
-class OneCodeBlockMember
+class AbstractMethod
 	inherits BoxMember
-	implements ICodePart
 	"""
 	The abstract ancestor class for
 		Constructor
@@ -575,11 +514,11 @@ class OneCodeBlockMember
 				baseMember = _box.baseClass.memberForName(_name)
 				if baseMember is nil
 					pass
-				else if baseMember inherits OneCodeBlockMember
+				else if baseMember inherits AbstractMethod
 					if .matchesSignature(baseMember)
 						_matchingBaseMember = baseMember
 				else if baseMember inherits MemberOverload
-					if baseMember.members[0] inherits OneCodeBlockMember
+					if baseMember.members[0] inherits AbstractMethod
 						for member in baseMember.members
 							if .matchesSignature(member)
 								_matchingBaseMember = member
@@ -700,7 +639,7 @@ class OneCodeBlockMember
 
 
 class Constructor
-	inherits OneCodeBlockMember
+	inherits AbstractMethod
 
 	def init(token as IToken, box as Box, paramsList as List<of Param>, isNames as List<of String>, docString as String)
 		base.init(token, box, 'init', paramsList, isNames, docString)
@@ -768,7 +707,7 @@ class Constructor
 
 
 class Method
-	inherits OneCodeBlockMember
+	inherits AbstractMethod
 
 	var _implementsTypeNode as ISyntaxNode?
 	var _implementsType as IType?
@@ -883,14 +822,14 @@ class ProperDexer
 			else
 				throw FallThroughException(returnTypeOrNode)
 
-	def makeGetPart(token as IToken) as OneCodeBlockMember
+	def makeGetPart(token as IToken) as AbstractMethod
 		require .getPart is nil
 		ensure .getPart is not nil
 		throw OverrideException()
 		# CC: shouldn't need a return:
 		return nil to passthrough
 
-	def makeSetPart(token as IToken) as OneCodeBlockMember
+	def makeSetPart(token as IToken) as AbstractMethod
 		require .setPart is nil
 		ensure .setPart is not nil
 		throw OverrideException()
@@ -927,7 +866,7 @@ class ProperDexer
 	get setPart from var
 
 	def defaultToVirtual is override
-		# TODO: dup'ed in OneCodeBlockMember
+		# TODO: dup'ed in AbstractMethod
 		if .isClassMember
 			for name in ['nonvirtual', 'virtual', 'shared', 'override']
 				if name in _isNames
@@ -995,7 +934,7 @@ class ProperDexer
 
 
 class ProperDexerXetter
-	inherits OneCodeBlockMember
+	inherits AbstractMethod
 	"""
 	Base class for IndexerGetter, IndexerSetter, PropertyGetter and PropertySetter.
 	"""
@@ -1161,10 +1100,10 @@ class ConditionPart
 	"""
 
 	var _connectToken as IToken?
-	var _codeMember as ICodePart
+	var _codeMember as AbstractMethod
 	var _exprs as List<of Expr>
 
-	def init(connectToken as IToken?, mainToken as IToken, codeMember as ICodePart, exprs as List<of Expr>)
+	def init(connectToken as IToken?, mainToken as IToken, codeMember as AbstractMethod, exprs as List<of Expr>)
 		base.init(mainToken)
 		_connectToken = connectToken
 		_codeMember = codeMember
@@ -1200,7 +1139,7 @@ class ConditionPart
 class RequirePart
 	inherits ConditionPart
 
-	def init(connectToken as IToken?, mainToken as IToken, codeMember as ICodePart, exprs as List<of Expr>)
+	def init(connectToken as IToken?, mainToken as IToken, codeMember as AbstractMethod, exprs as List<of Expr>)
 		base.init(connectToken, mainToken, codeMember, exprs)
 		codeMember.requirePart = this
 
@@ -1225,7 +1164,7 @@ class RequirePart
 				sw.indent
 				if n>1
 					sw.write('re[n-1].Next = re[n];\n')
-				codeMember = codeMember.matchingBaseMember to ICodePart  # TODO: maybe matchingBaseMember should return ICodePart?
+				codeMember = codeMember.matchingBaseMember to AbstractMethod  # TODO: maybe matchingBaseMember should return AbstractMethod?
 				n += 1
 			# at this point in C# code, all requirements have failed
 			# TODO: chain all the failures together
@@ -1267,7 +1206,7 @@ class RequirePart
 class EnsurePart
 	inherits ConditionPart
 
-	def init(connectToken as IToken?, mainToken as IToken, codeMember as ICodePart, exprs as List<of Expr>)
+	def init(connectToken as IToken?, mainToken as IToken, codeMember as AbstractMethod, exprs as List<of Expr>)
 		base.init(connectToken, mainToken, codeMember, exprs)
 		codeMember.ensurePart = this
 

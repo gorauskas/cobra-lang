@@ -78,8 +78,8 @@ class Parser
 	var _globalNS as NameSpace
 	var _nameSpaceStack as Stack<of NameSpace>
 
-	var _codeParts as Stack<of ICodePart>
-	var _curCodePart as ICodePart?
+	var _codeParts as Stack<of AbstractMethod>
+	var _curCodePart as AbstractMethod?
 
 	var _spaceAgnosticIndentLevel as int
 	var _isContractOnSameLine as bool
@@ -102,7 +102,7 @@ class Parser
 	def init
 		_boxStack = Stack<of Box>()
 		_nameSpaceStack = Stack<of NameSpace>()
-		_codeParts = Stack<of ICodePart>()
+		_codeParts = Stack<of AbstractMethod>()
 
 	pro verbosity from var
 
@@ -917,7 +917,7 @@ class Parser
 		assert isNames is not nil
 		return ClassVar(tok, .curBox, identifier, type, isNames, initExpr, docString)
 
-	def declareMethod as OneCodeBlockMember?
+	def declareMethod as AbstractMethod?
 		require _typeProvider
 		token = .expect('DEF')
 		opener = .grab()
@@ -934,7 +934,7 @@ class Parser
 				.throwError('Cannot define more than one destruct method.')  # TODO give reference to the other one
 			if other inherits MemberOverload
 				overload = other
-			else if other inherits OneCodeBlockMember
+			else if other inherits AbstractMethod
 				overload = MemberOverload(other)
 				curClass.registerOverload(overload to MemberOverload)  # CC: axe cast
 			else
@@ -957,7 +957,7 @@ class Parser
 			returnType = _typeProvider.voidType
 		assert returnType
 
-		method as OneCodeBlockMember?
+		method as AbstractMethod?
 
 		if curClass inherits Class or curClass inherits Struct
 			isNames = .indentIsDeclNames()
@@ -1273,10 +1273,10 @@ class Parser
 	## Top Level Statement Entry
 	##
 
-	def statementsFor(codePart as ICodePart)
+	def statementsFor(codePart as AbstractMethod)
 		.statementsFor(codePart, nil)
 
-	def statementsFor(codePart as ICodePart, codePartContainingTest as BoxMember?)
+	def statementsFor(codePart as AbstractMethod, codePartContainingTest as BoxMember?)
 		"""
 		Example source
 			<any statement 1>
@@ -1329,7 +1329,7 @@ class Parser
 		finally
 			_popCodePart()
 
-	def _statementsFor(codePart as ICodePart)
+	def _statementsFor(codePart as AbstractMethod)
 		"""
 		Utility method for .statementsFor.
 		"""
@@ -1589,13 +1589,13 @@ class Parser
 			expr = .expression()
 		return ReturnStmt(token, expr)
 
-	def requireSection(codeMember as ICodePart) as ConditionPart
+	def requireSection(codeMember as AbstractMethod) as ConditionPart
 		return _requireOrEnsure(codeMember, 'OR', 'REQUIRE', RequirePart)
 
-	def ensureSection(codeMember as ICodePart) as ConditionPart
+	def ensureSection(codeMember as AbstractMethod) as ConditionPart
 		return _requireOrEnsure(codeMember, 'AND', 'ENSURE', EnsurePart)
 
-	def _requireOrEnsure(codeMember as ICodePart, connectWhich as String, mainWhich as String, theClass as Type) as ConditionPart
+	def _requireOrEnsure(codeMember as AbstractMethod, connectWhich as String, mainWhich as String, theClass as Type) as ConditionPart
 		connectToken = .optional(connectWhich)
 		mainToken = .expect(mainWhich)
 		if .peek().which in ['EOL', 'COLON']
@@ -2474,7 +2474,7 @@ class Parser
 		token = .last
 		_warningRecorder.warning(CobraWarning(_fileName, token, msg))
 
-	def _pushCodePart(codePart as ICodePart)
+	def _pushCodePart(codePart as AbstractMethod)
 		_codeParts.push(codePart)
 		_curCodePart = codePart
 
@@ -2483,7 +2483,7 @@ class Parser
 		_codeParts.pop()
 		# CC: _curCodePart = if(_codeParts, _codeParts.peek(), nil)
 		if _codeParts
-			_curCodePart = _codeParts.peek() to ICodePart  # CC: axe "to ICodePart"
+			_curCodePart = _codeParts.peek() to AbstractMethod  # CC: axe "to AbstractMethod"
 		else
 			_curCodePart = nil
 
