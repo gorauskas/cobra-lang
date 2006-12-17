@@ -293,7 +293,7 @@ class ClassVar
 		if _type
 			return _type to passthrough  # CC: axe cast
 		else
-			assert false, '_type is nil. this=[this]'
+			throw FallThroughException('_type is nil. this=[this]')
 
 	## INamedNode
 
@@ -1189,12 +1189,12 @@ class RequirePart
 			count = 0
 			n = 1
 			while codeMember is not nil  # CC: make 'post'
-				if codeMember.requirePart is not nil and (not codeMember.requirePart.isImplicit or codeMember.matchingBaseMember is nil)
+				if not codeMember.box.isFake and codeMember.requirePart is not nil and (not codeMember.requirePart.isImplicit or codeMember.matchingBaseMember is nil)
 					count += 1
 					sw.write('try {\n')
 					sw.indent
 					sw.write('[codeMember.requirePart.sharpMethodName]')
-					codeMember.writeSharpPassArgs(sw)
+					_codeMember.writeSharpPassArgs(sw)  # always use *our* code member since the arg names can be different than base classes
 					sw.write(';\n')
 					sw.dedent
 					sw.write('} catch (RequireException re[n]) {\n')
@@ -1204,7 +1204,8 @@ class RequirePart
 					n += 1
 				codeMember = codeMember.matchingBaseMember to AbstractMethod  # TODO: should a cast really be needed here?
 			# at this point in C# code, all requirements have failed
-			sw.write('throw re1;\n')
+			if n > 1
+				sw.write('throw re1;\n')
 			for m = 1 .. n
 				sw.dedent
 				sw.write('}\n')
