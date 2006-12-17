@@ -476,10 +476,12 @@ class AbstractMethod
 				_returnType = _returnTypeNode.namedType
 			assert _returnType, _returnTypeNode
 		_returnType.bindInt  # TODO: needs a test case. like: def foo as String?; return ''
-		if _requirePart
-			_requirePart.bindInt
-		if _ensurePart
-			_ensurePart.bindInt
+		if _requirePart is nil
+			_requirePart = RequirePart(this)
+		_requirePart.bindInt
+		if _ensurePart is nil
+			_ensurePart = EnsurePart(this)
+		_ensurePart.bindInt
 		.compiler.codeMemberStack.pop
 
 	def _bindImp is override
@@ -1096,12 +1098,20 @@ class ConditionPart
 	inherits SyntaxNode
 	"""
 	TODO: Rename to ContractPart
+	TODO: make abstract
 	The abstract base class for RequirePart and EnsurePart.
 	"""
 
 	var _connectToken as IToken?
 	var _codeMember as AbstractMethod
 	var _exprs as List<of Expr>
+	var _isImplicit as bool # meaning the source code did not define this object
+
+	def init(codeMember as AbstractMethod)
+		base.init(codeMember.token)
+		_isImplicit = true
+		_codeMember = codeMember
+		_exprs = List<of Expr>()
 
 	def init(connectToken as IToken?, mainToken as IToken, codeMember as AbstractMethod, exprs as List<of Expr>)
 		base.init(mainToken)
@@ -1112,16 +1122,19 @@ class ConditionPart
 	get connectWord as String
 		return ''  # TODO: make abstract instead
 
+	get isImplicit from var
+
 	def _bindImp is override
 		base._bindImp
 		isNames = _codeMember.isNames
-		if _connectToken
-			if 'override' not in isNames
-				.recordError('The contract was specified with "[_connectToken.text]", but the code member is neither an "override" or "new".')
-		else
-			if 'override' in isNames
-				what = if('override' in isNames, 'override', 'new')
-				.recordError('The contract requires an "[.connectWord]" because the code member is "[what]".')
+		if not _isImplicit
+			if _connectToken
+				if 'override' not in isNames
+					.recordError('The contract was specified with "[_connectToken.text]", but the code member is neither an "override" or "new".')
+			else
+				if 'override' in isNames
+					what = if('override' in isNames, 'override', 'new')
+					.recordError('The contract requires an "[.connectWord]" because the code member is "[what]".')
 		i = 0
 		for expr as Expr in _exprs.toArray  # CC: axe as
 			expr.bindImp  # TODO: error recovery
@@ -1139,6 +1152,11 @@ class ConditionPart
 class RequirePart
 	inherits ConditionPart
 
+	var _sharpMethodName as String?
+
+	def init(codeMember as AbstractMethod)
+		base.init(codeMember)
+
 	def init(connectToken as IToken?, mainToken as IToken, codeMember as AbstractMethod, exprs as List<of Expr>)
 		base.init(connectToken, mainToken, codeMember, exprs)
 		codeMember.requirePart = this
@@ -1149,43 +1167,56 @@ class RequirePart
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
 		if _codeMember.isOverride
+			# Note that in Cobra, when the top level class does not define `require` then that is the
+			# same as saying `require true`--there is no requirement for calling the method. But when
+			# an overriding method does not define `require` then it is inheriting the `require` of
+			# its matching base method.
 			codeMember = _codeMember
 			assert codeMember is not nil
+			count = 0
 			n = 1
 			while codeMember is not nil  # CC: make 'post'
-				sw.write('try {\n')
-				sw.indent
-				if codeMember.requirePart is not nil
+				if codeMember.requirePart is not nil and (not codeMember.requirePart.isImplicit or codeMember.matchingBaseMember is nil)
+					count += 1
+					sw.write('try {\n')
+					sw.indent
 					sw.write('[codeMember.requirePart.sharpMethodName]')
 					codeMember.writeSharpPassArgs(sw)
 					sw.write(';\n')
-				sw.dedent
-				sw.write('} catch (RequireException re[n]) {\n')
-				sw.indent
-				if n>1
-					sw.write('re[n-1].Next = re[n];\n')
-				codeMember = codeMember.matchingBaseMember to AbstractMethod  # TODO: maybe matchingBaseMember should return AbstractMethod?
-				n += 1
+					sw.dedent
+					sw.write('} catch (RequireException re[n]) {\n')
+					sw.indent
+					if n>1
+						sw.write('re[n-1].Next = re[n];\n')
+					n += 1
+				codeMember = codeMember.matchingBaseMember to AbstractMethod  # TODO: should a cast really be needed here?
 			# at this point in C# code, all requirements have failed
-			# TODO: chain all the failures together
 			sw.write('throw re1;\n')
 			for m = 1 .. n
 				sw.dedent
 				sw.write('}\n')
+				count -= 1
 		else
 			sw.write('[.sharpMethodName]')
 			_codeMember.writeSharpPassArgs(sw)
 			sw.write(';\n')
 
 	get sharpMethodName as String
-		name = _codeMember.name
-		if name==r'[]' # indexer
-			name = 'Item'  # TODO: maybe Indexer should return 'Item' in the first place
-		else
-			name = name.replace('.', '_')  # happens for properindexers, ex: "name.get"
-		return 'require_[name]_[_codeMember.box.name]'
+		if _sharpMethodName is nil
+			name = 'require_[_codeMember.sharpName]_[_codeMember.serialNum]_[_codeMember.box.name]'
+			name = name.replace(r'[]', 'Item') # indexer # TODO: maybe Indexer should return 'Item' in the first place
+			# properindexers like "name.get" have '.'
+			# generics have < > and ,
+			for ch in [c'.', c'<', c'>', c',']
+				name = name.replace(ch, c'_')
+			_sharpMethodName = name
+		return _sharpMethodName to String  # CC: axe cast
 
 	def writeSharpMethod(sw as SharpWriter) is override
+		if _codeMember.isInterfaceMember
+			# contracts on interface members are not supported yet
+			# and when they are, these methods will have to be written outside the interface
+			return
 		static_ = if(_codeMember.isShared, 'static ', '')
 		sw.write('[static_]protected void [.sharpMethodName]')
 		_codeMember.writeSharpParams(sw)
@@ -1201,10 +1232,13 @@ class RequirePart
 			sw.write('throw new RequireException([Utils.csStringLitFor(expr.token.fileName)], [expr.token.lineNum], [s], null);\n')
 			sw.dedent
 		sw.dedent
-		sw.write('}\n')
+		sw.write('}\n\n')
 
 class EnsurePart
 	inherits ConditionPart
+
+	def init(codeMember as AbstractMethod)
+		base.init(codeMember)
 
 	def init(connectToken as IToken?, mainToken as IToken, codeMember as AbstractMethod, exprs as List<of Expr>)
 		base.init(connectToken, mainToken, codeMember, exprs)
