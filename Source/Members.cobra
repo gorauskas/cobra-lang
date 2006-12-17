@@ -1164,8 +1164,21 @@ class RequirePart
 	get connectWord as String is override
 		return 'or'
 
+	get sharpMethodName as String
+		if _sharpMethodName is nil
+			name = 'require_[_codeMember.sharpName]_[_codeMember.serialNum]_[_codeMember.box.name]'
+			name = name.replace(r'[]', 'Item') # indexer # TODO: maybe Indexer should return 'Item' in the first place
+			# properindexers like "name.get" have '.'
+			# generics have < > and ,
+			for ch in [c'.', c'<', c'>', c',']
+				name = name.replace(ch, c'_')
+			_sharpMethodName = name
+		return _sharpMethodName to String  # CC: axe cast
+
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
+		sw.write('if (CobraCore._willCheckRequire) {\n')
+		sw.indent
 		if _codeMember.isOverride
 			# Note that in Cobra, when the top level class does not define `require` then that is the
 			# same as saying `require true`--there is no requirement for calling the method. But when
@@ -1200,17 +1213,8 @@ class RequirePart
 			sw.write('[.sharpMethodName]')
 			_codeMember.writeSharpPassArgs(sw)
 			sw.write(';\n')
-
-	get sharpMethodName as String
-		if _sharpMethodName is nil
-			name = 'require_[_codeMember.sharpName]_[_codeMember.serialNum]_[_codeMember.box.name]'
-			name = name.replace(r'[]', 'Item') # indexer # TODO: maybe Indexer should return 'Item' in the first place
-			# properindexers like "name.get" have '.'
-			# generics have < > and ,
-			for ch in [c'.', c'<', c'>', c',']
-				name = name.replace(ch, c'_')
-			_sharpMethodName = name
-		return _sharpMethodName to String  # CC: axe cast
+		sw.dedent
+		sw.write('}\n')
 
 	def writeSharpMethod(sw as SharpWriter) is override
 		if _codeMember.isInterfaceMember

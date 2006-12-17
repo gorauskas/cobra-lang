@@ -73,6 +73,59 @@ static public class CobraCore {
 		return x.ToString();
 	}
 
+	static public bool _willCheckInvariant = true;
+
+	static public bool WillCheckInvariant {
+		get {
+			return _willCheckInvariant;
+		}
+		set {
+			_willCheckInvariant = value;
+		}
+	}
+
+	static public bool _willCheckRequire = true;
+
+	static public bool WillCheckRequire {
+		get {
+			return _willCheckRequire;
+		}
+		set {
+			_willCheckRequire = value;
+		}
+	}
+
+	static public bool _willCheckEnsure = true;
+
+	static public bool WillCheckEnsure {
+		get {
+			return _willCheckEnsure;
+		}
+		set {
+			_willCheckEnsure = value;
+		}
+	}
+
+	static public bool _willCheckAssert = true;
+
+	static public bool WillCheckAssert {
+		get {
+			return _willCheckAssert;
+		}
+		set {
+			_willCheckAssert = value;
+		}
+	}
+
+	static public bool WillCheckAll {
+		set {
+			WillCheckInvariant = value;
+			WillCheckRequire = value;
+			WillCheckEnsure = value;
+			WillCheckAssert = value;
+		}
+	}
+
 }
 
 
