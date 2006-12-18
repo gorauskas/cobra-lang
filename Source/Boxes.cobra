@@ -545,6 +545,23 @@ class Class
 			m = _baseClass.memberForName(name)
 		if m is nil
 			m = .interfaceMemberForName(name)
+		# handle get/set parts like "someProp.get" or "[].set"
+		# `computeMatchingBaseMember` in Members.cobra is at least one that returns this
+		if m is nil and '.' in name
+			if name.endsWith('.get')
+				part = 'g'
+			else if name.endsWith('.set')
+				part = 's'
+			else
+				throw FallThroughException(name)
+			pd = .memberForName(name[:-4])
+			if pd inherits ProperDexer
+				branch part
+					on 'g'
+						m = pd.getPart
+					on 's'
+						m = pd.setPart
+				# TODO: cache the above back into the _decls
 		return m
 
 	def symbolForName(name as String, canBeMember as bool, haveThis as bool) as IMember? is override
