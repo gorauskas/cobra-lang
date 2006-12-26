@@ -620,6 +620,10 @@ class CommandLine  # TODO: rename to CommandLine
 		finally
 			_statusWriter = nil
 
+	def _testifyFlush
+		_statusWriter.flush
+		_resultsWriter.flush
+
 	def _innerDoTestify(paths as List<of String>)
 		# TODO Console.error = Console.out
 		# TODO: respect command line args: paths = _pathList
@@ -674,23 +678,28 @@ class CommandLine  # TODO: rename to CommandLine
 						_testifyCount += .testifyFile(baseName)
 					else if Directory.exists(baseName)
 						.testifyDir(baseName)
+					_testifyFlush
 			finally
 				Directory.setCurrentDirectory(saveDir)
 		finally
 			_statusWriter.dedent()
+		_testifyFlush
 
 	def testifyFile(baseName as String) as int
 		save = _failureCount
 		_firstAttempt = true
-		result1 = _testifyFile(baseName)
-		if _failureCount > save
-			print
-			print
-			print 'DUE TO FAILURE, RERUNNING WITH MORE OUTPUT:'
-			_firstAttempt = false
-			result2 = _testifyFile(baseName)
-			if result1 <> result2
-				throw Exception('Result mismatch. result1=[result1], result2=[result2]')
+		try
+			result1 = _testifyFile(baseName)
+			if _failureCount > save
+				print
+				print
+				print 'DUE TO FAILURE, RERUNNING WITH MORE OUTPUT:'
+				_firstAttempt = false
+				result2 = _testifyFile(baseName)
+				if result1 <> result2
+					throw Exception('Result mismatch. result1=[result1], result2=[result2]')
+		finally
+			_testifyFlush
 		return result1
 
 	def _testifyFile(baseName as String) as int
