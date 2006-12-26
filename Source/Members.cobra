@@ -191,14 +191,16 @@ class BoxMember
 		.writeSharpParams(sw, '()')
 
 	def writeSharpParams(sw as SharpWriter, parens as String)
-		require parens.length==2
-		sw.write(parens[0])
+		require parens.length==2 or parens==''
+		if parens
+			sw.write(parens[0])
 		sep = ''
 		for param in .params
 			sw.write(sep)
 			param.writeSharpDef(sw)
 			sep = ', '
-		sw.write(parens[1].toString+' ')
+		if parens
+			sw.write(parens[1].toString+' ')
 
 	def writeSharpIsNames(sw as SharpWriter)
 		# TODO:
@@ -450,6 +452,11 @@ class AbstractMethod
 		_oldExprs.add(oldExpr)
 		oldExpr.sharpVarName = '_lh_old_' + _oldExprs.count.toString
 
+	get oldExprs from var
+		"""
+		Use .addOldExpr(e) instead of method.oldExprs.add().
+		"""
+
 	def addRefFields is override
 		base.addRefFields
 		.addField('returnTypeNode', _returnTypeNode)
@@ -584,13 +591,19 @@ class AbstractMethod
 		sw.write('\n')
 
 	def writeSharpPassArgs(sw as SharpWriter)
-		sw.write('(')
+		.writeSharpPassArgs(sw, '()')
+
+	def writeSharpPassArgs(sw as SharpWriter, parens as String)
+		require parens.length==2 or parens==''
+		if parens
+			sw.write(parens[0])
 		sep = ''
 		for param in _params
 			sw.write(sep)
 			sw.write(param.name)
 			sep = ', '
-		sw.write(')')
+		if parens
+			sw.write(parens[1])
 
 	# TODO: axe?
 #	def writeSharpLocals(sw as SharpWriter)
@@ -600,8 +613,7 @@ class AbstractMethod
 		if open
 			sw.writeAndIndent('{\n')
 		# record the `old` expressions for `ensure`
-		for oldExpr in _oldExprs
-			oldExpr.writeSharpAssignment(sw)
+		.writeSharpOldAssignments(sw)
 		if locals is nil
 			locals = _locals
 		if locals
@@ -613,6 +625,54 @@ class AbstractMethod
 					if init
 						sw.write(' = [init]')
 					sw.write(';\n')
+
+	def writeSharpOldAssignments(sw as SharpWriter)
+		if .isOverride and .matchingBaseMember is not nil
+			(.matchingBaseMember to AbstractMethod).writeSharpOldAssignments(sw)
+		for oldExpr in _oldExprs
+			oldExpr.writeSharpAssignment(sw)
+
+	def writeSharpEnsureArgs(sw as SharpWriter)
+		if .sharpResultVarName
+			sw.write('[.sharpResultVarName]')
+			sep = [',']
+		else
+			sep = ['']
+		_writeSharpOldArgs(sw, sep)
+		if .params
+			sw.write(sep[0])
+		.writeSharpPassArgs(sw, '')  # these have to come last, because they might include a C# "params" which has to be last
+
+	def _writeSharpOldArgs(sw as SharpWriter, sep as List<of String>)
+		if .isOverride and .matchingBaseMember is not nil
+			assert .matchingBaseMember is not this
+			(.matchingBaseMember to AbstractMethod)._writeSharpOldArgs(sw, sep)
+		for oldExpr in _oldExprs
+			sw.write(sep[0])
+			sw.write(oldExpr.sharpVarName)
+			sep[0] = ', '
+
+	def writeSharpEnsureParamDecls(sw as SharpWriter)
+		if .sharpResultVarName
+			sw.write('[.resultType.sharpRef] [.sharpResultVarName]')
+			sep = [',']
+		else
+			sep = ['']
+		_writeSharpOldParamDecls(sw, sep)
+		# these have to come last, because they might include a C# "params" which has to be last
+		for param in .params
+			sw.write(sep[0])
+			param.writeSharpDef(sw)
+			sep[0] = ', '
+
+	def _writeSharpOldParamDecls(sw as SharpWriter, sep as List<of String>)
+		if .isOverride and .matchingBaseMember is not nil
+			assert .matchingBaseMember is not this
+			(.matchingBaseMember to AbstractMethod)._writeSharpOldParamDecls(sw, sep)
+		for oldExpr in _oldExprs
+			sw.write(sep[0])
+			sw.write('[oldExpr.type.sharpRef] [oldExpr.sharpVarName]')
+			sep[0] = ', '
 
 	def writeSharpParamCheck(param as Param, sw as SharpWriter)
 		if param.type.isReference and not param.type inherits NilableType
@@ -707,6 +767,8 @@ class Constructor
 		.writeSharpImp(sw, if(callConstructor, true, false))
 		if _requirePart
 			_requirePart.writeSharpMethod(sw)
+		if _ensurePart
+			_ensurePart.writeSharpMethod(sw)
 		.writeSharpTest(sw)
 
 
@@ -786,6 +848,8 @@ class Method
 			.writeSharpImp(sw, false)
 			if _requirePart
 				_requirePart.writeSharpMethod(sw)
+			if _ensurePart
+				_ensurePart.writeSharpMethod(sw)
 			.writeSharpTest(sw)
 
 	get sharpName as String is override
@@ -1115,6 +1179,7 @@ class ConditionPart
 	var _codeMember as AbstractMethod
 	var _exprs as List<of Expr>
 	var _isImplicit as bool # meaning the source code did not define this object
+	var _sharpMethodNameCache as String?
 
 	def init(codeMember as AbstractMethod)
 		base.init(codeMember.token)
@@ -1166,11 +1231,22 @@ class ConditionPart
 	def writeSharpMethod(sw as SharpWriter)  # TODO: is abstract
 		pass
 
+	def _sharpMethodName(prefix as String) as String
+		if _sharpMethodNameCache is nil
+			# TODO: having the serial number in the name avoids problem with overloads, but it's ugly and it can change from run-to-run.
+			# 		would be nice if each member of an overload had an overload number.
+			name = '[prefix]_[_codeMember.sharpName]_[_codeMember.serialNum]_[_codeMember.box.name]'
+			name = name.replace(r'[]', 'Item') # indexer # TODO: maybe Indexer should return 'Item' in the first place
+			# properindexers like "name.get" have '.'
+			# generics have < > and ,
+			for ch in [c'.', c'<', c'>', c',']
+				name = name.replace(ch, c'_')
+			_sharpMethodNameCache = name
+		return _sharpMethodNameCache to String # CC: axe cast
+
 
 class RequirePart
 	inherits ConditionPart
-
-	var _sharpMethodName as String?
 
 	def init(codeMember as AbstractMethod)
 		base.init(codeMember)
@@ -1183,15 +1259,7 @@ class RequirePart
 		return 'or'
 
 	get sharpMethodName as String
-		if _sharpMethodName is nil
-			name = 'require_[_codeMember.sharpName]_[_codeMember.serialNum]_[_codeMember.box.name]'
-			name = name.replace(r'[]', 'Item') # indexer # TODO: maybe Indexer should return 'Item' in the first place
-			# properindexers like "name.get" have '.'
-			# generics have < > and ,
-			for ch in [c'.', c'<', c'>', c',']
-				name = name.replace(ch, c'_')
-			_sharpMethodName = name
-		return _sharpMethodName to String  # CC: axe cast
+		return _sharpMethodName('require')
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
@@ -1282,8 +1350,44 @@ class EnsurePart
 			finally
 				_codeMember.removeLocal('result')
 
+	get sharpMethodName as String
+		return _sharpMethodName('ensure')
+
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
+		sw.write('if (CobraCore._willCheckEnsure) {\n')
+		sw.indent
+		if _codeMember.isOverride
+			codeMember = _codeMember
+			assert codeMember is not nil
+			while codeMember is not nil  # CC: make 'post'
+				if not codeMember.box.isFake and codeMember.ensurePart is not nil # TODO: axe: and (not codeMember.ensurePart.isImplicit or codeMember.matchingBaseMember is nil)
+					sw.write('[codeMember.ensurePart.sharpMethodName](')
+					_codeMember.writeSharpEnsureArgs(sw)
+					sw.write(');\n')
+				codeMember = codeMember.matchingBaseMember to AbstractMethod  # TODO: should a cast really be needed here?
+			# at this point in C# code, all ensure have passed
+		else
+			# CC: use nil coalesce operator
+			resultVarName = _codeMember.sharpResultVarName
+			if resultVarName is nil
+				resultVarName = ''
+			sw.write('[_codeMember.ensurePart.sharpMethodName](')
+			_codeMember.writeSharpEnsureArgs(sw)
+			sw.write(');\n')
+		sw.dedent
+		sw.write('}\n')
+
+	def writeSharpMethod(sw as SharpWriter) is override
+		if _codeMember.isInterfaceMember
+			# contracts on interface members are not supported yet
+			# and when they are, these methods will have to be written outside the interface
+			return
+		static_ = if(_codeMember.isShared, 'static ', '')
+		sw.write('[static_]protected void [.sharpMethodName](')
+		_codeMember.writeSharpEnsureParamDecls(sw)
+		sw.write(') {\n')
+		sw.indent
 		passThis = if(_codeMember.isShared, 'typeof([_codeMember.box.sharpName])', 'this')
 		for expr in _exprs
 			sw.write('if (!')
@@ -1294,5 +1398,5 @@ class EnsurePart
 			s = Utils.csStringLitFor(s)
 			sw.write('throw new EnsureException([Utils.csStringLitFor(expr.token.fileName)], [expr.token.lineNum], [s], [passThis]);\n')
 			sw.dedent
-
-
+		sw.dedent
+		sw.write('}\n\n')
