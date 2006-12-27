@@ -137,8 +137,13 @@ class BoxMember
 		# (otherwise it's just an overload)
 		if _box inherits Class
 			assert _box.baseClass
+			# Why not use .matchingBaseMember? Because currently that's only method-to-method. Does not work for properties.
 			baseMember = _box.baseClass.memberForName(_name)
 			if baseMember inherits BoxMember
+				if baseMember inherits MemberOverload
+					for member in baseMember.members
+						if .matchesSignature(member)
+							$sharp('baseMember = member')  # CC: can't "back up" the type in an if-inherits
 				if .matchesSignature(baseMember)
 					if 'nonvirtual' in baseMember.isNames
 						_isNames.add('new')
@@ -514,12 +519,14 @@ class AbstractMethod
 				.compiler.recordError(ne)
 		if _ensurePart
 			_ensurePart.bindImp
-		.computeMatchingBaseMember
-		.checkForUnmarkedOverrideOrNew  # have to do this after statements bind imp since using base can add `override`
+		.computeMatchingBaseMember  # TODO: put this in _bindInt where it belongs. but not that last attempt broke a test case for indexers and requires...
+		.checkForUnmarkedOverrideOrNew  # have to do this after statements bindImp since using base can add `override`
 		.checkForUnusedVariables
 		.compiler.codeMemberStack.pop
 
 	def computeMatchingBaseMember
+		if _matchingBaseMember is not nil
+			return
 		if _box inherits Class
 			if _box.baseClass is not nil
 				baseMember = _box.baseClass.memberForName(_name)
