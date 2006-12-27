@@ -1910,12 +1910,18 @@ class Parser
 					# op was set earlier for a two word operator. ISNOT NOTIN
 					opToken = .grab()
 					.grab()
+				if op=='TO' or op=='TOQ'
+					getTypeExprForRightHandSide = true  # required to handle "x to String?", for example
 			assert _binaryOpPrec.containsKey(op to String)  # CC: axe cast or !
 			_leftStack.push(left to Expr)  # CC: axe cast with code flow analysis
 			.opStack.push(op to String)  # CC: axe cast or !
 			try
 				prec = if(OperatorSpecs.rightAssoc().containsKey(op to String), binaryOpPrec, binaryOpPrec+1)  # CC: axe cast or !
-				right = .expression(prec)
+				if getTypeExprForRightHandSide
+					right = .typeExpr to Expr
+					getTypeExprForRightHandSide = false
+				else
+					right = .expression(prec)
 				left = BinaryOpExpr.make(opToken to IToken, op to String, left to Expr, right to Expr)  # CC: assert opToken up higher and remove cast
 			finally
 				.opStack.pop()
@@ -2333,6 +2339,8 @@ class Parser
 			return nil to passthrough  # CC: remove
 
 		assert t<>nil
+
+		# TODO: the array and nilable check should probably be at the bottom of qualifiedType
 
 		# check for array
 		bracket = .optional('LBRACKET')
