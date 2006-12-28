@@ -284,7 +284,7 @@ public class FallThroughException : Exception {
 
 	public override string Message {
 		get {
-			return string.Format("info={0}", _info==null?"nil":_info);
+			return string.Format("info={0}", CobraCore.ToTechString(_info));
 		}
 	}
 
