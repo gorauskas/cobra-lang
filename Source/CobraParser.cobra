@@ -75,7 +75,7 @@ class Parser
 	var _isNamesStack as Stack<of String>?
 	var _boxStack as Stack<of Box>?
 
-	var _globalNS as NameSpace
+	var _globalNS as NameSpace?
 	var _nameSpaceStack as Stack<of NameSpace>
 
 	var _codeParts as Stack<of AbstractMethod>
@@ -84,17 +84,17 @@ class Parser
 	var _spaceAgnosticIndentLevel as int
 	var _isContractOnSameLine as bool
 
-	var _leftStack as Stack<of Expr>
-	var _opStackStack as Stack<of Stack<of String>>
+	var _leftStack as Stack<of Expr>?
+	var _opStackStack as Stack<of Stack<of String>>?
 		"""
 		Used by expression parts so the last operator can be examined.
 		A stack of stacks is needed for CallExpr's args.
 		"""
 
-	var _typeProvider as ITypeProvider
+	var _typeProvider as ITypeProvider?
 
 	# TODO: do this with a callback/delegate instead of this bullshit Java-style interface technique
-	var _warningRecorder as IWarningRecorder
+	var _warningRecorder as IWarningRecorder?
 
 	pro warningRecorder from var
 
@@ -110,11 +110,14 @@ class Parser
 
 	pro globalNS as NameSpace
 		get
-			return _globalNS
+			if _globalNS is not nil
+				return _globalNS
+			else
+				throw FallThroughException()  # CC: use assert
 		set
 			require _globalNS is nil
 			_globalNS = value
-			_nameSpaceStack.push(_globalNS)
+			_nameSpaceStack.push(_globalNS to passthrough)
 
 	get curBox as Box
 		# yes there is only one box at the moment, but when nested classes and structs are supported there could by many.
@@ -393,7 +396,7 @@ class Parser
 	## Parsing
 	##
 
-	var _module as Module
+	var _module as Module?
 
 	def parseTokens as Module
 		"""
@@ -451,7 +454,7 @@ class Parser
 					if addToNS
 						_globalNS.addDecl(what to IMember)  # CC: axe "to NamedNode"
 
-			return _module
+			return _module to Module # CC: to ! CC: axe cast
 
 	def useDirective as UseDirective
 		"""
