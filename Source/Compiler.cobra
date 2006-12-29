@@ -175,7 +175,7 @@ class Compiler
 						modules.add(module)
 			assert modules
 			_modules.addRange(modules)
-			if _errors
+			if _errors.count
 				_exitFromErrors
 			return modules
 
@@ -318,7 +318,7 @@ class Compiler
 				Node.setCompiler(nil)
 		finally
 			_isBindingInt = false
-		if _errors
+		if _errors.count
 			_exitFromErrors
 
 	def bindImp
@@ -337,7 +337,7 @@ class Compiler
 				Node.setCompiler(nil)
 		finally
 			_isBindingImp = false
-		if _errors
+		if _errors.count
 			_exitFromErrors
 
 	def symbolForName(name as String, canBeMember as bool, haveThis as bool) as IMember?
@@ -359,22 +359,22 @@ class Compiler
 				return nil
 
 			boxStack = Stack<of Box>(_boxStack)
-			while boxStack
+			while boxStack.count
 				box = boxStack.pop
 				x = box.symbolForName(name, canBeMember, haveThis)
-				if x is not nil
+				if x
 					return x
 
 			nameSpaceStack = Stack<of NameSpace>(_nameSpaceStack)
-			while nameSpaceStack
+			while nameSpaceStack.count
 				ns = nameSpaceStack.pop
 				assert ns.superNameSpace is nil or ns.superNameSpace is not nil
 				x = ns.symbolForName(name)
-				if x is not nil
+				if x
 					return x
 
 			x = _curModule.symbolForName(name)
-			if x is not nil
+			if x
 				return x
 
 			return _globalNS.symbolForName(name)
@@ -438,7 +438,7 @@ class Compiler
 		thing as IContainer? = nil
 		for name in names
 			possible = (thing ? ns).declForName(name)
-			assert possible is not nil, name
+			assert possible, name
 			if possible inherits IContainer
 				thing = possible
 			else
@@ -588,7 +588,7 @@ class Compiler
 
 	def compileCS  # TODO: rename to compileSharp
 		require
-			.options is not nil
+			.options
 			.modules
 			.modules[0].fileName.endsWith('SystemInterfaces.cobra')
 		body
@@ -624,8 +624,8 @@ class Compiler
 			# options
 			options = ''
 
-			target = Utils.getSO(_options, 'target', nil) to String
-			if target
+			target = Utils.getSO(_options, 'target', '') to String
+			if target and target.length
 				if target=='lib'
 					target = 'library'
 				options += ' [optChar]target:[target]'
@@ -639,13 +639,12 @@ class Compiler
 				outName += '.exe'
 
 			# CC: cleanup
-			thing = Utils.getSO(_options, 'reference', [])
-			if thing
-				for refer in thing to List<of String>
-					options += ' [optChar]r:[refer]' # TODO: mono?
+			thing = Utils.getSO(_options, 'reference', []) to List<of Object>
+			for refer in thing to List<of Object>
+				options += ' [optChar]r:[refer]' # TODO: mono?
 
-			debug = Utils.getSO(_options, 'debug', nil) to String
-			if debug
+			debug = Utils.getSO(_options, 'debug', '') to String
+			if debug.length
 				# TODO: mono does not support full and pdbonly afaik
 				assert debug in ['-', '+', 'full', 'pdbonly'], debug
 				options += ' [optChar]debug' + if(debug.length==1, debug, ':[debug]')
@@ -683,7 +682,7 @@ class Compiler
 			hadError = false
 			for line as String in output.split(c'\n')  # CC: axe as
 				line = line.trim
-				if not line
+				if not line.length
 					continue
 				if 'error ' in line
 					_addError(SharpCompilationError(line, this))

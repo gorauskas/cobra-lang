@@ -110,7 +110,7 @@ class Parser
 
 	pro globalNS as NameSpace
 		get
-			if _globalNS is not nil
+			if _globalNS
 				return _globalNS
 			else
 				throw FallThroughException()  # CC: use assert
@@ -212,7 +212,7 @@ class Parser
 		if _willShowTokens
 			print 'peek([offset]) --> [token]'
 		# TODO: resolve CUE
-		if token is not nil and token.which=='CUE'
+		if token and token.which=='CUE'
 			token.which = 'DEF'
 		return token
 
@@ -553,7 +553,7 @@ class Parser
 		if _validIsNames is nil
 			_validIsNames = ['fake', 'shared', 'virtual', 'nonvirtual', 'override', 'new', 'public', 'protected', 'private', 'internal']
 		names = List<of String>()
-		if _isNamesStack
+		if _isNamesStack.count
 			names.add(_isNamesStack.peek)  # TODO: why just peek? why not all the names?
 #		CC: use this instead of above 3 lines: names = if(_isNamesStack, [_isNamesStack.peek], List<of String>())
 		isWord = .optional('IS')
@@ -754,7 +754,7 @@ class Parser
 					break
 			if not found
 				.throwError('Unknown generic parameter "[paramName]".')
-			if param.constraints
+			if param.constraints.count
 				.throwError('Already specified constraints for "[paramName]".')
 			.expect('MUST')
 			.expect('BE')
@@ -833,7 +833,7 @@ class Parser
 					on 'TEST': .testSection(box)
 					else
 						.throwError('Got [.peek] when expecting var, def, pro, get, set, enum or shared')
-				if decl is not nil
+				if decl
 					box.addDecl(decl to IMember)  # CC: axe typecast when if gets smart about not nil
 			.dedent
 
@@ -842,7 +842,7 @@ class Parser
 		Created specifically to deal with the fact that overloads should not be added. The methods
 		that encounter overloads will create (or affect existing) MemberOverloads and return nil.
 		"""
-		if member is not nil
+		if member
 			box.addDecl(member)
 
 	def bodiedBoxMemberDeclsShared(box as Box)
@@ -855,7 +855,7 @@ class Parser
 			_isNamesStack.pop
 
 	def classPass
-		if .curBox.declsInOrder
+		if .curBox.declsInOrder.count
 			_warning('Encountered "pass" in a class that already has declared members.')  # TODO: change to an error
 		.grab
 		.oneOrMore('EOL')
@@ -907,7 +907,7 @@ class Parser
 				isNames = .isDeclNames
 				docString = .docString
 				.dedent
-		assert isNames is not nil
+		assert isNames
 		return ClassVar(tok, .curBox, identifier, type, isNames, initExpr, docString)
 
 	def declareMethod as AbstractMethod?
@@ -1039,7 +1039,7 @@ class Parser
 		if .curBox inherits Class or .curBox inherits Struct
 			isNames = .indentIsDeclNames
 			docString = .docString
-			if paramsList
+			if paramsList.count
 				prop = Indexer(token, .curBox, name, paramsList, returnType, isNames, docString)
 			else
 				prop = Property(token, .curBox, name, returnType, isNames, docString)
@@ -1128,12 +1128,12 @@ class Parser
 			returnType as INode = .type
 		else
 			returnType = _typeProvider.dynamicType
-		assert returnType is not nil
+		assert returnType
 
 		if .curBox inherits Class or .curBox inherits Struct
 			isNames = .indentIsDeclNames
 			docString = .docString
-			if paramsList
+			if paramsList.count
 				prop = Indexer(token, .curBox, name, paramsList, returnType, isNames, docString)
 			else
 				prop = Property(token, .curBox, name, returnType, isNames, docString)
@@ -1328,7 +1328,7 @@ class Parser
 		gotStmt = false
 		while .peek.which<>'DEDENT'
 			stmt = .stmt
-			if stmt is not nil
+			if stmt
 				codePart.addStmt(stmt to Stmt)  # CC: axe "to Stmt"
 				gotStmt = true
 		.dedent
@@ -1717,7 +1717,7 @@ class Parser
 		stmts = List<of Stmt>()
 		while true
 			stmt = .stmt
-			if stmt is not nil
+			if stmt
 				stmts.add(stmt)
 			if .peek.which=='DEDENT'
 				break
@@ -2096,7 +2096,7 @@ class Parser
 		"""
 		nameToken = .expect('ID')
 		name = nameToken.text
-		if .opStack and .opStack.peek=='DOT'
+		if .opStack.count and .opStack.peek=='DOT'
 			return MemberExpr(nameToken, name)
 		if .peek.which=='AS'
 			if not Utils.startsWithLowerLetter(name)
@@ -2135,7 +2135,7 @@ class Parser
 				.grab
 				break
 			if expectSep
-				if sep is not nil
+				if sep
 					.expect(sep)
 				else
 					for which in separators
@@ -2182,7 +2182,7 @@ class Parser
 			return SliceExpr(token, left, start, stopp, stepp)
 		else
 			for expr in exprs
-				assert expr is not nil, exprs
+				assert expr, exprs
 			return IndexExpr(token, left, exprs)
 
 	def literalList as ListLit
@@ -2330,13 +2330,13 @@ class Parser
 			.throwError('Unrecognized type: [token]')
 			return nil to passthrough  # CC: remove
 
-		assert t<>nil
+		assert t
 
 		# TODO: the array and nilable check should probably be at the bottom of qualifiedType
 
 		# check for array
 		bracket = .optional('LBRACKET')
-		if bracket is not nil
+		if bracket
 			if .peek.which=='INTEGER_LIT'
 				.throwError('Explicit array sizes are not currently supported.')
 			.expect('RBRACKET')
@@ -2344,7 +2344,7 @@ class Parser
 
 		# check for 'optional' aka 'can be nil'
 		question = .optional('QUESTION')
-		if question is not nil
+		if question
 			t = NilableTypeIdentifier(question, t)
 
 		return t to AbstractTypeIdentifier  # CC: axe cast
@@ -2379,7 +2379,7 @@ class Parser
 	##
 
 	def newOpStack
-		require _opStackStack is not nil
+		require _opStackStack
 		_opStackStack.push(Stack<of String>())
 
 	def delOpStack
@@ -2458,7 +2458,7 @@ class Parser
 		require _codeParts
 		_codeParts.pop
 		# CC: _curCodePart = if(_codeParts, _codeParts.peek, nil)
-		if _codeParts
+		if _codeParts.count
 			_curCodePart = _codeParts.peek to AbstractMethod  # CC: axe "to AbstractMethod"
 		else
 			_curCodePart = nil

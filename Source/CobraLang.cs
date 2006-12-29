@@ -135,13 +135,6 @@ public interface ICallable {
 }
 
 
-public interface ICount {
-	int Count {
-		get;
-	}
-}
-
-
 public class AssertException : Exception {
 
 	protected string _fileName;
@@ -428,13 +421,13 @@ static public class CobraImp {
 	}
 
 	static public bool IsTrue(string s) {
-		return s!=null && s.Length>0;
+		return s!=null;
 	}
 
 	static public bool IsTrue(System.Collections.ICollection c) {
 		// TODO: does System.Collections.Generics.ICollection inherit the non-generic ICollection?
 		// TODO: if a C# file uses both System.Collections and System.Collections.Generics, then what does "ICollection" mean?
-		return c!=null && c.Count>0;
+		return c!=null;
 	}
 
 	static public bool IsTrue(object x) {
@@ -444,18 +437,8 @@ static public class CobraImp {
 			return (bool)x;
 		if (x.Equals(0))
 			return false;
-		string s = x as string;
-		if (s!=null)
-			return IsTrue(s);
 		if (x is char)
 			return (char)x!='\0';
-		ICount c = x as ICount;
-		if (c!=null)
-			return c.Count>0;
-		System.Collections.ICollection col = x as System.Collections.ICollection;
-		if (col!=null)
-			return IsTrue(col);
-		// TODO: review definition I made for Boo and Power
 		return true;
 	}
 

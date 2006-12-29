@@ -155,7 +155,7 @@ class Token
 					on c'\n': sb.append('\\n')
 					else: sb.append(c)
 			s = sb.toString
-			if s
+			if s.length
 				if _which is nil or s.toLower()==_which.toLower()  # if keyword...
 					return '"[s]"'
 				else
@@ -429,19 +429,19 @@ class Tokenizer
 			tokenDefs as list
 		"""
 		ensure
-			_tokenDefs is not nil
+			_tokenDefs
 		body
 			assert _didReset, 'Have not reset. Probably the subclass overrides _reset() but forgets to invoke base.'
 			# create a single list of all token defs in the correct order
 			_tokenDefs = List<of TokenDef>()
-			if .orderedTokenSpecs
+			if .orderedTokenSpecs.count
 				for spec in .orderedTokenSpecs
 					.addTokenSpec(spec)
 			others = List<of TokenDef>()
-			if .unorderedTokenSpecs
+			if .unorderedTokenSpecs.count
 				for spec in .unorderedTokenSpecs
 					others.add(.tokenDefForSpec(spec))
-			if .keywords
+			if .keywords.length
 				t = List<of String>()
 				for line as String in .keywords.split(c'\n')
 					line = line.trim()
@@ -484,7 +484,7 @@ class Tokenizer
 
 	def _obtainSource as bool
 		ensure
-			result implies _sourceLine is not nil
+			result implies _sourceLine
 			result implies _lineNum == old _lineNum + 1
 		body
 			_sourceLine = _originalSourceLine = _stream.readLine()
@@ -511,10 +511,10 @@ class Tokenizer
 		This is the core brain of the tokenizer.
 		The primary logic for matching tokens is here.
 		"""
-		if _tokenQueue
+		if _tokenQueue.count
 			# eat up queue first
 			return _tokenQueue.dequeue()
-		if not _sourceLine
+		if not _sourceLine or not _sourceLine.length
 			if not _obtainSource()
 				return nil
 		try
@@ -557,7 +557,7 @@ class Tokenizer
 				# TODO: test if caching the methods is faster
 				methName = 'On' + tok.which
 				meth = .getType.getMethod(methName)
-				if meth is not nil
+				if meth
 					try
 						tok = meth.invoke(this, $sharp(r'new IToken[1] {tok}')) to IToken  # CC: to IToken?
 						#tok = meth.invoke(this, [tok].toArray()) to IToken  # CC: to IToken?
@@ -612,7 +612,7 @@ class Tokenizer
 			_tokenDefsStack.count > 0
 		body
 			_tokenDefsStack.pop()
-			if _tokenDefsStack
+			if _tokenDefsStack.count
 				tokenDefSet as TokenDefSet = _tokenDefsStack.peek() to TokenDefSet # CC: shouldn't need the 'as' or the 'to'
 				defs = tokenDefSet.defs # CC: add: to ?
 				defsByWhich = tokenDefSet.defsByWhich # CC: add: to ?

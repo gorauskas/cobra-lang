@@ -52,7 +52,7 @@ class Box
 	def addSubFields is override
 		base.addSubFields()
 		.addField('params', _params)
-		if _baseInterfaces
+		if _baseInterfaces.count
 			.addField('baseInterfaces', _baseInterfaces)
 		else
 			.addField('baseInterfaceNodes', _baseInterfaceNodes)
@@ -90,11 +90,11 @@ class Box
 
 	def interfaceMemberForName(name as String) as IMember?
 		m = .declForName(name)
-		if m is not nil
+		if m
 			return m
 		for inter in _baseInterfaces
 			m = inter.interfaceMemberForName(name)
-			if m is not nil
+			if m
 				break
 		return m
 
@@ -157,7 +157,7 @@ class Box
 		assert .compiler
 		# return .compiler.typeType
 		t = .compiler.libraryType('System', 'Type')
-		assert t is not nil
+		assert t
 		return t
 
 	get typeForReceiver as IType is override
@@ -233,7 +233,7 @@ class Box
 
 	def _bindInterfaces
 		# structs, classes and interfaces can all have 0 or more interfaces they inherit/implement
-		assert _baseInterfaceNodes is not nil, this
+		assert _baseInterfaceNodes, this
 		for node in _baseInterfaceNodes
 			try
 				baseWhat = node.bindInt().namedType
@@ -251,7 +251,7 @@ class Box
 						_baseInterfaces.add(baseWhat.theWrappedType to Interface)
 						_baseInterfaceTypes.add(baseWhat)
 					else
-						assert baseWhat.theWrappedType<>nil, baseWhat.toTechString()
+						assert baseWhat.theWrappedType, baseWhat.toTechString()
 						.throwError('Cannot inherit "[baseWhat.theWrappedType.name]" which is a [baseWhat.theWrappedType.englishName].')
 				else
 					_badInterfaceError(baseWhat to IType)  # CC: axe type cast
@@ -294,7 +294,7 @@ class Box
 
 	get isGenericDef as bool is override
 		# TODO: make this more efficient, maybe be computing in the constructor
-		if _params
+		if _params.count
 			for param in _params
 				if not param inherits GenericParam
 					return false
@@ -368,7 +368,7 @@ class Box
 	def cloneCollections is override
 		base.cloneCollections()
 		_params = List<of IType>(_params)  # TODO: Can I just say _params.clone? Do I need the cast?
-		if _constructedTypes<>nil
+		if _constructedTypes
 			# CC: _constructedTypes = Dictionary<of String, IType>(_constructedTypes)
 			orig as Dictionary<of String, IType>?
 			$sharp('orig = _constructedTypes;')
@@ -409,7 +409,7 @@ class Box
 		throw OverrideException(.getType)
 
 	get sharpRef as String is override
-		if _params
+		if _params.count
 			sb = StringBuilder()
 			# generic
 			name = .rootName
@@ -431,7 +431,7 @@ class Box
 			return
 		.writeSharpIsNames(sw)
 		sw.write('[.sharpKeyWord] [.rootName]')
-		if _params
+		if _params.count
 			sw.write('<')
 			sep = ''
 			for param in _params
@@ -448,7 +448,7 @@ class Box
 			sw.write(inter.sharpRef)
 			sep = ', '
 
-		if _params
+		if _params.count
 			sw.indent()
 			for param in _params
 				if param inherits GenericParam
@@ -525,7 +525,7 @@ class Class
 			if .isDescendantOfInterface(type)
 				return true
 		assert .baseClass is not this, this  # check for direct cycles
-		if .baseClass<>nil
+		if .baseClass
 			return .baseClass.isDescendantOf(type)
 		else
 			return false
@@ -540,7 +540,7 @@ class Class
 		# if not .isGeneric
 		# 	assert .didBindInt  # TODO: is this legit? if so, push up to Container
 		m = base.memberForName(name)
-		if m is nil and _baseClass is not nil
+		if m is nil and _baseClass
 			m = _baseClass.memberForName(name)
 		if m is nil
 			m = .interfaceMemberForName(name)
@@ -570,7 +570,7 @@ class Class
 		haveThis.
 		"""
 		m = base.symbolForName(name, canBeMember, haveThis)
-		if m is nil and _baseClass is not nil
+		if m is nil and _baseClass
 			m = _baseClass.memberForName(name)
 		return m
 
@@ -605,7 +605,7 @@ class Class
 		if not foundConstructor
 			# TODO: at some point this should be changed to provide cover constructors for each of the public, inherited constructors
 			.addDecl(Constructor(.token, this, List<of Param>(), ['public'], ''))
-		if _baseClass is not nil
+		if _baseClass
 			_baseClass.bindInt
 		base._bindInt()
 
@@ -617,7 +617,7 @@ class Class
 
 	def _finishOverloads
 		# deal with inheritance and overloads
-		assert _baseClass is not nil or _name=='Object'
+		assert _baseClass or _name=='Object'
 		if _baseClass
 			#assert _baseClass.didBindInt
 			if not _baseClass.didBindInt
@@ -625,7 +625,7 @@ class Class
 			for decl in List<of IMember>(_declsInOrder)
 				if decl inherits Method and not decl inherits Constructor
 					other = _baseClass.memberForName(decl.name)
-					if other is not nil
+					if other
 						if decl inherits MemberOverload
 							overload = decl
 						else if decl inherits BoxMember
@@ -668,7 +668,7 @@ class Class
 			sw.write(_baseClass.sharpRef)
 			didWrite = true
 		if didWrite
-			if _baseInterfaces
+			if _baseInterfaces.count
 				sw.write(', ')
 			else
 				sw.write(' ')
@@ -717,7 +717,7 @@ class Interface
 		return 'interface'
 
 	def writeSharpInheritance(sw as SharpWriter) is override
-		if _baseInterfaces
+		if _baseInterfaces.count
 			sw.write(' : ')
 
 	def writeSharpTest(sw as SharpWriter) is override
@@ -807,8 +807,7 @@ class GenericParam
 		if type.superType is nil  # the root type
 			return true
 		for constraint in _constraints
-			r = constraint.isDescendantOf(type)
-			if r
+			if constraint.isDescendantOf(type)
 				return true
 		return false
 
@@ -825,7 +824,7 @@ class GenericParam
 		sw.write(.name)
 
 	def writeSharpConstraint(sw as SharpWriter)
-		if _constraints
+		if _constraints.count
 			sw.write('where [_name] :  ')
 			sep = ''
 			for constraint in _constraints

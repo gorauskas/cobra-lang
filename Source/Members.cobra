@@ -104,7 +104,7 @@ class BoxMember
 		"""
 		A hook for subclasses to add the virtual keyword to _isNames, if appropriate.
 		"""
-		require _isNames is not nil
+		require _isNames
 		pass
 
 	## INamedNode
@@ -177,7 +177,7 @@ class BoxMember
 
 	def addSubFields is override
 		base.addSubFields
-		if _isNames
+		if _isNames.count
 			.addField('isNames', _isNames)
 		.addField('docString', _docString)
 
@@ -197,14 +197,14 @@ class BoxMember
 
 	def writeSharpParams(sw as SharpWriter, parens as String)
 		require parens.length==2 or parens==''
-		if parens
+		if parens.length
 			sw.write(parens[0])
 		sep = ''
 		for param in .params
 			sw.write(sep)
 			param.writeSharpDef(sw)
 			sep = ', '
-		if parens
+		if parens.length
 			sw.write(parens[1].toString+' ')
 
 	def writeSharpIsNames(sw as SharpWriter)
@@ -212,7 +212,7 @@ class BoxMember
 		# if isNames is nil
 		#	isNames = _isNames
 		isNames = List<of String>()
-		if _isNames
+		if _isNames.count
 			isNames.addRange(_isNames)
 		if .defaultAccessLevel
 			found = false
@@ -232,7 +232,7 @@ class BoxMember
 			sw.write(sep)
 			sw.write(name)
 			sep = ' '
-		if sep
+		if sep.length
 			sw.write(' ')
 
 
@@ -273,7 +273,7 @@ class ClassVar
 	pro ifInheritsStack from var
 
 	get requiresDotPrefix as bool
-		return _box is not nil and not _name.startsWith('_')
+		return _box and not _name.startsWith('_')
 
 	get useCSNameStack from var
 
@@ -307,14 +307,14 @@ class ClassVar
 
 	get typeForReceiver as IType is override
 		assert .resultType
-		return if(_ifInheritsStack, _ifInheritsStack.peek, .resultType to IType)
+		return if(_ifInheritsStack.count, _ifInheritsStack.peek, .resultType to IType)
 
 	## IVar
 
 	pro type as IType?
 		get
 			require _type
-			return if(_ifInheritsStack, _ifInheritsStack.peek, _type)
+			return if(_ifInheritsStack.count, _ifInheritsStack.peek, _type)
 		set
 			assert false, 'Cannot set the type of a ClassVar.'
 
@@ -324,7 +324,7 @@ class ClassVar
 		return List<of String>(_useCSNameStack)
 
 	get sharpRef as String is override
-		return if(_useCSNameStack, _useCSNameStack.peek, _name)
+		return if(_useCSNameStack.count, _useCSNameStack.peek, _name)
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
@@ -337,7 +337,7 @@ class ClassVar
 		sw.write(';\n')
 
 	get sharpName as String is override
-		return if(_useCSNameStack, _useCSNameStack.peek, .name)
+		return if(_useCSNameStack.count, _useCSNameStack.peek, .name)
 
 
 class AbstractMethod
@@ -363,7 +363,7 @@ class AbstractMethod
 	var _locals as List<of LocalVar>
 	var _stmts as List<of Stmt>
 	var _hasReturnStmt as bool
-	var _sharpResultVarName as String?
+	var _sharpResultVarName = ''
 
 	def init(token as IToken, box as Box, name as String, paramsList as List<of Param>, isNames as List<of String>, docString as String)
 		base.init(token, box, name, isNames, docString)
@@ -408,7 +408,7 @@ class AbstractMethod
 	get resultType as IType is override
 		or require
 			.didBindInt
-			_returnType is not nil
+			_returnType
 		body
 			return _returnType to IType  # CC: to !
 
@@ -439,7 +439,7 @@ class AbstractMethod
 			.findLocal(local.name) is nil  # TODO: , 'symbol=[symbol], symbolForName=[.symbolForName(symbol.name)]'
 		body
 			other = .findLocalCI(local.name)
-			if other is not nil
+			if other
 				.throwError('Parameters and locals must vary by more than just their case. Change "[local.name]" or "[other.name]" to match, or rename one of them to something different.')
 			local.isTracked = true
 			_locals.add(local)
@@ -447,7 +447,7 @@ class AbstractMethod
 	def removeLocal(name as String)
 		require
 			name
-			.findLocal(name) is not nil
+			.findLocal(name)
 		body
 			for i = 0 .. _locals.count
 				if _locals[i].name==name
@@ -508,10 +508,10 @@ class AbstractMethod
 			local.bindImp
 		if _requirePart
 			_requirePart.bindImp
-		if _ensurePart and _returnType is not nil and _returnType is not .compiler.voidType
+		if _ensurePart and _returnType and _returnType is not .compiler.voidType
 			_sharpResultVarName = '_lh_result_[_box.makeNextPrivateSerialNumber]'
 		else
-			_sharpResultVarName = nil
+			_sharpResultVarName = ''
 		for stmt in _stmts
 			try
 				stmt.bindImp
@@ -526,10 +526,10 @@ class AbstractMethod
 		.compiler.codeMemberStack.pop
 
 	def computeMatchingBaseMember
-		if _matchingBaseMember is not nil
+		if _matchingBaseMember
 			return
 		if _box inherits Class
-			if _box.baseClass is not nil
+			if _box.baseClass
 				baseMember = _box.baseClass.memberForName(_name)
 				if baseMember is nil
 					pass
@@ -550,7 +550,7 @@ class AbstractMethod
 
 	def checkForUnmarkedOverrideOrNew
 		# require called computeMatchingBaseMember  # CC:? TODO?
-		if 'new' not in .isNames and 'override' not in .isNames and _matchingBaseMember is not nil
+		if 'new' not in .isNames and 'override' not in .isNames and _matchingBaseMember
 			.throwError('Member "[_name]" also exists in the base class. You must specify "is override" or "is new", or change the name.')
 
 	def checkForUnusedVariables
@@ -573,7 +573,7 @@ class AbstractMethod
 		.writeSharpLocals(sw, nil, false)
 		if _ensurePart
 			sw.write('bool _lh_canEnsure = true;\n')
-			if _sharpResultVarName  # set in _bindImp
+			if _sharpResultVarName.length  # set in _bindImp
 				sw.write('[_returnType.sharpRef] [_sharpResultVarName] = [_returnType.csInit];\n')
 			sw.writeAndIndent('try {\n')
 		for stmt in _stmts
@@ -603,14 +603,14 @@ class AbstractMethod
 
 	def writeSharpPassArgs(sw as SharpWriter, parens as String)
 		require parens.length==2 or parens==''
-		if parens
+		if parens.length
 			sw.write(parens[0])
 		sep = ''
 		for param in _params
 			sw.write(sep)
 			sw.write(param.name)
 			sep = ', '
-		if parens
+		if parens.length
 			sw.write(parens[1])
 
 	# TODO: axe?
@@ -624,35 +624,35 @@ class AbstractMethod
 		.writeSharpOldAssignments(sw)
 		if locals is nil
 			locals = _locals
-		if locals
+		if locals.count
 			sw.write('// locals\n')
 			for local in locals
 				if not local.isImplicit
 					sw.write('[local.type.sharpRef] [local.name]')
 					init = local.type.csInit
-					if init
+					if init.length
 						sw.write(' = [init]')
 					sw.write(';\n')
 
 	def writeSharpOldAssignments(sw as SharpWriter)
-		if .isOverride and .matchingBaseMember is not nil
+		if .isOverride and .matchingBaseMember
 			(.matchingBaseMember to AbstractMethod).writeSharpOldAssignments(sw)
 		for oldExpr in _oldExprs
 			oldExpr.writeSharpAssignment(sw)
 
 	def writeSharpEnsureArgs(sw as SharpWriter)
-		if .sharpResultVarName
+		if .sharpResultVarName.length
 			sw.write('[.sharpResultVarName]')
 			sep = [',']
 		else
 			sep = ['']
 		_writeSharpOldArgs(sw, sep)
-		if .params
+		if .params.count
 			sw.write(sep[0])
 		.writeSharpPassArgs(sw, '')  # these have to come last, because they might include a C# "params" which has to be last
 
 	def _writeSharpOldArgs(sw as SharpWriter, sep as List<of String>)
-		if .isOverride and .matchingBaseMember is not nil
+		if .isOverride and .matchingBaseMember
 			assert .matchingBaseMember is not this
 			(.matchingBaseMember to AbstractMethod)._writeSharpOldArgs(sw, sep)
 		for oldExpr in _oldExprs
@@ -661,7 +661,7 @@ class AbstractMethod
 			sep[0] = ', '
 
 	def writeSharpEnsureParamDecls(sw as SharpWriter)
-		if .sharpResultVarName
+		if .sharpResultVarName.length
 			sw.write('[.resultType.sharpRef] [.sharpResultVarName]')
 			sep = [',']
 		else
@@ -674,7 +674,7 @@ class AbstractMethod
 			sep[0] = ', '
 
 	def _writeSharpOldParamDecls(sw as SharpWriter, sep as List<of String>)
-		if .isOverride and .matchingBaseMember is not nil
+		if .isOverride and .matchingBaseMember
 			assert .matchingBaseMember is not this
 			(.matchingBaseMember to AbstractMethod)._writeSharpOldParamDecls(sw, sep)
 		for oldExpr in _oldExprs
@@ -743,7 +743,7 @@ class Constructor
 		pass
 
 	get lastToken as IToken
-		if _stmts
+		if _stmts.count
 			return _stmts[_stmts.count-1].lastToken  # CC: say: _stmts.last.token
 		else
 			return .token
@@ -763,7 +763,7 @@ class Constructor
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		first = if(_stmts, _stmts[0], nil)
+		first = if(_stmts.count, _stmts[0], nil)
 		callConstructor as String? = nil
 		if first inherits DotExpr
 			if first.left inherits ThisLit or first.left inherits BaseLit
@@ -836,7 +836,7 @@ class Method
 
 	get defaultAccessLevel as String is override
 		dal = base.defaultAccessLevel
-		if dal and not _implementsType and not _implementsTypeNode
+		if dal.length and not _implementsType and not _implementsTypeNode
 			return dal
 		else
 			return ''
@@ -848,7 +848,7 @@ class Method
 	def _bindImp is override
 		numErrors = .compiler.errors.count
 		base._bindImp
-		if _implementsTypeNode is not nil
+		if _implementsTypeNode
 			_implementsTypeNode.bindAll
 			assert _implementsTypeNode.namedType
 			_implementsType = _implementsTypeNode.namedType
@@ -916,14 +916,14 @@ class ProperDexer
 
 	def makeGetPart(token as IToken) as AbstractMethod
 		require .getPart is nil
-		ensure .getPart is not nil
+		ensure .getPart
 		throw OverrideException()
 		# CC: shouldn't need a return:
 		return nil to passthrough
 
 	def makeSetPart(token as IToken) as AbstractMethod
 		require .setPart is nil
-		ensure .setPart is not nil
+		ensure .setPart
 		throw OverrideException()
 		# CC: shouldn't need a return:
 		return nil to passthrough
@@ -1296,11 +1296,11 @@ class RequirePart
 			# an overriding method does not define `require` then it is inheriting the `require` of
 			# its matching base method.
 			codeMember = _codeMember
-			assert codeMember is not nil
+			assert codeMember
 			count = 0
 			n = 1
-			while codeMember is not nil  # CC: make 'post'
-				if not codeMember.box.isFake and codeMember.requirePart is not nil and (not codeMember.requirePart.isImplicit or codeMember.matchingBaseMember is nil)
+			while codeMember  # CC: make 'post'
+				if not codeMember.box.isFake and codeMember.requirePart and (not codeMember.requirePart.isImplicit or codeMember.matchingBaseMember is nil)
 					count += 1
 					sw.write('try {\n')
 					sw.indent
@@ -1384,9 +1384,9 @@ class EnsurePart
 		sw.indent
 		if _codeMember.isOverride
 			codeMember = _codeMember
-			assert codeMember is not nil
-			while codeMember is not nil  # CC: make 'post'
-				if not codeMember.box.isFake and codeMember.ensurePart is not nil # TODO: axe: and (not codeMember.ensurePart.isImplicit or codeMember.matchingBaseMember is nil)
+			assert codeMember
+			while codeMember  # CC: make 'post'
+				if not codeMember.box.isFake and codeMember.ensurePart # TODO: axe: and (not codeMember.ensurePart.isImplicit or codeMember.matchingBaseMember is nil)
 					sw.write('[codeMember.ensurePart.sharpMethodName](')
 					_codeMember.writeSharpEnsureArgs(sw)
 					sw.write(');\n')

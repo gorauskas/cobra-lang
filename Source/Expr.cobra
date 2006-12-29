@@ -83,14 +83,14 @@ class Expr
 				else
 					break
 			container = t to? IContainer
-			if container is not nil
+			if container
 				return container.memberForName(name)
 			else
 				# TODO: at some point this might be an error to access a member of a nilable type, but not for now...
 				if t inherits NilableType
 					nt = t to NilableType
 					container = nt.theWrappedType to? IContainer
-					if container is not nil
+					if container
 						return container.memberForName(name)
 				return nil
 
@@ -265,7 +265,7 @@ class AsExpr
 		# but if it is the right hand side like so:
 		#		_x = x as int = 5
 		# then it is, in fact, being used.
-		if _definition is not nil and .superNode inherits BinaryOpExpr
+		if _definition and .superNode inherits BinaryOpExpr
 			if .binarySuperNode.right is this
 				# case: x = y as int
 				_definition.isUsed = true
@@ -378,7 +378,7 @@ class CallExpr
 						type = possibleDefinition.resultType
 					handled = true
 			if handled
-				assert type is not nil
+				assert type
 			else
 				# handle instantiation such Car() or t() (where t is a System.Type)
 				canBeMember = .compiler.canNameBeMember(_name)
@@ -390,7 +390,7 @@ class CallExpr
 				if definition is nil
 					.throwError('Cannot find "[_name]".')
 				_isCallOnSystemType = not definition inherits Box and not definition inherits Method and not definition inherits MemberOverload
-			if definition is not nil
+			if definition
 				if definition inherits IVar
 					# such as having:
 					#	t as Type
@@ -545,7 +545,7 @@ class ForExpr
 		else
 			assert _nameExpr.hasError, _nameExpr
 		_varNumber = .compiler.curBox.makeNextPrivateSerialNumber
-		if _whereExpr is not nil
+		if _whereExpr
 			_whereExpr.bindImp
 			if _whereExpr.type is not .compiler.boolType
 				_whereExpr = TruthExpr(_whereExpr).bindAll to TruthExpr  # CC: axe cast when have "as this"
@@ -644,7 +644,7 @@ class IdentifierExpr
 					if _superNode.right is this
 						curBox = .compiler.boxStack.peek()
 						definition = curBox.symbolForName(_name, true, true)
-						if definition is not nil
+						if definition
 							.throwError('You must refer to non-underscored members with a leading dot (.). Member name is "[_name]".')
 
 			# TODO: The effect of using symbolForName() just above and the next 3 lines is that class members mask globals of the same name. This will become a problem when module-level functions are supported.
@@ -668,7 +668,7 @@ class IdentifierExpr
 
 	def bindImp as INode
 		base.bindImp
-		if _definition is not nil
+		if _definition
 			_definition.isUsed = true
 		return this
 
@@ -1032,7 +1032,7 @@ class MemberExpr
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		assert .superNode inherits DotExpr
 		sw.write(Utils.capped(_name))
-		if _definition is not nil and _definition.isMethod or _name=='toString'
+		if _definition and _definition.isMethod or _name=='toString'
 			sw.write('()')
 
 
@@ -1258,11 +1258,11 @@ class SliceExpr
 			return true
 		if _target.hasError
 			return true
-		if _start is not nil and _start.hasError
+		if _start and _start.hasError
 			return true
-		if _stop is not nil and _stop.hasError
+		if _stop and _stop.hasError
 			return true
-		if _step is not nil and _step.hasError
+		if _step and _step.hasError
 			return true
 		return false
 
@@ -1276,7 +1276,7 @@ class SliceExpr
 		success
 			if not _isSequence(_target.type to IType)  # to !
 				.throwError('Cannot slice values of type "[_target.type.name]". You can slice strings, arrays, IList and IList<of>.')
-		if _start is not nil
+		if _start
 			try
 				_start.bindImp
 			catch ne as NodeException
@@ -1284,7 +1284,7 @@ class SliceExpr
 			success
 				if not _start.isKindOf(intType)
 					_start.recordError('The start index of the slice is type "[_start.type.name]", but should be "int".')
-		if _stop is not nil
+		if _stop
 			try
 				_stop.bindImp
 			catch ne as NodeException
@@ -1292,7 +1292,7 @@ class SliceExpr
 			success
 				if not _stop.isKindOf(intType)
 					_stop.recordError('The stop index of the slice is type "[_stop.type.name]", but should be "int".')
-		if _step is not nil
+		if _step
 			try
 				_step.bindImp
 			catch ne as NodeException
@@ -1309,12 +1309,12 @@ class SliceExpr
 		sb = StringBuilder()
 		sb.append(_target.toCobraSource)
 		sb.append(r'[')
-		if _start is not nil
+		if _start
 			sb.append(_start.toCobraSource)
 		sb.append(':')
-		if _stop is not nil
+		if _stop
 			sb.append(_stop.toCobraSource)
-		if _step is not nil
+		if _step
 			sb.append(':')
 			sb.append(_step.toCobraSource)
 		sb.append(']')
@@ -1430,12 +1430,12 @@ class TypeExpr
 
 	def _bindImp is override
 		base._bindImp()
-		if _typeNode is not nil
+		if _typeNode
 			_typeNode.bindImp()
 			t = _typeNode.namedType
 			if t is nil
 				assert false, 'when does this happen?'
-			if t is not nil  # CC: use 'else'
+			if t  # CC: use 'else'
 				_containedType = t
 				_receiverType = t
 		_type = .compiler.typeType
@@ -1931,7 +1931,7 @@ class ListLit
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		innerType = (_type to Box).params[0]
 		sw.write('CobraImp.MakeList<[innerType.sharpRef]>(typeof([_type.sharpRef])')
-		if _exprs
+		if _exprs.count
 			sw.write(', ')
 			sep = ''
 			for expr in _exprs
@@ -2002,7 +2002,7 @@ class DictLit
 		keyType   = (_type to Box).params[0]
 		valueType = (_type to Box).params[1]
 		sw.write('CobraImp.MakeDict<[keyType.sharpRef],[valueType.sharpRef]>(typeof([_type.sharpRef])')
-		if _entries
+		if _entries.count
 			sw.write(', ')
 			sep = ''
 			for entry in _entries
