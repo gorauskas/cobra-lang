@@ -335,6 +335,16 @@ class Parser
 		else
 			return ''
 
+	def idOrKeyword as IToken
+		token = .grab
+		if token is nil
+			.throwError('Expecting an identifier or keyword.')
+		else if token.isKeyword or token.which=='ID'
+			return token to IToken  # CC: axe cast
+		else
+			.throwError('Expecting an identifier or keyword, but got [token] instead.')
+		throw FallThroughException(token)  # CC: axe when throwError() can be marked as always throwing
+
 	def indent as IToken
 		"""
 		Consumes an option COLON (which generates a warning), 1 or more EOLs and an INDENT.
@@ -914,7 +924,7 @@ class Parser
 		require _typeProvider
 		token = .expect('DEF')
 		opener = .grab
-		if opener.which not in ['ID', 'OPEN_CALL']
+		if opener.which not in ['ID', 'OPEN_CALL'] and not opener.isKeyword
 			.throwError('Encountered [opener.which] when expecting an identifier.')
 		name = opener.value to String
 		curClass = .curBox
@@ -966,7 +976,7 @@ class Parser
 			else if name=='destruct'
 				if returnType is not .typeProvider.voidType
 					.throwError('Cannot declare a return type for destruct.')
-				if paramsList
+				if paramsList.count
 					.throwError('Cannot declare parameters for destruct.')
 				if 'shared' in isNames
 					.throwError('Cannot declare a shared destructor.')
@@ -1026,7 +1036,7 @@ class Parser
 					overload = MemberOverload(other)
 					.curBox.registerOverload(overload to MemberOverload)  # CC: axe typecast
 		else
-			name = .expect('ID').text
+			name = .idOrKeyword.text
 			.checkProperty(name)
 			if .optional('FROM')
 				return .declarePropertyFrom(token, name, 'getset')
@@ -1119,7 +1129,7 @@ class Parser
 					overload = MemberOverload(other)
 					.curBox.registerOverload(overload to MemberOverload)  # CC: axe typecast
 		else
-			name = .expect('ID').text
+			name = .idOrKeyword.text
 			.checkProperty(name)
 			if .optional('FROM')
 				return .declarePropertyFrom(token, name, 'get')
@@ -1165,7 +1175,7 @@ class Parser
 				_foo = value
 		"""
 		token = .expect('SET')
-		name = .expect('ID').text
+		name = .idOrKeyword.text
 		.checkProperty(name)
 		if .optional('FROM')
 			return .declarePropertyFrom(token, name, 'set')
@@ -1939,9 +1949,10 @@ class Parser
 		else if peek=='DOT'
 			# leading dot
 			token = .grab
-			peek = .peek.which
-			if peek=='ID'
-				memberToken = .expect('ID')
+			peekToken = .peek
+			peek = peekToken.which
+			if peek=='ID' or peekToken.isKeyword
+				memberToken = .idOrKeyword
 				expr = MemberExpr(memberToken, memberToken.text) to Expr
 			else if peek=='OPEN_CALL'
 				expr = .callExpr
@@ -1999,6 +2010,8 @@ class Parser
 			return .identifierExpr
 		else if peek=='SHARP_OPEN'
 			return .sharpExpr
+		else if .opStack.count and .opStack.peek=='DOT' and .peek.isKeyword
+			return .identifierExpr
 		else
 			try
 				return .typeExpr
@@ -2094,7 +2107,7 @@ class Parser
 		"""
 		Can return an IdentifierExpr or an AsExpr if the user says "i as int", for example.
 		"""
-		nameToken = .expect('ID')
+		nameToken = .idOrKeyword
 		name = nameToken.text
 		if .opStack.count and .opStack.peek=='DOT'
 			return MemberExpr(nameToken, name)
