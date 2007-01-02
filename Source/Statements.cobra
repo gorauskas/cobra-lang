@@ -562,11 +562,14 @@ class IfStmt
 						ifInherits = true
 						_trueStmts.setIfInherits(leftVar, leftVar.ifInheritsStack.peek())
 			if not ifInherits
+				# check for an if-not-nil
 				if cond inherits TruthExpr
 					if cond.expr inherits IdentifierExpr
 						leftVar = (cond.expr to IdentifierExpr).definition
-						if leftVar.typeForIdentifier inherits NilableType
+						leftType = leftVar.typeForIdentifier
+						if leftType inherits NilableType or (leftType.isReference and leftType is not .compiler.libraryType('System', 'Object'))
 							# if x ...
+							# Note: The check for System.Object just above is due to the fact that a type of System.Object can point to boxed values such as ints and bools which Cobra will treat properly at runtime.
 							notNil = true
 			if not ifInherits and not notNil
 				if cond inherits CompareExpr
