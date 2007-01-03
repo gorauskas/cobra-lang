@@ -294,8 +294,7 @@ class CobraType
 		# TODO: is this essential? if so, perhaps "namedType" --> "effectiveType"
 		return this
 
-	get superType as IType?
-		return _superType
+	get superType from var
 
 	get isGenericDef as bool
 		return false
@@ -989,7 +988,9 @@ class QualifiedType
 			else
 				node = initNode.memberFrom(prevNode to Container)  # CC: axe cast if "else" is smart about "not nil"
 				if node is nil
-					.throwError('Cannot find "[initNode.name]" in [prevNode.name].')
+					# TODO: there is no line number info because this is a type, not a syntax node.
+					# ANOTHER example of how QualifiedType needs to be reworked.
+					.throwError('*** Cannot find "[initNode.name]" in [prevNode.name].')
 				if node inherits Container
 					node.bindInt()
 					_boundNodes.add(node)
@@ -1001,11 +1002,10 @@ class QualifiedType
 			sep = '.'
 		_wrappedType = _boundNodes[_boundNodes.count-1]
 		base._bindInt()
-		if _superType is nil
-			_superType = _wrappedType.superType
-			# TODO: are the following 2 lines needed?
-			if _superType is nil
-				_superType = .compiler.typeType
+
+	get superType as IType? is override
+		assert .didBindInt
+		return _wrappedType.superType
 
 	## Code gen
 
