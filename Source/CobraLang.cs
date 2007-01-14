@@ -137,33 +137,46 @@ public interface ICallable {
 
 public class AssertException : Exception {
 
-	protected string _fileName;
-	protected int    _lineNumber;
-	protected string _conditionSource;
-	protected object _info;
+	protected string   _fileName;
+	protected int      _lineNumber;
+	protected object[] _expressions;
+	protected object   _info;
 
-	public AssertException(string fileName, int lineNumber, string conditionSource, object info)
-		: this(fileName, lineNumber, conditionSource, info, null) {
+	public AssertException(string fileName, int lineNumber, object[] expressions, object info)
+		: this(fileName, lineNumber, expressions, info, null) {
 	}
 
-	public AssertException(string fileName, int lineNumber, string conditionSource, object info, Exception innerExc)
+	public AssertException(string fileName, int lineNumber, object[] expressions, object info, Exception innerExc)
 		: base("assert", innerExc) {
 		_fileName = fileName;
 		_lineNumber = lineNumber;
-		_conditionSource = conditionSource;
+		_expressions = expressions;
 		_info = info;
 	}
 
 	public override string Message {
 		get {
+			StringBuilder sb = new StringBuilder("\n");
+			sb.AppendFormat("location = {0}:{1}\n", _fileName, _lineNumber);
 			string info = null;
 			try {
 				info = CobraCore.ToTechString(_info);
 			} catch (Exception e) {
-				info = "Exception: " + e.Message;
+				info = "toTechString exception: " + e.Message;
 			}
-			return string.Format("location={0}:{1}, info={2}, source={3}",
-				_fileName, _lineNumber, info, _conditionSource);
+			sb.AppendFormat("info = {0}\n", info);
+			for (int i=2; i<_expressions.Length; i+=2) {
+				string source = (string)_expressions[i-1];
+				object value = _expressions[i];
+				string valueString;
+				try {
+					valueString = CobraCore.ToTechString(value);
+				} catch (Exception e) {
+					valueString = "toTechString exception: " + e.Message;
+				}
+				sb.AppendFormat("{0} = {1}\n", source, valueString);
+			}
+			return sb.ToString();
 		}
 	}
 
@@ -180,12 +193,12 @@ public class RequireException : AssertException {
 
 	RequireException _next;
 
-	public RequireException(string fileName, int lineNumber, string conditionSource, object info)
-		: this(fileName, lineNumber, conditionSource, info, null) {
+	public RequireException(string fileName, int lineNumber, object[] expressions, object info)
+		: this(fileName, lineNumber, expressions, info, null) {
 	}
 
-	public RequireException(string fileName, int lineNumber, string conditionSource, object info, Exception innerExc)
-		: base(fileName, lineNumber, conditionSource, info, innerExc) {
+	public RequireException(string fileName, int lineNumber, object[] expressions, object info, Exception innerExc)
+		: base(fileName, lineNumber, expressions, info, innerExc) {
 	}
 
 	public RequireException Next {
@@ -202,12 +215,12 @@ public class RequireException : AssertException {
 
 public class EnsureException : AssertException {
 
-	public EnsureException(string fileName, int lineNumber, string conditionSource, object info)
-		: this(fileName, lineNumber, conditionSource, info, null) {
+	public EnsureException(string fileName, int lineNumber, object[] expressions, object info)
+		: this(fileName, lineNumber, expressions, info, null) {
 	}
 
-	public EnsureException(string fileName, int lineNumber, string conditionSource, object info, Exception innerExc)
-		: base(fileName, lineNumber, conditionSource, info, innerExc) {
+	public EnsureException(string fileName, int lineNumber, object[] expressions, object info, Exception innerExc)
+		: base(fileName, lineNumber, expressions, info, innerExc) {
 	}
 
 }

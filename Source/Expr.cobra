@@ -169,6 +169,19 @@ class Expr
 		.writeSharpDef(sw, false)
 		sw.write(';\n')
 
+	def writeSharpBreakdown(sw as SharpWriter)
+		sw.write(r'new object[] { 0')
+		.writeSharpBreakdownItems(sw)
+		sw.write('}, ')
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		src = Utils.csStringLitFor(.toCobraSource)
+		sw.write(', [src], ')
+		.writeSharpDefForBreakdown(sw)
+
+	def writeSharpDefForBreakdown(sw as SharpWriter)
+		.writeSharpDef(sw)
+
 
 class NameExpr
 	inherits Expr
@@ -505,6 +518,12 @@ class CallExpr
 		if _isNew and parens
 			sw.write(')')
 
+	def writeSharpBreakdownItems(sw as SharpWriter) is override
+		# leaving out the base call is intentional:
+		# base.writeSharpBreakdownItems(sw)
+		for expr in _args
+			expr.writeSharpBreakdownItems(sw)
+
 
 class ForExpr
 	inherits Expr
@@ -728,6 +747,13 @@ class IdentifierExpr
 			else
 				return nil
 
+	def writeSharpDefForBreakdown(sw as SharpWriter)
+		sharpName = .sharpName
+		if (.type inherits TypeType or .isKindOf(.compiler.libraryType('System', 'Type'))) and .definition inherits IType and 'typeof(' not in sharpName
+			sw.write('typeof([.sharpName])')
+		else
+			base.writeSharpDefForBreakdown(sw)
+
 
 class IfExpr
 	inherits Expr
@@ -799,6 +825,10 @@ class IfExpr
 
 	def toCobraSource as String is override
 		return 'if([_cond.toCobraSource], [_tpart.toCobraSource], [_fpart.toCobraSource])'
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		_cond.writeSharpBreakdownItems(sw)
 
 
 class IndexExpr
@@ -881,6 +911,12 @@ class IndexExpr
 		if parens
 			sw.write(')')
 
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		_target.writeSharpBreakdownItems(sw)
+		for expr in _args
+			expr.writeSharpBreakdownItems(sw)
+
 
 class IsNilExpr
 	inherits Expr
@@ -912,6 +948,10 @@ class IsNilExpr
 		sw.write('==null')
 		if parens
 			sw.write(')')
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		_expr.writeSharpBreakdownItems(sw)
 
 
 class IsNotNilExpr
@@ -947,6 +987,10 @@ class IsNotNilExpr
 		sw.write('!=null')
 		if parens
 			sw.write(')')
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		_expr.writeSharpBreakdownItems(sw)
 
 
 class MemberExpr
@@ -1034,6 +1078,9 @@ class MemberExpr
 		sw.write(Utils.capped(_name))
 		if _definition and _definition.isMethod or _name=='toString'
 			sw.write('()')
+
+	def writeSharpBreakdownItems(sw as SharpWriter) is override
+		pass
 
 
 class OldExpr
@@ -1195,6 +1242,12 @@ class PostCallExpr
 		if parens
 			sw.write(')')
 
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		_expr.writeSharpBreakdownItems(sw)
+		for expr in _args
+			expr.writeSharpBreakdownItems(sw)
+
 
 class SharpExpr
 	inherits Expr
@@ -1340,6 +1393,16 @@ class SliceExpr
 			_step.writeSharpDef(sw, false)
 		sw.write(')')
 
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		_target.writeSharpBreakdownItems(sw)
+		if _start
+			_start.writeSharpBreakdownItems(sw)
+		if _stop
+			_stop.writeSharpBreakdownItems(sw)
+		if _step
+			_step.writeSharpBreakdownItems(sw)
+
 
 class TruthExpr
 	inherits Expr
@@ -1351,11 +1414,12 @@ class TruthExpr
 
 	var _useRuntimeService as bool
 	var _expr as Expr
+	var _origExpr as Expr
 
 	def init(expr as Expr)
 		base.init(expr.token)
 		_useRuntimeService = false
-		_expr = expr
+		_origExpr = _expr = expr
 
 	def addSubFields is override
 		base.addSubFields()
@@ -1387,7 +1451,7 @@ class TruthExpr
 		_type = .compiler.boolType
 
 	def toCobraSource as String is override
-		return _expr.toCobraSource()
+		return _origExpr.toCobraSource()
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		if _useRuntimeService
@@ -1396,6 +1460,11 @@ class TruthExpr
 			sw.write(')')
 		else
 			_expr.writeSharpDef(sw, parens)
+
+	def writeSharpBreakdownItems(sw as SharpWriter) is override
+		# leaving out the base class is intentional:
+		# base.writeSharpBreakdownItems(sw, isFirstExpr)
+		_expr.writeSharpBreakdownItems(sw)
 
 
 class TypeExpr
@@ -1428,6 +1497,10 @@ class TypeExpr
 		base.addSubFields()
 		.addField('typeNode', _typeNode)
 
+	def toCobraSource as String is override
+		assert _containedType
+		return _containedType.name
+
 	def _bindImp is override
 		base._bindImp()
 		if _typeNode
@@ -1443,6 +1516,11 @@ class TypeExpr
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		sw.write(_containedType.sharpRef)
 
+	def writeSharpDefForBreakdown(sw as SharpWriter) is override
+		sw.write('typeof(')
+		.writeSharpDef(sw)
+		sw.write(')')
+
 
 class UnaryOpExpr
 	inherits Expr
@@ -1454,6 +1532,14 @@ class UnaryOpExpr
 		base.init(token)
 		_op = op
 		_expr = expr
+
+	def addMinFields
+		base.addMinFields
+		.addField('op', _op)
+
+	def addSubFields
+		base.addSubFields
+		.addField('expr', _expr)
 
 	get hasError as bool is override
 		if base.hasError
@@ -1503,6 +1589,10 @@ class UnaryOpExpr
 		if parens
 			sw.write(')')
 
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		_expr.writeSharpBreakdownItems(sw)
+
 
 ##
 ## Literals
@@ -1519,6 +1609,9 @@ class Literal
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		sw.write(.asSharp)
+
+	def writeSharpBreakdownItems(sw as SharpWriter) is override
+		pass
 
 
 class AtomicLiteral
@@ -1940,6 +2033,11 @@ class ListLit
 				sep = ', '
 		sw.write(')')
 
+	def writeSharpBreakdownItems(sw as SharpWriter) is override  # CC: axe is override
+		base.writeSharpBreakdownItems(sw)
+		for expr in _exprs
+			expr.writeSharpBreakdownItems(sw)
+
 
 class DictLit
 	inherits CompositeLiteral
@@ -2012,3 +2110,13 @@ class DictLit
 				entry[1].writeSharpDef(sw)
 				sep = ', '
 		sw.write(')')
+
+	def writeSharpBreakdownItems(sw as SharpWriter) is override  # CC: axe is override
+		base.writeSharpBreakdownItems(sw)
+		for entry in _entries
+			# CC: keyExpr, valueExpr = entry
+			keyExpr = entry[0]
+			valueExpr = entry[1]
+			keyExpr.writeSharpBreakdownItems(sw)
+			valueExpr.writeSharpBreakdownItems(sw)
+
