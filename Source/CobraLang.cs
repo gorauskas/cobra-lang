@@ -135,6 +135,23 @@ public interface ICallable {
 }
 
 
+public class CobraDirectString : Object {
+
+	string _s;
+
+	public CobraDirectString(string s) {
+		_s = s;
+	}
+
+	public string String {
+		get {
+			return _s;
+		}
+	}
+
+}
+
+
 public class AssertException : Exception {
 
 	protected string   _fileName;
@@ -168,11 +185,16 @@ public class AssertException : Exception {
 			for (int i=2; i<_expressions.Length; i+=2) {
 				string source = (string)_expressions[i-1];
 				object value = _expressions[i];
+				CobraDirectString dirStr = value as CobraDirectString;
 				string valueString;
-				try {
-					valueString = CobraCore.ToTechString(value);
-				} catch (Exception e) {
-					valueString = "toTechString exception: " + e.Message;
+				if (dirStr!=null) {
+					valueString = dirStr.String;
+				} else {
+					try {
+						valueString = CobraCore.ToTechString(value);
+					} catch (Exception e) {
+						valueString = "toTechString exception: " + e.Message;
+					}
 				}
 				sb.AppendFormat("{0} = {1}\n", source, valueString);
 			}
