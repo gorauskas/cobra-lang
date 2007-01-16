@@ -182,21 +182,35 @@ public class AssertException : Exception {
 				info = "toTechString exception: " + e.Message;
 			}
 			sb.AppendFormat("info = {0}\n", info);
-			for (int i=2; i<_expressions.Length; i+=2) {
-				string source = (string)_expressions[i-1];
-				object value = _expressions[i];
-				CobraDirectString dirStr = value as CobraDirectString;
-				string valueString;
-				if (dirStr!=null) {
-					valueString = dirStr.String;
+			int indentLevel = 1;
+			int i = 1;
+			while (i < _expressions.Length) {
+				object item = _expressions[i];
+				if (item.Equals(+1)) {
+					indentLevel++;
+					i++;
+				} else if (item.Equals(-1)) {
+					indentLevel--;
+					i++;
 				} else {
-					try {
-						valueString = CobraCore.ToTechString(value);
-					} catch (Exception e) {
-						valueString = "toTechString exception: " + e.Message;
+					string source = (string)_expressions[i];
+					object value = _expressions[i+1];
+					CobraDirectString dirStr = value as CobraDirectString;
+					string valueString;
+					if (dirStr!=null) {
+						valueString = dirStr.String;
+					} else {
+						try {
+							valueString = CobraCore.ToTechString(value);
+						} catch (Exception e) {
+							valueString = "toTechString exception: " + e.Message;
+						}
 					}
+					// for (int x = 0; x < indentLevel*4; x++)
+					sb.Append(new String(' ', indentLevel*4));
+					sb.AppendFormat("{0} = {1}\n", source, valueString);
+					i += 2;
 				}
-				sb.AppendFormat("{0} = {1}\n", source, valueString);
 			}
 			return sb.ToString();
 		}
