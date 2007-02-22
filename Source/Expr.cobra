@@ -1992,8 +1992,9 @@ class CompositeLiteral
 		base.init(token)
 
 
-class ListLit
+class SequenceLit
 	inherits CompositeLiteral
+	# CC: mark abstract
 
 	var _exprs as List<of Expr>
 
@@ -2038,13 +2039,16 @@ class ListLit
 				# TODO: get rid of this hack:
 				if type.getType.name=='CobraType'
 					type = .compiler.libraryType('System', 'Object')
-			_type = .compiler.libraryType('System', 'Collections', 'Generic', 'List<of>').constructedTypeFor([type])
+			_type = _makeTypeWith(type)
 			_type.bindAll()
+
+	def _makeTypeWith(type as IType) as IType  # CC: make abstract
+		return nil to passthrough
 
 # TODO
 #	def toCobraSource(self):
 #		sb = []
-#		sb.append('[')
+#		sb.append(_openingBracket)
 #		sep = ''
 #		for expr in self.exprs:
 #			sb.append(sep)
@@ -2052,6 +2056,24 @@ class ListLit
 #			sep = ', '
 #		sb.append(']')
 #		return ''.join(sb)
+
+	def writeSharpBreakdownItems(sw as SharpWriter) is override  # CC: axe is override
+		base.writeSharpBreakdownItems(sw)
+		sw.write(', +1')
+		for expr in _exprs
+			expr.writeSharpBreakdownItems(sw)
+		sw.write(', -1')
+
+
+class ListLit
+	inherits SequenceLit
+
+	# CC: should just inherit this because no initializers are defined
+	def init(token as IToken, exprs as List<of Expr>)
+		base.init(token, exprs)
+
+	def _makeTypeWith(type as IType) as IType is override
+		return .compiler.libraryType('System', 'Collections', 'Generic', 'List<of>').constructedTypeFor([type])
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		innerType = (_type to Box).params[0]
@@ -2065,12 +2087,26 @@ class ListLit
 				sep = ', '
 		sw.write(')')
 
-	def writeSharpBreakdownItems(sw as SharpWriter) is override  # CC: axe is override
-		base.writeSharpBreakdownItems(sw)
-		sw.write(', +1')
-		for expr in _exprs
-			expr.writeSharpBreakdownItems(sw)
-		sw.write(', -1')
+
+class ArrayLit
+	inherits SequenceLit
+
+	# CC: should just inherit this because no initializers are defined
+	def init(token as IToken, exprs as List<of Expr>)
+		base.init(token, exprs)
+
+	def _makeTypeWith(type as IType) as IType is override
+		return ArrayType(type)
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		sw.write('new [_type.sharpRef] { ')
+		if _exprs.count
+			sep = ''
+			for expr in _exprs
+				sw.write(sep)
+				expr.writeSharpDef(sw, false)
+				sep = ', '
+		sw.write(' }')
 
 
 class DictLit
