@@ -77,6 +77,7 @@ class CobraTokenizer
 			r'INDENT_MIXED_1		^[\t]+[ ]+',
 			r'INDENT_MIXED_2		^[ ]+[\t]+',
 			r'INDENT_ALL_TABS		^[\t]+',
+			r'INDENT_ALL_SPACES		^[ ]+',
 			r'NO_INDENT				^(?=[^\t\n#])',
 			r'EOL					\n',
 			r'SINGLE_LINE_COMMENT	\#.*',
@@ -240,15 +241,22 @@ class CobraTokenizer
 
 	def onINDENT_ALL_TABS(tok as IToken) as IToken?
 		numTabs = _countChars(tok.text, c'\t')  # CC: tok.text.count(c'\t')
-		return _processNumTabs(numTabs)
+		return _processNumIndentLevels(numTabs)
+
+	def onINDENT_ALL_SPACES(tok as IToken) as IToken?
+		numSpaces = _countChars(tok.text, c' ')
+		if numSpaces % 4  # yes, 4. hard coded, intentionally.
+			# TODO: should really just record an error and take round(numSpaces/4) as the indent
+			.throwError('Space based indentation must be a multiple of 4. This line has a remainder of [numSpaces%4].')
+		return _processNumIndentLevels(numSpaces // 4)
 
 	def onNO_INDENT(tok as IToken) as IToken?
 		require tok.text==''
 		_curTokenDef.ignoreCount = 1
-		t = _processNumTabs(0)
+		t = _processNumIndentLevels(0)
 		return t
 
-	def _processNumTabs(numTabs as int) as IToken?
+	def _processNumIndentLevels(numTabs as int) as IToken?
 		firstTok as IToken? = nil  # CC: should be able to leave out type by inferring type from below
 		lastTok as IToken? = nil  # CC: same as above the line
 		while numTabs>_indentCount
