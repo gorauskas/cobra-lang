@@ -752,11 +752,24 @@ class Constructor
 		# add asserts at the end for non-nilable class vars
 		token = .lastToken.copy
 		token.incLineNum
+		stmts = List<of Stmt>()
 		for decl in _box.declsInOrder
 			if decl inherits ClassVar
 				assert decl.type
 				if not decl.type inherits NilableType and decl.type.isReference and not decl.isShared
-					.addStmt(AssertStmt(token, IsNotNilExpr(token, IdentifierExpr(token, decl.name, decl)), nil))
+					stmts.add(AssertStmt(token, IsNotNilExpr(token, IdentifierExpr(token, decl.name, decl)), nil))
+		if stmts.count
+			sharpToken = token.copy
+			sharpToken.which = 'STRING'
+			sharpToken.value = 'CobraCore._willCheckNonNilClassVars'
+			cond = SharpExpr(token, StringLit(sharpToken))
+
+			block = BlockStmt(token, stmts)
+
+			ifStmt = IfStmt(token, cond, block, nil)
+
+			.addStmt(ifStmt)
+
 		base._bindImp
 
 	## Code gen

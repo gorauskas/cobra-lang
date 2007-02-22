@@ -117,12 +117,24 @@ static public class CobraCore {
 		}
 	}
 
+	static public bool _willCheckNonNilClassVars = true;
+
+	static public bool WillCheckNonNilClassVars {
+		get {
+			return _willCheckNonNilClassVars;
+		}
+		set {
+			_willCheckNonNilClassVars = value;
+		}
+	}
+
 	static public bool WillCheckAll {
 		set {
 			WillCheckInvariant = value;
 			WillCheckRequire = value;
 			WillCheckEnsure = value;
 			WillCheckAssert = value;
+			WillCheckNonNilClassVars = value;
 		}
 	}
 
