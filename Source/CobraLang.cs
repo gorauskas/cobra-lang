@@ -13,13 +13,13 @@ static public class CobraCore {
 
 	static public Version Version {
 		get {
-			return new Version(0, 3, 0);
+			return new Version(0, 4, 0);
 		}
 	}
 
 	static public int ReleaseNum {
 		get {
-			return 16;  // increment by exactly one with each release, no matter how big or small
+			return 17;  // increment by exactly one with each release, no matter how big or small
 		}
 	}
 
@@ -43,6 +43,34 @@ static public class CobraCore {
 		CobraImp.DumpStack(tw);
 	}
 
+	static public string TypeName(Type t) {
+		if (t==null)
+			return "nil";
+		if (t.IsGenericType) {
+			StringBuilder sb = new StringBuilder();
+			string[] parts = t.GetGenericTypeDefinition().Name.Split(new char[] {'`'}, 2);
+			sb.AppendFormat("{0}<of ", parts[0]);
+			string sep = "";
+			foreach(Type genArg in t.GetGenericArguments()) {
+				sb.AppendFormat("{0}{1}", sep, TypeName(genArg));
+				sep = ", ";
+			}
+			sb.Append(">");
+			return sb.ToString();
+		}
+		if (t==typeof(int))
+			return "int";
+		if (t==typeof(double))
+			return "float";
+		if (t==typeof(decimal))
+			return "decimal";
+		if (t==typeof(bool))
+			return "bool";
+		if (t==typeof(char))
+			return "char";
+		return t.Name;
+	}
+
 	static public string ToTechString(object x) {
 		if (x==null)
 			return "nil";
@@ -59,16 +87,28 @@ static public class CobraCore {
 		if (x is System.Collections.IList) {
 			// TODO: should not go into infinite loop for circular references
 			StringBuilder sb = new StringBuilder();
-			sb.AppendFormat("{0}[", x.GetType().Name);
+			sb.AppendFormat("{0}[", TypeName(x.GetType()));
 			string sep = "";
 			foreach (object item in (System.Collections.IList)x) {
 				sb.AppendFormat("{0}{1}", sep, ToTechString(item));
 				sep = ", ";
 			}
-			sb.AppendFormat("]");
+			sb.Append("]");
 			return sb.ToString();
 		}
-		// TODO: IDictionary
+		if (x is System.Collections.IDictionary) {
+			// TODO: should not go into infinite loop for circular references
+			System.Collections.IDictionary idict = (System.Collections.IDictionary)x;
+			StringBuilder sb = new StringBuilder();
+			sb.AppendFormat("{0}{1}", TypeName(x.GetType()), "{");
+			string sep = "";
+			foreach (object key in idict.Keys) {
+				sb.AppendFormat("{0}{1}: {2}", sep, ToTechString(key), ToTechString(idict[key]));
+				sep = ", ";
+			}
+			sb.Append("}");
+			return sb.ToString();
+		}
 		// TODO: For StringBuilder, return StringBuilder'aoeu'
 		return x.ToString();
 	}
