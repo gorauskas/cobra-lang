@@ -51,6 +51,7 @@ class Compiler
 	var _options as Dictionary<of String, Object>
 	var _globalNS as NameSpace
 	var _modules as List<of Module>
+	var _firstUserModuleIndex as int
 
 	var _curModule as Module?  # set during bindInt and bindImp
 	var _nameSpaceStack as Stack<of NameSpace>
@@ -150,6 +151,10 @@ class Compiler
 				path = Path.combine(.cobraExeDir, 'SystemInterfaces.cobra')
 				assert File.exists(path), path
 				filenames.insert(0, path)
+				path = Path.combine(.cobraExeDir, 'CobraLang.cobra')
+				assert File.exists(path), path
+				filenames.insert(1, path)
+				_firstUserModuleIndex = 2
 			modules = List<of Module>()
 			for filename in filenames
 				if filename.endsWith('.cs')
@@ -386,7 +391,7 @@ class Compiler
 		print '[title]:'
 		output.indent
 		try
-			for module as Module in _modules.getRange(1, _modules.count-1)  # CC: axe "as Module"
+			for module as Module in _modules.getRange(_firstUserModuleIndex, _modules.count-1)  # CC: axe "as Module"
 				# when going to the new SystemInterfaces.cobra,
 				# the following statement:
 				# module.writeDeepString(output)
@@ -620,8 +625,8 @@ class Compiler
 			optChar = if(platform=='ms', '/', '-')  # option prefix character
 
 			# exe names
-			# CC: exe = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName, _modules[1].csFileName)
-			outName = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName to passthrough, _modules[1].csFileName to passthrough) to String
+			# CC: exe = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName, _modules[_firstUserModuleIndex].csFileName)
+			outName = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName to passthrough, _modules[_firstUserModuleIndex].csFileName to passthrough) to String
 			if outName.endsWith('.cs')
 				outName = outName.substring(0, outName.length-3) # CC: [..-3]
 			if outName.endsWith('.cobra')
