@@ -9,178 +9,6 @@ using System.Text;
 namespace Cobra.Lang {
 
 
-static public class CobraCore {
-
-	static public Version Version {
-		get {
-			return new Version(0, 4, 0);
-		}
-	}
-
-	static public int ReleaseNum {
-		get {
-			return 17;  // increment by exactly one with each release, no matter how big or small
-		}
-	}
-
-	static public List<string> CommandLineArgs {
-		get {
-			return new List<string>(Environment.GetCommandLineArgs());
-		}
-	}
-
-	static public bool HasSuperStackTrace {
-		get {
-			return CobraImp.HasSuperStackTrace;
-		}
-	}
-
-	static public void DumpStack() {
-		CobraImp.DumpStack();
-	}
-
-	static public void DumpStack(TextWriter tw) {
-		CobraImp.DumpStack(tw);
-	}
-
-	static public string TypeName(Type t) {
-		if (t==null)
-			return "nil";
-		if (t.IsGenericType) {
-			StringBuilder sb = new StringBuilder();
-			string[] parts = t.GetGenericTypeDefinition().Name.Split(new char[] {'`'}, 2);
-			sb.AppendFormat("{0}<of ", parts[0]);
-			string sep = "";
-			foreach(Type genArg in t.GetGenericArguments()) {
-				sb.AppendFormat("{0}{1}", sep, TypeName(genArg));
-				sep = ", ";
-			}
-			sb.Append(">");
-			return sb.ToString();
-		}
-		if (t==typeof(int))
-			return "int";
-		if (t==typeof(double))
-			return "float";
-		if (t==typeof(decimal))
-			return "decimal";
-		if (t==typeof(bool))
-			return "bool";
-		if (t==typeof(char))
-			return "char";
-		return t.Name;
-	}
-
-	static public string ToTechString(object x) {
-		if (x==null)
-			return "nil";
-		if (x is bool)
-			return (bool)x ? "true" : "false";
-		if (x is string) {
-			string s = (string)x;
-			s = s.Replace("\n", "\\n");
-			s = s.Replace("\r", "\\r");
-			s = s.Replace("\t", "\\t");
-			s = "'" + s + "'";  // TODO: could be more sophisticated with respect to ' and "
-			return s;
-		}
-		if (x is System.Collections.IList) {
-			// TODO: should not go into infinite loop for circular references
-			StringBuilder sb = new StringBuilder();
-			sb.AppendFormat("{0}[", TypeName(x.GetType()));
-			string sep = "";
-			foreach (object item in (System.Collections.IList)x) {
-				sb.AppendFormat("{0}{1}", sep, ToTechString(item));
-				sep = ", ";
-			}
-			sb.Append("]");
-			return sb.ToString();
-		}
-		if (x is System.Collections.IDictionary) {
-			// TODO: should not go into infinite loop for circular references
-			System.Collections.IDictionary idict = (System.Collections.IDictionary)x;
-			StringBuilder sb = new StringBuilder();
-			sb.AppendFormat("{0}{1}", TypeName(x.GetType()), "{");
-			string sep = "";
-			foreach (object key in idict.Keys) {
-				sb.AppendFormat("{0}{1}: {2}", sep, ToTechString(key), ToTechString(idict[key]));
-				sep = ", ";
-			}
-			sb.Append("}");
-			return sb.ToString();
-		}
-		// TODO: For StringBuilder, return StringBuilder'aoeu'
-		return x.ToString();
-	}
-
-	static public bool _willCheckInvariant = true;
-
-	static public bool WillCheckInvariant {
-		get {
-			return _willCheckInvariant;
-		}
-		set {
-			_willCheckInvariant = value;
-		}
-	}
-
-	static public bool _willCheckRequire = true;
-
-	static public bool WillCheckRequire {
-		get {
-			return _willCheckRequire;
-		}
-		set {
-			_willCheckRequire = value;
-		}
-	}
-
-	static public bool _willCheckEnsure = true;
-
-	static public bool WillCheckEnsure {
-		get {
-			return _willCheckEnsure;
-		}
-		set {
-			_willCheckEnsure = value;
-		}
-	}
-
-	static public bool _willCheckAssert = true;
-
-	static public bool WillCheckAssert {
-		get {
-			return _willCheckAssert;
-		}
-		set {
-			_willCheckAssert = value;
-		}
-	}
-
-	static public bool _willCheckNonNilClassVars = true;
-
-	static public bool WillCheckNonNilClassVars {
-		get {
-			return _willCheckNonNilClassVars;
-		}
-		set {
-			_willCheckNonNilClassVars = value;
-		}
-	}
-
-	static public bool WillCheckAll {
-		set {
-			WillCheckInvariant = value;
-			WillCheckRequire = value;
-			WillCheckEnsure = value;
-			WillCheckAssert = value;
-			WillCheckNonNilClassVars = value;
-		}
-	}
-
-}
-
-
 public interface ICallable {
 	// object Call(object[] args);
 	object Call(object arg);
@@ -402,13 +230,83 @@ public class SliceException : SystemException {
 
 static public class CobraImp {
 
-	// public to Cobra source
+	// Public to Cobra source for the purpose of generated code (not user code).
 
-	// supports Cobra language features
+	// Supports Cobra language features.
 
 	static CobraImp() {
 		_printToStack = new Stack<TextWriter>();
 		PushPrintTo(Console.Out);
+	}
+
+	static public string TypeName(Type t) {
+		if (t==null)
+			return "nil";
+		if (t.IsGenericType) {
+			StringBuilder sb = new StringBuilder();
+			string[] parts = t.GetGenericTypeDefinition().Name.Split(new char[] {'`'}, 2);
+			sb.AppendFormat("{0}<of ", parts[0]);
+			string sep = "";
+			foreach(Type genArg in t.GetGenericArguments()) {
+				sb.AppendFormat("{0}{1}", sep, TypeName(genArg));
+				sep = ", ";
+			}
+			sb.Append(">");
+			return sb.ToString();
+		}
+		if (t==typeof(int))
+			return "int";
+		if (t==typeof(double))
+			return "float";
+		if (t==typeof(decimal))
+			return "decimal";
+		if (t==typeof(bool))
+			return "bool";
+		if (t==typeof(char))
+			return "char";
+		return t.Name;
+	}
+
+	static public string ToTechString(object x) {
+		if (x==null)
+			return "nil";
+		if (x is bool)
+			return (bool)x ? "true" : "false";
+		if (x is string) {
+			string s = (string)x;
+			s = s.Replace("\n", "\\n");
+			s = s.Replace("\r", "\\r");
+			s = s.Replace("\t", "\\t");
+			s = "'" + s + "'";  // TODO: could be more sophisticated with respect to ' and "
+			return s;
+		}
+		if (x is System.Collections.IList) {
+			// TODO: should not go into infinite loop for circular references
+			StringBuilder sb = new StringBuilder();
+			sb.AppendFormat("{0}[", TypeName(x.GetType()));
+			string sep = "";
+			foreach (object item in (System.Collections.IList)x) {
+				sb.AppendFormat("{0}{1}", sep, ToTechString(item));
+				sep = ", ";
+			}
+			sb.Append("]");
+			return sb.ToString();
+		}
+		if (x is System.Collections.IDictionary) {
+			// TODO: should not go into infinite loop for circular references
+			System.Collections.IDictionary idict = (System.Collections.IDictionary)x;
+			StringBuilder sb = new StringBuilder();
+			sb.AppendFormat("{0}{1}", TypeName(x.GetType()), "{");
+			string sep = "";
+			foreach (object key in idict.Keys) {
+				sb.AppendFormat("{0}{1}: {2}", sep, ToTechString(key), ToTechString(idict[key]));
+				sep = ", ";
+			}
+			sb.Append("}");
+			return sb.ToString();
+		}
+		// TODO: For StringBuilder, return StringBuilder'aoeu'
+		return x.ToString();
 	}
 
 	static public new bool Equals(object a, object b) {

@@ -1,0 +1,122 @@
+
+
+namespace Cobra
+
+	namespace Lang
+
+		class CobraImp
+			is fake
+			shared
+				get hasSuperStackTrace
+					pass
+				def dumpStack
+					pass
+				def dumpStack(tw as System.IO.TextWriter)  # TODO: why does TextWriter have to be qualified?
+					pass
+				def typeName(t as Type) as String
+					pass
+				def toTechString(x as Object) as String
+					pass
+
+		class CobraCore
+
+			shared
+
+				get version as Version
+					return Version(0, 4, 0)
+
+				get releaseNum as int
+
+					return 17
+
+				get commandLineArgs as List<of String>
+					return List<of String>(Environment.getCommandLineArgs)
+
+				get hasSuperStackTrace
+					return CobraImp.hasSuperStackTrace
+
+				def dumpStack
+					CobraImp.dumpStack
+
+				def dumpStack(tw as System.IO.TextWriter)  # TODO: why does TextWriter have to be qualified?
+					CobraImp.dumpStack(tw)
+
+				def typeName(t as Type) as String
+					return CobraImp.typeName(t)
+
+				def toTechString(x as Object) as String
+					return CobraImp.toTechString(x)
+
+				# CC: make a public section/block here
+				var _willCheckInvariant = true
+					is public
+				var _willCheckRequire = true
+					is public
+				var _willCheckEnsure = true
+					is public
+				var _willCheckAssert = true
+					is public
+				var _willCheckNonNilClassVars = true
+					is public
+
+				pro willCheckInvariant from var
+				pro willCheckRequire from var
+				pro willCheckEnsure from var
+				pro willCheckAssert from var
+				pro willCheckNonNilClassVars from var
+
+				set willCheckAll as bool
+					.willCheckInvariant = value
+					.willCheckRequire = value
+					.willCheckEnsure = value
+					.willCheckAssert = value
+					.willCheckNonNilClassVars = value
+
+		class SourceInfo
+
+			var _fileName as String
+			var _lineNum as int
+			var _className as String
+			var _memberName as String
+			var _object as Object
+
+			def init(fileName as String, lineNum as int, className as String, memberName as String, obj as Object)
+				_fileName = fileName
+				_lineNum = lineNum
+				_className = className
+				_memberName = memberName
+				_object = obj
+
+			def toString as String is override
+				fileName = CobraCore.toTechString(_fileName)
+				className = CobraCore.toTechString(_className)
+				memberName = CobraCore.toTechString(_memberName)
+				obj = CobraCore.toTechString(_object)
+				return '[.getType.name]([fileName], [_lineNum], [className], [memberName], [obj])'
+
+			get fileName from var
+
+			get lineNum from var
+
+			get className from var
+
+			get memberName from var
+
+			get object from var
+
+			get runTimeClassName as String
+				return _object.getType.name
+
+			def oneLiner(sep as String) as String
+				test
+					si = SourceInfo('Foo.cobra', 10, 'Object', 'bar', Object())
+					assert si.oneLiner('; ') == 'at Foo.cobra:10; in Object.bar'
+					si = SourceInfo('Foo.cobra', 10, 'Foo', 'bar', Object())
+					assert si.oneLiner('; ') == 'at Foo.cobra:10; in Foo.bar; subclass Object'
+				body
+					sb = $sharp('new System.Text.StringBuilder()') to System.Text.StringBuilder
+					sb.append('at [_fileName]:[_lineNum][sep]in [_className].[_memberName]')
+					name = .runTimeClassName
+					if name <> _className
+						sb.append('[sep]subclass [name]')
+					return sb.toString
