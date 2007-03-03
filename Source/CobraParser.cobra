@@ -1553,7 +1553,7 @@ class Parser
 		.expect('WHILE')
 		return PostWhileStmt(token, .expression, .block)
 
-	def traceStmt as TraceStmt
+	def traceStmt as TraceStmt?
 		"""
 		Example source:
 			trace
@@ -1569,18 +1569,24 @@ class Parser
 			on 'ON'
 				.expect('ON', 'EOL')
 				_isTraceOn = true
+				return nil
 			on 'OFF'
 				.expect('OFF', 'EOL')
 				_isTraceOn = false
+				return nil
 			on 'ALL'
 				.expect('ALL', 'EOL')
-				return TraceAllStmt(token, _curCodePart)
+				return if(_isTraceOn, TraceAllStmt(token, _curCodePart), nil)
 			on 'EOL'
 				.expect('EOL')
-				return TraceLocationStmt(token, _curCodePart)
+				return if(_isTraceOn, TraceLocationStmt(token, _curCodePart), nil)
 			else
-				return TraceExprsStmt(token, _curCodePart, .commaSepExprs('EOL'))
-		throw FallThroughException()
+				if _isTraceOn
+					return TraceExprsStmt(token, _curCodePart, .commaSepExprs('EOL'))
+				else
+					.commaSepExprs('EOL')
+					return nil
+		throw FallThroughException()  # 'branch..else should have returned'
 
 	def printStmt as Stmt
 		"""
