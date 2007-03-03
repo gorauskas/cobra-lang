@@ -186,39 +186,6 @@ public class ExpectException : Exception {
 }
 
 
-public class FallThroughException : Exception {
-
-	protected object _info;
-
-	public FallThroughException()
-		: this(null) {
-	}
-
-	public FallThroughException(object info)
-		: base() {
-		_info = info;
-	}
-
-	public FallThroughException(object info, Exception innerExc)
-		: base(null, innerExc) {
-		_info = info;
-	}
-
-	public override string Message {
-		get {
-			return string.Format("info={0}", CobraCore.ToTechString(_info));
-		}
-	}
-
-	public object Info {
-		get {
-			return _info;
-		}
-	}
-
-}
-
-
 public class SliceException : SystemException {
 
 	public SliceException(string msg)
