@@ -747,6 +747,71 @@ class ReturnStmt
 		else
 			sw.write('return;\n')
 
+
+class TraceStmt
+	inherits Stmt
+
+	var _codePart as AbstractMethod
+
+	def init(token as IToken, codePart as AbstractMethod)
+		base.init(token)
+		_codePart = codePart
+
+	get sharpSourceInfo as String
+		tok = .token
+		fileName = Utils.csStringLitFor(tok.fileName)
+		boxName = Utils.csStringLitFor(_codePart.box.name)
+		memberName = Utils.csStringLitFor(_codePart.name)
+		return 'new SourceInfo([fileName], [tok.lineNum], [boxName], [memberName], this)'
+
+
+class TraceLocationStmt
+	inherits TraceStmt
+
+	def init(token as IToken, codePart as AbstractMethod)
+		base.init(token, codePart)
+
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		sw.write('CobraCore.Tracer.Trace([.sharpSourceInfo]);\n')
+
+
+class TraceAllStmt
+	inherits TraceStmt
+
+	def init(token as IToken, codePart as AbstractMethod)
+		base.init(token, codePart)
+
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		# TODO: complete
+		sw.write('CobraCore.Tracer.Trace([.sharpSourceInfo]);\n')
+
+
+class TraceExprsStmt
+	inherits TraceStmt
+
+	var _exprs as List<of Expr>
+
+	def init(token as IToken, codePart as AbstractMethod, exprs as List<of Expr>)
+		base.init(token, codePart)
+		_exprs = exprs
+
+	def _bindImp
+		base._bindImp
+		for expr in _exprs
+			expr.bindImp
+
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		sw.write('CobraCore.Tracer.Trace([.sharpSourceInfo]')
+		sep = ', '
+		for expr in _exprs
+			sw.write('[sep][Utils.csStringLitFor(expr.toCobraSource)][sep]')
+			expr.writeSharpDef(sw, false)
+		sw.write(');\n')
+
+
 class TryStmt
 	inherits Stmt
 

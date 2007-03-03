@@ -84,6 +84,8 @@ class Parser
 	var _spaceAgnosticIndentLevel as int
 	var _isContractOnSameLine as bool
 
+	var _isTraceOn as bool
+
 	var _leftStack as Stack<of Expr>?
 	var _opStackStack as Stack<of Stack<of String>>?
 		"""
@@ -828,6 +830,7 @@ class Parser
 			breakLoop = false  # cannot use 'break' to stop a 'while' loop in a branch statement. CC?
 			while not breakLoop
 				decl = nil
+				_isTraceOn = true
 				branch .peek.which
 					on 'PASS'
 						.classPass
@@ -1385,6 +1388,9 @@ class Parser
 				s = .returnStmt
 			on 'THROW'
 				s = .throwStmt
+			on 'TRACE'
+				s = .traceStmt
+				expectEOL = false
 			on 'TRY'
 				s = .tryStmt
 				expectEOL = false
@@ -1546,6 +1552,35 @@ class Parser
 		token = .expect('POST')
 		.expect('WHILE')
 		return PostWhileStmt(token, .expression, .block)
+
+	def traceStmt as TraceStmt
+		"""
+		Example source:
+			trace
+			trace x
+			trace this, x, foo.bar
+			trace all
+			trace on
+			trace off
+		"""
+		token = .expect('TRACE')
+		peek = .peek.which
+		branch peek
+			on 'ON'
+				.expect('ON', 'EOL')
+				_isTraceOn = true
+			on 'OFF'
+				.expect('OFF', 'EOL')
+				_isTraceOn = false
+			on 'ALL'
+				.expect('ALL', 'EOL')
+				return TraceAllStmt(token, _curCodePart)
+			on 'EOL'
+				.expect('EOL')
+				return TraceLocationStmt(token, _curCodePart)
+			else
+				return TraceExprsStmt(token, _curCodePart, .commaSepExprs('EOL'))
+		throw FallThroughException()
 
 	def printStmt as Stmt
 		"""

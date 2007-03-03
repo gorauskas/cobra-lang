@@ -18,9 +18,69 @@ namespace Cobra
 				def toTechString(x as Object?) as String
 					pass
 
+		class Tracer
+			inherits Object
+			"""
+			Used to implement the trace statement.
+			TODO: support indentation
+			"""
+
+			var _isActive = true
+			var _dest as System.IO.TextWriter
+			var _separator = '; '
+			var _prefix = 'trace: '
+
+			def init
+				.init(Console.out)
+
+			def init(dest as System.IO.TextWriter)
+				base.init
+				_dest = dest
+
+			pro isActive from var
+				"""
+				When false, the `trace` methods will produce no output.
+				"""
+
+			pro destination from _dest
+				"""
+				The TextWriter where all trace output is sent to.
+				"""
+
+			pro separator from var
+				"""
+				The separator string used between items of both name/value pairs and source information.
+				Default is '; '.
+				"""
+
+			pro prefix from var
+				"""
+				The prefix string used at the beginning of every trace.
+				Default is 'trace: '.
+				"""
+
+			def trace(source as SourceInfo)
+				if .isActive
+					print to _dest, '[.prefix][source.oneLiner(.separator)]'
+
+			def trace(source as SourceInfo, nameValues as vari Object)
+				require nameValues.length % 2 == 0
+				if .isActive
+					_dest.write(.prefix)
+					sep = .separator
+					i = 0
+					while i < nameValues.length-1
+						name = nameValues[i] to String
+						value = CobraCore.toTechString(nameValues[i+1])
+						_dest.write('[name]=[value][sep]')
+						i += 2
+					_dest.writeLine(source.oneLiner(.separator))
+
 		class CobraCore
 
 			shared
+
+				## Release info
 
 				get version as Version
 					return Version(0, 4, 0)
@@ -29,8 +89,33 @@ namespace Cobra
 
 					return 17
 
+
+				## Command line args in generic list form
+
 				get commandLineArgs as List<of String>
 					return List<of String>(Environment.getCommandLineArgs)
+
+
+				## Tracer
+
+				var _tracer as Tracer
+
+				pro tracer as Tracer
+					"""
+					The global Tracer object used by `trace` statements.
+					Via this property, you can set this to your own instance,
+					or access the tracer to read or write its properties.
+					To turn off tracing, for example, you can write `CobraCore.tracer.isActive = false`.
+					"""
+					get
+						if _tracer is nil
+							_tracer = Tracer()
+						return _tracer
+					set
+						_tracer = Tracer()
+
+
+				## Super stack trace
 
 				get hasSuperStackTrace
 					return CobraImp.hasSuperStackTrace
@@ -41,11 +126,17 @@ namespace Cobra
 				def dumpStack(tw as System.IO.TextWriter)  # TODO: why does TextWriter have to be qualified?
 					CobraImp.dumpStack(tw)
 
+
+				## Type names and tech strings
+
 				def typeName(t as Type) as String
 					return CobraImp.typeName(t)
 
 				def toTechString(x as Object?) as String
 					return CobraImp.toTechString(x)
+
+
+				## Will check control flags
 
 				# CC: make a public section/block here
 				var _willCheckInvariant = true
@@ -73,6 +164,12 @@ namespace Cobra
 					.willCheckNonNilClassVars = value
 
 		class SourceInfo
+			"""
+			A SourceInfo instance captures the source location of a statement or expression, as in the
+			filename, line number, declaring class name, method name and run-time object. The Cobra
+			compiler generates SourceInfo instances in various circumstances; for example, the `trace`
+			statement.
+			"""
 
 			var _fileName as String
 			var _lineNum as int
