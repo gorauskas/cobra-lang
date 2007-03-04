@@ -405,6 +405,8 @@ static public class CobraImp {
 			return false;
 		if (x is char)
 			return (char)x!='\0';
+		if (x is decimal)
+			return (decimal)x!=0;  // can't believe x.Equals(0) above doesn't work for decimal. *sigh*
 		return true;
 	}
 
