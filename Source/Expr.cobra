@@ -164,12 +164,23 @@ class Expr
 	## Code gen
 
 	def writeSharpDefInContext(sw as SharpWriter)
-		if _contextType
+		"""
+		When an expression is used where a particular type is expected, such as:
+			# assignment
+			x = y
+			# argument passing
+			obj.foo(x, y)
+		it may need C# typecasting--particularly if it is dynamic typed expression.
+		This method relies on having had its .contextType set beforehand.
+		This method should be invoked instead of `writeSharpDef` in any situation where .contextType was set.
+		"""
+		type = .type
+		cast = _contextType and (type is .compiler.dynamicType or (type inherits WrappedType and (type to WrappedType).theWrappedType is .compiler.dynamicType))
+		if cast
 			sw.write('(([_contextType.sharpRef])(')
-			.writeSharpDef(sw)
+		.writeSharpDef(sw)
+		if cast
 			sw.write('))')
-		else
-			.writeSharpDef(sw)
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
@@ -458,7 +469,7 @@ class CallExpr
 									.throwError('The method "[definition.name]" is expecting 0 arguments, but [args.count] are being supplied in this call.')
 							else
 								paramsx = definition.params  # CC: rename paramsx to params
-								if args.count<>paramsx.count
+								if args.count <> paramsx.count
 									if _name=='toString'  # TODO because many structs like Decimal have a toString() overload which cannot currently be expressed in SystemInterfaces.cobra
 										check = false
 									else
@@ -471,7 +482,9 @@ class CallExpr
 											break
 										assert arg.didBindImp, arg
 										assert paramx.didBindInt, paramx
-										if not arg.canBeAssignedTo(paramx.type)
+										if arg.canBeAssignedTo(paramx.type)
+											arg.contextType = paramx.type
+										else
 		# TODO
 		#									if paramx.type.__class__.__name__.startswith('GenericParam')
 		#										# TODO support generic params (2)
@@ -514,7 +527,7 @@ class CallExpr
 			sep = ','  # TODO: sep = ', '
 			for arg in _args
 				sw.write(sep)
-				arg.writeSharpDef(sw, false)
+				arg.writeSharpDefInContext(sw)
 			sw.write(')')
 			return
 		if _isNew
@@ -528,7 +541,7 @@ class CallExpr
 		sep = ''
 		for arg in _args
 			sw.write(sep)
-			arg.writeSharpDef(sw, false)
+			arg.writeSharpDefInContext(sw)
 			sep = ', '
 		sw.write(')')
 		if _isNew and parens
