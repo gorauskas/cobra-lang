@@ -687,7 +687,31 @@ static public class CobraImp {
 		}
 	}
 
+	// Dynamic Binding
+
+	static private readonly BindingFlags PropertyFlags = BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.GetProperty;
+	static private readonly BindingFlags FieldFlags = BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.GetField;
+
+	static public object GetPropertyValue(Object obj, string propertyName) {
+		if (obj==null)
+			throw new ArgumentNullException("obj");
+		if (propertyName==null)
+			throw new ArgumentNullException("propertyName");
+		Type type = obj.GetType();
+		PropertyInfo pi = type.GetProperty(propertyName, PropertyFlags);
+		if (pi!=null) {
+			return pi.GetValue(obj, null);
+		} else {
+			FieldInfo fi = type.GetField(propertyName, FieldFlags);
+			if (fi!=null)
+				return fi.GetValue(obj);
+			throw new UnknownMemberException(obj, propertyName);
+		}
+
+	}
+
 }
+
 
 internal class CobraFrame {
 

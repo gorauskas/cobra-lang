@@ -655,23 +655,36 @@ class DotExpr
 			return '[_left.toCobraSource].[_right.toCobraSource]'
 
 	def _writeSharpDef(sw as SharpWriter) is override
-		# don't write 'this' for shared members
-		writeThis = true
-		if _left inherits ThisLit
-			if _right inherits CallExpr
-				defi = _right.definition
-				if defi inherits IMember
-					writeThis = not defi.isShared
-				else
-					# TODO: compiler bug stimulated by following line:
-					# throw FallThroughException({'right': _right, 'defi': defi})
-					throw FallThroughException(defi)
-			else if _right inherits MemberExpr
-				writeThis = not _right.definition.isShared
-		if writeThis
-			_left.writeSharpDef(sw, not _left inherits DotExpr)
-			sw.write('.')
-		_right.writeSharpDef(sw, false)
+		if _left.receiverType is .compiler.dynamicType
+			# handle dynamic typing
+			if _right inherits MemberExpr
+				sw.write('CobraImp.GetPropertyValue(')
+				_left.writeSharpDef(sw, not _left inherits DotExpr)
+				sw.write(', ')
+				sw.write(Utils.csStringLitFor(Utils.capped(_right.name)))
+				sw.write(')')
+			else
+				# TODO: CallExpr
+				throw FallThroughException(_right)
+		else
+			# handle static typing
+			# don't write 'this' for shared members
+			writeThis = true
+			if _left inherits ThisLit
+				if _right inherits CallExpr
+					defi = _right.definition
+					if defi inherits IMember
+						writeThis = not defi.isShared
+					else
+						# TODO: compiler bug stimulated by following line:
+						# throw FallThroughException({'right': _right, 'defi': defi})
+						throw FallThroughException(defi)
+				else if _right inherits MemberExpr
+					writeThis = not _right.definition.isShared
+			if writeThis
+				_left.writeSharpDef(sw, not _left inherits DotExpr)
+				sw.write('.')
+			_right.writeSharpDef(sw, false)
 
 	def _writeSharpBreakdownItemsLeft(sw as SharpWriter) is override
 		if not _left.type inherits TypeType  # feels like a cheap escape...
