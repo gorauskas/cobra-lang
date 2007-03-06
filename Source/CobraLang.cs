@@ -700,14 +700,42 @@ static public class CobraImp {
 		Type type = obj.GetType();
 		PropertyInfo pi = type.GetProperty(propertyName, PropertyFlags);
 		if (pi!=null) {
-			return pi.GetValue(obj, null);
+			if (pi.CanRead) {
+				return pi.GetValue(obj, null);
+			} else {
+				throw new CannotReadPropertyException(obj, propertyName, type);
+			}
 		} else {
 			FieldInfo fi = type.GetField(propertyName, FieldFlags);
 			if (fi!=null)
 				return fi.GetValue(obj);
-			throw new UnknownMemberException(obj, propertyName);
+			throw new UnknownMemberException(obj, propertyName, type);
 		}
 
+	}
+
+	static public object SetPropertyValue(Object obj, string propertyName, Object value) {
+		if (obj==null)
+			throw new ArgumentNullException("obj");
+		if (propertyName==null)
+			throw new ArgumentNullException("propertyName");
+		Type type = obj.GetType();
+		PropertyInfo pi = type.GetProperty(propertyName, PropertyFlags);
+		if (pi!=null) {
+			if (pi.CanWrite) {
+				pi.SetValue(obj, value, null);
+				return value;
+			} else {
+				throw new CannotWritePropertyException(obj, propertyName, type);
+			}
+		} else {
+			FieldInfo fi = type.GetField(propertyName, FieldFlags);
+			if (fi!=null) {
+				fi.SetValue(obj, value);
+				return value;
+			}
+			throw new UnknownMemberException(obj, propertyName, type);
+		}
 	}
 
 }

@@ -282,6 +282,19 @@ class AssignExpr
 					sw.write(sharpNames[i])
 				handled = true
 		if not handled
+			# `obj.foo = bar` where `obj` is dynamic, requires special handling
+			if _left inherits DotExpr
+				if _left.left.type is .compiler.dynamicType
+					assert _left.right inherits MemberExpr
+					sw.write('CobraImp.SetPropertyValue(')
+					_left.left.writeSharpDef(sw, false)
+					sw.write(', ')
+					sw.write(Utils.csStringLitFor(Utils.capped((_left.right to MemberExpr).name)))
+					sw.write(', ')
+					_right.writeSharpDef(sw)
+					sw.write(')')
+					return
+		if not handled
 			# for something like "p.total = 0", cannot generate "(p.Total)=0" because then C# sees
 			# the left hand side as an r-value instead an l-value/target. hence the false below.
 			_left.writeSharpDef(sw, false)
@@ -655,7 +668,10 @@ class DotExpr
 			return '[_left.toCobraSource].[_right.toCobraSource]'
 
 	def _writeSharpDef(sw as SharpWriter) is override
-		if _left.receiverType is .compiler.dynamicType
+		.writeSharpDef(sw, true)
+
+	def writeSharpDef(sw as SharpWriter, checkForDynamic as bool) is override
+		if checkForDynamic and _left.receiverType is .compiler.dynamicType
 			# handle dynamic typing
 			if _right inherits MemberExpr
 				sw.write('CobraImp.GetPropertyValue(')
