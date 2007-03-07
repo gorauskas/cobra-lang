@@ -756,6 +756,39 @@ static public class CobraImp {
 		}
 	}
 
+	static public object GetIndexerValue(Object obj, params object[] args) {
+		if (obj==null)
+			throw new ArgumentNullException("obj");
+		Type type = obj.GetType();
+		Type[] argsTypes = args==null ? new Type[0] : new Type[args.Length];
+		for (int i=0; i<argsTypes.Length; i++) {
+			argsTypes[i] = args[i].GetType();
+		}
+		PropertyInfo pi = type.GetProperty("Item", PropertyFlags);
+		if (pi!=null) {
+			return pi.GetValue(obj, args);
+		} else {
+			throw new UnknownMemberException(obj, "[]", type);
+		}
+	}
+
+	static public object SetIndexerValue(Object obj, Object value, params object[] args) {
+		if (obj==null)
+			throw new ArgumentNullException("obj");
+		Type type = obj.GetType();
+		Type[] argsTypes = args==null ? new Type[0] : new Type[args.Length];
+		for (int i=0; i<argsTypes.Length; i++) {
+			argsTypes[i] = args[i].GetType();
+		}
+		PropertyInfo pi = type.GetProperty("Item", PropertyFlags);
+		if (pi!=null) {
+			pi.SetValue(obj, value, args);
+			return value;
+		} else {
+			throw new UnknownMemberException(obj, "[]", type);
+		}
+	}
+
 }
 
 
