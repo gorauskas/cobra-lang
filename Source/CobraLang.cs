@@ -738,6 +738,24 @@ static public class CobraImp {
 		}
 	}
 
+	static public object InvokeMethod(Object obj, string methodName, params object[] args) {
+		if (obj==null)
+			throw new ArgumentNullException("obj");
+		if (methodName==null)
+			throw new ArgumentNullException("methodName");
+		Type type = obj.GetType();
+		Type[] argsTypes = args==null ? new Type[0] : new Type[args.Length];
+		for (int i=0; i<argsTypes.Length; i++) {
+			argsTypes[i] = args[i].GetType();
+		}
+		MethodInfo mi = type.GetMethod(methodName, argsTypes);
+		if (mi!=null) {
+			return mi.Invoke(obj, args);
+		} else {
+			throw new UnknownMemberException(obj, methodName, type);
+		}
+	}
+
 }
 
 

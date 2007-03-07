@@ -668,10 +668,7 @@ class DotExpr
 			return '[_left.toCobraSource].[_right.toCobraSource]'
 
 	def _writeSharpDef(sw as SharpWriter) is override
-		.writeSharpDef(sw, true)
-
-	def writeSharpDef(sw as SharpWriter, checkForDynamic as bool) is override
-		if checkForDynamic and _left.receiverType is .compiler.dynamicType
+		if _left.receiverType is .compiler.dynamicType
 			# handle dynamic typing
 			if _right inherits MemberExpr
 				sw.write('CobraImp.GetPropertyValue(')
@@ -679,8 +676,17 @@ class DotExpr
 				sw.write(', ')
 				sw.write(Utils.csStringLitFor(Utils.capped(_right.name)))
 				sw.write(')')
-			else
+			else if _right inherits CallExpr
 				# TODO: CallExpr
+				sw.write('CobraImp.InvokeMethod(')
+				_left.writeSharpDef(sw, not _left inherits DotExpr)
+				sw.write(', ')
+				sw.write(Utils.csStringLitFor(Utils.capped(_right.name)))
+				for arg in _right.args
+					sw.write(', ')
+					arg.writeSharpDef(sw, false)
+				sw.write(')')
+			else
 				throw FallThroughException(_right)
 		else
 			# handle static typing
