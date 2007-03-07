@@ -170,6 +170,7 @@ class Expr
 			x = y
 			# argument passing
 			obj.foo(x, y)
+			obj[x, y]
 		it may need C# typecasting--particularly if it is dynamic typed expression.
 		This method relies on having had its .contextType set beforehand.
 		This method should be invoked instead of `writeSharpDef` in any situation where .contextType was set.
@@ -934,6 +935,7 @@ class IndexExpr
 			_type = _target.type.indexType(argTypes)
 			if _type is nil
 				_type = .compiler.passThroughType
+			# TODO: need to lookup the member and (1) check type compatibility and (2) set context type for arg
 
 	def toCobraSource as String is override
 		sb = StringBuilder()
@@ -951,9 +953,8 @@ class IndexExpr
 		if _target.type is .compiler.dynamicType
 			sw.write('CobraImp.GetIndexerValue(')
 			_target.writeSharpDef(sw, false)
-			sep = ', '
 			for expr in _args
-				sw.write(sep)
+				sw.write(', ')
 				expr.writeSharpDef(sw, false)
 			sw.write(')')
 			return
@@ -970,7 +971,7 @@ class IndexExpr
 		sep = ''
 		for expr in _args
 			sw.write(sep)
-			expr.writeSharpDef(sw, false)
+			expr.writeSharpDefInContext(sw)
 			sep = ', '
 		sw.write(']')
 		if parens
