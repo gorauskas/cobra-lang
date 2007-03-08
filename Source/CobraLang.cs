@@ -535,6 +535,21 @@ static public class CobraImp {
 		return list.GetRange(start.Value, stop.Value-start.Value);
 	}
 
+	static public Object GetSlice(Object obj, int? start, int? stop, int? step) {
+		// this is for when obj is type `dynamic`
+		if (obj==null)
+			throw new NullReferenceException("Cannot slice null.");
+		if (obj is String)
+			return GetSlice((String)obj, start, stop, step);
+		else if (obj is ArrayList)
+			return GetSlice((ArrayList)obj, start, stop, step);
+		else if (obj is IList)
+			return GetSlice((IList)obj, start, stop, step);
+		else
+			throw new CannotSliceTypeException(obj, "[::]", obj.GetType());
+	}
+
+
 	static private Stack<TextWriter> _printToStack;
 
 	static public void PushPrintTo(TextWriter tw) {
