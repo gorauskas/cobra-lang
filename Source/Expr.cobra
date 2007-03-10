@@ -165,6 +165,9 @@ class Expr
 	## Code gen
 
 	def writeSharpDefInContext(sw as SharpWriter)
+		.writeSharpDefInContext(sw, true)
+
+	def writeSharpDefInContext(sw as SharpWriter, parens as bool)
 		"""
 		When an expression is used where a particular type is expected, such as:
 			# assignment
@@ -179,10 +182,14 @@ class Expr
 		type = .type
 		cast = _contextType and type.isDynamic
 		if cast
-			sw.write('(([_contextType.sharpRef])(')
+			if parens
+				sw.write('(')
+			sw.write('([_contextType.sharpRef])(')
 		.writeSharpDef(sw)
 		if cast
-			sw.write('))')
+			sw.write(')')
+			if parens
+				sw.write(')')
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
@@ -1409,7 +1416,9 @@ class SliceExpr
 			catch ne as NodeException
 				.compiler.recordError(ne)
 			success
-				if not _start.isKindOf(intType)
+				if _start.type.isDynamic
+					_start.contextType = intType
+				else if not _start.isKindOf(intType)
 					_start.recordError('The start index of the slice is type "[_start.type.name]", but should be "int".')
 		if _stop
 			try
@@ -1417,7 +1426,9 @@ class SliceExpr
 			catch ne as NodeException
 				.compiler.recordError(ne)
 			success
-				if not _stop.isKindOf(intType)
+				if _stop.type.isDynamic
+					_stop.contextType = intType
+				else if not _stop.isKindOf(intType)
 					_stop.recordError('The stop index of the slice is type "[_stop.type.name]", but should be "int".')
 		if _step
 			try
@@ -1425,7 +1436,9 @@ class SliceExpr
 			catch ne as NodeException
 				.compiler.recordError(ne)
 			success
-				if not _step.isKindOf(intType)
+				if _step.type.isDynamic
+					_step.contextType = intType
+				else if not _step.isKindOf(intType)
 					_step.recordError('The step of the slice is type "[_step.type.name]", but should be "int".')
 		if _target.hasError
 			_type = .compiler.passThroughType
@@ -1454,17 +1467,17 @@ class SliceExpr
 		if _start is nil
 			sw.write('null')
 		else
-			_start.writeSharpDef(sw, false)
+			_start.writeSharpDefInContext(sw, false)
 		sw.write(',')
 		if _stop is nil
 			sw.write('null')
 		else
-			_stop.writeSharpDef(sw, false)
+			_stop.writeSharpDefInContext(sw, false)
 		sw.write(',')
 		if _step is nil
 			sw.write('null')
 		else
-			_step.writeSharpDef(sw, false)
+			_step.writeSharpDefInContext(sw, false)
 		sw.write(')')
 
 	def writeSharpBreakdownItems(sw as SharpWriter)
