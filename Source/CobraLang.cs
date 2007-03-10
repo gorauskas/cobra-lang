@@ -358,12 +358,47 @@ static public class CobraImp {
 		return b.IndexOf(a)!=-1;
 	}
 
+	static public bool In(object a, IList b) {
+		return b.Contains(a);
+	}
+
+	static public bool In(object a, IDictionary b) {
+		return b.Contains(a);
+	}
+
 	static public bool In<innerType>(innerType a, IList<innerType> b) {
 		return b.Contains(a);
 	}
 
 	static public bool In<keyType,valueType>(keyType a, IDictionary<keyType,valueType> b) {
 		return b.ContainsKey(a);
+	}
+
+	static private bool _noNestedIn = false;
+
+	static public bool In(object a, object b) {
+		if (_noNestedIn)
+			throw new Exception(string.Format("_noNestedIn a={0}, a.getType={1}, b={2}, b.getType={3}", a, a==null?"":a.GetType().Name, b, b==null?"":b.GetType().Name));
+		_noNestedIn = true;
+		try {
+			if (b is IList) {
+				return In(a, (IList)b);
+			} else if (b is IDictionary) {
+				return In(a, (IDictionary)b);
+			} else if (b is String) {
+				if (a is String) {
+					return In((String)a, (String)b);
+				} if (a is char) {
+					return In((char)a, (String)b);
+				} else {
+					throw new CannotInTypeException(a, "a of `a in b`", a.GetType());
+				}
+			} else {
+				throw new CannotInTypeException(b, "b of `a in b`", b.GetType());
+			}
+		} finally {
+			_noNestedIn = false;
+		}
 	}
 
 	static public bool IsTrue(char c) {
