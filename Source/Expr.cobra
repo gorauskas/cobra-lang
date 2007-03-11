@@ -935,6 +935,10 @@ class IndexExpr
 			catch ne as NodeException
 				.compiler.recordError(ne)
 		if _type is nil
+			if _target.isKindOf(.compiler.libraryType('System', 'Type'))
+				if _target inherits IdentifierExpr
+					_type = ArrayType(_target.definition) # AXE: TypeIdentifier(_target.token))
+					return
 			# CC: use a list comprehension to get the types
 			# _target.type.indexType(for arg in _args get arg.type)
 			argTypes = List<of IType>()
@@ -942,8 +946,9 @@ class IndexExpr
 				argTypes.add(arg.type to IType)  # CC: to !
 			_type = _target.type.indexType(argTypes)
 			if _type is nil
-				_type = .compiler.passThroughType
-			# TODO: need to lookup the member and (1) check type compatibility and (2) set context type for arg
+				name = ns'[]'
+				.throwError('Cannot find a definition for "[name]" in "[_target.type.name]".')
+			# TODO: need to lookup the member and (1) check type compatibility and (2) set context type for each arg
 
 	def toCobraSource as String is override
 		sb = StringBuilder()
