@@ -496,6 +496,8 @@ class ForEnumerableStmt
 
 	def _bindImp is override
 		_what.bindImp()
+		if _what.type.isDynamic
+			_what.contextType = .compiler.libraryType('System', 'Collections', 'IEnumerable')
 		_var = .bindVar(_varExpr)
 		base._bindImp()
 		_varNumber = .compiler.curBox.makeNextPrivateSerialNumber()
@@ -511,7 +513,15 @@ class ForEnumerableStmt
 		# these constraints don't exist in Cobra
 		helperName = '_lh_for_[_var.name]_[_varNumber]'
 		sw.write('foreach ([_var.type.sharpRef] [helperName] in ')
-		_what.writeSharpDef(sw, false)
+
+		# TODO: the sharpRef of a type is not qualified and there is no using System.Collections;
+		# _what.writeSharpDefInContext(sw, false)
+		if _what.type.isDynamic
+			sw.write('(System.Collections.IEnumerable)')
+			_what.writeSharpDef(sw, true)
+		else
+			_what.writeSharpDef(sw, false)
+
 		sw.write(')')
 		_block.writeSharpDef(sw, '[_var.sharpName] = [helperName];\n')
 
