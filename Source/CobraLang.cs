@@ -839,6 +839,38 @@ static public class CobraImp {
 		}
 	}
 
+	static public object DynamicOp(String opMethodName, Object value1, Object value2) {
+		Type type = value1.GetType();
+		MethodInfo mi = type.GetMethod(opMethodName, BindingFlags.Static|BindingFlags.Public);
+		if (mi!=null) {
+			return mi.Invoke(value1, new object[] { value1, value2 });
+		} else {
+			String name = opMethodName + '_' + value1.GetType().Name + '_' + value2.GetType().Name;
+			// whoops. GetMethod() requires that you specify the args, even though InvokeMethod() does not--weirdness. I guess that means that InvokeMethod() does not use GetMethod()
+			// mi = typeof(CobraImp).GetMethod(opMethodName, BindingFlags.Static|BindingFlags.Public);
+			// if (mi!=null) {
+			// 	return mi.Invoke(value1, new object[] { value1, value2 });
+			try {
+				// TODO: complete the op_Foo_Type1_Type2() methods or find a better way to do this
+				return typeof(CobraImp).InvokeMember(name, BindingFlags.Public|BindingFlags.Static|BindingFlags.InvokeMethod, null, null, new object[] { value1, value2 });
+			} catch (MissingMethodException exc) {
+			}
+			throw new UnknownMemberException(value1, opMethodName + " or " + name, type);
+		}
+	}
+
+	static public int op_Addition_Int32_Int32(int a, int b) {
+		return a + b;
+	}
+
+	static public int op_Multiply_Int32_Int32(int a, int b) {
+		return a * b;
+	}
+
+	static public String op_Addition_String_String(String a, String b) {
+		return a + b;
+	}
+
 }
 
 

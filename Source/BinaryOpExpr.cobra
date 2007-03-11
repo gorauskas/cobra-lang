@@ -322,6 +322,9 @@ class NumericPromoExpr
 
 	def _bindImp is override
 		base._bindImp()
+		if _left.type.isDynamic or _right.type.isDynamic
+			_type = .compiler.dynamicType
+			return
 		tint = .compiler.intType
 		tdecimal = .compiler.decimalType
 		tfloat = .compiler.floatType
@@ -486,12 +489,14 @@ class BinaryMathExpr
 		base.init(opToken, op, left, right)
 		assert op in ['PLUS', 'MINUS', 'STAR', 'SLASH', 'SLASHSLASH', 'PERCENT']
 
-	def _bindImp # TODO: this is missing, so its not being run. resolve with base class: is override
+	def _bindImp # TODO: this is all messed up. does this get called? TODO: this is missing, so its not being run. resolve with base class: is override
 		base._bindImp()
 		lt = _left.type
 		rt = _right.type
 		if lt is rt
-			_type = lt
+			assert _type == lt or (_type is .compiler.decimalType and _op=='SLASH')
+		else if lt.isDynamic or rt.isDynamic
+			_type = .compiler.dynamicType
 		else
 			# TODO: this will need to be more sophisticated in the future with different sized ints and floats
 			if lt.isDescendantOf(.compiler.intType)
@@ -514,6 +519,17 @@ class BinaryMathExpr
 				throw FallThroughException({'op': _op, 'lt': lt, 'rt': rt})
 
 	def _writeSharpDef(sw as SharpWriter) is override
+		if _type.isDynamic
+			specs = OperatorSpecs.binaryOpSpecsByCobraText
+			assert specs.containsKey(.token.text)
+			spec = specs[.token.text]
+			opText = Utils.csStringLitFor(spec.opMethodName)
+			sw.write('CobraImp.DynamicOp([opText], ')
+			_left.writeSharpDef(sw)
+			sw.write(', ')
+			_right.writeSharpDef(sw)
+			sw.write(')')
+			return
 		intType = .compiler.intType
 		left = _left
 		right = _right
