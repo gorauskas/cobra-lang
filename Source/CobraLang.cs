@@ -853,7 +853,7 @@ static public class CobraImp {
 			try {
 				// TODO: complete the op_Foo_Type1_Type2() methods or find a better way to do this
 				return typeof(CobraImp).InvokeMember(name, BindingFlags.Public|BindingFlags.Static|BindingFlags.InvokeMethod, null, null, new object[] { value1, value2 });
-			} catch (MissingMethodException exc) {
+			} catch (MissingMethodException) {
 			}
 			throw new UnknownMemberException(value1, opMethodName + " or " + name, type);
 		}
