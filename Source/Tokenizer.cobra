@@ -231,9 +231,12 @@ class Tokenizer
 	var _keywordToWhichToken as Dictionary<of String, String>
 
 	var _tokenDefs as List<of TokenDef>?
+	var _tokenDefsByFirstChar as Dictionary<of char, List<of TokenDef>>?
 	var _tokenDefsByWhich as Dictionary<of String, TokenDef>?
 	var _curTokenDef as TokenDef?
 	var _lastTokenDef as TokenDef?
+	var _avgCount = 0
+	var _avgCountNum = 0
 
 	# Source line and location
 	var _sourceLine as String?
@@ -335,6 +338,10 @@ class Tokenizer
 		#assert .readLine, 'Not started.'
 		_didStart = true
 		_lastToken = _nextToken
+		if _lastToken is nil and _avgCountNum > 0
+			avgCount = _avgCount / _avgCountNum
+			_avgCountNum = 0
+			# print '*** avg toks to look through: [avgCount:N2] for [_fileName]'
 		if _verbosity>=1
 			print '<> nextToken() returning [_lastToken]'
 		return _lastToken
@@ -428,7 +435,7 @@ class Tokenizer
 
 	def afterStart
 		"""
-		Sets up self attrs
+		Sets up class vars
 			readLine as callable
 			tokenDefs as list
 		"""
@@ -455,7 +462,7 @@ class Tokenizer
 				for word in t
 					_keywordToWhichToken[word] = word.toUpper()
 			# longest tokens need to be matched first
-			# CC: others.sort(lambda a, b cmp(a.length, b.length))
+			# CC: others.sort(def(a, b)=cmp(a.length, b.length))
 			didSort = false
 			post while didSort
 				didSort = false
@@ -502,7 +509,7 @@ class Tokenizer
 			#print '<> sourceLine = %r' % .sourceLine
 			if numLines
 				if numLines==1
-					assert _sourceLine.endsWith('\n'), _sourceLine
+					assert _sourceLine.endsWith('\n')
 				else
 					assert false, 'Expecting readline() to return one line instead of many.'
 			_sourceLineIndex = 0
@@ -510,93 +517,120 @@ class Tokenizer
 			_colNum = 1
 			return true
 
+	var _narrowTokenDefs = true
+	var _minNumTokenDefsToNarrow = 4
+
 	get _nextToken as IToken?
 		"""
 		This is the core brain of the tokenizer.
 		The primary logic for matching tokens is here.
 		"""
-		if _tokenQueue.count
-			# eat up queue first
-			return _tokenQueue.dequeue()
-		if not _sourceLine or not _sourceLine.length
-			if not _obtainSource()
-				return nil
+		count = 0
 		try
-			for tokenDef in _tokenDefs
-				if tokenDef.ignoreCount
-					tokenDef.ignoreCount -= 1
-					continue
-				if not tokenDef.isActive
-					continue
-				if _sourceLineIndex>0 and tokenDef.requiresBOL
-					continue
-				if not .isActiveCall(tokenDef)
-					continue
-				#print '<> Trying to match [tokenDef]'
-				sourceLine = _sourceLine to String  # CC: to !
-				#print '_sourceLineIndex=[_sourceLineIndex]'
-				match = tokenDef.match(sourceLine)
-				# CC: if match is nil or not match.`success`
-				if match is nil or not $sharp('match.Success')
-				#if match is nil or not match.getType.getProperty('Success').getValue(match, nil)
-					#print '<> No match on [tokenDef] for [_sourceLine[_sourceLineIndex]]'
-					continue
-				assert match.index==0
-				_lastTokenDef = _curTokenDef
-				_curTokenDef = tokenDef  # this enables onTOKENWHICH() methods to access the current tokenDef
-				text = match.toString
-				#print '<> Match! [CobraCore.toTechString(text)] - [tokenDef]'
-				# tok = Token(_fileName, _lineNum, _colNum, _charNum, tokenDef.which, text, text) to ? # CC
-				tok as IToken?
-				tok = Token(_fileName, _lineNum, _colNum, _charNum, tokenDef.which, text, text)
-				len = text.length
-				_colNum += len
-				_charNum += len
-				_sourceLineIndex += len
-				_sourceLine = _sourceLine.substring(len)
-
-				# enable methods to customize handling of tokens
-				reinvoke = false
-
-				# TODO: test if caching the methods is faster
-				methName = 'On' + tok.which
-				meth = .getType.getMethod(methName)
-				if meth
-					try
-						tok = meth.invoke(this, $sharp(r'new IToken[1] {tok}')) to IToken  # CC: to IToken?
-						#tok = meth.invoke(this, [tok].toArray()) to IToken  # CC: to IToken?
-					catch tie as TargetInvocationException
-						throw tie.innerException
-					if tok is nil
-						# skip token, so go to the next one
-						reinvoke = true
+			if _tokenQueue.count
+				# eat up queue first
+				return _tokenQueue.dequeue()
+			if not _sourceLine or not _sourceLine.length
+				if not _obtainSource()
+					return nil
+			try
+				assert _tokenDefs
+				if _narrowTokenDefs and _tokenDefs.count >= _minNumTokenDefsToNarrow
+					assert _tokenDefsByFirstChar
+					assert _sourceLine.length
+					if _tokenDefsByFirstChar.containsKey(_sourceLine[0])
+						# print 'Using short list for char: [_sourceLine[0]], [_sourceLine[0] to int]'
+						tokenDefs = _tokenDefsByFirstChar[_sourceLine[0]]
 					else
-						# TODO: could probably make this more efficient by axing the queue and just checking for nextToken in this method
-						while tok
-							_tokenQueue.enqueue(tok)
-							tok = tok.nextToken
-						reinvoke = true  # to pick up the queue
+						tokenDefs = _tokenDefs to List<of TokenDef>  # CC: to !
+				else
+					tokenDefs = _tokenDefs to List<of TokenDef>  # CC: to !
+				for tokenDef in tokenDefs
+					count += 1
+					if tokenDef.ignoreCount
+						tokenDef.ignoreCount -= 1
+						continue
+					if not tokenDef.isActive
+						continue
+					if _sourceLineIndex>0 and tokenDef.requiresBOL
+						continue
+					if not .isActiveCall(tokenDef)
+						continue
+					#print '<> Trying to match [tokenDef]'
+					sourceLine = _sourceLine to String  # CC: to !
+					#print '_sourceLineIndex=[_sourceLineIndex]'
+					match = tokenDef.match(sourceLine)
+					# CC: if match is nil or not match.`success`
+					if match is nil or not $sharp('match.Success')
+					#if match is nil or not match.getType.getProperty('Success').getValue(match, nil)
+						#print '<> No match on [tokenDef] for [_sourceLine[_sourceLineIndex]]'
+						continue
+					assert match.index==0
+					_lastTokenDef = _curTokenDef
+					_curTokenDef = tokenDef  # this enables onTOKENWHICH() methods to access the current tokenDef
+					text = match.toString
+					#print '<> Match! [CobraCore.toTechString(text)] - [tokenDef]'
+					# tok = Token(_fileName, _lineNum, _colNum, _charNum, tokenDef.which, text, text) to ? # CC
+					tok as IToken?
+					tok = Token(_fileName, _lineNum, _colNum, _charNum, tokenDef.which, text, text)
+					len = text.length
+					_colNum += len
+					_charNum += len
+					_sourceLineIndex += len
+					_sourceLine = _sourceLine.substring(len)
 
-				# finished with current line?
-				if _sourceLine.length==0
-					_sourceLine = nil
-					_sourceLineIndex = -1
-					_originalSourceLine = nil
+					# enable methods to customize handling of tokens
+					reinvoke = false
 
-				# handle token skipping
-				if reinvoke
-					tok = _nextToken
+					# TODO: test if caching the methods is faster
+					methName = 'On' + tok.which
+					meth = .getType.getMethod(methName)
+					if meth
+						try
+							tok = meth.invoke(this, $sharp(r'new IToken[1] {tok}')) to IToken  # CC: to IToken?
+							#tok = meth.invoke(this, [tok].toArray()) to IToken  # CC: to IToken?
+						catch tie as TargetInvocationException
+							throw tie.innerException
+						if tok is nil
+							# skip token, so go to the next one
+							reinvoke = true
+						else
+							# TODO: could probably make this more efficient by axing the queue and just checking for nextToken in this method
+							while tok
+								_tokenQueue.enqueue(tok)
+								tok = tok.nextToken
+							reinvoke = true  # to pick up the queue
 
-				# yay!
-				return tok
+					# finished with current line?
+					if _sourceLine.length==0
+						_sourceLine = nil
+						_sourceLineIndex = -1
+						_originalSourceLine = nil
+
+					# handle token skipping
+					if reinvoke
+						tok = _nextToken
+
+					# yay!
+					return tok
+			finally
+				_curTokenDef = nil
+
+			# no match
+			if false
+				trace all
+				trace _lineNum, _colNum, _charNum
+				trace _sourceLine[0], _sourceLine[0] to int
+				trace _sourceLine
+				trace _sourceLineIndex
+				trace _originalSourceLine
+			.throwError('Lexical error: "[_originalSourceLine[_sourceLineIndex]]" ([_originalSourceLine[_sourceLineIndex] to int])')
+			# ^ no source location information is included in the error message as that should be pulled
+			#   from TokenizerError.tokenzier.lastToken.
+			return nil
 		finally
-			_curTokenDef = nil
-
-		# no match
-		.throwError('Lexical error: "[_originalSourceLine[_sourceLineIndex]]"')
-		# ^ no source location information is included in the error message as that should be pulled
-		#   from TokenizerError.tokenzier.lastToken.
-		return nil
+			_avgCount += count
+			_avgCountNum += 1
 
 	def pushTokenDefs(defs as List<of TokenDef>)
 		ensure
@@ -604,12 +638,42 @@ class Tokenizer
 			_tokenDefsByWhich.count is defs.count
 		body
 			defsByWhich = Dictionary<of String, TokenDef>()
+			defsByFirstChar = Dictionary<of char, List<of TokenDef>>()
+			unknownFirstCharDefs = List<of TokenDef>()
+			number = 0
 			for tokenDef in defs
+				tokenDef.number = number
+				number += 1
 				assert not defsByWhich.containsKey(tokenDef.which), tokenDef
 				defsByWhich[tokenDef.which] = tokenDef
-			_tokenDefsStack.push(TokenDefSet(defs, defsByWhich))
+				if _narrowTokenDefs
+					if tokenDef.firstChars.count
+						for c in tokenDef.firstChars
+							if defsByFirstChar.containsKey(c)
+								defsByFirstChar[c].add(tokenDef)
+							else
+								defsByFirstChar[c] = [tokenDef]
+					else
+						unknownFirstCharDefs.add(tokenDef)
+			if _narrowTokenDefs
+				v = false
+				for key as char in defsByFirstChar.keys
+					if v
+						print
+						print '***', key, defsByFirstChar[key]
+					t = defsByFirstChar[key]
+					t.addRange(unknownFirstCharDefs)
+					# sort by number
+					# CC: should specify the comparison here I think, since there is another place where they are sorted by length
+					t.sort()
+					if v
+						print '{[key]}'
+						for i = 0 .. t.count
+							print '  [i]. [t[i]]'
+			_tokenDefsStack.push(TokenDefSet(defs, defsByWhich, defsByFirstChar))
 			_tokenDefs = defs
 			_tokenDefsByWhich = defsByWhich
+			_tokenDefsByFirstChar = defsByFirstChar
 
 	def popTokenDefs
 		require
@@ -620,11 +684,14 @@ class Tokenizer
 				tokenDefSet as TokenDefSet = _tokenDefsStack.peek() to TokenDefSet # CC: shouldn't need the 'as' or the 'to'
 				defs = tokenDefSet.defs # CC: add: to ?
 				defsByWhich = tokenDefSet.defsByWhich # CC: add: to ?
+				defsByFirstChar = tokenDefSet.defsByFirstChar
 			else
 				defs = nil to passthrough  # CC: axe cast after fixing CCs above
 				defsByWhich = nil to passthrough  # CC: axe cast after fixing CCs above
+				defsByFirstChar = nil to passthrough
 			_tokenDefs = defs
 			_tokenDefsByWhich = defsByWhich
+			_tokenDefsByFirstChar = defsByFirstChar
 
 	def isActiveCall(tok as TokenDef) as bool
 		return true
@@ -645,17 +712,21 @@ class Tokenizer
 			sb.append(t.which)
 			sep = ' '
 		tokensStr = sb.toString
-		assert tokensStr==expected, 'tokensStr=[tokensStr], expected=[expected]'
+		assert tokensStr==expected
 
 
 class TokenDef
+	implements IComparable
 
 	shared
 		var _compiledRegExes = Dictionary<of String, Regex>()
 
+	var _number as int
 	var _which as String
 	var _regExSource as String
 	var _re as Regex
+	var _length as int
+	var _firstChars as List<of char>
 	var _requiresBOL as bool
 	var _ignoreCount as int
 	var _isActive = true
@@ -669,22 +740,54 @@ class TokenDef
 			.re
 		body
 			_requiresBOL = regExSource.startsWith('^')
+			_firstChars = _computeFirstChars(regExSource)
+			_regExSource = regExSource
 			if not _requiresBOL
 				regExSource = '^' + regExSource
+			_length = regExSource.length
 			_which = which
-			_regExSource = regExSource
 			if _compiledRegExes.containsKey(regExSource)
 				_re = _compiledRegExes[regExSource]
 			else
-				_re = Regex(_regExSource, $sharp('RegexOptions.Compiled'))
+				_re = Regex(regExSource, $sharp('RegexOptions.Compiled'))
 				_compiledRegExes[regExSource] = _re
+
+	def _computeFirstChars(s as String) as List<of char>
+		# TODO: this is actually specific to Cobra, so it should really be in CobraTokenizer.
+		# Maybe that can be done via a callback/delegate.
+		t = List<of char>()
+		if s.startsWith(r'[A-Za-z_]')
+			for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_'
+				t.add(c)
+		else if s.startsWith(r'\d')
+			for c in '0123456789'
+				t.add(c)
+		else if s.startsWith(r'\t')
+			t.add(c'\t')
+		else if s.startsWith(r'\n')
+			t.add(c'\n')
+		else if s[0] == c'\\'
+			t.add(s[1])
+		else if s.startsWith(r'^[\t]')
+			t.add(c'\t')
+		else if s.startsWith(r'^[ ]+')
+			t.add(c' ')
+		else if s.startsWith(r'[ \t]+')
+			t.add(c' ')
+			t.add(c'\t')
+		else if s[0] not in r'^\[.'
+			t.add(s[0])
+		return t
+
+	pro number from var
 
 	pro which from var
 
 	get regExSource from var
 
-	get length as int
-		return _regExSource.length
+	get firstChars from var
+
+	get length from var
 
 	get requiresBOL from var
 
@@ -708,25 +811,36 @@ class TokenDef
 			return _re.match(input, startAt)
 
 	def toString as String is override
-		return '[.getType.name]([_which], [_regExSource], [_re])'
+		return '[.getType.name]([_number], [_which], [_regExSource], [_re])'
+
+	def compareTo(obj as Object) as int
+		if obj is nil
+			return 0
+		assert obj inherits TokenDef
+		return _number - (obj to TokenDef).number  # CC: axe cast
 
 
 class TokenDefSet
 
 	var _defs as List<of TokenDef>
 	var _defsByWhich as Dictionary<of String, TokenDef>
+	var _defsByFirstChar as Dictionary<of char, List<of TokenDef>>
 
-	def init(defs as List<of TokenDef>, defsByWhich as Dictionary<of String, TokenDef>)
+	def init(defs as List<of TokenDef>, defsByWhich as Dictionary<of String, TokenDef>, defsByFirstChar as Dictionary<of char, List<of TokenDef>>)
 		require
 			defs
 			defsByWhich
+			defsByFirstChar
 		body
 			_defs = defs
 			_defsByWhich = defsByWhich
+			_defsByFirstChar = defsByFirstChar
 
 	get defs from var
 
 	get defsByWhich from var
+
+	get defsByFirstChar from var
 
 
 class TestTokenizer
@@ -797,7 +911,7 @@ class TestTokenizer
 			if tokens[i].which=='NEWLINE'
 				tokens.removeAt(i)
 				i -= 1
-		assert tokens.count==3, tokens.count
+		assert tokens.count==3
 		hello = tokens[0]  # CC:  hello, there, you = tokens
 		there = tokens[1]
 		you = tokens[2]
