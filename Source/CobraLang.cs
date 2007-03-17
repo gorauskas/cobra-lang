@@ -859,6 +859,18 @@ static public class CobraImp {
 		}
 	}
 
+	static public int DynamicCompare(Object a, Object b) {
+		if (object.ReferenceEquals(a, b))
+			return 0;
+		if (a==null)
+			return 0;
+		if (b==null)
+			return 1;
+		if (a is IComparable)
+			return ((IComparable)a).CompareTo(b);
+		throw new CannotCompareException(a, b);
+	}
+
 	static public int op_Addition_Int32_Int32(int a, int b) {
 		return a + b;
 	}
