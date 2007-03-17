@@ -421,7 +421,7 @@ class ForNumericStmt
 
 	def init(token as IToken, varr as NameExpr, start as Expr, stopp as Expr, dir as int, stepp as Expr?, block as BlockStmt)
 		require
-			true # dir==-1 or dir==+1
+			true # TODO: dir==-1 or dir==+1
 		body
 			base.init(token, varr, block)
 			_start = start
@@ -457,24 +457,33 @@ class ForNumericStmt
 		csVar = _var.sharpName
 		sw.write('for ([csVar]=')
 		_start.writeSharpDef(sw)
-		sw.write('; [csVar]')
-		if _dir==1
-			sw.write('<')
-		else
-			sw.write('>')
-		_stop.writeSharpDef(sw)
-		sw.write('; ')
-		if _step
-			if _dir==1
-				sw.write('[csVar]+=')
+		if _var.type.isDynamic
+			sw.write('; CobraImp.DynamicCompare([csVar], ')
+			_stop.writeSharpDef(sw, false)
+			sw.write(')[if(_dir==1, "<", ">")]0')
+			opName = if(_dir==1, 'op_Addition', 'op_Subtraction')
+			sw.write('; [csVar]=CobraImp.DynamicOp("[opName]", [csVar], ')
+			if _step
+				_step.writeSharpDef(sw, false)
 			else
-				sw.write('[csVar]-=')
-			_step.writeSharpDef(sw)
+				sw.write('1')
+			sw.write(')')
 		else
-			if _dir==1
-				sw.write('[csVar]++')
+			sw.write('; [csVar]')
+			sw.write(if(_dir==1, '<', '>'))
+			_stop.writeSharpDef(sw)
+			sw.write('; ')
+			if _step
+				if _dir==1
+					sw.write('[csVar]+=')
+				else
+					sw.write('[csVar]-=')
+				_step.writeSharpDef(sw)
 			else
-				sw.write('[csVar]--')
+				if _dir==1
+					sw.write('[csVar]++')
+				else
+					sw.write('[csVar]--')
 		sw.write(')')
 		_block.writeSharpDef(sw)
 
