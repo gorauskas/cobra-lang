@@ -210,10 +210,14 @@ class Expr
 		.writeSharpBreakdownItems(sw)
 		sw.write('}, ')
 
+	get willWriteSharpBreakdownItems as bool
+		return true
+
 	def writeSharpBreakdownItems(sw as SharpWriter)
-		src = Utils.csStringLitFor(.toCobraSource)
-		sw.write(', [src], ')
-		.writeSharpDefForBreakdown(sw)
+		if .willWriteSharpBreakdownItems
+			src = Utils.csStringLitFor(.toCobraSource)
+			sw.write(', [src], ')
+			.writeSharpDefForBreakdown(sw)
 
 	def writeSharpDefForBreakdown(sw as SharpWriter)
 		.writeSharpDef(sw)
@@ -1706,9 +1710,6 @@ class Literal
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		sw.write(.asSharp)
 
-	def writeSharpBreakdownItems(sw as SharpWriter) is override
-		pass
-
 
 class AtomicLiteral
 	inherits Literal
@@ -1732,6 +1733,9 @@ class AtomicLiteral
 
 	def toCobraSource as String is override
 		return _text
+
+	get willWriteSharpBreakdownItems as bool is override
+		return false
 
 
 class BoolLit
@@ -1914,6 +1918,15 @@ class StringSubstLit
 				return true
 		return false
 
+	def toCobraSource as String is override
+		sb = StringBuilder()
+		for item in _items
+			if item inherits StringLit
+				sb.append(item.token.text)
+			else
+				sb.append(item.toCobraSource)
+		return sb.toString
+
 	def _bindImp is override
 		base._bindImp()
 		for item in _items
@@ -1974,6 +1987,9 @@ class FormattedExpr
 		if _expr.hasError
 			return true
 		return false
+
+	def toCobraSource as String is override
+		return '[_expr.toCobraSource]:[_format]'
 
 	def _bindImp is override
 		base._bindImp()

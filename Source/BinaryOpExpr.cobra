@@ -405,6 +405,19 @@ class AugAssignMathExpr
 		# TODO: does NumericPromoExpr cover everything we need?
 
 	def _writeSharpDef(sw as SharpWriter) is override
+		if _left.type.isDynamic
+			_left.writeSharpDef(sw)
+			sw.write(' = ')
+			specs = OperatorSpecs.binaryOpSpecsByCobraText
+			assert specs.containsKey(.token.text)
+			spec = specs[.token.text]
+			opText = Utils.csStringLitFor(spec.opMethodName)
+			sw.write('CobraImp.DynamicOp([opText], ')
+			_left.writeSharpDef(sw)
+			sw.write(', ')
+			_right.writeSharpDef(sw)
+			sw.write(')')
+			return
 		op = ''
 		sep = ','  # for the method call case
 		branch _op
@@ -416,7 +429,7 @@ class AugAssignMathExpr
 				op = '*='
 			on 'STARSTAR_EQUALS'
 				op = 'CobraImp.PowerToEquals('
-			on 'SLASH'
+			on 'SLASH_EQUALS'
 				op = '/='  # TODO: finish this
 			on 'SLASHSLASH_EQUALS'
 				op = '/='  # TODO: finish this

@@ -875,12 +875,12 @@ static public class CobraImp {
 		return a + b;
 	}
 
-	static public int op_Multiply_Int32_Int32(int a, int b) {
-		return a * b;
-	}
-
 	static public int op_Subtraction_Int32_Int32(int a, int b) {
 		return a - b;
+	}
+
+	static public int op_Multiply_Int32_Int32(int a, int b) {
+		return a * b;
 	}
 
 	static public decimal op_Division_Int32_Int32(int a, int b) {
@@ -897,6 +897,30 @@ static public class CobraImp {
 
 	static public String op_Addition_String_String(String a, String b) {
 		return a + b;
+	}
+
+	static public int op_AdditionAssignment_Int32_Int32(int a, int b) {
+		return a + b;
+	}
+
+	static public int op_SubtractionAssignment_Int32_Int32(int a, int b) {
+		return a - b;
+	}
+
+	static public decimal op_SubtractionAssignment_Decimal_Int32(decimal a, int b) {
+		return a - b;
+	}
+
+	static public int op_MultiplicationAssignment_Int32_Int32(int a, int b) {
+		return a * b;
+	}
+
+	static public decimal op_DivisionAssignment_Int32_Int32(int a, int b) {
+		return (decimal)a / (decimal)b;
+	}
+
+	static public int op_IntegerDivisionAssignment_Int32_Int32(int a, int b) {
+		return a / b;
 	}
 
 }
