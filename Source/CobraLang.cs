@@ -867,6 +867,22 @@ static public class CobraImp {
 		return a * b;
 	}
 
+	static public int op_Subtraction_Int32_Int32(int a, int b) {
+		return a - b;
+	}
+
+	static public decimal op_Division_Int32_Int32(int a, int b) {
+		return (decimal)a / (decimal)b;
+	}
+
+	static public int op_IntegerDivision_Int32_Int32(int a, int b) {
+		return a / b;
+	}
+
+	static public int op_Modulus_Int32_Int32(int a, int b) {
+		return a % b;
+	}
+
 	static public String op_Addition_String_String(String a, String b) {
 		return a + b;
 	}
