@@ -479,6 +479,8 @@ class Parser
 		assert false
 		return nil to passthrough
 
+	var _syntaxForClassInheritanceMsg = 'The syntax for inheritance is to put "inherits BaseClass" on the following line, indented.'
+
 	def classDecl as Class
 		token = .expect('CLASS')
 		peek = .peek.which
@@ -488,8 +490,12 @@ class Parser
 		else if peek == 'OPEN_GENERIC'
 			token = .expect('OPEN_GENERIC')
 			name = token.value to String
+		else if peek == 'OPEN_CALL'
+			.throwError(_syntaxForClassInheritanceMsg)
 		else
 			.throwError('Expecting a class name.')
+		if .peek.which=='COLON' and .peek(1)<>nil and .peek(1).which=='ID'
+			.throwError(_syntaxForClassInheritanceMsg)
 		if name[0] not in _uppercaseLetters
 			.throwError('Class names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 
@@ -604,6 +610,8 @@ class Parser
 				if expectComma
 					.expect('COMMA')
 				ident = .expect('ID').text
+				if Utils.startsWithLowerLetter(ident)
+					.throwError('Generic parameter names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 				paramsList.add(GenericParam(ident))
 				expectComma = true
 		return paramsList
@@ -620,6 +628,8 @@ class Parser
 			name += '>'
 		return name
 
+	var _syntaxForInterfaceInheritanceMsg = 'The syntax for inheritance is to put "inherits BaseInterfaceA, BaseInterfaceB" on the following line, indented.'
+
 	def interfaceDecl as Interface
 		token = .expect('INTERFACE')
 		peek = .peek.which
@@ -629,12 +639,16 @@ class Parser
 		else if peek == 'OPEN_GENERIC'
 			token = .expect('OPEN_GENERIC')
 			name = token.value to String
+		else if peek == 'OPEN_CALL'
+			.throwError(_syntaxForInterfaceInheritanceMsg)
 		else
 			.throwError('Expecting an interface name.')
 		if name[0] not in _uppercaseLetters
 			.throwError('Interface names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 		if not name.startsWith('I')
 			.throwError('Interfaces must start with a capital "I".')
+		if .peek.which=='COLON' and .peek(1)<>nil and .peek(1).which=='ID'
+			.throwError(_syntaxForInterfaceInheritanceMsg)
 
 		# CC: rename paramsList to params (can't do it now because it's a C# reserved word and Cobra needs to generate IL or 'escape' these)
 		paramsList = .declGenericParams(token)
@@ -683,7 +697,7 @@ class Parser
 			token = .expect('OPEN_GENERIC')
 			name = token.value to String
 		else
-			.throwError('Expecting a class name.')
+			.throwError('Expecting a struct name.')
 		if name[0] not in _uppercaseLetters
 			.throwError('Struct names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 
