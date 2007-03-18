@@ -859,6 +859,25 @@ static public class CobraImp {
 		}
 	}
 
+	static public object DynamicOp(String opMethodName, Object value) {
+		Type type = value.GetType();
+		MethodInfo mi = type.GetMethod(opMethodName, BindingFlags.Static|BindingFlags.Public);
+		if (mi!=null) {
+			return mi.Invoke(value, new object[] { value } );
+		} else {
+			String name = opMethodName + '_' + value.GetType().Name;
+			// whoops. GetMethod() requires that you specify the args, even though InvokeMethod() does not--weirdness. I guess that means that InvokeMethod() does not use GetMethod()
+			// mi = typeof(CobraImp).GetMethod(opMethodName, BindingFlags.Static|BindingFlags.Public);
+			// if (mi!=null) {
+			// 	return mi.Invoke(value1, new object[] { value1, value2 });
+			try {
+				return typeof(CobraImp).InvokeMember(name, BindingFlags.Public|BindingFlags.Static|BindingFlags.InvokeMethod, null, null, new object[] { value });
+			} catch (MissingMethodException) {
+			}
+			throw new UnknownMemberException(value, opMethodName + " or " + name, type);
+		}
+	}
+
 	static public int DynamicCompare(Object a, Object b) {
 		if (object.ReferenceEquals(a, b))
 			return 0;
@@ -869,6 +888,14 @@ static public class CobraImp {
 		if (a is IComparable)
 			return ((IComparable)a).CompareTo(b);
 		throw new CannotCompareException(a, b);
+	}
+
+	static public int op_UnaryNegation_Int32(int a) {
+		return -a;
+	}
+
+	static public double op_UnaryNegation_Double(double a) {
+		return -a;
 	}
 
 	static public int op_Addition_Int32_Int32(int a, int b) {

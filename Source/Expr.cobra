@@ -452,7 +452,7 @@ class CallExpr
 					#	t as Type
 					#	...
 					#	x = t()
-					if definition.type.isDescendantOf(.compiler.libraryType('System', 'Type'))
+					if definition.type.isDynamic or definition.type.isDescendantOf(.compiler.libraryType('System', 'Type'))
 						type = .compiler.dynamicType
 					else
 						.throwError('Cannot call a variable of type [definition.type.name].')
@@ -539,6 +539,8 @@ class CallExpr
 		if _isCallOnSystemType
 			defi = _definition
 			what = if(defi inherits Class, 'typeof([_definition.name])', defi.sharpName)
+			if (defi to IVar).type.isDynamic
+				what = '(System.Type)' + what
 			sw.write('Activator.CreateInstance([what]')
 			sep = ','  # TODO: sep = ', '
 			for arg in _args
@@ -1674,6 +1676,15 @@ class UnaryOpExpr
 		return op + _expr.toCobraSource
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if _expr.type.isDynamic
+			specs = OperatorSpecs.unaryOpSpecsByCobraText
+			assert specs.containsKey(.token.text)
+			spec = specs[.token.text]
+			opText = Utils.csStringLitFor(spec.opMethodName)
+			sw.write('CobraImp.DynamicOp([opText], ')
+			_expr.writeSharpDef(sw, false)
+			sw.write(')')
+			return
 		if parens
 			sw.write('(')
 		branch _op
