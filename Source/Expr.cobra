@@ -1629,6 +1629,7 @@ class UnaryOpExpr
 	var _expr as Expr
 
 	def init(token as IToken, op as String, expr as Expr)
+		require op in ['MINUS', 'PLUS', 'NOT']
 		base.init(token)
 		_op = op
 		_expr = expr
@@ -1660,6 +1661,8 @@ class UnaryOpExpr
 		branch _op
 			on 'MINUS'
 				_type = _expr.type
+			on 'PLUS'
+				_type = _expr.type
 			on 'NOT'
 				if _expr.type is not .compiler.boolType
 					_expr = TruthExpr(_expr).bindAll() to TruthExpr  # CC: axe when "as this"
@@ -1671,11 +1674,19 @@ class UnaryOpExpr
 	def toCobraSource as String is override
 		branch _op
 			on 'MINUS': op = '-'
+			on 'PLUS': op = '+'
 			on 'NOT': op = 'not '
 			else: throw FallThroughException(_op)
 		return op + _expr.toCobraSource
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if _op == 'PLUS'
+			if parens
+				sw.write('(')
+			_expr.writeSharpDef(sw, false)
+			if parens
+				sw.write(')')
+			return
 		if _expr.type.isDynamic
 			specs = OperatorSpecs.unaryOpSpecsByCobraText
 			assert specs.containsKey(.token.text)
