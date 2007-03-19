@@ -1270,6 +1270,12 @@ class Parser
 		Errors:
 			None
 		"""
+		if .peek.which == 'OPEN_GENERIC'
+			# the programmer likely declared a parameter in the C syntax: List<of int> numbers
+			.throwError('The correct parameter syntax is "paramName as ParamType".')
+		if .looksLikeType(0) and .looksLikeVarNameIsNext(1)
+			# the programmer likely declared a parameter in the C syntax: String s
+			.throwError('The correct parameter syntax is "paramName as ParamType". Try "[.peek(1).text] as [.peek(0).text]".')
 		token = .expect('ID')
 		identifier = token.value to String
 		.checkStartsLowercase(identifier, 'Parameter')
@@ -1420,6 +1426,12 @@ class Parser
 				.grab  # ignore stray EOL (can especially come up at the end of a file)
 				expectEOL = false
 			else
+				# Can't do this (or at least not this simply) because it's legit to say:
+				# SomeClass<of Blah>()
+				#if token.which=='OPEN_GENERIC'
+				#	.throwError('The correct local variable syntax is "name as Type" or "name = initValue".')
+				if .looksLikeType(0) and .looksLikeVarNameIsNext(1)
+					.throwError('The correct local variable syntax is "name as Type" or "name = initValue". Try "[.peek(1).text] as [.peek(0).text]."')
 				s = .expression
 				s.afterParserRecognizesStatement
 		if expectEOL
@@ -2506,6 +2518,32 @@ class Parser
 		if Utils.startsNonLower(identifier)  # CC: should be char.isLower(identifier[0]), but cannot see members of char at this time
 			sugg = identifier[0].toString.toLower + identifier.substring(1, identifier.length-1)
 			.throwError('[whatName] declarations must start with a lowercase letter to distinguish them from other types of identifiers. Try "[sugg]".')
+
+	def looksLikeType(peekAhead as int) as bool
+		"""
+		Returns true if the token looks like a type because
+			* it's an uppercase identifier, or
+			* it's a primitive type (bool, char, etc.)
+
+		The users of this method have to handle OPEN_GENERIC in a separate way which is why this
+		method does not check for that.
+
+		Also, this method cannot check for dotted names since it only works with one token.
+
+		This method supports the feature where C# style syntax for params and locals is detected
+		(`int x = 5` instead of `x as int = 5` or `x = 5`) in order to give a more useful error
+		message to the programmer.
+		"""
+		token = .peek(peekAhead)
+		if token.which == 'ID'
+			return Utils.startsNonLower(token.value to String)
+		if token.isKeyword and token.text in ['bool', 'char', 'decimal', 'int', 'float']
+			return true
+		return false
+
+	def looksLikeVarNameIsNext(peekAhead as int) as bool
+		token = .peek(peekAhead)
+		return token is not nil and token.which=='ID' and Utils.startsWithLowerLetter(token.text)
 
 	def throwError(msg as String)
 		.throwError(.last, msg)
