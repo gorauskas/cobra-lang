@@ -243,7 +243,7 @@ class CommandLine  # TODO: rename to CommandLine
 			if d.containsKey('synonyms')
 				syns = d['synonyms']
 				for syn as String in (syns to System.Collections.IList) # CC: shouldn't need either cast
-					assert not specDict.containsKey(syn), syn
+					assert not specDict.containsKey(syn)
 					specDict[syn] = d
 					synToName[syn] = d['name'] to String
 					synList.add(syn)
@@ -412,13 +412,13 @@ class CommandLine  # TODO: rename to CommandLine
 			c.writeSharp()
 			if writeTestInvocation
 				c.writeSharpTestInvocation()
-			c.compileCS()
+			c.compileCS(if(writeTestInvocation, '/main:RunTests', ''))
 			c.printMessages()
 		catch StopCompilation
 			# Each phase of the compiler may throw an exception to stop compilation.
 			# Before doing so, it prints its errors.
 			if _optionDict.containsKey('editor')
-				assert c.errors.count>0, c
+				assert c.errors.count>0
 				spec = _optionDict['editor'] to String
 				if spec.indexOf('_')==-1
 					.error('Missing underscore from editor spec.')
@@ -449,8 +449,9 @@ class CommandLine  # TODO: rename to CommandLine
 		if c.errors.count
 			print 'Not running tests due to errors above.'
 			return
-		testInvoker = c.modules[c.modules.count-1]  # CC: [-1]
-		assert testInvoker inherits SharpModule, testInvoker
+		testInvoker = c.modules[c.modules.count-1]  # CC: .last
+		assert testInvoker inherits SharpModule
+		assert testInvoker.fileName.startsWith('test-')
 		File.delete(testInvoker.fileName)
 		try
 			p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
@@ -709,7 +710,7 @@ class CommandLine  # TODO: rename to CommandLine
 
 		_statusWriter.writeLine('([_statusCount]) [baseName]')
 		_statusCount += 1
-		assert File.exists(baseName), baseName
+		assert File.exists(baseName)
 
 		source = File.readAllText(baseName)
 		bar = '----------------------------------------------------------------------------------------------------'
