@@ -60,11 +60,36 @@ class Box
 	get overloads from var
 
 	get rootName as String
-		name = .name
-		i = name.indexOf('<')
-		if i<>-1  # List<of>, Dictionary<of,>
-			name = name[0:i]
-		return name
+		ensure
+			'<' not in result
+			.name.startsWith(result)
+		body
+			name = .name
+			i = name.indexOf('<')
+			if i <> -1  # List<of>, Dictionary<of,>
+				name = name[0:i]
+			return name
+
+	get qualifiedRootName as String
+		require
+			.nameSpace
+		ensure
+			not result.startsWith('.')
+			not result.endsWith('.')
+			not .nameSpace.isGlobal implies '.' in result
+		body
+			nameSpaces = List<of NameSpace>()
+			ns = _nameSpace
+			while ns and not ns.isGlobal
+				nameSpaces.add(ns to passthrough)  # CC: axe cast
+				assert ns is not ns.superNameSpace
+				ns = ns.superNameSpace
+			nameSpaces.reverse
+			name = Utils.join('.', for ns in nameSpaces get ns.name)
+			if name.length
+				name += '.'
+			name += .rootName
+			return name
 
 	get defaultAccessLevel as String is override
 		return 'public'
@@ -498,7 +523,8 @@ class Box
 			return
 		if .isFake
 			return
-		sw.write('\t\t[.rootName].RunTestsIfNeeded();\n')
+		assert _nameSpace
+		sw.write('\t\t[.qualifiedRootName].RunTestsIfNeeded();\n')
 		_didWriteSharpTestInvocation = true
 
 	get newForSharpTest as String

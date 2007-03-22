@@ -455,7 +455,7 @@ class CommandLine  # TODO: rename to CommandLine
 		File.delete(testInvoker.fileName)
 		try
 			p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
-			p.startInfo.fileName = c.exeFileName
+			p.startInfo.fileName = c.baseExeFileName  # TODO: may need enhancement for Novell
 			# TODO: support args to the program with a - or -- separator
 			# p.startInfo.arguments = ...
 			if _verbosity >= 3
@@ -464,10 +464,10 @@ class CommandLine  # TODO: rename to CommandLine
 			p.start()
 			p.waitForExit()
 		catch
-			File.delete(c.exeFileName)
+			File.delete(c.fullExeFileName)
 			throw
 		success
-			File.delete(c.exeFileName)
+			File.delete(c.fullExeFileName)
 
 	def doRun(paths as List<of String>)
 		c = .doCompile(paths)
@@ -477,14 +477,12 @@ class CommandLine  # TODO: rename to CommandLine
 			p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
 			branch c.platform
 				on PlatformEnum.Microsoft
-					p.startInfo.fileName = c.exeFileName
+					p.startInfo.fileName = c.baseExeFileName
 					# TODO: support args to the program with a - or -- separator (and for Novell below)
 					# p.startInfo.arguments = ...
 				on PlatformEnum.Novell
 					p.startInfo.fileName = 'mono'
-					exeFileName = c.exeFileName
-					if not exeFileName.endsWith('.exe')
-						exeFileName += '.exe'
+					exeFileName = c.fullExeFileName
 					p.startInfo.arguments = exeFileName
 				else
 					throw FallThroughException(c.platform)
@@ -888,8 +886,8 @@ class CommandLine  # TODO: rename to CommandLine
 		print 'Run:'
 		p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
 		if _verbosity > 2
-			print 'c.exeFileName = "[c.exeFileName]"'
-		p.startInfo.fileName = c.exeFileName + if(c.platform==PlatformEnum.Novell, '.exe', '')
+			print 'c.fullExeFileName = "[c.fullExeFileName]"'
+		p.startInfo.fileName = c.baseExeFileName + if(c.platform==PlatformEnum.Novell, '.exe', '')
 		# TODO: axe p.startInfo.arguments = options + ' ' + csFileNames + ' ' + cobraLangPath
 		#if _verbosity >= 2  # TODO: restore
 		if true

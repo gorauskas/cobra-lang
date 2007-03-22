@@ -65,6 +65,10 @@ class Compiler
 	var _warnings as List<of CobraWarning>
 	var _messages as List<of Object>  # all errors and warnings
 
+	var _baseExeFileName as String = ''
+	var _fullExeFileName as String = ''
+
+
 	def init(verbosity as int)
 		_nextSerialNum += 1
 		_serialNum = _nextSerialNum
@@ -78,7 +82,6 @@ class Compiler
 		_errors = List<of CobraException>()
 		_messages = List<of Object>()
 		_warnings = List<of CobraWarning>()
-		_exeFileName = ''  # CC: just make _exeFileName a String?, but note that compiler chokes on doing so!
 
 	def toString as String is override
 		return '[.getType.name]([_serialNum])'
@@ -584,8 +587,6 @@ class Compiler
 				print '}'
 		_modules.add(SharpModule(fileName, _verbosity))
 
-	var _exeFileName as String
-
 	var _cscExecPaths = [
 		[r'\WINDOWS\Microsoft.NET\Framework\v2.0.50727\csc', 'ms'],  # common
 		[r'\WINNT\Microsoft.NET\Framework\v2.0.50727\csc', 'ms'],
@@ -594,7 +595,15 @@ class Compiler
 		[r'/usr/local/bin/gmcs', 'novell'],
 	]
 
-	get exeFileName from var
+	get baseExeFileName from var
+		"""
+		Returns the exe file name sans extension.
+		"""
+
+	get fullExeFileName from var
+		"""
+		Returns the exe file name with extension.
+		"""
 
 	var _platform as PlatformEnum
 
@@ -631,12 +640,12 @@ class Compiler
 
 			# exe names
 			# CC: exe = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName, _modules[_firstUserModuleIndex].csFileName)
-			outName = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName to passthrough, _modules[_firstUserModuleIndex].csFileName to passthrough) to String
+			outName = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName, _modules[_firstUserModuleIndex].csFileName)
 			if outName.endsWith('.cs')
-				outName = outName.substring(0, outName.length-3) # CC: [..-3]
+				outName = outName.substring(0, outName.length-3)  # CC: cannot slice nilable, [:-3]
 			if outName.endsWith('.cobra')
-				outName = outName.substring(0, outName.length-6) # CC: [..-6]
-			_exeFileName = outName
+				outName = outName.substring(0, outName.length-6)  # CC: cannot slice nilable, [:-6]
+			_baseExeFileName = outName to String  # CC: to !  CC: axe cast
 
 			# options
 			options = ''
@@ -654,6 +663,7 @@ class Compiler
 					else: throw FallThroughException(target)
 			else
 				outName += '.exe'
+			_fullExeFileName = outName to String  # CC: to !  CC: axe cast
 
 			# CC: cleanup
 			thing = Utils.getSO(_options, 'reference', []) to List<of Object>
