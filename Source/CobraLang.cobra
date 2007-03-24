@@ -100,14 +100,22 @@ namespace Cobra
 					return Version(0, 4, 0)
 
 				get releaseNum as int
-
 					return 17
 
 
-				## Command line args in generic list form
+				## Program stuff
 
 				get commandLineArgs as List<of String>
 					return List<of String>(Environment.getCommandLineArgs)
+
+				get exePath as String
+					"""
+					Returns the full path of the currently executing exe including directory, file name and extension.
+					"""
+					test
+						assert '.exe' in CobraCore.exePath
+					body
+						return System.Reflection.Assembly.getExecutingAssembly.location
 
 
 				## Tracer
@@ -176,6 +184,110 @@ namespace Cobra
 					.willCheckEnsure = value
 					.willCheckAssert = value
 					.willCheckNonNilClassVars = value
+
+
+				## Finding cobra command line program
+
+				def findCobraExe as String?
+					return .findCobraExe(nil)
+
+				def findCobraExe(extraPaths as IList<of String>?) as String?
+					"""
+					Finds cobra.exe on the current system by looking in various places:
+						* the current directory
+						* the directory where the current executable resides
+						* the path of the cobra.exe that produced the current executable
+						* the path of the COBRA environment variable
+						* the system PATH
+						* educated guesses like \WINDOWS\Program Files\Cobra\bin and /usr/local/bin
+						* the extraPaths argument
+					"""
+					# check previous cached result first
+					if _findCobraCache
+						return _findCobraCache
+					# check the current directory
+					path = _findCobraExe(Environment.currentDirectory)
+					if path
+						return path
+					# check the directory where the current executable resides
+					path = _findCobraExe(CobraCore.exePath)
+					if path
+						return path
+					# check for the cobra that created the current executable
+					if System.IO.File.exists(CobraInfo.cobraPath)
+						return CobraInfo.cobraPath
+					# check COBRA environment variable
+					path = Environment.getEnvironmentVariable('COBRA') ? ''
+					if path <> ''
+						path = _findCobraExe(path)
+						if path
+							return path
+					# check the PATH
+					paths = (Environment.getEnvironmentVariable('PATH') ? '').split(System.IO.Path.pathSeparator)
+					for sysPath in paths
+						path = _findCobraExe(sysPath)
+						if path
+							return path
+					# check common locations and extraPaths
+					morePaths = [
+						r'\WINDOWS\Program Files\Cobra\bin',
+						r'\Cobra\bin',
+						r'/usr/local/bin',
+						r'/usr/bin',
+						r'/bin',
+					]
+					if extraPaths
+						morePaths.addRange(extraPaths)
+					for path in morePaths
+						path = _findCobraExe(path)
+						if path
+							return path
+					# cannot find cobra.exe
+					return nil
+
+				def clearCobraExeCache
+					"""
+					The `findCobraExe` method caches its results for subsequent speed.
+					This method clears the cache in the event you need to do so.
+					"""
+					_findCobraCache = nil
+
+				var _findCobraCache as String?
+
+				def _findCobraExe(path as String) as String?
+					_findCobraCache = _findCobraExe(path, true)
+					return _findCobraCache
+
+				def _findCobraExe(path as String, firstTime as bool) as String?
+					if path <> CobraCore.exePath and path.endsWith('cobra.exe')
+						# ^ first condition guards against test cases like "invoke-cobra.exe" from endlessly invoking themselves
+						if System.IO.File.exists(path)
+							return path
+						else
+							return nil
+					else if System.IO.Directory.exists(path)
+						exe = System.IO.Path.combine(path, 'cobra.exe')
+						if System.IO.File.exists(exe)
+							return exe
+						exe = System.IO.Path.combine(System.IO.Path.combine(path, 'bin'), 'cobra.exe')
+						if System.IO.File.exists(exe)
+							return exe
+						if firstTime
+							# check for a 'Cobra' subdirectory
+							return _findCobraExe(System.IO.Path.combine(path, 'Cobra'), false)
+						else
+							return nil
+					else
+						return nil
+
+		class CobraInfo
+			is fake
+
+			get cobraPath as String
+				"""
+				The Path of the cobra compiler executable that created this program.
+				"""
+				pass
 
 		class SourceInfo
 			"""

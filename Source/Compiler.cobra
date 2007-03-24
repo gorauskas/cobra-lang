@@ -157,7 +157,10 @@ class Compiler
 				path = Path.combine(.cobraExeDir, 'CobraLang.cobra')
 				assert File.exists(path), path
 				filenames.insert(1, path)
-				_firstUserModuleIndex = 2
+				path = Path.combine(.cobraExeDir, 'CobraInfo.cs')
+				assert File.exists(path), path
+				filenames.insert(2, path)
+				_firstUserModuleIndex = 3
 			modules = List<of Module>()
 			for filename in filenames
 				if filename.endsWith('.cs')
@@ -538,7 +541,7 @@ class Compiler
 
 
 	##
-	## Generating C#
+	## Generating and compiling C#
 	##
 
 	var _moduleFileName_to_sharpToCobraLineNum as Dictionary<of String, Dictionary<of int, int>>?
@@ -587,6 +590,26 @@ class Compiler
 				print '}'
 		_modules.add(SharpModule(fileName, _verbosity))
 
+	def writeSharpInfoClass
+		"""
+		The Cobra.Lang.Info class is compiled into the program and contains, at least, the path to the cobra.exe.
+		This is used for, at least, the implementation of CobraCore.findCobra.
+		"""
+		# CC: path = CobraCore.exePath
+		path = Assembly.getExecutingAssembly.getModules[0].fullyQualifiedName
+		assert File.exists(path)
+		infoPath = Path.combine(Path.getDirectoryName(path), 'CobraInfo.cs')
+		using sw = File.createText(infoPath)
+			print to sw
+				print 'using System;'
+				print 'namespace Cobra.Lang {'
+				print '    class CobraInfo {'
+				print '        static public String CobraPath {'
+				print '            get { return @"[path]"; }'
+				print '        }'
+				print '    }'
+				print '}'
+
 	var _cscExecPaths = [
 		[r'\WINDOWS\Microsoft.NET\Framework\v2.0.50727\csc', 'ms'],  # common
 		[r'\WINNT\Microsoft.NET\Framework\v2.0.50727\csc', 'ms'],
@@ -618,6 +641,7 @@ class Compiler
 			.modules
 			.modules[0].fileName.endsWith('SystemInterfaces.cobra')
 		body
+			.writeSharpInfoClass
 			# locate the C# compiler
 			found = false
 			for execPathSpec in _cscExecPaths
@@ -705,7 +729,7 @@ class Compiler
 			p.startInfo.useShellExecute = false
 			p.start
 			output = p.standardOutput.readToEnd
-			output += p.standardOutput.readToEnd
+			output += p.standardError.readToEnd  # TODO: change to standardError and check for other instances
 			p.waitForExit
 
 			hadError = false
