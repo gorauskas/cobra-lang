@@ -131,13 +131,15 @@ class Expr
 				_type = .compiler.passThroughType
 
 	def _isSequence(type as IType) as bool
+		# TODO: check for ISliceable which would have a getSlice()
 		if type.isDescendantOf(.compiler.libraryType('System', 'String'))
 			return true
-		# TODO: Array
-		#if type.isDescendantOf(.compiler.libraryType('System', 'Array'))
-		#	return true
+		# if type.isDescendantOf(.compiler.libraryType('System', 'Array'))
+		if type inherits ArrayType
+			return true
 		if type.isDescendantOf(.compiler.libraryType('System', 'Collections', 'IList'))
 			return true
+		# TODO: is ArrayList redundant with IList above? I think so.
 		if type.isDescendantOf(.compiler.libraryType('System', 'Collections', 'ArrayList'))
 			return true
 		genericList = .compiler.libraryType('System', 'Collections', 'Generic', 'List<of>')
@@ -154,9 +156,6 @@ class Expr
 				return true
 		if type.isDynamic
 			return true
-		# TODO: type has getRange()
-		# TODO: type has getSlice()
-		# TODO: type has indexer [int]?
 		return false
 
 	## Code gen
@@ -1470,7 +1469,12 @@ class SliceExpr
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		sw.write('CobraImp.GetSlice(')
+		isArray = _target.type inherits ArrayType
+		if isArray
+			sw.write('(System.Array)(')  # or C# can't disambiguate the GetSlice() overloads
 		_target.writeSharpDef(sw, false)
+		if isArray
+			sw.write(')')
 		sw.write(',')
 		if _start is nil
 			sw.write('null')

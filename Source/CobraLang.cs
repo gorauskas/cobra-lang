@@ -570,6 +570,15 @@ static public class CobraImp {
 		return list.GetRange(start.Value, stop.Value-start.Value);
 	}
 
+	static public Array GetSlice(System.Array array, int? start, int? stop, int? step) {
+		if (array==null)
+			throw new NullReferenceException("Cannot slice array.");
+		ProcessGetSliceArgs(array.Length, ref start, ref stop, ref step);
+		Array slice = Array.CreateInstance(array.GetType().GetElementType(), stop.Value-start.Value); // TODO: will need enhance when other step sizes are supported
+		Array.ConstrainedCopy(array, start.Value, slice, 0, stop.Value-start.Value);
+		return slice;
+	}
+
 	static public Object GetSlice(Object obj, int? start, int? stop, int? step) {
 		// this is for when obj is type `dynamic`
 		if (obj==null)
