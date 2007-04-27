@@ -4,7 +4,7 @@ Cobra Command Line Program (compiler and more)
 """
 
 
-class CommandLine  # TODO: rename to CommandLine
+class CommandLine
 	"""
 	The main options that control the command line's behavior are:
 		run
@@ -177,15 +177,16 @@ class CommandLine  # TODO: rename to CommandLine
 		"""
 		Run the command line using the command line arguments.
 		"""
-		args = CobraCore.commandLineArgs # CC: [1:] and then axe next line
-		args = args.getRange(1, args.count-1)
-		.run(args)
+		.run(CobraCore.commandLineArgs[1:])
 
 	def run(args as List<of String>)
 		"""
 		Run the command line using the given arguments.
 		The `args` should include only the arguments and not the executable/program name.
 		"""
+		if args.count == 0
+			.doAbout
+			return
 		.parseArgs(args)
 		d = _optionDict
 		paths = _pathList to List<of String>  # CC: to !
@@ -199,13 +200,13 @@ class CommandLine  # TODO: rename to CommandLine
 		else if _getOne(d, 'compile')
 			.doCompile(paths)
 		else if _getOne(d, 'help')
-			.doHelp()
+			.doHelp
 		else if _getOne(d, 'version')
-			.doVersion()
+			.doVersion
 		else if _getOne(d, 'about')
-			.doAbout()
+			.doAbout
 		else if not paths.count
-			.doHelp()
+			.doHelp
 		else
 			.doRun(paths)
 
@@ -266,10 +267,10 @@ class CommandLine  # TODO: rename to CommandLine
 				if parts.count==1
 					name = parts[0] to String
 					if name.endsWith('+')
-						name = name.substring(0, name.length-1) # [..-1]
+						name = name[:-1]
 						valueStr = 'on'
 					else if name.endsWith('-')
-						name = name.substring(0, name.length-1) # [..-1]
+						name = name[:-1]
 						valueStr = 'off'
 					else
 						valueStr = 'on'
@@ -337,7 +338,6 @@ class CommandLine  # TODO: rename to CommandLine
 					if cannotProcess
 						.error('Cannot process value "[valueStr]" for option "[name]".')
 					valueDict[name] = value
-				# TODO: remove: optionValueList.add((name, value))
 			else # not isOption
 				if File.exists(arg)
 					fileList.add(arg)
@@ -374,7 +374,7 @@ class CommandLine  # TODO: rename to CommandLine
 			for fileName as String in (valueDict['files'] to System.Collections.IList)
 				try
 					for line as String in File.readAllLines(fileName)
-						line = line.trim()
+						line = line.trim
 						if line.length==0 or line.startsWith('#')
 							continue
 						# TODO: dup'ed above
@@ -402,18 +402,17 @@ class CommandLine  # TODO: rename to CommandLine
 		return .doCompile(paths, false)
 
 	def doCompile(paths as List<of String>, writeTestInvocation as bool) as Compiler
-		# paths = paths or self.fileList  # TODO
 		c = Compiler(.verbosity)
 		c.options = _optionDict to Dictionary<of String, Object>    # CC: to !, CC: use extended syntax  # TODO
 		try
 			c.parseFilesNamed(paths)
-			c.bindInt()
-			c.bindImp()
-			c.writeSharp()
+			c.bindInt
+			c.bindImp
+			c.writeSharp
 			if writeTestInvocation
-				c.writeSharpTestInvocation()
+				c.writeSharpTestInvocation
 			c.compileCS(if(writeTestInvocation, '/main:RunTests', ''))
-			c.printMessages()
+			c.printMessages
 		catch StopCompilation
 			# Each phase of the compiler may throw an exception to stop compilation.
 			# Before doing so, it prints its errors.
@@ -444,8 +443,8 @@ class CommandLine  # TODO: rename to CommandLine
 						if _verbosity >= 3
 							print 'About to run: [p.startInfo.fileName] [p.startInfo.arguments]'
 						p.startInfo.useShellExecute = false
-						p.start()
-						p.waitForExit()
+						p.start
+						p.waitForExit
 						break
 		return c
 
@@ -466,8 +465,8 @@ class CommandLine  # TODO: rename to CommandLine
 			if _verbosity >= 3
 				print 'About to run: [p.startInfo.fileName] [p.startInfo.arguments]'
 			p.startInfo.useShellExecute = false
-			p.start()
-			p.waitForExit()
+			p.start
+			p.waitForExit
 		catch
 			File.delete(c.fullExeFileName)
 			throw
@@ -494,12 +493,12 @@ class CommandLine  # TODO: rename to CommandLine
 			if _verbosity >= 3
 				print 'About to run: [p.startInfo.fileName] [p.startInfo.arguments]'
 			p.startInfo.useShellExecute = false
-			p.start()
-			p.waitForExit()
+			p.start
+			p.waitForExit
 
 	def doHelp
 		# CC: multiline string
-		.doAbout()
+		.doAbout
 		print ''
 		print 'Usage:'
 		print ''
@@ -525,8 +524,16 @@ class CommandLine  # TODO: rename to CommandLine
 		# print options from their specs (but not the main ones which are covered above)
 		leftMargin = 8
 		leftMarginStr = '        '
-		totalWidth = 78  # TODO: get the console width?
+		totalWidth = Console.bufferWidth - 2  # btw Console.bufferWidth can return 0 (or not 0) in mono 1.2
+		if totalWidth < 0
+			totalWidth = 0
+		if totalWidth == 0
+			totalWidth = 78
+		else if totalWidth < 20
+			totalWidth = 20
+		assert totalWidth > 0
 		width = totalWidth - leftMargin
+		assert width > 0
 		for spec in _optionSpecs
 			if spec.containsKey('type') and spec['type']=='main' # CC: spec.get('main', '')
 				continue
@@ -551,14 +558,16 @@ class CommandLine  # TODO: rename to CommandLine
 					print '[leftMarginStr][s]'
 					s = ''
 				else
+					# TODO: bug in here for narrow widths. try "width = 20" to reproduce
 					j = width+1
 					if j >= s.length
 						j = s.length - 1
-					while s[j]<>' '
+					while j > 0 and s[j] <> ' '
 						j -= 1
-					sub = s.substring(0, j)
-					s = s.substring(j+1)
-					print '[leftMarginStr][sub]'
+					if j
+						sub = s.substring(0, j)
+						s = if(s.length, s.substring(j+1), '')
+						print '[leftMarginStr][sub]'
 			if spec.containsKey('example')
 				if spec['example'] inherits System.Collections.IList
 					first = true
@@ -577,17 +586,18 @@ class CommandLine  # TODO: rename to CommandLine
 		print 'The Cobra Programming Language [.versionString]'
 		print 'Copyright (C) 2003-[DateTime.now.year] by Cobra Language LLC.  All Rights Reserved.'
 		print ''
-		print 'On the net:  http://CobraLang.com/'
-		print 'License:     See License.text in Docs or'
+		print 'On the web:  http://CobraLang.com/'
+		print 'License:     See Cobra/Docs/License.text'
 		# TODO: print '             http://CobraLang.com/Docs/License.text'
+		print 'Usage:       cobra -h'
 
 	def doVersion
 		print .versionString
 
 	def boolForString(s as String) as bool
-		if s.toLower() in ['', '+', 'on', 'true', 'yes']
+		if s.toLower in ['', '+', 'on', 'true', 'yes']
 			return true
-		else if s.toLower() in ['-', 'off', 'false', 'no']
+		else if s.toLower in ['-', 'off', 'false', 'no']
 			return false
 		else
 			throw FormatException()
@@ -640,7 +650,6 @@ class CommandLine  # TODO: rename to CommandLine
 
 	def _innerDoTestify(paths as List<of String>)
 		# TODO Console.error = Console.out
-		# TODO: respect command line args: paths = _pathList
 		if paths.count==0
 			paths = [.cobraTestsPath]
 		_testifyCount = 0
@@ -677,7 +686,7 @@ class CommandLine  # TODO: rename to CommandLine
 			# examples: .svn, _svn. Also, _ is a nice way to temporarily exclude a directory if possible
 			return
 		_statusWriter.writeLine('[dirName]')
-		_statusWriter.indent()
+		_statusWriter.indent
 		try
 			print 'Running tests in [dirName]'
 			saveDir = Environment.currentDirectory
@@ -685,7 +694,7 @@ class CommandLine  # TODO: rename to CommandLine
 			try
 				paths = List<of String>(Directory.getFiles('.'))
 				paths.addRange(Directory.getDirectories('.'))
-				paths.sort()
+				paths.sort
 				for baseName in paths
 					baseName = Utils.normalizePath(baseName)
 					if baseName.endsWith('.cobra')
@@ -696,7 +705,7 @@ class CommandLine  # TODO: rename to CommandLine
 			finally
 				Directory.setCurrentDirectory(saveDir)
 		finally
-			_statusWriter.dedent()
+			_statusWriter.dedent
 		_testifyFlush
 
 	def testifyFile(baseName as String) as int
@@ -740,23 +749,23 @@ class CommandLine  # TODO: rename to CommandLine
 			.printSource(source)
 			print bar
 		# TODO: why doesn't the following line work?
-		# firstLine as String = source.split([c'\n'].toArray(), 1)[0]  # CC: axe "as String"
+		# firstLine as String = source.split([c'\n'].toArray, 1)[0]  # CC: axe "as String"
 		firstLine = source.split(c'\n')[0] to String
 
-		firstLineInsensitive = firstLine.trim().replace(' ', '')
+		firstLineInsensitive = firstLine.trim.replace(' ', '')
 		if firstLineInsensitive.startsWith('#.error.')
-			# CC: support split() with a String extension method
-			# error = firstLine.split('.error.',1)[1].trim().toLower()
+			# CC: support split with a String extension method
+			# error = firstLine.split('.error.',1)[1].trim.toLower
 			index = firstLine.indexOf('.error.')
-			error = firstLine.substring(index+7).trim().toLower()
+			error = firstLine.substring(index+7).trim.toLower
 			try
 				c = Compiler(_verbosity)
 				c.parseFilesNamed([baseName])
 				if verbose
 					c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
 					print bar
-				c.bindInt()
-				c.bindImp()
+				c.bindInt
+				c.bindImp
 				if verbose
 					c.dumpModulesForTestify(_resultsWriter, 'Modules after binding')
 					print bar
@@ -764,16 +773,16 @@ class CommandLine  # TODO: rename to CommandLine
 				assert c.errors
 				expectedErrors = List<of String>(error.split(c'&')) # CC: axe List<of String> instantiation
 				for i = 0 .. expectedErrors.count
-					expectedError = expectedErrors[i].trim()
+					expectedError = expectedErrors[i].trim
 					print 'Expecting error substring [i+1] of [expectedErrors.count]: **[expectedError]**'
 					if i >= c.errors.count
 						print 'Ran out of real errors.'
-						.failed()
+						.failed
 						return 0
 					actualError = c.errors[i]
-					if actualError.message.toLower().indexOf(expectedError)==-1
+					if actualError.message.toLower.indexOf(expectedError)==-1
 						print 'Actual error is: **[actualError.message]**'
-						.failed()
+						.failed
 						return 0
 					else
 						print 'Matches: "[actualError.message]"'
@@ -781,22 +790,22 @@ class CommandLine  # TODO: rename to CommandLine
 					print 'There are more actual errors than expected errors:'
 					for j = expectedErrors.count .. c.errors.count  # CC: say for i
 						print 'Another actual error: [c.errors[j].message]'
-					.failed()
+					.failed
 					return 0
 			catch exc as Exception
 				print 'Internal exception: [exc]'
-				.failed()
+				.failed
 				return 0
 			success
 				print 'Expecting error(s): [error]'
 				print 'No error at all.'
-				.failed()
+				.failed
 				return 0
 			return 1
 
 		if firstLineInsensitive.startsWith('#.warning.')
 			index = firstLine.indexOf('.warning.')
-			warning = firstLine.substring(index+9).trim().toLower()
+			warning = firstLine.substring(index+9).trim.toLower
 			# TODO: the following code both checks for warnings to be thrown as well as going through a list of warnings. Seems like it should just need to do one or the other.
 			try
 				c = Compiler(_verbosity)
@@ -804,31 +813,31 @@ class CommandLine  # TODO: rename to CommandLine
 				if verbose
 					c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
 					print bar
-				c.bindInt()
-				c.bindImp()
+				c.bindInt
+				c.bindImp
 				if verbose
 					c.dumpModulesForTestify(_resultsWriter, 'Modules after binding')
 			catch StopCompilation
 				print 'Expecting warning substring: "[warning]"'
 				print 'But got errors.'
-				.failed()
+				.failed
 				return 0
 			catch exc as Exception
 				print 'Internal exception: [exc]'
-				.failed()
+				.failed
 				return 0
 			expectedWarnings = List<of String>(warning.split(c'&')) # CC: axe List<of String> instantiation
 			for i = 0 .. expectedWarnings.count
-				expectedWarning = expectedWarnings[i].trim()
+				expectedWarning = expectedWarnings[i].trim
 				print 'Expecting warning substring [i+1] of [expectedWarnings.count]: **[expectedWarning]**'
 				if i >= c.warnings.count
 					print 'Ran out of real warnings.'
-					.failed()
+					.failed
 					return 0
 				actualWarning = c.warnings[i]
-				if actualWarning.message.toLower().indexOf(expectedWarning)==-1
+				if actualWarning.message.toLower.indexOf(expectedWarning)==-1
 					print 'Actual warning is: **[actualWarning.message]**'
-					.failed()
+					.failed
 					return 0
 				else
 					print 'Matches: "[actualWarning.message]"'
@@ -836,7 +845,7 @@ class CommandLine  # TODO: rename to CommandLine
 				print 'There are more actual warnings than expected warnings:'
 				for j = expectedWarnings.count .. c.warnings.count  # CC: say for i
 					print 'Another actual warning: [c.warnings[j].message]'
-				.failed()
+				.failed
 				return 0
 			return 1
 
@@ -854,7 +863,7 @@ class CommandLine  # TODO: rename to CommandLine
 
 		if firstLineInsensitive.startsWith('#.multi.')
 			print 'Running multiple files.'
-			for fileName as String in firstLine.substring(firstLine.indexOf('.multi.')+8).split()  # CC: axe "as String"
+			for fileName as String in firstLine.substring(firstLine.indexOf('.multi.')+8).split  # CC: axe "as String"
 				if fileName.length
 					fileNames.add(Utils.combinePaths(Path.getDirectoryName(baseName), fileName))
 			print fileNames
@@ -869,15 +878,15 @@ class CommandLine  # TODO: rename to CommandLine
 				print bar
 
 			print 'Bind interface:'
-			c.bindInt()
+			c.bindInt
 			print 'Bind implementation:'
-			c.bindImp()
+			c.bindImp
 			if verbose
 				c.dumpModulesForTestify(_resultsWriter, 'Modules after binding')
 				print bar
 
 			print 'Generate C#:'
-			c.writeSharp()
+			c.writeSharp
 			if verbose
 				# CC: shouldn't need to rename to 'module2'
 				for module2 as Module in c.modules
@@ -886,40 +895,39 @@ class CommandLine  # TODO: rename to CommandLine
 				print bar
 
 			print 'Compile C#:'
-			c.compileCS()
+			c.compileCS
 			if verbose
-				c.printMessages()
+				c.printMessages
 				print bar
 		catch StopCompilation
-			.failed()
+			.failed
 			return 0
 		catch exc as Exception
 			print 'Internal exception: [exc]'
-			.failed()
+			.failed
 			return 0
 
 		print 'Run:'
 		p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
-		if _verbosity > 2
+		if _verbosity >= 1
 			print 'c.fullExeFileName = "[c.fullExeFileName]"'
 		p.startInfo.fileName = c.baseExeFileName + if(c.platform==PlatformEnum.Novell, '.exe', '')
-		# TODO: axe p.startInfo.arguments = options + ' ' + csFileNames + ' ' + cobraLangPath
-		#if _verbosity >= 2  # TODO: restore
-		if true
+		if _verbosity >= 2
 			print '[p.startInfo.fileName] [p.startInfo.arguments]'
 		p.startInfo.redirectStandardOutput = true
 		p.startInfo.redirectStandardError = true
 		p.startInfo.useShellExecute = false
+		# TODO: enable or axe:
 		# p.WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
-		p.start()
-		p.waitForExit()
-		output = p.standardOutput.readToEnd()
-		output += p.standardError.readToEnd()
+		p.start
+		p.waitForExit
+		output = p.standardOutput.readToEnd
+		output += p.standardError.readToEnd
 
 		print 'Output:'
 		print output
-		if output.toLower().indexOf('unhandled exception')<>-1
-			.failed()
+		if output.toLower.indexOf('unhandled exception')<>-1
+			.failed
 			return 0
 
 		print bar
