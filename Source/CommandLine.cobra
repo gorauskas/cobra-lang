@@ -56,8 +56,8 @@ class CommandLine  # TODO: rename to CommandLine
 		},
 		{
 			'name': 'editor',
-			'description': 'Specify an editor and command line options to invoke if there is a compile-time error. Use underscore (_) for space in the specification.',
-			'example': 'uedit32_FILE/LINE',
+			'description': 'Specify an editor and command line options to invoke if there is a compile-time error. Use underscore (_) for space in the specification. Can also set via COBRA_EDITOR environment variable (in which case spaces work fine).',
+			'example': ['uedit32_FILE/LINE', 'mate_FILE_-l_LINE'],
 			'args': 'editor_spec_with_FILE_LINE',
 		},
 		{
@@ -417,18 +417,23 @@ class CommandLine  # TODO: rename to CommandLine
 		catch StopCompilation
 			# Each phase of the compiler may throw an exception to stop compilation.
 			# Before doing so, it prints its errors.
+			assert c.errors.count>0
 			if _optionDict.containsKey('editor')
-				assert c.errors.count>0
-				spec = _optionDict['editor'] to String
-				if spec.indexOf('_')==-1
-					.error('Missing underscore from editor spec.')
+				spec = _optionDict['editor'] to String?
+			else
+				spec = Environment.getEnvironmentVariable('COBRA_EDITOR')
+			if spec and spec <> ''
 				if spec.indexOf('FILE')==-1
 					.error('Missing FILE from editor spec.')
 				if spec.indexOf('LINE')==-1
 					.error('Missing LINE from editor spec.')
-				under = spec.indexOf('_')
-				exeName = spec.substring(0, under)
-				args = spec.substring(under+1)
+				i = spec.indexOf('_')
+				if i == -1
+					i = spec.indexOf(' ')
+					if i == -1
+						.error('Missing underscore or space from editor spec.')
+				exeName = spec.substring(0, i)
+				args = spec.substring(i+1)
 				for error in c.errors
 					if error inherits ISourceError
 						args = args.replace('FILE', error.fileName)
@@ -555,7 +560,17 @@ class CommandLine  # TODO: rename to CommandLine
 					s = s.substring(j+1)
 					print '[leftMarginStr][sub]'
 			if spec.containsKey('example')
-				print '        Example: -[spec["name"]]=[spec["example"]]'
+				if spec['example'] inherits System.Collections.IList
+					first = true
+					for example in spec['example'] to System.Collections.IList
+						if first
+							print '        Examples: ' stop
+						else
+							print '                  ' stop
+						print '-[spec["name"]]=[example]'
+						first = false
+				else
+					print '        Example: -[spec["name"]]=[spec["example"]]'
 
 	def doAbout
 		# CC: multiline string
