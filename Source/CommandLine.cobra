@@ -399,11 +399,12 @@ class CommandLine
 		_pathList = fileList
 
 	def doCompile(paths as List<of String>) as Compiler
-		return .doCompile(paths, false)
+		return .doCompile(paths, true, false)
 
-	def doCompile(paths as List<of String>, writeTestInvocation as bool) as Compiler
+	def doCompile(paths as List<of String>, willPrintSuccessMsg as bool, writeTestInvocation as bool) as Compiler
 		c = Compiler(.verbosity)
 		c.options = _optionDict to Dictionary<of String, Object>    # CC: to !, CC: use extended syntax  # TODO
+		c.willPrintSuccessMsg = willPrintSuccessMsg
 		try
 			c.parseFilesNamed(paths)
 			c.bindInt
@@ -411,7 +412,9 @@ class CommandLine
 			c.writeSharp
 			if writeTestInvocation
 				c.writeSharpTestInvocation
-			c.compileCS(if(writeTestInvocation, '/main:RunTests', ''))
+				c.compileCS('/main:RunTests')
+			else
+				c.compileCS
 			c.printMessages
 		catch StopCompilation
 			# Each phase of the compiler may throw an exception to stop compilation.
@@ -449,7 +452,7 @@ class CommandLine
 		return c
 
 	def doTest(paths as List<of String>)
-		c = .doCompile(paths, true)
+		c = .doCompile(paths, false, true)
 		if c.errors.count
 			print 'Not running tests due to errors above.'
 			return
@@ -474,7 +477,7 @@ class CommandLine
 			File.delete(c.fullExeFileName)
 
 	def doRun(paths as List<of String>)
-		c = .doCompile(paths)
+		c = .doCompile(paths, false, false)
 		if c.errors.count
 			print 'Not running due to errors above.'
 		else
