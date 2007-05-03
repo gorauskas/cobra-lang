@@ -1277,7 +1277,7 @@ class TypeIdentifier
 			return
 		# don't need to check "basic types" like int, bool, etc. here. the parser does those.
 		if Utils.isCapped(_name)
-			symbol = .compiler.symbolForName(.name, true, false)  # nested enum and class types are capped and are members of the current class
+			symbol = .compiler.symbolForName(.name, true, false)  # nested enum and class types are capped and can be members of the current class
 		else
 			symbol = nil
 		if symbol is nil
@@ -1357,3 +1357,51 @@ class GenericTypeIdentifier
 		else
 			assert false, 'When does this happen?'
 			.throwError('The definition for "[_fullName]" is not a type.')
+
+
+class QualifiedTypeIdentifier
+	inherits AbstractTypeIdentifier
+
+	var _typeNodes as List<of AbstractTypeIdentifier>
+
+	def init(typeNodes as List<of AbstractTypeIdentifier>)
+		require typeNodes.count > 1
+		base.init(typeNodes[0].token, '(uninitialized name)')
+		_typeNodes = typeNodes
+		sb = StringBuilder()
+		sep = ''
+		for t in typeNodes
+			sb.append(sep)
+			sb.append(t.name)
+			sep = '.'
+		_name = sb.toString
+		# TODO: would it be useful to set the _token.text to the name? Maybe it would help with syntax highlighting
+
+	def _resolveType is override
+		if _actualType
+			return
+		member = .compiler.symbolForName(_typeNodes[0].name, true, false)
+#		print
+#		print '_resolveType'
+#		trace _typeNodes
+#		trace member
+		i = 1
+		while i < _typeNodes.count and member <> nil
+			if member inherits IContainer
+#				trace i
+#				trace _typeNodes[i].name
+				m = member.memberForName(_typeNodes[i].name)
+#				n = member.declForName(_typeNodes[i].name)
+#				trace m
+#				trace n
+				if m
+					$sharp('member = m')
+				else
+					.throwError('Cannot find "[_name]" at component [i+1].')
+				i += 1
+			else
+				.throwError('"[member]" cannot contain additional members.')
+		if member inherits IType
+			_actualType = member
+		else
+			.throwError('The definition for "[_name]" is not a type.')
