@@ -229,7 +229,8 @@ class Tokenizer
 	var _tokenQueue as Queue<of IToken>  # needed when token methods return lists of tokens
 
 	var _keywordToWhichToken as Dictionary<of String, String>
-
+	var _onTokenTypeCache as Dictionary<of String, MethodInfo?>
+	
 	var _tokenDefs as List<of TokenDef>?
 	var _tokenDefsByFirstChar as Dictionary<of char, List<of TokenDef>>?
 	var _tokenDefsByWhich as Dictionary<of String, TokenDef>?
@@ -307,6 +308,7 @@ class Tokenizer
 		_tokenQueue = Queue<of IToken>()
 		# _tokenMethods = {}
 		_keywordToWhichToken = Dictionary<of String, String>()
+		_onTokenTypeCache = Dictionary<of String, MethodInfo?>()
 
 		_didReset = true
 
@@ -566,9 +568,14 @@ class Tokenizer
 					# enable methods to customize handling of tokens
 					reinvoke = false
 
-					# TODO: test if caching the methods is faster
-					methName = 'On' + tok.which
-					meth = .getType.getMethod(methName)
+					which = tok.which
+					if _onTokenTypeCache.containsKey(which)
+						meth = _onTokenTypeCache[which]
+					else
+						methName = 'On' + which
+						meth = .getType.getMethod(methName)
+						_onTokenTypeCache[which] = meth
+						
 					if meth
 						try
 							tok = meth.invoke(this, $sharp(r'new IToken[1] {tok}')) to IToken  # CC: to IToken?
