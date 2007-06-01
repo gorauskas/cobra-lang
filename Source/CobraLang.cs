@@ -736,6 +736,7 @@ static public class CobraImp {
 	}
 
 	static public void DumpStack(TextWriter tw) {
+		// dump the most recent stack frames last since the text will output top-down and scroll in the shell
 		tw.WriteLine("Stack trace:");
 		if (_badStackCopy==null)
 			tw.WriteLine("No bad stack.");
@@ -744,6 +745,20 @@ static public class CobraImp {
 			frame.Dump(tw, i);
 			i++;
 		}
+	}
+	
+	static public void DumpHtmlStack(TextWriter tw) {
+		// dump the most recent stack frames first since the HTML file will be displayed at the top in the browser
+		tw.WriteLine("<p>Stack trace at {0}</p>", DateTime.Now);
+		int i = 0;
+		List<CobraFrame> frames = new List<CobraFrame>(_badStackCopy);
+		frames.Reverse();
+		tw.WriteLine("<table class=stack border=0 cellpadding=1 cellspacing=1>");
+		foreach (CobraFrame frame in frames) {
+			frame.DumpHtml(tw, i);
+			i++;
+		}
+		tw.WriteLine("</table>");
 	}
 
 	// Dynamic Binding
@@ -1021,6 +1036,37 @@ internal class CobraFrame {
 		}
 	}
 
+	public void DumpHtml(TextWriter tw, int i) {
+		tw.WriteLine("<tr class=frameHead> <td class=number> {0}. </td> <td> {1}.{2} </td> </tr> ", i, _declClassName, _methodName);
+		for (int j=0; j<_args.Length; j+=2) {
+			string label = j==0 ? "args:" : "";
+			tw.Write("<tr class=frameDetails> <td> &nbsp; </td> <td> {0} </td> <td colspan=3> {1} </td> <td> = </td>", label, _args[j]);
+			string s;
+			try {
+				s = CobraCore.ToTechString(_args[j+1]);
+			} catch (Exception e) {
+				s = "ToString() Exception: " + e.Message;
+			}
+			tw.WriteLine("<td> {0} </td> </tr>", s);
+		}
+		bool first = true;
+		foreach (string name in _localNamesInOrder) {
+			if (name=="this")
+				continue;
+			string label = first ? "locals:" : "";
+			tw.Write("<tr class=frameDetails> <td> &nbsp; </td> <td> {0} </td> <td colspan=3> {1} </td> <td> = </td>", label, name);
+			string s;
+			try {
+				s = CobraCore.ToTechString(_locals[name]);
+			} catch (Exception e) {
+				s = "ToString() Exception: " + e.Message;
+			}
+			tw.WriteLine("<td> {0} </td> </tr>", s);
+			first = false;
+		}
+		tw.WriteLine("<tr class=blank> <td colspan=4> &nbsp; </td> </tr>");
+	}
+	
 	public override string ToString() {
 		return string.Format("def {0}.{1} at line {2}", _declClassName, _methodName, _lineNum);
 	}
