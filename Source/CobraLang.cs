@@ -706,8 +706,8 @@ static public class CobraImp {
 	static private Stack<CobraFrame> _superStack = new Stack<CobraFrame>();
 	static private Stack<CobraFrame> _badStackCopy = null;
 
-	static public void PushFrame(string declClassName, string methodName, params object[] args) {
-		_superStack.Push(new CobraFrame(declClassName, methodName, args));
+	static public void PushFrame(string declClassName, string methodName, string fileName, params object[] args) {
+		_superStack.Push(new CobraFrame(declClassName, methodName, fileName, args));
 	}
 
 	static public void SetLine(int lineNum) {
@@ -749,7 +749,17 @@ static public class CobraImp {
 	
 	static public void DumpHtmlStack(TextWriter tw) {
 		// dump the most recent stack frames first since the HTML file will be displayed at the top in the browser
-		tw.WriteLine("<p>Stack trace at {0}</p>", DateTime.Now);
+		tw.WriteLine("<html>");
+		tw.WriteLine("<link href=styles.css rel=stylesheet type=\"text/css\">");
+		tw.WriteLine("<body>");
+		tw.WriteLine("<div class=sstHeading>Cobra Super Stack Trace</div>");
+		tw.WriteLine("<table class=keyValues border=0 cellpadding=1 cellspacing=1>");
+		pair(tw, "When", DateTime.Now);
+		pair(tw, "CommandLine", Environment.CommandLine);
+		pair(tw, "CurrentDirectory", Environment.CurrentDirectory);
+		pair(tw, "MachineName", Environment.MachineName);
+//		pair(tw, "Cobra", CobraCore.Version);
+		tw.WriteLine("</table>");
 		int i = 0;
 		List<CobraFrame> frames = new List<CobraFrame>(_badStackCopy);
 		frames.Reverse();
@@ -759,6 +769,19 @@ static public class CobraImp {
 			i++;
 		}
 		tw.WriteLine("</table>");
+		tw.WriteLine("</body>");
+		tw.WriteLine("</html>");
+	}
+	
+	static void pair(TextWriter tw, string key, object value) {
+		key = HtmlEncode(key);
+		value = HtmlEncode(value.ToString());
+		tw.WriteLine("<tr class=keyValue> <td class=key> {0} </td> <td> &nbsp;=&nbsp; </td> <td class=value> {1} </td> </tr>", key, value);
+	}
+	
+	static string HtmlEncode(string s) {
+		// TODO: complete this
+		return s;
 	}
 
 	// Dynamic Binding
@@ -981,14 +1004,16 @@ internal class CobraFrame {
 
 	protected string _declClassName;
 	protected string _methodName;
+	protected string _fileName;
 	protected int _lineNum;
 	protected object[] _args;
 	protected Dictionary<string, object> _locals;
 	protected List<string> _localNamesInOrder;
 
 	// args should have the arg names embedded: "x", x, "y", y
-	public CobraFrame(string declClassName, string methodName, params object[] args) {
+	public CobraFrame(string declClassName, string methodName, string fileName, params object[] args) {
 		_declClassName = declClassName;
+		_fileName = fileName;
 		_methodName = methodName;
 		_args = (object[])args.Clone();
 		_locals = new Dictionary<string, object>();
@@ -1037,10 +1062,15 @@ internal class CobraFrame {
 	}
 
 	public void DumpHtml(TextWriter tw, int i) {
-		tw.WriteLine("<tr class=frameHead> <td class=number> {0}. </td> <td> {1}.{2} </td> </tr> ", i, _declClassName, _methodName);
+		tw.WriteLine("<tr class=frameHead> <td class=number> {0}. </td> <td class=qualifiedMember colspan=4> {1}.{2} </td> </tr> ", i, _declClassName, _methodName);
+		string baseName = Path.GetFileName(_fileName);
+		string dirName = Path.GetDirectoryName(_fileName);
+		if (dirName!="")
+			dirName = " - " + dirName;
+		tw.WriteLine("<tr> <td class=indent> &nbsp; </td> <td class=label> at: </td> <td class=sourceLocation colspan=3> {0} {1} {2} </td> </tr>", _lineNum, baseName, dirName);
 		for (int j=0; j<_args.Length; j+=2) {
 			string label = j==0 ? "args:" : "";
-			tw.Write("<tr class=frameDetails> <td> &nbsp; </td> <td> {0} </td> <td colspan=3> {1} </td> <td> = </td>", label, _args[j]);
+			tw.Write("<tr class=frameDetails> <td class=indent> &nbsp; </td> <td class=label> {0} </td> <td> {1} </td> <td> &nbsp;=&nbsp; </td>", label, _args[j]);
 			string s;
 			try {
 				s = CobraCore.ToTechString(_args[j+1]);
@@ -1054,7 +1084,7 @@ internal class CobraFrame {
 			if (name=="this")
 				continue;
 			string label = first ? "locals:" : "";
-			tw.Write("<tr class=frameDetails> <td> &nbsp; </td> <td> {0} </td> <td colspan=3> {1} </td> <td> = </td>", label, name);
+			tw.Write("<tr class=frameDetails> <td class=indent> &nbsp; </td> <td class=label> {0} </td> <td> {1} </td> <td> &nbsp;=&nbsp; </td>", label, name);
 			string s;
 			try {
 				s = CobraCore.ToTechString(_locals[name]);
