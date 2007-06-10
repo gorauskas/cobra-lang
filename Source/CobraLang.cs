@@ -708,8 +708,8 @@ static public class CobraImp {
 	static public CobraFrame _curFrame = null;
 	static private Stack<CobraFrame> _badStackCopy = null;
 
-	static public void PushFrame(string declClassName, string methodName, string fileName, params object[] args) {
-		_superStack.Push(_curFrame = new CobraFrame(declClassName, methodName, fileName, args));
+	static public void PushFrame(string declClassName, string methodName, string fileName, int lineNum, params object[] args) {
+		_superStack.Push(_curFrame = new CobraFrame(declClassName, methodName, fileName, lineNum, args));
 		int MaxStackFrames = 500; // TODO: move these out to CobraCore
 		int NumLastFrames = 20;
 		if (MaxStackFrames > 0 && _superStack.Count > MaxStackFrames) {
