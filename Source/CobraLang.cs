@@ -704,7 +704,7 @@ static public class CobraImp {
 		}
 	}
 
-	static private Stack<CobraFrame> _superStack = new Stack<CobraFrame>();
+	static public Stack<CobraFrame> _superStack = new Stack<CobraFrame>();
 	static private Stack<CobraFrame> _badStackCopy = null;
 
 	static public void PushFrame(string declClassName, string methodName, string fileName, params object[] args) {
@@ -727,10 +727,6 @@ static public class CobraImp {
 				Environment.Exit(-1);
 			}
 		}
-	}
-
-	static public void SetLine(int lineNum) {
-		_superStack.Peek().SetLine(lineNum);
 	}
 
 	static public T SetLocal<T>(string name, T value) {
