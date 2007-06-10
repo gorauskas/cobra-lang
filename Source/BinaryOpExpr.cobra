@@ -187,11 +187,12 @@ class AbstractAssignExpr
 		base.checkAfterBindImp()
 		# can't do the following in a _bindImp() override since type inference is implemented in
 		# a subclass (_left may not have its _definition until after that executes)
-		if .compiler.hasSuperStackTraceOption and .compiler.curCodeMember.name <> 'CobraFrame'
+		if .compiler.hasSuperStackTraceOption
 			if _left inherits NameExpr
-				_trackLocal = _left.definition inherits AbstractLocalVar
-				if _trackLocal
-					_trackName  = _left.definition.name
+				if .compiler.curCodeMember.box <> 'CobraFrame'
+					_trackLocal = _left.definition inherits AbstractLocalVar
+					if _trackLocal
+						_trackName  = _left.definition.name
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		if _trackLocal
@@ -536,7 +537,7 @@ class BinaryMathExpr
 					# int case already taken care of, so...
 					.throwError('Cannot promote between decimal and "[rt.name]".')
 			else
-				throw FallThroughException({'op': _op, 'lt': lt, 'rt': rt})
+				throw FallThroughException({'this': this, '_left': _left, 'op': _op, 'lt': lt, 'rt': rt})
 
 	def _writeSharpDef(sw as SharpWriter) is override
 		if _type.isDynamic

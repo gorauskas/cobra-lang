@@ -30,12 +30,6 @@ class Stmt
 			else if expr.op.endsWith('_EQUALS')
 				.throwError('Cannot use an augmented assignment in a flow control expression. Change to == or make the assignment just above.')
 
-	def writeSharpStmt(sw as SharpWriter)
-		assert .didBindImp
-		sw.node(this)
-		.writeSharpSetLine(sw)
-		.writeSharpDef(sw)
-
 	def bindVar(ve as NameExpr) as IVar
 		"""
 		Computes the _var from the _varExpr which is either IdentifierExpr or AsExpr.
@@ -87,6 +81,23 @@ class Stmt
 		"""
 		# CC: is abstract
 		return nil to passthrough
+
+	var _canSetLine as bool
+
+	def _bindImp
+		base._bindImp
+		_canSetLine = .compiler.hasSuperStackTraceOption and .compiler.codeMemberStack.count and .compiler.curBox.name <> 'CobraFrame'
+		# the code member stack can be empty because of class vars (ex: var _foo = true)
+
+	def writeSharpSetLine(sw as SharpWriter)
+		if _canSetLine and .lineNum > 0
+			sw.write('CobraImp.SetLine([.lineNum]);\n')
+
+	def writeSharpStmt(sw as SharpWriter)
+		assert .didBindImp
+		sw.node(this)
+		.writeSharpSetLine(sw)
+		.writeSharpDef(sw)
 
 
 class AssertStmt

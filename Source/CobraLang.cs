@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Text;
@@ -708,6 +709,24 @@ static public class CobraImp {
 
 	static public void PushFrame(string declClassName, string methodName, string fileName, params object[] args) {
 		_superStack.Push(new CobraFrame(declClassName, methodName, fileName, args));
+		int MaxStackFrames = 500; // TODO: move these out to CobraCore
+		int NumLastFrames = 20;
+		if (MaxStackFrames > 0 && _superStack.Count > MaxStackFrames) {
+			Console.WriteLine("Cobra detected stack overflow:");
+			Console.WriteLine("  Last {0} frames:", NumLastFrames);
+			List<CobraFrame> frames = new List<CobraFrame>(_superStack);
+			frames.Reverse();
+			for (int i = MaxStackFrames-NumLastFrames; i < frames.Count; i++) {
+				Console.WriteLine("    {0}. {1}", i, frames[i]);
+			}
+			try {
+				Console.WriteLine("Fail fast: Stack Overflow");
+				Environment.FailFast("Stack Overflow");
+			} catch (NotImplementedException) {
+				Console.WriteLine("Exiting with -1");
+				Environment.Exit(-1);
+			}
+		}
 	}
 
 	static public void SetLine(int lineNum) {
@@ -754,11 +773,21 @@ static public class CobraImp {
 		tw.WriteLine("<body>");
 		tw.WriteLine("<div class=sstHeading>Cobra Super Stack Trace</div>");
 		tw.WriteLine("<table class=keyValues border=0 cellpadding=1 cellspacing=1>");
+		string name = Process.GetCurrentProcess().ProcessName;
+		if (name.EndsWith("mono")) {
+			foreach (string part in Environment.CommandLine.Split(' ')) {
+				if (part.EndsWith(".exe")) {
+					name = Path.GetFileName(part);
+					break;
+				}
+			}
+		}
+		pair(tw, "Program", name);
 		pair(tw, "When", DateTime.Now);
 		pair(tw, "CommandLine", Environment.CommandLine);
 		pair(tw, "CurrentDirectory", Environment.CurrentDirectory);
 		pair(tw, "MachineName", Environment.MachineName);
-//		pair(tw, "Cobra", CobraCore.Version);
+		pair(tw, "Cobra", CobraCore.Version);
 		tw.WriteLine("</table>");
 		int i = 0;
 		List<CobraFrame> frames = new List<CobraFrame>(_badStackCopy);
@@ -997,114 +1026,6 @@ static public class CobraImp {
 		return a / b;
 	}
 
-}
+} // class CobraImp
 
-
-internal class CobraFrame {
-
-	protected string _declClassName;
-	protected string _methodName;
-	protected string _fileName;
-	protected int _lineNum;
-	protected object[] _args;
-	protected Dictionary<string, object> _locals;
-	protected List<string> _localNamesInOrder;
-
-	// args should have the arg names embedded: "x", x, "y", y
-	public CobraFrame(string declClassName, string methodName, string fileName, params object[] args) {
-		_declClassName = declClassName;
-		_fileName = fileName;
-		_methodName = methodName;
-		_args = (object[])args.Clone();
-		_locals = new Dictionary<string, object>();
-		_localNamesInOrder = new List<string>();
-		for (int j=0; j<_args.Length; j+=2)
-			SetLocal((string)_args[j], _args[j+1]);
-	}
-
-	public void SetLine(int lineNum) {
-		_lineNum = lineNum;
-	}
-
-	public void SetLocal(string name, object value) {
-		if (!_locals.ContainsKey(name))
-			_localNamesInOrder.Add(name);
-		_locals[name] = value;
-	}
-
-	public void Dump(TextWriter tw, int i) {
-		int nameWidth = 8;
-		tw.WriteLine("\n    {0}. {1}", i, this);
-		tw.WriteLine("        args");
-		for (int j=0; j<_args.Length; j+=2) {
-			tw.Write("               {0} = ", ((string)_args[j]).PadRight(nameWidth));
-			string s;
-			try {
-				s = CobraCore.ToTechString(_args[j+1]);
-			} catch (Exception e) {
-				s = "ToString() Exception: " + e.Message;
-			}
-			tw.WriteLine(s);
-		}
-		tw.WriteLine("        locals");
-		foreach (string name in _localNamesInOrder) {
-			if (name=="this")
-				continue;
-			tw.Write("               {0} = ", name.PadRight(nameWidth));
-			string s;
-			try {
-				s = CobraCore.ToTechString(_locals[name]);
-			} catch (Exception e) {
-				s = "ToString() Exception: " + e.Message;
-			}
-			tw.WriteLine(s);
-		}
-	}
-
-	public void DumpHtml(TextWriter tw, int i) {
-		tw.WriteLine("<tr class=frameHead> <td class=number> {0}. </td> <td class=qualifiedMember colspan=4> {1}.{2} </td> </tr> ", i, _declClassName, _methodName);
-		string baseName = Path.GetFileName(_fileName);
-		string dirName = Path.GetDirectoryName(_fileName);
-		if (dirName!="")
-			dirName = " - " + dirName;
-		tw.WriteLine("<tr> <td class=indent> &nbsp; </td> <td class=label> at: </td> <td class=sourceLocation colspan=3> {0} {1} {2} </td> </tr>", _lineNum, baseName, dirName);
-		for (int j=0; j<_args.Length; j+=2) {
-			string label = j==0 ? "args:" : "";
-			tw.Write("<tr class=frameDetails> <td class=indent> &nbsp; </td> <td class=label> {0} </td> <td> {1} </td> <td> &nbsp;=&nbsp; </td>", label, _args[j]);
-			string s;
-			try {
-				s = CobraCore.ToTechString(_args[j+1]);
-			} catch (Exception e) {
-				s = "ToString() Exception: " + e.Message;
-			}
-			tw.WriteLine("<td> {0} </td> </tr>", s);
-		}
-		bool first = true;
-		foreach (string name in _localNamesInOrder) {
-			if (name=="this")
-				continue;
-			string label = first ? "locals:" : "";
-			tw.Write("<tr class=frameDetails> <td class=indent> &nbsp; </td> <td class=label> {0} </td> <td> {1} </td> <td> &nbsp;=&nbsp; </td>", label, name);
-			string s;
-			try {
-				s = CobraCore.ToTechString(_locals[name]);
-			} catch (Exception e) {
-				s = "ToString() Exception: " + e.Message;
-			}
-			tw.WriteLine("<td> {0} </td> </tr>", s);
-			first = false;
-		}
-		tw.WriteLine("<tr class=blank> <td colspan=4> &nbsp; </td> </tr>");
-	}
-	
-	public override string ToString() {
-		return string.Format("def {0}.{1} at line {2}", _declClassName, _methodName, _lineNum);
-	}
-
-	public CobraFrame Copy() {
-		return (CobraFrame)MemberwiseClone();
-	}
-
-}
-
-}
+} // namespace Cobra.Lang

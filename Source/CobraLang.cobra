@@ -351,6 +351,94 @@ namespace Cobra
 							sb.append('[sep]subclass [name]')
 					return sb.toString
 
+		class CobraFrame
+		
+			var _declClassName as String
+			var _methodName as String
+			var _fileName as String
+			var _lineNum as int
+			var _args as Object[]
+			var _locals as Dictionary<of String, dynamic>
+			var _localNamesInOrder as List<of String>
+			
+			def init(declClassName as String, methodName as String, fileName as String, args as vari Object)
+				"""
+				args should have the arg names embedded: "x", x, "y", y
+				"""
+				_declClassName = declClassName
+				_fileName = fileName
+				_methodName = methodName
+				_args = $sharp(r'(object[])args.Clone()')
+				_locals = Dictionary<of String, dynamic>()
+				_localNamesInOrder = List<of String>()
+				for j = 0 .. _args.length ++ 2
+					.setLocal(_args[j] to String, _args[j+1])
+
+			def setLine(lineNum as int)
+				_lineNum = lineNum
+
+			def setLocal(name as String, value as dynamic)
+				if not _locals.containsKey(name)
+					_localNamesInOrder.add(name)
+				_locals[name] = value
+
+			def dump(tw as System.IO.TextWriter, i as int)
+				nameWidth = 8
+				tw.writeLine('\n    [i]. [this]')
+				tw.writeLine('        args')
+				for j = 0 .. _args.length ++ 2
+					tw.write(String.format('               {0} = ', (_args[j] to String).padRight(nameWidth)))
+					try
+						s = CobraCore.toTechString(_args[j+1])
+					catch e as Exception
+						s = 'ToString() Exception: ' + e.message
+					tw.writeLine(s)
+				tw.writeLine('        locals')
+				for name in _localNamesInOrder
+					if name == 'this'
+						continue
+					tw.write(String.format('               {0} = ', name.padRight(nameWidth)))
+					try
+						s = CobraCore.toTechString(_locals[name])
+					catch e as Exception
+						s = 'ToString() Exception: ' + e.message
+					tw.writeLine(s)
+
+			def dumpHtml(tw as System.IO.TextWriter, i as int)
+				tw.writeLine('<tr class=frameHead> <td class=number> [i]. </td> <td class=qualifiedMember colspan=4> [_declClassName].[_methodName] </td> </tr> ')
+				baseName = System.IO.Path.getFileName(_fileName) # CC: no qual
+				dirName = System.IO.Path.getDirectoryName(_fileName) # CC: no qual
+				if dirName <> ''
+					dirName = ' - ' + (dirName to String)
+				tw.writeLine('<tr> <td class=indent> &nbsp; </td> <td class=label> at: </td> <td class=sourceLocation colspan=3> [_lineNum] [baseName] [dirName] </td> </tr>')
+				for j = 0 .. _args.length ++ 2
+					label = if(j==0, 'args:', '')
+					tw.write('<tr class=frameDetails> <td class=indent> &nbsp; </td> <td class=label> [label] </td> <td> [_args[j]] </td> <td> &nbsp;=&nbsp; </td>')
+					try
+						s = CobraCore.toTechString(_args[j+1])
+					catch e as Exception
+						s = 'ToString() Exception: ' + e.message
+					tw.writeLine('<td> [s] </td> </tr>')
+				first = true
+				for name in _localNamesInOrder
+					if name == 'this'
+						continue
+					label = if(first, 'locals:', '')
+					tw.write('<tr class=frameDetails> <td class=indent> &nbsp; </td> <td class=label> [label] </td> <td> [name] </td> <td> &nbsp;=&nbsp; </td>')
+					try
+						s = CobraCore.toTechString(_locals[name])
+					catch e as Exception
+						s = 'ToString() Exception: ' + e.message
+					tw.writeLine('<td> [s] </td> </tr>')
+					first = false
+				tw.writeLine('<tr class=blank> <td colspan=4> &nbsp; </td> </tr>')
+
+			def toString as String is override
+				return 'def [_declClassName].[_methodName] at line [_lineNum]'
+
+			def copy as CobraFrame
+				return .memberwiseClone to CobraFrame
+
 		class FallThroughException
 			inherits Exception
 
