@@ -704,11 +704,12 @@ static public class CobraImp {
 		}
 	}
 
-	static public Stack<CobraFrame> _superStack = new Stack<CobraFrame>();
+	static private Stack<CobraFrame> _superStack = new Stack<CobraFrame>();
+	static public CobraFrame _curFrame = null;
 	static private Stack<CobraFrame> _badStackCopy = null;
 
 	static public void PushFrame(string declClassName, string methodName, string fileName, params object[] args) {
-		_superStack.Push(new CobraFrame(declClassName, methodName, fileName, args));
+		_superStack.Push(_curFrame = new CobraFrame(declClassName, methodName, fileName, args));
 		int MaxStackFrames = 500; // TODO: move these out to CobraCore
 		int NumLastFrames = 20;
 		if (MaxStackFrames > 0 && _superStack.Count > MaxStackFrames) {
@@ -744,6 +745,8 @@ static public class CobraImp {
 
 	static public void PopFrame() {
 		_superStack.Pop();
+		_curFrame = _superStack.Peek();
+//		_curFrame = _superStack.Count > 0 ? _superStack.Peek() : null;
 	}
 
 	static public void DumpStack() {
