@@ -731,6 +731,7 @@ static public class CobraImp {
 	}
 
 	static public T SetLocal<T>(string name, T value) {
+		// TODO: Change the CobraFrame.setLocal() to be generic and in the generate code invoke it directly ("CobraImp._curFrame.SetLocal(...)"). Then axe this method.
 		_superStack.Peek().SetLocal(name, value);
 		return value;
 	}
@@ -746,7 +747,6 @@ static public class CobraImp {
 	static public void PopFrame() {
 		_superStack.Pop();
 		_curFrame = _superStack.Peek();
-//		_curFrame = _superStack.Count > 0 ? _superStack.Peek() : null;
 	}
 
 	static public void DumpStack() {
