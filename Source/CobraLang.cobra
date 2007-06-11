@@ -9,6 +9,8 @@ namespace Cobra
 			shared
 				get hasSuperStackTrace
 					pass
+				get superStackTrace as Stack<of CobraFrame>
+					pass
 				def dumpStack
 					pass
 				def dumpStack(tw as System.IO.TextWriter)  # TODO: why does TextWriter have to be qualified?
@@ -143,14 +145,68 @@ namespace Cobra
 				get hasSuperStackTrace
 					return CobraImp.hasSuperStackTrace
 
-				def dumpStack
-					CobraImp.dumpStack
+				def dumpStackAsText
+					.dumpStackAsText(Console.out)
 
-				def dumpStack(tw as System.IO.TextWriter)  # TODO: why does TextWriter have to be qualified?
-					CobraImp.dumpStack(tw)
+				def dumpStackAsText(tw as System.IO.TextWriter)  # TODO: why does TextWriter have to be qualified?
+					.dumpStackAsText(tw, CobraImp.superStackTrace)
+						
+				def dumpStackAsText(tw as System.IO.TextWriter, frames as Stack<of CobraFrame>)
+					# dump the most recent stack frames last since the text will output top-down and scroll in the shell
+					tw.writeLine('Stack trace:')
+					if not frames.count
+						tw.writeLine('No stack frames.')
+					else
+						i = 0
+						for frame in frames
+							frame.dumpText(tw, i)
+							i += 1
 
-				def dumpHtmlStack(tw as System.IO.TextWriter)  # CC: no qual
-					CobraImp.dumpHtmlStack(tw)
+				def dumpStackAsHtml(tw as System.IO.TextWriter)  # CC: no qual
+					.dumpStackAsHtml(tw, CobraImp.superStackTrace)
+					
+				def dumpStackAsHtml(tw as System.IO.TextWriter, frames as Stack<of CobraFrame>)  # CC: no qual
+					# dump the most recent stack frames first since the HTML file will be displayed at the top in the browser
+					tw.writeLine('<html>')
+					tw.writeLine('<link href=styles.css rel=stylesheet type="text/css">')
+					tw.writeLine('<body>')
+					tw.writeLine('<div class=sstHeading>Cobra Super Stack Trace</div>')
+					tw.writeLine('<table class=keyValues border=0 cellpadding=1 cellspacing=1>')
+					name = System.Diagnostics.Process.getCurrentProcess.processName
+					if name.endsWith('mono')
+						for part in Environment.commandLine.split(c' ')
+							if part.endsWith('.exe')
+								name = System.IO.Path.getFileName(part)  # CC: axe namespace
+								break
+					.pair(tw, 'Program', name)
+					.pair(tw, 'When', DateTime.now)
+					.pair(tw, 'CommandLine', Environment.commandLine)
+					.pair(tw, 'CurrentDirectory', Environment.currentDirectory)
+					.pair(tw, 'MachineName', Environment.machineName)
+					.pair(tw, 'Cobra', CobraCore.version)
+					tw.writeLine('</table>')
+					if not frames.count
+						tw.writeLine('<p>No stack frames.</p>')
+					else
+						frameList = List<of CobraFrame>(frames)
+						frameList.reverse
+						tw.writeLine('<table class=stack border=0 cellpadding=1 cellspacing=1>')
+						i = 0
+						for frame in frameList
+							frame.dumpHtml(tw, i)
+							i += 1
+						tw.writeLine('</table>')
+					tw.writeLine('</body>')
+					tw.writeLine('</html>')
+
+				def pair(tw as System.IO.TextWriter, key as String, value as Object)
+					key = .htmlEncode(key)
+					value = .htmlEncode(value.toString)
+					tw.writeLine('<tr class=keyValue> <td class=key> [key] </td> <td> &nbsp;=&nbsp; </td> <td class=value> [value] </td> </tr>')
+
+				def htmlEncode(s as String) as String
+					# TODO: complete this
+					return s
 
 
 				## Type names and tech strings
@@ -380,7 +436,7 @@ namespace Cobra
 					_localNamesInOrder.add(name)
 				_locals[name] = value
 
-			def dump(tw as System.IO.TextWriter, i as int)
+			def dumpText(tw as System.IO.TextWriter, i as int)
 				nameWidth = 8
 				tw.writeLine('\n    [i]. [this]')
 				tw.writeLine('        args')

@@ -704,6 +704,15 @@ static public class CobraImp {
 		}
 	}
 
+	static public Stack<CobraFrame> SuperStackTrace {
+		get {
+			if (_badStackCopy == null)
+				return null;
+			else
+				return new Stack<CobraFrame>(new Stack<CobraFrame>(_badStackCopy));  // Double call preserves order. Is there a better way to copy a stack?
+		}
+	}
+	
 	static private Stack<CobraFrame> _superStack = new Stack<CobraFrame>();
 	static public CobraFrame _curFrame = null;
 	static private Stack<CobraFrame> _badStackCopy = null;
@@ -749,68 +758,6 @@ static public class CobraImp {
 		_curFrame = _superStack.Count > 0 ? _superStack.Peek() : null;
 	}
 
-	static public void DumpStack() {
-		DumpStack(Console.Out);
-	}
-
-	static public void DumpStack(TextWriter tw) {
-		// dump the most recent stack frames last since the text will output top-down and scroll in the shell
-		tw.WriteLine("Stack trace:");
-		if (_badStackCopy==null)
-			tw.WriteLine("No bad stack.");
-		int i = 0;
-		foreach (CobraFrame frame in _badStackCopy) {
-			frame.Dump(tw, i);
-			i++;
-		}
-	}
-	
-	static public void DumpHtmlStack(TextWriter tw) {
-		// dump the most recent stack frames first since the HTML file will be displayed at the top in the browser
-		tw.WriteLine("<html>");
-		tw.WriteLine("<link href=styles.css rel=stylesheet type=\"text/css\">");
-		tw.WriteLine("<body>");
-		tw.WriteLine("<div class=sstHeading>Cobra Super Stack Trace</div>");
-		tw.WriteLine("<table class=keyValues border=0 cellpadding=1 cellspacing=1>");
-		string name = Process.GetCurrentProcess().ProcessName;
-		if (name.EndsWith("mono")) {
-			foreach (string part in Environment.CommandLine.Split(' ')) {
-				if (part.EndsWith(".exe")) {
-					name = Path.GetFileName(part);
-					break;
-				}
-			}
-		}
-		pair(tw, "Program", name);
-		pair(tw, "When", DateTime.Now);
-		pair(tw, "CommandLine", Environment.CommandLine);
-		pair(tw, "CurrentDirectory", Environment.CurrentDirectory);
-		pair(tw, "MachineName", Environment.MachineName);
-		pair(tw, "Cobra", CobraCore.Version);
-		tw.WriteLine("</table>");
-		int i = 0;
-		List<CobraFrame> frames = new List<CobraFrame>(_badStackCopy);
-		frames.Reverse();
-		tw.WriteLine("<table class=stack border=0 cellpadding=1 cellspacing=1>");
-		foreach (CobraFrame frame in frames) {
-			frame.DumpHtml(tw, i);
-			i++;
-		}
-		tw.WriteLine("</table>");
-		tw.WriteLine("</body>");
-		tw.WriteLine("</html>");
-	}
-	
-	static void pair(TextWriter tw, string key, object value) {
-		key = HtmlEncode(key);
-		value = HtmlEncode(value.ToString());
-		tw.WriteLine("<tr class=keyValue> <td class=key> {0} </td> <td> &nbsp;=&nbsp; </td> <td class=value> {1} </td> </tr>", key, value);
-	}
-	
-	static string HtmlEncode(string s) {
-		// TODO: complete this
-		return s;
-	}
 
 	// Dynamic Binding
 
