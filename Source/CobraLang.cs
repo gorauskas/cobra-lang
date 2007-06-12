@@ -716,17 +716,21 @@ static public class CobraImp {
 	static private Stack<CobraFrame> _superStack = new Stack<CobraFrame>();
 	static public CobraFrame _curFrame = null;
 	static private Stack<CobraFrame> _badStackCopy = null;
+	static public int _maxStackFrames = 500;
+	static public int _numLastMaxStackFrames = 20;
 
 	static public void PushFrame(string declClassName, string methodName, string fileName, int lineNum, params object[] args) {
 		_superStack.Push(_curFrame = new CobraFrame(declClassName, methodName, fileName, lineNum, args));
-		int MaxStackFrames = 500; // TODO: move these out to CobraCore
-		int NumLastFrames = 20;
-		if (MaxStackFrames > 0 && _superStack.Count > MaxStackFrames) {
+		int max = _maxStackFrames;
+		if (max > 0 && _superStack.Count > max) {
+			int num = _numLastMaxStackFrames;
+			if (num < 2)
+				num = 2;
 			Console.WriteLine("Cobra detected stack overflow:");
-			Console.WriteLine("  Last {0} frames:", NumLastFrames);
+			Console.WriteLine("  Last {0} frames:", num);
 			List<CobraFrame> frames = new List<CobraFrame>(_superStack);
 			frames.Reverse();
-			for (int i = MaxStackFrames-NumLastFrames; i < frames.Count; i++) {
+			for (int i = max-num; i < frames.Count; i++) {
 				Console.WriteLine("    {0}. {1}", i, frames[i]);
 			}
 			try {
