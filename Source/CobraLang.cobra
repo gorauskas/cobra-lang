@@ -214,7 +214,7 @@ namespace Cobra
 						tw.writeLine('<div class=section>')
 						tw.writeLine('<div class=title>Exception</div>')
 						post while exc
-							.dumpObjectAsHtml(tw, 0, exc)
+							.dumpObjectAsHtml(tw, 0, exc, nil)
 							if exc.innerException
 								tw.writeLine('<br><br>innerException:<br>')
 							exc = exc.innerException
@@ -247,7 +247,7 @@ namespace Cobra
 							serialNums.add(pair.value to int)  # CC: axe dynamic
 						serialNums.sort
 						for serialNum in serialNums
-							.dumpObjectAsHtml(tw, serialNum, objectsBySerialNum[serialNum])
+							.dumpObjectAsHtml(tw, serialNum, objectsBySerialNum[serialNum], objects)
 						tw.writeLine('</div> <!-- section -->')
 
 					tw.writeLine('</body>')
@@ -289,7 +289,16 @@ namespace Cobra
 					s = s.replace('\r', '').replace('\n', '<br>').replace(' ', '&nbsp;')
 					return Html(s)
 					
-				def dumpObjectAsHtml(tw as System.IO.TextWriter, serialNum as int, obj as Object)
+				def willDumpHtmlFor(obj as Object?) as bool			
+					if obj is nil
+						return false
+					if obj inherits int
+						return false
+					if obj inherits String
+						return false
+					return true
+
+				def dumpObjectAsHtml(tw as System.IO.TextWriter, serialNum as int, obj as Object, otherObjects as Dictionary<of Object, int>?)
 					tw.writeLine('<table class=object border=0 cellpadding=0 cellspacing=0>')
 					tw.writeLine('<tr class=objectTitle> <td class=objectTitle colspan=2> <a name=Object[serialNum]>[.typeName(obj.getType)]</a> </td> </tr>')
 					value as Object?
@@ -299,32 +308,35 @@ namespace Cobra
 						value = 'Caught exception while reading value: [exc.toString]'
 					_objectPair(tw, 1, 'toString', .htmlFormat(value.toString))
 					i = 1
+					# TODO: use success instead of isGood
 					for propInfo as System.Reflection.PropertyInfo in obj.getType.getProperties  # CC: axe explicit type
 						if propInfo.canRead
 							try
 								value = propInfo.getValue(obj, nil)
 								isGood = true
 							catch exc as Exception
-								value = 'Caught exception while reading value: [exc.toString]'
+								s = .htmlEncode('Caught exception while reading value: [exc.toString]')
 								isGood = false
 							if isGood
 								try
-									value = .toTechString(value)
+									s = .htmlEncode(.toTechString(value))
 								catch exc as Exception
-									value = 'Caught exception while converting value toTechString: [exc.toString]'
-							_objectPair(tw, i%2+1, propInfo.name, value.toString)
+									s = .htmlEncode('Caught exception while converting value toTechString: [exc.toString]')
+									isGood = false
+								if isGood and otherObjects and otherObjects.containsKey(value to passthrough)
+									s = '<a class=objectDetails href=#Object[otherObjects[value]]>[s]</a>'
+							_objectPair(tw, i%2+1, propInfo.name, s)
 							i += 1
 					tw.writeLine('</table>')
 
-				def _objectPair(tw as System.IO.TextWriter, i as int, key as String, value as Object)
+				def _objectPair(tw as System.IO.TextWriter, i as int, key as String, valueHtml as Object)
 					require
 						i == 1 or i == 2
 						key.length
 					body
 						key = key[0].toString.toLower + key[1:]
 						key = .htmlEncode(key)
-						value = .htmlEncode(value)
-						tw.writeLine('<tr class=keyValue[i]> <td class=key[i]> [key] </td> <td class=value[i]> [value] </td> </tr>')
+						tw.writeLine('<tr class=keyValue[i]> <td class=key[i]> [key] </td> <td class=value[i]> [valueHtml] </td> </tr>')
 
 				
 				## Type names and tech strings
@@ -629,13 +641,7 @@ namespace Cobra
 				tw.writeLine('<tr class=blank> <td colspan=4> &nbsp; </td> </tr>')
 			
 			def willDumpHtmlFor(obj as Object?) as bool
-				if obj is nil
-					return false
-				if obj inherits int
-					return false
-				if obj inherits String
-					return false
-				return true
+				return CobraCore.willDumpHtmlFor(obj)
 				
 			def toString as String is override
 				return 'def [_declClassName].[_methodName] at line [_lineNum]'
