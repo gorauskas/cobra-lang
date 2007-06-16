@@ -301,9 +301,8 @@ namespace Cobra
 				def dumpObjectAsHtml(tw as System.IO.TextWriter, serialNum as int, obj as Object, otherObjects as Dictionary<of Object, int>?)
 					tw.writeLine('<table class=object border=0 cellpadding=0 cellspacing=0>')
 					tw.writeLine('<tr class=objectTitle> <td class=objectTitle colspan=2> <a name=Object[serialNum]>[.typeName(obj.getType)]</a> </td> </tr>')
-					value as Object?
 					try
-						value = obj.toString
+						value = obj.toString to Object
 					catch exc as Exception
 						value = 'Caught exception while reading value: [exc.toString]'
 					_objectPair(tw, 1, 'toString', .htmlFormat(value.toString))
@@ -313,24 +312,44 @@ namespace Cobra
 							try
 								value = propInfo.getValue(obj, nil)
 							catch exc as Exception
-								s = .htmlEncode('Caught exception while reading value: [exc.toString]')
+								value = .htmlEncode('Caught exception while reading value: [exc.toString]')
 							success
-								try
-									s = .toTechString(value)
-								catch exc as Exception
-									s = .htmlEncode('Caught exception while converting value toTechString: [exc.toString]')
-								success
-									s = .htmlEncode(s)
-									if otherObjects and otherObjects.containsKey(value to passthrough)
-										s = '<a class=objectDetails href=#Object[otherObjects[value]]>[s]</a>'
-							_objectPair(tw, i%2+1, propInfo.name, s)
+								value = _htmlForValue(value, otherObjects)
+							_objectPair(tw, i%2+1, propInfo.name, value)
 							i += 1
 					# TODO: ack! cannot do this until qualified type problems are fixed up
 					#if obj inherits System.Collections.IList
+					if obj.getType.name.startsWith('List`')
+						dobj = obj to dynamic
+						count = dobj.count to int
+						for j = 0 .. count
+							try
+								value = dobj[j]
+							catch exc as Exception
+								value = .htmlEncode('Caught exception while reading indexed value [j]: [exc.toString]')
+							success
+								value = _htmlForValue(value, otherObjects)
+							_objectPair(tw, (j+i)%2+1, r'[' + '[j]]', value)
+
 					#	pass
 					# TODO: do IDictionary too
 					tw.writeLine('</table>')
 
+				def _htmlForValue(value as dynamic?, otherObjects as Dictionary<of Object, int>?) as dynamic
+					"""
+					Returns the .toTechString of the value, encoded for HTML.
+					Gracefully handles exceptions and also creates links to objects.
+					"""
+					try
+						s = .toTechString(value)
+					catch exc as Exception
+						s = .htmlEncode('Caught exception while converting value toTechString: [exc.toString]')
+					success
+						s = .htmlEncode(s)
+						if otherObjects and otherObjects.containsKey(value to passthrough)
+							s = '<a class=objectDetails href=#Object[otherObjects[value]]>[s]</a>'
+					return s
+				
 				def _objectPair(tw as System.IO.TextWriter, i as int, key as String, valueHtml as Object)
 					require
 						i == 1 or i == 2
