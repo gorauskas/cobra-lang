@@ -188,6 +188,9 @@ namespace Cobra
 					tw.writeLine('<link href=styles.css rel=stylesheet type="text/css">')
 					tw.writeLine('<body>')
 					tw.writeLine('<div class=sstHeading>Cobra Super Stack Trace</div>')
+					
+					tw.writeLine('<div class=section>')
+					tw.writeLine('<div class=title>Header</div>')
 					tw.writeLine('<table class=keyValues border=0 cellpadding=1 cellspacing=1>')
 					name = System.Diagnostics.Process.getCurrentProcess.processName
 					if name.endsWith('mono')
@@ -195,37 +198,107 @@ namespace Cobra
 							if part.endsWith('.exe')
 								name = System.IO.Path.getFileName(part)  # CC: axe namespace
 								break
-					.pair(tw, 'Program', name)
-					.pair(tw, 'When', DateTime.now)
-					.pair(tw, 'CommandLine', Environment.commandLine)
-					.pair(tw, 'CurrentDirectory', Environment.currentDirectory)
-					.pair(tw, 'MachineName', Environment.machineName)
-					.pair(tw, 'Cobra', CobraCore.version)
+					_headerPair(tw, 'Program', name)
+					_headerPair(tw, 'When', DateTime.now)
+					_headerPair(tw, 'CommandLine', Environment.commandLine)
+					_headerPair(tw, 'CurrentDirectory', Environment.currentDirectory)
+					_headerPair(tw, 'MachineName', Environment.machineName)
+					_headerPair(tw, 'Cobra', CobraCore.version)
 					tw.writeLine('</table>')
+					tw.writeLine('</div> <!-- section -->')
+					
+					objects as Dictionary<of Object, int>? = nil
+					tw.writeLine('<div class=section>')
+					tw.writeLine('<div class=title>Stack Frames</div>')
 					if not frames.count
 						tw.writeLine('<p>No stack frames.</p>')
 					else
 						frameList = List<of CobraFrame>(frames)
 						frameList.reverse
+						objects = Dictionary<of Object, int>()
 						tw.writeLine('<table class=stack border=0 cellpadding=1 cellspacing=1>')
 						i = 0
 						for frame in frameList
-							frame.dumpHtml(tw, i)
+							frame.dumpHtml(tw, i, objects to Dictionary<of Object, int>) # axe cast
 							i += 1
 						tw.writeLine('</table>')
+					tw.writeLine('</div> <!-- section -->')
+
+					if objects
+						tw.writeLine('<div class=section>')
+						tw.writeLine('<div class=title>Objects</div>')
+						objectsBySerialNum = Dictionary<of int, Object>()
+						serialNums = List<of int>()
+						for pair as dynamic in objects  # CC: axe dynamic
+							objectsBySerialNum[pair.value to int] = pair.key  # CC: axe cast
+							serialNums.add(pair.value to int)  # CC: axe dynamic
+						serialNums.sort
+						for serialNum in serialNums
+							.dumpObjectAsHtml(tw, objectsBySerialNum[serialNum])
+						tw.writeLine('</div> <!-- section -->')
+
 					tw.writeLine('</body>')
 					tw.writeLine('</html>')
 
-				def pair(tw as System.IO.TextWriter, key as String, value as Object)
+				def _headerPair(tw as System.IO.TextWriter, key as String, value as Object)
 					key = .htmlEncode(key)
 					value = .htmlEncode(value.toString)
 					tw.writeLine('<tr class=keyValue> <td class=key> [key] </td> <td> &nbsp;=&nbsp; </td> <td class=value> [value] </td> </tr>')
 
+				var _htmlEncodes = @[['&', '&amp;'], ['<', '&lt;'], ['>', '&gt;'], ['"', '&quot;']]
+
 				def htmlEncode(s as String) as String
-					# TODO: complete this
-					return s
+					"""
+					Return the HTML encoded version of the given string.
+					This is useful to display a plain ASCII text string on a web page.
+					"""
+					test
+						assert CobraCore.htmlEncode('foo') == 'foo'
+						assert CobraCore.htmlEncode('3 < 5') == '3 &lt; 5'
+					body
+						for code in _htmlEncodes
+							s = s.replace(code[0], code[1])
+						return s
 
+				def dumpObjectAsHtml(tw as System.IO.TextWriter, obj as Object)
+					tw.writeLine('<table class=object border=0 cellpadding=0 cellspacing=0>')
+					tw.writeLine('<tr class=objectTitle> <td class=objectTitle colspan=2> Object </td> </tr>')
+					_objectPair(tw, 1, 'type', .typeName(obj.getType))
+					value as Object?
+					try
+						value = obj.toString
+					catch exc as Exception
+						value = 'Caught exception while reading value: [exc.toString]'
+					_objectPair(tw, 2, 'toString', value.toString)
+					i = 1
+					for propInfo as System.Reflection.PropertyInfo in obj.getType.getProperties  # CC: axe explicit type
+						if propInfo.canRead
+							try
+								value = propInfo.getValue(obj, nil)
+								isGood = true
+							catch exc as Exception
+								value = 'Caught exception while reading value: [exc.toString]'
+								isGood = false
+							if isGood
+								try
+									value = .toTechString(value)
+								catch exc as Exception
+									value = 'Caught exception while converting value toTechString: [exc.toString]'
+							_objectPair(tw, i, propInfo.name, value.toString)
+							i += 1
+					tw.writeLine('</table>')
 
+				def _objectPair(tw as System.IO.TextWriter, i as int, key as String, value as Object)
+					require
+						i == 1 or i == 2
+						key.length
+					body
+						key = key[0].toString.toLower + key[1:]
+						key = .htmlEncode(key)
+						value = .htmlEncode(value.toString)
+						tw.writeLine('<tr class=keyValue[i]> <td class=key[i]> [key] </td> <td class=value[i]> [value] </td> </tr>')
+
+				
 				## Type names and tech strings
 
 				def typeName(t as Type) as String
@@ -431,7 +504,7 @@ namespace Cobra
 			var _fileName as String
 			var _lineNum as int is public
 			var _args as Object[]
-			var _locals as Dictionary<of String, dynamic>
+			var _locals as Dictionary<of String, dynamic?>
 			var _localNamesInOrder as List<of String>
 			
 			def init(declClassName as String, methodName as String, fileName as String, lineNum as int, args as vari Object)
@@ -443,12 +516,12 @@ namespace Cobra
 				_fileName = fileName
 				_lineNum = lineNum
 				_args = $sharp(r'(object[])args.Clone()')
-				_locals = Dictionary<of String, dynamic>()
+				_locals = Dictionary<of String, dynamic?>()
 				_localNamesInOrder = List<of String>()
 				for j = 0 .. _args.length ++ 2
 					.setLocal(_args[j] to String, _args[j+1])
 
-			def setLocal(name as String, value as dynamic)
+			def setLocal(name as String, value as dynamic?)
 				if not _locals.containsKey(name)
 					_localNamesInOrder.add(name)
 				_locals[name] = value
@@ -475,7 +548,12 @@ namespace Cobra
 						s = 'ToString() Exception: ' + e.message
 					tw.writeLine(s)
 
-			def dumpHtml(tw as System.IO.TextWriter, i as int)
+			def dumpHtml(tw as System.IO.TextWriter, i as int, objects as Dictionary<of Object, int>)
+				# record objects
+				for localValue in _locals.values
+					if localValue and .willDumpHtmlFor(localValue) and not objects.containsKey(localValue)
+						objects.add(localValue, objects.count+1000)
+				# write frame html
 				tw.writeLine('<tr class=frameHead> <td class=number> [i]. </td> <td class=qualifiedMember colspan=4> [_declClassName].[_methodName] </td> </tr> ')
 				baseName = System.IO.Path.getFileName(_fileName) # CC: no qual
 				dirName = System.IO.Path.getDirectoryName(_fileName) # CC: no qual
@@ -503,7 +581,14 @@ namespace Cobra
 					tw.writeLine('<td> [s] </td> </tr>')
 					first = false
 				tw.writeLine('<tr class=blank> <td colspan=4> &nbsp; </td> </tr>')
-
+			
+			def willDumpHtmlFor(obj as Object) as bool
+				if obj inherits int
+					return false
+				if obj inherits String
+					return false
+				return true
+				
 			def toString as String is override
 				return 'def [_declClassName].[_methodName] at line [_lineNum]'
 
