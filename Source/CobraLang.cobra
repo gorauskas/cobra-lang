@@ -308,25 +308,27 @@ namespace Cobra
 						value = 'Caught exception while reading value: [exc.toString]'
 					_objectPair(tw, 1, 'toString', .htmlFormat(value.toString))
 					i = 1
-					# TODO: use success instead of isGood
 					for propInfo as System.Reflection.PropertyInfo in obj.getType.getProperties  # CC: axe explicit type
-						if propInfo.canRead
+						if propInfo.canRead and propInfo.name <> 'Item'
 							try
 								value = propInfo.getValue(obj, nil)
-								isGood = true
 							catch exc as Exception
 								s = .htmlEncode('Caught exception while reading value: [exc.toString]')
-								isGood = false
-							if isGood
+							success
 								try
-									s = .htmlEncode(.toTechString(value))
+									s = .toTechString(value)
 								catch exc as Exception
 									s = .htmlEncode('Caught exception while converting value toTechString: [exc.toString]')
-									isGood = false
-								if isGood and otherObjects and otherObjects.containsKey(value to passthrough)
-									s = '<a class=objectDetails href=#Object[otherObjects[value]]>[s]</a>'
+								success
+									s = .htmlEncode(s)
+									if otherObjects and otherObjects.containsKey(value to passthrough)
+										s = '<a class=objectDetails href=#Object[otherObjects[value]]>[s]</a>'
 							_objectPair(tw, i%2+1, propInfo.name, s)
 							i += 1
+					# TODO: ack! cannot do this until qualified type problems are fixed up
+					#if obj inherits System.Collections.IList
+					#	pass
+					# TODO: do IDictionary too
 					tw.writeLine('</table>')
 
 				def _objectPair(tw as System.IO.TextWriter, i as int, key as String, valueHtml as Object)
