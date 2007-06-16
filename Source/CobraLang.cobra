@@ -296,9 +296,23 @@ namespace Cobra
 						return false
 					if obj inherits String
 						return false
+					if obj inherits decimal or obj inherits float
+						return false
+					if obj inherits bool or obj inherits char
+						return false
 					return true
 
+				def willDumpHtmlForConservative(obj as Object?) as bool
+					if not .willDumpHtmlFor(obj)
+						return false
+					if obj.getType.isNested
+						return false
+					if 'IEquatableOf' in obj.getType.name
+						return false
+					return true
+					
 				def dumpObjectAsHtml(tw as System.IO.TextWriter, serialNum as int, obj as Object, otherObjects as Dictionary<of Object, int>?)
+					moreObjects = Dictionary<of Object, int>()  # TODO: Use a generic OrderedDictionary. .NET doesn't seem to have one so one will have to be created.
 					tw.writeLine('<table class=object border=0 cellpadding=0 cellspacing=0>')
 					tw.writeLine('<tr class=objectTitle> <td class=objectTitle colspan=2> <a name=Object[serialNum]>[.typeName(obj.getType)]</a> </td> </tr>')
 					try
@@ -314,7 +328,7 @@ namespace Cobra
 							catch exc as Exception
 								value = .htmlEncode('Caught exception while reading value: [exc.toString]')
 							success
-								value = _htmlForValue(value, otherObjects)
+								value = _htmlForValue(value, otherObjects, moreObjects)
 							_objectPair(tw, i%2+1, propInfo.name, value)
 							i += 1
 					# TODO: ack! cannot do this until qualified type problems are fixed up
@@ -328,7 +342,7 @@ namespace Cobra
 							catch exc as Exception
 								value = .htmlEncode('Caught exception while reading indexed value [j]: [exc.toString]')
 							success
-								value = _htmlForValue(value, otherObjects)
+								value = _htmlForValue(value, otherObjects, moreObjects)
 							_objectPair(tw, i%2+1, r'[' + '[j]]', value)
 							i += 1
 					else if obj.getType.name.startsWith('Dictionary')  # TODO: use if implements/inherits
@@ -345,13 +359,16 @@ namespace Cobra
 							catch exc as Exception
 								value = .htmlEncode('Caught exception while reading keyed value [htmlKey]: [exc.toString]')
 							success
-								value = _htmlForValue(value, otherObjects)
+								value = _htmlForValue(value, otherObjects, moreObjects)
 							_objectPair(tw, i%2+1, r'[' + htmlKey + ']', value)
 							i += 1
 
 					tw.writeLine('</table>')
+					
+					for pair as dynamic in moreObjects  # CC: axe as dynamic
+						.dumpObjectAsHtml(tw, pair.value, pair.key, otherObjects)
 
-				def _htmlForValue(value as dynamic?, otherObjects as Dictionary<of Object, int>?) as dynamic
+				def _htmlForValue(value as dynamic?, otherObjects as Dictionary<of Object, int>?, moreObjects as Dictionary<of Object, int>?) as dynamic
 					"""
 					Returns the .toTechString of the value, encoded for HTML.
 					Gracefully handles exceptions and also creates links to objects.
@@ -362,8 +379,16 @@ namespace Cobra
 						s = .htmlEncode('Caught exception while converting value toTechString: [exc.toString]')
 					success
 						s = .htmlEncode(s)
-						if otherObjects and otherObjects.containsKey(value to passthrough)
-							s = '<a class=objectDetails href=#Object[otherObjects[value]]>[s]</a>'
+						if otherObjects
+							willLink = false
+							if otherObjects.containsKey(value to passthrough)
+								willLink = true
+							else if .willDumpHtmlForConservative(value) and moreObjects
+								otherObjects.add(value to passthrough, otherObjects.count+1000)
+								moreObjects.add(value to passthrough, otherObjects.count+1000)
+								willLink = true
+							if willLink
+								s = '<a class=objectDetails href=#Object[otherObjects[value]]>[s]</a>'
 					return s
 				
 				def _objectPair(tw as System.IO.TextWriter, i as int, key as String, valueHtml as Object)
