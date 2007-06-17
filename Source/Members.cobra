@@ -487,6 +487,14 @@ class AbstractMethod
 		.addField('locals', _locals)
 		.addField('stmts', _stmts)
 
+	get willRequire as bool
+		# in the future, this will also depend on a command line option to include/exclude preconditions
+		return .box.name <> 'CobraFrame'
+
+	get willEnsure as bool
+		# in the future, this will also depend on a command line option to include/exclude preconditions
+		return .box.name <> 'CobraFrame'
+
 	def _bindInt is override
 		base._bindInt
 		.compiler.codeMemberStack.push(this)
@@ -500,12 +508,14 @@ class AbstractMethod
 				_returnType = _returnTypeNode.namedType
 			assert _returnType, _returnTypeNode
 		_returnType.bindInt  # TODO: needs a test case. like: def foo as String?; return ''
-		if _requirePart is nil
+		if _requirePart is nil and .willRequire
 			_requirePart = RequirePart(this)
-		_requirePart.bindInt
-		if _ensurePart is nil
+		if _requirePart
+			_requirePart.bindInt
+		if _ensurePart is nil and .willEnsure
 			_ensurePart = EnsurePart(this)
-		_ensurePart.bindInt
+		if _ensurePart
+			_ensurePart.bindInt
 		.compiler.codeMemberStack.pop
 
 	def _bindImp is override
@@ -762,25 +772,26 @@ class Constructor
 
 	def _bindImp
 		# add asserts at the end for non-nilable class vars
-		token = .lastToken.copy
-		token.incLineNum
-		stmts = List<of Stmt>()
-		for decl in _box.declsInOrder
-			if decl inherits ClassVar
-				assert decl.type
-				if not decl.type inherits NilableType and decl.type.isReference and not decl.isShared
-					stmts.add(AssertStmt(token, IsNotNilExpr(token, IdentifierExpr(token, decl.name, decl)), nil))
-		if stmts.count
-			sharpToken = token.copy
-			sharpToken.which = 'STRING'
-			sharpToken.value = 'CobraCore._willCheckNonNilClassVars'
-			cond = SharpExpr(token, StringLit(sharpToken))
+		if .box.name <> 'CobraFrame'
+			token = .lastToken.copy
+			token.incLineNum
+			stmts = List<of Stmt>()
+			for decl in _box.declsInOrder
+				if decl inherits ClassVar
+					assert decl.type
+					if not decl.type inherits NilableType and decl.type.isReference and not decl.isShared
+						stmts.add(AssertStmt(token, IsNotNilExpr(token, IdentifierExpr(token, decl.name, decl)), nil))
+			if stmts.count
+				sharpToken = token.copy
+				sharpToken.which = 'STRING'
+				sharpToken.value = 'CobraCore._willCheckNonNilClassVars'
+				cond = SharpExpr(token, StringLit(sharpToken))
 
-			block = BlockStmt(token, stmts)
+				block = BlockStmt(token, stmts)
 
-			ifStmt = IfStmt(token, cond, block, nil)
+				ifStmt = IfStmt(token, cond, block, nil)
 
-			.addStmt(ifStmt)
+				.addStmt(ifStmt)
 
 		base._bindImp
 
@@ -1254,6 +1265,9 @@ class ConditionPart
 	get connectWord as String
 		return ''  # TODO: make abstract instead
 
+	get willWriteSharp as bool
+		return _codeMember.box.name <> 'CobraFrame'
+		
 	get isImplicit from var
 
 	def _bindImp is override
@@ -1312,6 +1326,8 @@ class RequirePart
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
+		if not .willWriteSharp
+			return
 		sw.write('if (CobraCore._willCheckRequire) {\n')
 		sw.indent
 		if _codeMember.isOverride
@@ -1356,6 +1372,8 @@ class RequirePart
 		if _codeMember.isInterfaceMember
 			# contracts on interface members are not supported yet
 			# and when they are, these methods will have to be written outside the interface
+			return
+		if not .willWriteSharp
 			return
 		static_ = if(_codeMember.isShared, 'static ', '')
 		sw.write('[static_]protected void [.sharpMethodName]')
@@ -1404,6 +1422,8 @@ class EnsurePart
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
+		if not .willWriteSharp
+			return
 		sw.write('if (CobraCore._willCheckEnsure) {\n')
 		sw.indent
 		if _codeMember.isOverride
@@ -1431,6 +1451,8 @@ class EnsurePart
 		if _codeMember.isInterfaceMember
 			# contracts on interface members are not supported yet
 			# and when they are, these methods will have to be written outside the interface
+			return
+		if not .willWriteSharp
 			return
 		static_ = if(_codeMember.isShared, 'static ', '')
 		sw.write('[static_]protected void [.sharpMethodName](')
