@@ -161,6 +161,11 @@ interface IType
 		And as opposed to value type such as a struct, int, etc.).
 		"""
 
+	def isComparableTo(t as IType) as bool
+		"""
+		Returns true if this type can be compared to the given type via `is`, `is not`, `==`, `<>`, `>`, etc.
+		"""
+
 	get isGenericDef as bool
 		"""
 		Returns true if this type is a definition of a generic type, and
@@ -283,6 +288,16 @@ class CobraType
 
 	get isShared as bool
 		return true
+
+	def isComparableTo(b as IType) as bool
+		if b inherits NilableType
+			# CC: b = b.theWrappedType
+			$sharp('b = ((NilableType)b).TheWrappedType')
+		if this.isAssignableTo(b to IType) or b.isAssignableTo(this)  # CC: to ! or assert above with nil flow analysis
+			return true
+		if b inherits NilType # TODO: axe this. but temp reason for this is due to Tests\150-basics-two\100-using.cobra
+			return true
+		return false
 
 	get requiresThis as bool
 		return false
@@ -471,6 +486,12 @@ class CharType
 	get name as String is override
 		return 'char'
 
+	def isComparableTo(b as IType) as bool
+		r = base.isComparableTo(b)
+		if not r and b is .compiler.libraryType('System', 'String')
+			r = true
+		return r
+
 	get csInit as String is override
 		return '(char)0'
 
@@ -586,6 +607,9 @@ class NilableType
 			assert _wrappedType
 			return _wrappedType.isAssignableTo(type.theWrappedType to IType)  # CC: to ! or something
 		return false
+
+	def isComparableTo(b as IType) as bool is override
+		return _wrappedType.isComparableTo(b)
 
 	def isDescendantOf(type as IType) as bool is override
 		return base.isDescendantOf(type) and _wrappedType.isDescendantOf(type)
