@@ -203,9 +203,15 @@ namespace Cobra
 
 				def dumpStackAsHtml(tw as System.IO.TextWriter, exc as Exception?)  # CC: no qual
 					.dumpStackAsHtml(tw, exc, CobraImp.superStackTrace)
-					
+				
+				var _dumpObjectCount as int
+				var _maxDumpObjectCount = 1000
+				
 				def dumpStackAsHtml(tw as System.IO.TextWriter, exc as Exception?, frames as Stack<of CobraFrame>)  # CC: no qual
 					# dump the most recent stack frames first since the HTML file will be displayed at the top in the browser
+					
+					_dumpObjectCount = 1
+					
 					tw.writeLine('<html>')
 					tw.writeLine('<link href=styles.css rel=stylesheet type="text/css">')
 					tw.writeLine('<body>')
@@ -238,7 +244,7 @@ namespace Cobra
 						tw.writeLine('<div class=section>')
 						tw.writeLine('<div class=title>Exception</div>')
 						post while exc
-							.dumpObjectAsHtml(tw, 0, exc, nil)
+							.dumpObjectAsHtml(tw, 0, exc, nil, 0)
 							if exc.innerException
 								tw.writeLine('<br><br>innerException:<br>')
 							exc = exc.innerException
@@ -271,7 +277,7 @@ namespace Cobra
 							serialNums.add(pair.value to int)  # CC: axe dynamic
 						serialNums.sort
 						for serialNum in serialNums
-							.dumpObjectAsHtml(tw, serialNum, objectsBySerialNum[serialNum], objects)
+							.dumpObjectAsHtml(tw, serialNum, objectsBySerialNum[serialNum], objects, 0)
 						tw.writeLine('</div> <!-- section -->')
 
 					tw.writeLine('</body>')
@@ -353,8 +359,15 @@ namespace Cobra
 						return false
 					return true
 					
-				def dumpObjectAsHtml(tw as System.IO.TextWriter, serialNum as int, obj as Object, otherObjects as Dictionary<of Object, int>?)
+				def dumpObjectAsHtml(tw as System.IO.TextWriter, serialNum as int, obj as Object, otherObjects as Dictionary<of Object, int>?, nestedCallCount as int)
+					if nestedCallCount > 9
+						return
+					if _dumpObjectCount >= _maxDumpObjectCount
+						return
+					_dumpObjectCount += 1
 					moreObjects = Dictionary<of Object, int>()  # TODO: Use a generic OrderedDictionary. .NET doesn't seem to have one so one will have to be created.
+					if otherObjects and not otherObjects.containsKey(obj)
+						otherObjects.add(obj, otherObjects.count+1000)
 					tw.writeLine('<table class=object border=0 cellpadding=0 cellspacing=0>')
 					tw.writeLine('<tr class=objectTitle> <td class=objectTitle colspan=2> <a name=Object[serialNum]>[.typeName(obj.getType)]</a> </td> </tr>')
 					try
@@ -364,7 +377,7 @@ namespace Cobra
 					_objectPair(tw, 1, 'toString', .htmlFormat(value.toString))
 					i = 1
 					for propInfo as System.Reflection.PropertyInfo in obj.getType.getProperties  # CC: axe explicit type
-						if propInfo.canRead and propInfo.name <> 'Item'
+						if propInfo.canRead and not propInfo.getGetMethod.isStatic and propInfo.name not in ['Clone', 'Copy', 'Item']
 							try
 								value = propInfo.getValue(obj, nil)
 							catch exc as Exception
@@ -408,7 +421,8 @@ namespace Cobra
 					tw.writeLine('</table>')
 					
 					for pair as dynamic in moreObjects  # CC: axe as dynamic
-						.dumpObjectAsHtml(tw, pair.value, pair.key, otherObjects)
+						if pair.key is not obj
+							.dumpObjectAsHtml(tw, pair.value, pair.key, otherObjects, nestedCallCount+1)
 
 				def _htmlForValue(value as dynamic?, otherObjects as Dictionary<of Object, int>?, moreObjects as Dictionary<of Object, int>?) as dynamic
 					"""
@@ -423,7 +437,7 @@ namespace Cobra
 						s = .htmlEncode(s)
 						if value and otherObjects
 							willLink = false
-							if otherObjects.containsKey(value to passthrough)
+							if otherObjects.containsKey(value to passthrough) or moreObjects.containsKey(value to passthrough)
 								willLink = true
 							else if .willDumpHtmlForConservative(value) and moreObjects
 								otherObjects.add(value to passthrough, otherObjects.count+1000)
