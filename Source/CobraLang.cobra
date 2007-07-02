@@ -250,7 +250,7 @@ namespace Cobra
 							exc = exc.innerException
 						tw.writeLine('<br></div>')
 						
-					objects as Dictionary<of Object, int>? = nil
+					objects = Dictionary<of Object, int>()
 					tw.writeLine('<div class=section>')
 					tw.writeLine('<div class=title>Stack Frames</div>')
 					if not frames.count
@@ -262,12 +262,12 @@ namespace Cobra
 						tw.writeLine('<table class=stack border=0 cellpadding=1 cellspacing=1>')
 						i = 0
 						for frame in frameList
-							frame.dumpHtml(tw, i, objects to Dictionary<of Object, int>) # axe cast
+							frame.dumpHtml(tw, i, objects)
 							i += 1
 						tw.writeLine('</table>')
 					tw.writeLine('</div> <!-- section -->')
 
-					if objects
+					if objects.count
 						tw.writeLine('<div class=section>')
 						tw.writeLine('<div class=title>Objects</div>')
 						objectsBySerialNum = Dictionary<of int, Object>()
@@ -395,7 +395,7 @@ namespace Cobra
 							try
 								value = propInfo.getValue(obj, nil)
 							catch exc as Exception
-								value = .htmlEncode('Caught exception while reading value: [exc.toString]')
+								value = .htmlFormat('Caught exception while reading value: [exc.toString]')
 							success
 								value = _htmlForValue(value, otherObjects, moreObjects)
 							_objectPair(tw, i%2+1, propInfo.name, value)
@@ -409,7 +409,7 @@ namespace Cobra
 							try
 								value = dobj[j]
 							catch exc as Exception
-								value = .htmlEncode('Caught exception while reading indexed value [j]: [exc.toString]')
+								value = .htmlFormat('Caught exception while reading indexed value [j]: [exc.toString]')
 							success
 								value = _htmlForValue(value, otherObjects, moreObjects)
 							_objectPair(tw, i%2+1, r'[' + '[j]]', value)
@@ -417,10 +417,11 @@ namespace Cobra
 					else if obj.getType.name.startsWith('Dictionary')  # TODO: use if implements/inherits
 						dobj = obj to dynamic
 						for key in dobj.keys
+							htmlKey as dynamic?
 							try
 								htmlKey = .toTechString(key)
 							catch exc as Exception
-								htmlKey = .htmlEncode('Caught exception for toTechString(key): [exc.toString]')
+								htmlKey = .htmlFormat('Caught exception for toTechString(key): [exc.toString]')
 							success
 								htmlKey = .htmlEncode(htmlKey)
 							try
@@ -443,12 +444,13 @@ namespace Cobra
 					Returns the .toTechString of the value, encoded for HTML.
 					Gracefully handles exceptions and also creates links to objects.
 					"""
+					s as dynamic?
 					try
 						s = .toTechString(value)
 					catch exc as Exception
-						s = .htmlEncode('Caught exception while converting value toTechString: [exc.toString]')
+						s = .htmlFormat('Caught exception while converting value toTechString: [exc.toString]')
 					success
-						s = .htmlEncode(s)
+						s = .htmlFormat(s to String) # CC: to !
 						if value and otherObjects
 							willLink = false
 							if otherObjects.containsKey(value to passthrough) or moreObjects.containsKey(value to passthrough)
@@ -459,7 +461,7 @@ namespace Cobra
 								willLink = true
 							if willLink
 								s = '<a class=objectDetails href=#Object[otherObjects[value]]>[s]</a>'
-					return s
+					return s to dynamic
 				
 				def _objectPair(tw as System.IO.TextWriter, i as int, key as String, valueHtml as Object)
 					require
@@ -605,6 +607,7 @@ namespace Cobra
 		class Html
 			"""
 			Represents HTML that doesn't need to be encoded.
+			Html.toString returns the contents as-is.
 			"""
 			var _contents as String
 			def init(contents as String)
