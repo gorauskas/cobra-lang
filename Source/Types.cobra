@@ -1143,11 +1143,9 @@ class AbstractTypeIdentifier
 	get actualType from var
 
 	get namedType as IType? is override
-		or require
-			.didBindInt or .didBindImp
-			.actualType
-		body
-			return _actualType
+		or require .didBindInt or .didBindImp
+		and ensure .actualType
+		return _actualType
 
 	def equals(other as Object) as bool is override
 		if other is nil
@@ -1178,27 +1176,17 @@ class AbstractTypeIdentifier
 
 	def _bindInt is override
 		base._bindInt()
-		_resolveType()
-		_actualType.bindInt()
 
 	def _bindImp is override
 		base._bindImp()
-		_resolveType()
-
 		# A TypeIdentifier can be given a type that is constructed
 		# during parsing (such as a QualifiedType). Consequently, it may
 		# not have gotten a bindInt() and without one, it will barf at
 		# some point. So:
 		# TODO: this may be axeable when QualifiedType is retired
 		# then again, generic types are constructed as well (but then maybe they can be bound upon construction)
-		_actualType.bindInt()
-
-	def _resolveType
-		"""
-		Subclasses must override. No need to invoke base.
-		"""
-		ensure .actualType
-		pass
+		# TODO: axe this
+		.namedType.bindInt()
 
 
 class WrappedTypeIdentifier
@@ -1235,11 +1223,13 @@ class ArrayTypeIdentifier
 	def memberFrom(container as Container) as IMember? is override
 		return container.memberForName(.theWrappedTypeIdentifier.name)
 
-	def _resolveType is override
+	get namedType as IType? is override
 		if _actualType
-			return
-		_actualType = ArrayType(_typeId.actualType)
-
+			return _actualType
+		assert _typeId.namedType
+		_actualType = ArrayType(_typeId.namedType)
+		return _actualType
+		
 
 class NilableTypeIdentifier
 	inherits WrappedTypeIdentifier
@@ -1247,11 +1237,13 @@ class NilableTypeIdentifier
 	def init(token as IToken, typeId as AbstractTypeIdentifier)
 		base.init(token, typeId)
 
-	def _resolveType is override
+	get namedType as IType? is override
 		if _actualType
-			return
-		_actualType = NilableType(_typeId.actualType)
-
+			return _actualType
+		assert _typeId.namedType
+		_actualType = NilableType(_typeId.namedType)
+		return _actualType
+		
 
 class TypeIdentifier
 	inherits AbstractTypeIdentifier
@@ -1296,9 +1288,9 @@ class TypeIdentifier
 			assert name == token.text or type inherits QualifiedType
 			_actualType = type
 
-	def _resolveType is override
+	get namedType as IType? is override
 		if _actualType
-			return
+			return _actualType
 		# don't need to check "basic types" like int, bool, etc. here. the parser does those.
 		if Utils.isCapped(_name)
 			symbol = .compiler.symbolForName(.name, true, false)  # nested enum and class types are capped and can be members of the current class
@@ -1311,15 +1303,14 @@ class TypeIdentifier
 				other = .compiler.symbolForName(sugg, true, false)
 				sugg = if(other, ' Try "[sugg]".', '')
 			.throwError('Cannot find type for "[_name]".[sugg]')
-
 		if symbol inherits IType
 			_actualType = symbol
 		else
 			what = symbol.namedType
 			assert what, symbol
 			_actualType = what
-
 		assert _actualType
+		return _actualType
 
 
 class GenericTypeIdentifier
@@ -1351,16 +1342,20 @@ class GenericTypeIdentifier
 
 	def memberFrom(container as Container) as IMember? is override
 		genericType = container.memberForName(_typeRefName)
-		_resolveType(genericType)
+		assert genericType
+		_locateType(genericType to IMember) # CC: axe cast
 		return _actualType
 
-	def _resolveType is override
+	get namedType as IType? is override
+		if _actualType
+			return _actualType
 		genericType = .compiler.symbolForName(_typeRefName, Utils.isCapped(_name), false)
-		_resolveType(genericType)
-
-	def _resolveType(genericType as IMember?)
 		if genericType is nil
 			.throwError('Cannot find a generic type named "[_typeRefName]".')
+		_locateType(genericType to IMember)  # CC: axe cast
+		return _actualType
+
+	def _locateType(genericType as IMember)
 		if genericType inherits IType
 			gt as IType = genericType to IType  # CC: shouldn't need this local. if-inherits looks broken for interfaces
 			if not gt.isGeneric
@@ -1401,9 +1396,9 @@ class QualifiedTypeIdentifier
 		_name = sb.toString
 		# TODO: would it be useful to set the _token.text to the name? Maybe it would help with syntax highlighting
 
-	def _resolveType is override
+	get namedType as IType? is override
 		if _actualType
-			return
+			return _actualType
 		member = .compiler.symbolForName(_typeNodes[0].name, true, false)
 #		print
 #		print '_resolveType'
@@ -1429,3 +1424,5 @@ class QualifiedTypeIdentifier
 			_actualType = member
 		else
 			.throwError('The definition for "[_name]" is not a type.')
+		return _actualType
+		
