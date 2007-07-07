@@ -497,52 +497,54 @@ class AbstractMethod
 	def _bindInt is override
 		base._bindInt
 		.compiler.codeMemberStack.push(this)
-		# TODO: try ... finally
-		for param in _params
-			param.bindInt
-		if _returnType is nil
-			if _returnTypeNode is nil
-				_returnType = .compiler.voidType
-			else
-				_returnType = _returnTypeNode.namedType
-			assert _returnType, _returnTypeNode
-		_returnType.bindInt  # TODO: needs a test case. like: def foo as String?; return ''  # axens
-		if _requirePart is nil and .willRequire
-			_requirePart = RequirePart(this)
-		if _requirePart
-			_requirePart.bindInt
-		if _ensurePart is nil and .willEnsure
-			_ensurePart = EnsurePart(this)
-		if _ensurePart
-			_ensurePart.bindInt
-		.compiler.codeMemberStack.pop
+		try
+			for param in _params
+				param.bindInt
+			if _returnType is nil
+				if _returnTypeNode is nil
+					_returnType = .compiler.voidType
+				else
+					_returnType = _returnTypeNode.namedType
+				assert _returnType, _returnTypeNode
+			_returnType.bindInt  # TODO: needs a test case. like: def foo as String?; return ''  # axens
+			if _requirePart is nil and .willRequire
+				_requirePart = RequirePart(this)
+			if _requirePart
+				_requirePart.bindInt
+			if _ensurePart is nil and .willEnsure
+				_ensurePart = EnsurePart(this)
+			if _ensurePart
+				_ensurePart.bindInt
+		finally
+			.compiler.codeMemberStack.pop
 
 	def _bindImp is override
 		base._bindImp
 		.compiler.codeMemberStack.push(this)
-		# TODO: try ... finally
-		for param in _params
-			param.bindImp
-		for local in _locals
-			local.bindImp
-		if _requirePart
-			_requirePart.bindImp
-		if _ensurePart and _returnType and _returnType is not .compiler.voidType
-			_sharpResultVarName = '_lh_result_[_box.makeNextPrivateSerialNumber]'
-		else
-			_sharpResultVarName = ''
-		for stmt in _stmts
-			try
-				stmt.bindImp
-				stmt.afterStatementBindImp  # to let expressions know when they are used as statements
-			catch ne as NodeException
-				.compiler.recordError(ne)
-		if _ensurePart
-			_ensurePart.bindImp
-		.computeMatchingBaseMember  # TODO: put this in _bindInt where it belongs. but not that last attempt broke a test case for indexers and requires...
-		.checkForUnmarkedOverrideOrNew  # have to do this after statements bindImp since using base can add `override`
-		.checkForUnusedVariables
-		.compiler.codeMemberStack.pop
+		try
+			for param in _params
+				param.bindImp
+			for local in _locals
+				local.bindImp
+			if _requirePart
+				_requirePart.bindImp
+			if _ensurePart and _returnType and _returnType is not .compiler.voidType
+				_sharpResultVarName = '_lh_result_[_box.makeNextPrivateSerialNumber]'
+			else
+				_sharpResultVarName = ''
+			for stmt in _stmts
+				try
+					stmt.bindImp
+					stmt.afterStatementBindImp  # to let expressions know when they are used as statements
+				catch ne as NodeException
+					.compiler.recordError(ne)
+			if _ensurePart
+				_ensurePart.bindImp
+			.computeMatchingBaseMember  # TODO: put this in _bindInt where it belongs. but not that last attempt broke a test case for indexers and requires...
+			.checkForUnmarkedOverrideOrNew  # have to do this after statements bindImp since using base can add `override`
+			.checkForUnusedVariables
+		finally
+			.compiler.codeMemberStack.pop
 
 	def computeMatchingBaseMember
 		if _matchingBaseMember
