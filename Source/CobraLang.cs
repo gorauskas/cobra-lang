@@ -38,17 +38,19 @@ public class AssertException : Exception {
 	protected string   _fileName;
 	protected int      _lineNumber;
 	protected object[] _expressions;
+	protected object   _this;
 	protected object   _info;
 
-	public AssertException(string fileName, int lineNumber, object[] expressions, object info)
-		: this(fileName, lineNumber, expressions, info, null) {
+	public AssertException(string fileName, int lineNumber, object[] expressions, object thiss, object info)
+		: this(fileName, lineNumber, expressions, thiss, info, null) {
 	}
 
-	public AssertException(string fileName, int lineNumber, object[] expressions, object info, Exception innerExc)
+	public AssertException(string fileName, int lineNumber, object[] expressions, object thiss, object info, Exception innerExc)
 		: base("assert", innerExc) {
 		_fileName = fileName;
 		_lineNumber = lineNumber;
 		_expressions = expressions;
+		_this = thiss;
 		_info = info;
 	}
 
@@ -56,13 +58,8 @@ public class AssertException : Exception {
 		get {
 			StringBuilder sb = new StringBuilder("\n");
 			sb.AppendFormat("location = {0}:{1}\n", _fileName, _lineNumber);
-			string info = null;
-			try {
-				info = CobraCore.ToTechString(_info);
-			} catch (Exception e) {
-				info = "toTechString exception: " + e.Message;
-			}
-			sb.AppendFormat("info = {0}\n", info);
+			sb.AppendFormat("info     = {0}\n", ToTechString(_info));
+			sb.AppendFormat("this     = {0}\n", ToTechString(_this));
 			int indentLevel = 1;
 			int i = 1;
 			while (i < _expressions.Length) {
@@ -81,11 +78,7 @@ public class AssertException : Exception {
 					if (dirStr!=null) {
 						valueString = dirStr.String;
 					} else {
-						try {
-							valueString = CobraCore.ToTechString(value);
-						} catch (Exception e) {
-							valueString = "toTechString exception: " + e.Message;
-						}
+						valueString = ToTechString(value);
 					}
 					// for (int x = 0; x < indentLevel*4; x++)
 					sb.Append(new String(' ', indentLevel*4));
@@ -97,12 +90,28 @@ public class AssertException : Exception {
 		}
 	}
 
+	public object This {
+		get {
+			return _this;
+		}
+	}
+	
 	public object Info {
 		get {
 			return _info;
 		}
 	}
 
+	string ToTechString(object obj) {
+		string s = null;
+		try {
+			s = CobraCore.ToTechString(obj);
+		} catch (Exception e) {
+			s = "toTechString exception: " + e.Message;
+		}
+		return s;
+	}
+	
 }
 
 
@@ -110,12 +119,12 @@ public class RequireException : AssertException {
 
 	RequireException _next;
 
-	public RequireException(string fileName, int lineNumber, object[] expressions, object info)
-		: this(fileName, lineNumber, expressions, info, null) {
+	public RequireException(string fileName, int lineNumber, object[] expressions, object thiss, object info)
+		: this(fileName, lineNumber, expressions, thiss, info, null) {
 	}
 
-	public RequireException(string fileName, int lineNumber, object[] expressions, object info, Exception innerExc)
-		: base(fileName, lineNumber, expressions, info, innerExc) {
+	public RequireException(string fileName, int lineNumber, object[] expressions, object thiss, object info, Exception innerExc)
+		: base(fileName, lineNumber, expressions, thiss, info, innerExc) {
 	}
 
 	public RequireException Next {
@@ -132,12 +141,12 @@ public class RequireException : AssertException {
 
 public class EnsureException : AssertException {
 
-	public EnsureException(string fileName, int lineNumber, object[] expressions, object info)
-		: this(fileName, lineNumber, expressions, info, null) {
+	public EnsureException(string fileName, int lineNumber, object[] expressions, object thiss, object info)
+		: this(fileName, lineNumber, expressions, thiss, info, null) {
 	}
 
-	public EnsureException(string fileName, int lineNumber, object[] expressions, object info, Exception innerExc)
-		: base(fileName, lineNumber, expressions, info, innerExc) {
+	public EnsureException(string fileName, int lineNumber, object[] expressions, object thiss, object info, Exception innerExc)
+		: base(fileName, lineNumber, expressions, thiss, info, innerExc) {
 	}
 
 }
