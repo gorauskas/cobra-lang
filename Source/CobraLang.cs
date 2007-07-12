@@ -283,7 +283,23 @@ static public class CobraImp {
 			return sb.ToString();
 		}
 		// TODO: For StringBuilder, return StringBuilder'aoeu'
-		return x.ToString();
+		string tts = x.ToString();
+		if (IsInterestingType(x.GetType())) {
+			string typeName = x.GetType().Name;
+			if (!tts.Contains(typeName))
+				tts = string.Format("{0} (xx {1})", tts, typeName);
+		}
+		return tts;
+	}
+
+	static bool IsInterestingType(Type t) {
+		if (t == typeof(System.Int32))
+			return false;
+		if (t == typeof(System.Char))
+			return false;
+		if (t == typeof(System.Boolean))
+			return false;
+		return true;
 	}
 
 	static public new bool Equals(object a, object b) {
