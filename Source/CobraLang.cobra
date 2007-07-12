@@ -246,8 +246,10 @@ namespace Cobra
 					if exc
 						tw.writeLine('<div class=section>')
 						tw.writeLine('<div class=title>Exception</div>')
-						.dumpObjectAsHtml(tw, 1000, exc, objects)
+						objects.record(exc)
+						.dumpObjectAsHtml(tw, objects.serialNumFor(exc), exc, objects)
 					
+					startingSerialNum = objects.minSerialNum
 					tw.writeLine('<div class=section>')
 					tw.writeLine('<div class=title>Stack Frames</div>')
 					if not frames.count
@@ -265,7 +267,7 @@ namespace Cobra
 
 					tw.writeLine('<div class=section>')
 					tw.writeLine('<div class=title>Objects</div>')
-					serialNum = 1001
+					serialNum = if(startingSerialNum > 0, startingSerialNum+1, objects.minSerialNum)
 					while objects.contains(serialNum) and _dumpObjectCount <= _maxDumpObjectCount
 						.dumpObjectAsHtml(tw, serialNum, objects.objectFor(serialNum), objects)
 						serialNum += 1
@@ -643,11 +645,14 @@ namespace Cobra
 
 			var _objectToSerialNum = Dictionary<of Object, int>()
 			var _serialNumToObject = Dictionary<of int, Object>()
+			var _minSerialNum = 0
 			var _maxSerialNum = 0
 
 			def init
 				pass
 
+			get minSerialNum from var
+			
 			get maxSerialNum from var
 
 			def contains(obj as Object) as bool
@@ -662,6 +667,8 @@ namespace Cobra
 					_maxSerialNum = _objectToSerialNum.count + 1000
 					_objectToSerialNum.add(obj, _maxSerialNum)
 					_serialNumToObject.add(_maxSerialNum, obj)
+					if _minSerialNum == 0
+						_minSerialNum = _maxSerialNum
 
 			def serialNumFor(obj as Object) as int
 				require
