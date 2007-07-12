@@ -257,7 +257,7 @@ namespace Cobra
 					else
 						frameList = List<of CobraFrame>(frames)
 						frameList.reverse
-						tw.writeLine('<table class=stack border=0 cellpadding=1 cellspacing=1>')
+						tw.writeLine('<table class=stack border=0 cellpadding=2 cellspacing=0>')
 						i = 0
 						for frame in frameList
 							frame.dumpHtml(tw, i, objects)
@@ -812,17 +812,19 @@ namespace Cobra
 					if localValue and .willDumpHtmlFor(localValue)
 						objects.record(localValue)
 				# write frame html
+				tw.writeLine()
 				tw.writeLine('<tr class=frameHead> <td class=number> [i]. </td> <td class=qualifiedMember colspan=4> [_declClassName].[_methodName] </td> </tr> ')
 				baseName = System.IO.Path.getFileName(_fileName) # CC: no qual
 				dirName = System.IO.Path.getDirectoryName(_fileName) # CC: no qual
 				if dirName <> ''
 					dirName = ' - ' + (dirName to String)
-				tw.writeLine('<tr> <td class=indent> &nbsp; </td> <td class=label> at: </td> <td class=sourceLocation colspan=3> [_lineNum] [baseName] [dirName] </td> </tr>')
+				tw.writeLine('<tr class=frameDetails1> <td class=indent> &nbsp; </td> <td class=label> at: </td> <td class=sourceLocation colspan=3> [_lineNum] [baseName] [dirName] </td> </tr>')
+				rowNum = 1
 				for j = 0 .. _args.length ++ 2
 					name = _args[j] to String
 					value = _args[j+1] to dynamic?
 					label = if(j==0, 'args:', '')
-					tw.write('<tr class=frameDetails> <td class=indent> &nbsp; </td> <td class=label> [label] </td> <td> [name] </td> <td> &nbsp;=&nbsp; </td>')
+					tw.write('<tr class=frameDetails[rowNum%2+1]> <td class=indent> &nbsp; </td> <td class=label> [label] </td> <td> [name] </td> <td> &nbsp;=&nbsp; </td>')
 					try
 						s = CobraCore.htmlEncode(CobraCore.toTechString(value))
 					catch e as Exception
@@ -830,12 +832,13 @@ namespace Cobra
 					if .willDumpHtmlFor(value)
 						s = '<a class=objectDetails href=#Object[objects.serialNumFor(value to passthrough)]>[s]</a>'
 					tw.writeLine('<td> [s] </td> </tr>')
+					rowNum += 1
 				first = true
 				for name in _localNamesInOrder
 					if name == 'this'
 						continue
 					label = if(first, 'locals:', '')
-					tw.write('<tr class=frameDetails> <td class=indent> &nbsp; </td> <td class=label> [label] </td> <td> [name] </td> <td> &nbsp;=&nbsp; </td>')
+					tw.write('<tr class=frameDetails[rowNum%2+1] valign=top> <td class=indent> &nbsp; </td> <td class=label> [label] </td> <td> [name] </td> <td> &nbsp;=&nbsp; </td>')
 					value = _locals[name]
 					try
 						s = CobraCore.htmlEncode(CobraCore.toTechString(value))
@@ -845,6 +848,7 @@ namespace Cobra
 						s = '<a class=objectDetails href=#Object[objects.serialNumFor(value to passthrough)]>[s]</a>'
 					tw.writeLine('<td> [s] </td> </tr>')
 					first = false
+					rowNum += 1
 				tw.writeLine('<tr class=blank> <td colspan=4> &nbsp; </td> </tr>')
 			
 			def willDumpHtmlFor(obj as Object?) as bool
