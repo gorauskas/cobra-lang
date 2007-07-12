@@ -203,6 +203,7 @@ namespace Cobra
 
 				def dumpStackAsHtml(tw as System.IO.TextWriter, exc as Exception?)  # CC: no qual
 					.dumpStackAsHtml(tw, exc, CobraImp.superStackTrace)
+					Console.out.writeLine()
 				
 				var _dumpObjectCount as int
 				var _maxDumpObjectCount = 1000
@@ -347,6 +348,8 @@ namespace Cobra
 						return false
 					if obj inherits bool or obj inherits char
 						return false
+					if obj.getType.fullName == 'System.Security.Policy.Evidence'  # 2007-07-11 CE: causes problems, at least on mono 1.2.4
+						return false
 					return true
 
 				def willDumpHtmlForConservative(obj as Object?) as bool
@@ -359,6 +362,9 @@ namespace Cobra
 					return true
 					
 				def dumpObjectAsHtml(tw as System.IO.TextWriter, serialNum as int, obj as Object, otherObjects as Dictionary<of Object, int>?, nestedCallCount as int)
+					if _dumpObjectCount % 10 == 0  # TODO: change 10 to a public property. value < 1 means not to write progress
+						Console.out.write('.')
+						Console.out.flush()
 					if nestedCallCount > 9
 						return
 					if _dumpObjectCount >= _maxDumpObjectCount
@@ -376,6 +382,7 @@ namespace Cobra
 					_objectPair(tw, 1, 'toString', .htmlFormat(value.toString))
 					propInfos = List<of System.Reflection.PropertyInfo>(obj.getType.getProperties)
 					# CC: propInfos.sort(def(a as PropertyInfo, b as PropertyInfo)=a.name.compareTo(b.name))
+					# ... sort propInfos by name
 					# TODO: yeah, I know this awful
 					didSort = false
 					post while didSort
@@ -445,22 +452,34 @@ namespace Cobra
 					"""
 					s as dynamic?
 					try
-						s = .toTechString(value)
-					catch exc as Exception
-						s = .htmlFormat('Caught exception while converting value toTechString: [exc.toString]')
-					success
-						s = .htmlFormat(s to String) # CC: to !
-						if value and otherObjects
-							willLink = false
-							if otherObjects.containsKey(value to passthrough) or moreObjects.containsKey(value to passthrough)
-								willLink = true
-							else if .willDumpHtmlForConservative(value) and moreObjects
-								id = otherObjects.count+1000
-								otherObjects.add(value to passthrough, id)
-								moreObjects.add(value to passthrough, id)
-								willLink = true
-							if willLink
-								s = '<a class=objectDetails href=#Object[otherObjects[value]]>[s]</a>'
+						try
+							s = .toTechString(value)
+						catch exc as Exception
+							s = .htmlFormat('Caught exception while converting value toTechString: [exc.toString]')
+						success
+							s = .htmlFormat(s to String) # CC: to !
+							if value and otherObjects
+								willLink = false
+								if otherObjects.containsKey(value to passthrough) or moreObjects.containsKey(value to passthrough)
+									willLink = true
+								else if .willDumpHtmlForConservative(value) and moreObjects
+									id = otherObjects.count+1000
+									otherObjects.add(value to passthrough, id)
+									moreObjects.add(value to passthrough, id)
+									willLink = true
+								if willLink
+									s = '<a class=objectDetails href=#Object[otherObjects[value]]>[s]</a>'
+					catch topExc as SystemException  # for example, System.Security.Policy.Evidence as a dictionary key causes problems (at least on mono 1.2.4)
+						try
+							s = value.toString
+						catch toStringExc as Exception
+							s = '(_htmlForValue: Exception during toString: [toStringExc];[Environment.newLine]Exception during processing: [topExc])'
+						success
+							s = '(_htmlForValue: value=[s]; Exception during processing: [topExc])'
+						try
+							s = .htmlFormat(s to String) # CC: to !
+						catch Exception
+							pass  # forget it
 					return s to dynamic
 				
 				def _objectPair(tw as System.IO.TextWriter, i as int, key as String, valueHtml as Object)
