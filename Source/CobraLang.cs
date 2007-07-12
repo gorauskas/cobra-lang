@@ -282,12 +282,15 @@ static public class CobraImp {
 			sb.Append("}");
 			return sb.ToString();
 		}
+		if (x is System.Enum) {
+			return x.GetType().Name + "." + x.ToString() + " enum";
+		}
 		// TODO: For StringBuilder, return StringBuilder'aoeu'
 		string tts = x.ToString();
 		if (IsInterestingType(x.GetType())) {
 			string typeName = x.GetType().Name;
 			if (!tts.Contains(typeName))
-				tts = string.Format("{0} (xx {1})", tts, typeName);
+				tts = string.Format("{0} ({1})", tts, typeName);
 		}
 		return tts;
 	}
