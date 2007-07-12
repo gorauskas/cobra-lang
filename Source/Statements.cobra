@@ -1149,3 +1149,80 @@ class PostWhileStmt
 		sw.write('} while (')
 		_expr.writeSharpDef(sw, false)
 		sw.write(');\n')
+
+
+class YieldStmt
+	inherits Stmt
+	# CC: is abstract
+
+	# CC: axe when initializers are inherited
+	def init(token as IToken)
+		base.init(token)
+
+
+class YieldBreakStmt
+	inherits YieldStmt
+
+	# CC: axe when initializers are inherited
+	def init(token as IToken)
+		base.init(token)
+
+	def _bindImp is override
+		base._bindImp
+		.compiler.curCodeMember.hasYieldStmt = true
+
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		sw.write('yield break;\n')
+
+
+class YieldReturnStmt
+	inherits YieldStmt
+
+	var _expr as Expr?
+	var _sharpResultVarName as String?
+
+	def init(token as IToken, expr as Expr?)
+		base.init(token)
+		_expr = expr
+
+	def addSubFields is override
+		base.addSubFields()
+		.addField('expr', _expr)
+
+	pro sharpResultVarName from var
+
+	def _bindImp is override
+		base._bindImp
+		expr = _expr
+		curCodeMember = .compiler.codeMemberStack.peek()
+		if expr
+			_expr.bindImp()
+			resultType = curCodeMember.resultType
+			elementType = resultType.genericParams[0]
+			if not expr.canBeAssignedTo(elementType)
+				.throwError('Cannot return [expr.type.name] because "[curCodeMember.name]" is declared to return a [elementType.name].')
+			_expr.contextType = elementType
+		else
+			# TODO: can there just be "yield return"?
+			pass
+		curCodeMember.hasReturnStmt = true
+		curCodeMember.hasYieldStmt = true
+		_sharpResultVarName = curCodeMember.sharpResultVarName
+
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		if .compiler.curCodeMember.ensurePart
+			sw.write('_lh_canEnsure = true;\n')
+		if _expr
+			if _sharpResultVarName and _sharpResultVarName.length
+				#sw.write('yield return [_sharpResultVarName]=')  # TODO: resolve yield return with ensure
+				sw.write('yield return ')
+				_expr.writeSharpDefInContext(sw)
+				sw.write(';\n')
+			else
+				sw.write('yield return ')
+				_expr.writeSharpDefInContext(sw)
+				sw.write(';\n')
+		else
+			sw.write('yield return;\n')
