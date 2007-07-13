@@ -728,22 +728,24 @@ static public class CobraImp {
 
 	static public bool HasSuperStackTrace {
 		get {
-			return _badStackCopy!=null;
+			return _badStackCopy!=null || _lastBadStackCopy!=null;
 		}
 	}
 
 	static public Stack<CobraFrame> SuperStackTrace {
 		get {
-			if (_badStackCopy == null)
+			Stack<CobraFrame> badStack = _badStackCopy!=null ? _badStackCopy : _lastBadStackCopy;
+			if (badStack == null)
 				return null;
 			else
-				return new Stack<CobraFrame>(new Stack<CobraFrame>(_badStackCopy));  // Double call preserves order. Is there a better way to copy a stack?
+				return new Stack<CobraFrame>(new Stack<CobraFrame>(badStack));  // Double call preserves order. Is there a better way to copy a stack?
 		}
 	}
 	
 	static private Stack<CobraFrame> _superStack = new Stack<CobraFrame>();
 	static public CobraFrame _curFrame = null;
 	static private Stack<CobraFrame> _badStackCopy = null;
+	static private Stack<CobraFrame> _lastBadStackCopy = null;
 	static public int _maxStackFrames = 500;
 	static public int _numLastMaxStackFrames = 20;
 
@@ -785,6 +787,11 @@ static public class CobraImp {
 		}
 	}
 
+	static public void HandledException() {
+		_lastBadStackCopy = _badStackCopy;
+		_badStackCopy = null;
+	}
+	
 	static public void PopFrame() {
 		_superStack.Pop();
 		_curFrame = _superStack.Count > 0 ? _superStack.Peek() : null;
