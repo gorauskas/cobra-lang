@@ -543,7 +543,7 @@ class AbstractMethod
 					.compiler.recordError(ne)
 			if _ensurePart
 				_ensurePart.bindImp
-			.computeMatchingBaseMember  # TODO: put this in _bindInt where it belongs. but not that last attempt broke a test case for indexers and requires...
+			.computeMatchingBaseMember  # TODO: put this in _bindInt where it belongs. but note that last attempt broke a test case for indexers and requires...
 			.checkForUnmarkedOverrideOrNew  # have to do this after statements bindImp since using base can add `override`
 			.checkForUnusedVariables
 		finally
@@ -895,9 +895,21 @@ class Method
 		if _implementsTypeNode
 			_implementsType = _implementsTypeNode.namedType
 			# TODO: make sure the type is among the interfaces of the box
-		if .compiler.errors.count==numErrors and _returnType is not .compiler.voidType and not .hasReturnStmt and not .box.isFake and not .box inherits Interface
+		if .compiler.errors.count==numErrors and _returnType is not .compiler.voidType and not .hasReturnStmt and not .hasYieldStmt and not .box.isFake and not .box inherits Interface
 			.throwError('Missing return statement for method "[_name]" which returns [_returnType.name].')
-
+		# check for `return` and `yield` in the same method
+		if .resultType is not .compiler.voidType
+			returnStmts = List<of Stmt>()
+			hasYield = false
+			for stmt in _stmts
+				if stmt inherits ReturnStmt
+					returnStmts.add(stmt)
+				else if stmt inherits YieldStmt
+					hasYield = true
+			if hasYield and returnStmts.count
+				for stmt in returnStmts
+					stmt.throwError('Cannot return a value from an iterator. Use the yield return statement to return a value, or yield break to end the iteration.')
+			
 	## Code gen
 
 	def writeSharpDef(sw as SharpWriter) is override
