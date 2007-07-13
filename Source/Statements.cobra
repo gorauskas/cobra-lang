@@ -893,12 +893,27 @@ class TryStmt
 		base._bindImp()
 		_varNumber = .compiler.curBox.makeNextPrivateSerialNumber()
 		_tryBlock.bindImp()
-		for eb in _catchBlocks
-			eb.bindImp()
+		for cb in _catchBlocks
+			cb.bindImp()
 		if _successBlock
 			_successBlock.bindImp()
 		if _finallyBlock
 			_finallyBlock.bindImp()
+		# error check
+		if _catchBlocks.count
+			for stmt in _tryBlock.stmts
+				if stmt inherits YieldStmt
+					stmt.recordError('Cannot yield a value in the body of a try block with a catch clause.')
+		# error check
+		for cb in _catchBlocks
+			for stmt in cb.block.stmts
+				if stmt inherits YieldStmt
+					stmt.recordError('Cannot yield a value in the body of a catch clause.')
+		# error check
+		if _finallyBlock
+			for stmt in _finallyBlock.stmts
+				if stmt inherits YieldStmt
+					stmt.recordError('Cannot yield in the body of a finally clause.')
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
