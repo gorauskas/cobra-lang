@@ -813,7 +813,24 @@ class InheritsExpr
 	def _bindImp is override
 		base._bindImp()
 		_type = .compiler.boolType
-
+		# CC: collapse next two lines to:
+		# if (right = .right) inherits IdentifierExpr ...
+		right = .right
+		if right inherits IdentifierExpr
+			defi = right.definition
+			if defi
+				if defi inherits Class
+					if .op <> 'INHERITS'
+						.throwError('Use the "inherits" operator when testing objects against classes.')
+				else if defi inherits Struct
+					if .op <> 'INHERITS'
+						.throwError('Use the "inherits" operator when testing objects against structs.')
+				else if defi inherits Interface
+					if .op <> 'IMPLEMENTS'
+						.throwError('Use the "implements" operator when testing objects against interfaces.')
+				else
+					throw FallThroughException(defi)
+				
 	def _writeSharpDef(sw as SharpWriter) is override
 		_left.writeSharpDef(sw, false)  # TODO: is false okay here?
 		sw.write(' is ')
