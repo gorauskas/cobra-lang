@@ -90,7 +90,7 @@ class Stmt
 		# the code member stack can be empty because of class vars (ex: var _foo = true)
 
 	get sharpThis as String
-		return if(.compiler.curCodeMember.isShared, 'typeof([.compiler.curCodeMember.box.sharpName])', 'this')
+		return .compiler.curCodeMember.sharpThis
 
 	def writeSharpSetLine(sw as SharpWriter)
 		if _canSetLine and .lineNum > 0
@@ -796,9 +796,7 @@ class TraceStmt
 		fileName = Utils.csStringLitFor(tok.fileName)
 		boxName = Utils.csStringLitFor(_codePart.box.name)
 		memberName = Utils.csStringLitFor(_codePart.name)
-		# sigh. I wish .NET had metaclasses instead of this instance vs. static crap
-		this_ = if(_codePart.isShared, 'typeof([_codePart.box.sharpName])', 'this')
-		return 'new SourceInfo([fileName], [tok.lineNum], [boxName], [memberName], [this_])'
+		return 'new SourceInfo([fileName], [tok.lineNum], [boxName], [memberName], [_codePart.sharpThis])'
 
 
 class TraceLocationStmt
@@ -820,7 +818,7 @@ class TraceAllStmt
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		sw.write('CobraCore.Tracer.Trace([.sharpSourceInfo], "this", this')
+		sw.write('CobraCore.Tracer.Trace([.sharpSourceInfo], "this", [_codePart.sharpThis]')
 		for param in _codePart.params
 			sw.write(', "[param.name]", [param.name]')
 		for local in _codePart.locals
