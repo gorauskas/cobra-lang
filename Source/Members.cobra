@@ -785,8 +785,8 @@ class Constructor
 			return .token
 
 	def _bindImp
-		# add asserts at the end for non-nilable class vars
 		if .box.name <> 'CobraFrame'
+			# add asserts at the end for non-nilable class vars
 			token = .lastToken.copy
 			token.incLineNum
 			stmts = List<of Stmt>()
@@ -809,6 +809,18 @@ class Constructor
 
 		base._bindImp
 
+		first = true
+		for stmt in _stmts
+			if not first
+				if stmt inherits DotExpr
+					if stmt.left inherits BaseLit
+						# TODO: after switching to byte code gen, it would be nice to relax this a bit, by say allowing statements that use args and locals, but can't set class state by, for example, setting class vars or calling members
+						stmt.recordError('The base constructor can only be invoked in the first statement.')
+					else if stmt.left inherits ThisLit and ((stmt.right inherits MemberExpr and (stmt.right to MemberExpr).name == 'init') or (stmt.right inherits CallExpr and (stmt.right to CallExpr).name == 'init'))  # CC: axe casts
+						stmt.recordError('Another constructor can only be invoked in the first statement.')
+			first = false
+
+				
 	## Code gen
 
 	def writeSharpDef(sw as SharpWriter) is override
