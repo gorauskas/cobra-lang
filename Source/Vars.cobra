@@ -15,7 +15,7 @@ interface IVar
 
 	pro ifInheritsStack as Stack<of IType>
 
-	get useCSNameStack as Stack<of String>
+	get useSharpNameStack as Stack<of String>
 
 	get sharpAssignmentNames as List<of String>?
 		"""
@@ -36,7 +36,7 @@ class AbstractLocalVar
 	var _isImplicit as bool
 	var _isTracked as bool
 	var _ifInheritsStack = Stack<of IType>()
-	var _useCSNameStack = Stack<of String>()  # for if-inherits
+	var _useSharpNameStack = Stack<of String>()  # for if-inherits
 	var _isAssignedTo as bool
 
 	def init(token as IToken, type as IType, isImplicit as bool)
@@ -59,7 +59,7 @@ class AbstractLocalVar
 
 	pro isTracked from var
 
-	get useCSNameStack from var
+	get useSharpNameStack from var
 
 	def addMinFields is override
 		base.addMinFields()
@@ -117,11 +117,14 @@ class AbstractLocalVar
 		return if(_ifInheritsStack.count, _ifInheritsStack.peek(), _type to IType)
 
 	get sharpAssignmentNames as List<of String>
-		return List<of String>(_useCSNameStack)
+		return List<of String>(_useSharpNameStack)
 
 	get sharpName as String is override
-		return if(_useCSNameStack.count, _useCSNameStack.peek(), .name)
+		return if(_useSharpNameStack.count, _useSharpNameStack.peek(), if(_isImplicit, '', .sharpPrefix)+.name)
 
+	get sharpPrefix as String
+		# note that without a prefix, Cobra users would be surprised when coincidentally using a C# keyword as a parameter or local variable name in Cobra
+		throw FallThroughException()  # CC: should just be abstract method
 
 
 class Param
@@ -139,9 +142,12 @@ class Param
 	def init(token as IToken, typeNode as INode, isImplicit as bool)
 		base.init(token, typeNode, isImplicit)
 
+	get sharpPrefix as String is override
+		return 'arg_'
+
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		sw.write('[.type.sharpRef] [.name]')
+		sw.write('[.type.sharpRef] [.sharpName]')
 
 
 class LocalVar
@@ -162,6 +168,9 @@ class LocalVar
 	def addMinFields is override
 		base.addMinFields()
 		.addField('isTracked', _isTracked)
+
+	get sharpPrefix as String is override
+		return 'loc_'
 
 
 class ResultVar

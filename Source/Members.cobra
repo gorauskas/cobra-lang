@@ -254,7 +254,7 @@ class ClassVar
 	var _type as IType?
 	var _initExpr as Expr?
 	var _ifInheritsStack as Stack<of IType>
-	var _useCSNameStack as Stack<of String>
+	var _useSharpNameStack as Stack<of String>
 	var _isAssignedTo as bool
 
 	def init(token as IToken, box as Box, name as String, typeNode as INode, isNames as List<of String>, initExpr as Expr?, docString as String)
@@ -262,7 +262,7 @@ class ClassVar
 		_typeNode = typeNode
 		_initExpr = initExpr
 		_ifInheritsStack = Stack<of IType>()
-		_useCSNameStack = Stack<of String>()  # for if-inherits
+		_useSharpNameStack = Stack<of String>()  # for if-inherits
 
 	def addRefFields is override
 		base.addRefFields
@@ -285,7 +285,7 @@ class ClassVar
 	get requiresDotPrefix as bool
 		return _box and not _name.startsWith('_')
 
-	get useCSNameStack from var
+	get useSharpNameStack from var
 
 	def _bindInt is override
 		base._bindInt
@@ -330,10 +330,10 @@ class ClassVar
 	## Code Gen
 
 	get sharpAssignmentNames as List<of String>
-		return List<of String>(_useCSNameStack)
+		return List<of String>(_useSharpNameStack)
 
 	get sharpRef as String is override
-		return if(_useCSNameStack.count, _useCSNameStack.peek, _name)
+		return if(_useSharpNameStack.count, _useSharpNameStack.peek, _name)
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
@@ -346,7 +346,7 @@ class ClassVar
 		sw.write(';\n')
 
 	get sharpName as String is override
-		return if(_useCSNameStack.count, _useCSNameStack.peek, .name)
+		return if(_useSharpNameStack.count, _useSharpNameStack.peek, .name)
 
 
 class AbstractMethod
@@ -642,7 +642,7 @@ class AbstractMethod
 		sep = ''
 		for param in _params
 			sw.write(sep)
-			sw.write(param.name)
+			sw.write(param.sharpName)
 			sep = ', '
 		if parens.length
 			sw.write(parens[1])
@@ -662,7 +662,7 @@ class AbstractMethod
 			sw.write('// locals\n')
 			for local in locals
 				if not local.isImplicit
-					sw.write('[local.type.sharpRef] [local.name]')
+					sw.write('[local.type.sharpRef] [local.sharpName]')
 					init = local.type.csInit
 					if init.length
 						sw.write(' = [init]')
@@ -718,10 +718,8 @@ class AbstractMethod
 
 	def writeSharpParamCheck(param as Param, sw as SharpWriter)
 		if param.type.isReference and not param.type inherits NilableType
-			sw.write('if ([param.name]==null) throw new ArgumentNullException("[param.name]");\n')
-			# TODO axe the code below or above
-			#sw.write('if (%s==null) throw new ArgumentNullException("%s", string.Format("Object reference \\"%s\\" not set to an instance of an object."));\n' % (
-			#	param.name, param.name, param.name))
+			# TODO: guard with flag like _willCheckNonNilArgs
+			sw.write('if ([param.sharpName]==null) throw new ArgumentNullException("[param.name]");\n')
 
 	def writeSSTHead(sw as SharpWriter)
 		if .box.name == 'CobraFrame'  # otherwise, stack overflow
@@ -730,7 +728,7 @@ class AbstractMethod
 		if not .isShared
 			sw.write(', "this", this')
 		for param in .params
-			sw.write(', "[param.name]", [param.name]')
+			sw.write(', "[param.name]", [param.sharpName]')
 		sw.write(');\n')
 		sw.writeAndIndent('try {\n')
 

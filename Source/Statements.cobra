@@ -276,15 +276,14 @@ class BlockStmt
 		if top
 			sw.write(top)
 		if _ifInheritsVar
-			name = _ifInheritsVar.name
 			typeName = _ifInheritsType.sharpRef
-			newName = '_lh_' + name + '_' + _ifInheritsType.sharpNameComponent
-			sw.write('[typeName] [newName] = ([typeName])[name];\n')
-			_ifInheritsVar.useCSNameStack.push(newName)
+			newName = '_lh_' + _ifInheritsVar.name + '_' + _ifInheritsType.sharpNameComponent
+			sw.write('[typeName] [newName] = ([typeName])[_ifInheritsVar.sharpName];\n')
+			_ifInheritsVar.useSharpNameStack.push(newName)
 		for stmt in _stmts
 			stmt.writeSharpStmt(sw)
 		if _ifInheritsVar
-			_ifInheritsVar.useCSNameStack.pop()
+			_ifInheritsVar.useSharpNameStack.pop()
 		if close
 			sw.dedent()
 			sw.write('}\n')
@@ -817,9 +816,9 @@ class TraceAllStmt
 		base.writeSharpDef(sw)
 		sw.write('CobraCore.Tracer.Trace([.sharpSourceInfo], "this", [_codePart.sharpThis]')
 		for param in _codePart.params
-			sw.write(', "[param.name]", [param.name]')
+			sw.write(', "[param.name]", [param.sharpName]')
 		for local in _codePart.locals
-			sw.write(', "[local.name]", [local.name]')
+			sw.write(', "[local.name]", [local.sharpName]')
 		sw.write(');\n')
 
 
@@ -945,11 +944,11 @@ class TryStmt
 			if eb.type
 				sw.write(' ([eb.type.sharpRef]')
 				if eb.varName
-					helperName = eb.csHelperName
+					helperName = eb.sharpHelperName
 					sw.write(' [helperName]')
 				sw.write(')')
 			sst = if(.compiler.hasSuperStackTraceOption, 'CobraImp.HandledException();\n', '')
-			top = if(eb.varName, '[sst][eb.varName] = [helperName];\n', '')
+			top = if(eb.varName, '[sst][eb.sharpVarName] = [helperName];\n', '')
 			eb.block.writeSharpDef(sw, top)
 
 
@@ -961,7 +960,7 @@ class CatchBlock
 	var _type as IType?
 	var _block as BlockStmt
 	var _varName as String?
-	var _csHelperName as String?
+	var _sharpHelperName as String?
 
 	def init(token as IToken, block as BlockStmt)
 		"""
@@ -1019,12 +1018,15 @@ class CatchBlock
 				assert false, 'when does this happen?'
 			if t  # CC: use else
 				_type = t
-		_csHelperName = '_lh_catch_[.compiler.curBox.makeNextPrivateSerialNumber()]'
+		_sharpHelperName = '_lh_catch_[.compiler.curBox.makeNextPrivateSerialNumber()]'
 		_block.bindImp()
 
 	## Code gen
 
-	get csHelperName from var
+	get sharpHelperName from var
+
+	get sharpVarName as String
+		return _var.sharpName
 
 
 class ThrowStmt
