@@ -1011,6 +1011,29 @@ static public class CobraImp {
 		return a / b;
 	}
 
+	static public string RunAndCaptureAllOutput(object process) {
+		// CC: change to extension method on Process class
+		// Reference: http://msdn2.microsoft.com/en-us/library/system.diagnostics.process.beginoutputreadline(VS.80).aspx
+		System.Diagnostics.Process p = (System.Diagnostics.Process)process;
+		p.Start();
+		_processOutputBuffer = new StringBuilder();
+		p.OutputDataReceived += new DataReceivedEventHandler(OutputHandler);
+		p.BeginOutputReadLine();
+		string errorOutput = p.StandardError.ReadToEnd();
+		p.WaitForExit();
+		_processOutputBuffer.Append(errorOutput);
+		string s = _processOutputBuffer.ToString();
+		_processOutputBuffer = null;
+		return s;
+	}
+
+	private static StringBuilder _processOutputBuffer;
+
+	private static void OutputHandler(object sendingProcess, DataReceivedEventArgs outLine) {
+		if (!String.IsNullOrEmpty(outLine.Data))
+			_processOutputBuffer.Append(outLine.Data);
+    }
+
 } // class CobraImp
 
 } // namespace Cobra.Lang
