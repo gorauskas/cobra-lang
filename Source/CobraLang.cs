@@ -1021,6 +1021,7 @@ static public class CobraImp {
 		p.BeginOutputReadLine();
 		string errorOutput = p.StandardError.ReadToEnd();
 		p.WaitForExit();
+		_processOutputBuffer.AppendLine("");
 		_processOutputBuffer.Append(errorOutput);
 		string s = _processOutputBuffer.ToString();
 		_processOutputBuffer = null;
