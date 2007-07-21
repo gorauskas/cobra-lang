@@ -367,21 +367,15 @@ class Box
 			.containsGenericParameters
 			typeArgs.count==.params.count
 		body
+			# TODO: should this method return this if the typeArgs match the genericParams? (happens when using one's own type as a return value or argument)
 			if _constructedTypes is nil
 				_constructedTypes = Dictionary<of String, IType>()
-
 			key = Utils.join(',', for type in typeArgs get type.name)
-
-			c = _constructedTypes to Dictionary<of String, IType>  # CC: axe this. it works around a bug
-
 			if _constructedTypes.containsKey(key)
-				# CC: return _contructedTypes[key]
-				return c[key]
-
+				return _constructedTypes[key]
 			t = .memberwiseClone() to Box
 			t._completeConstruction(this, typeArgs, key)
-			# CC: _contructedTypes[key] = t
-			c[key] = t
+			_constructedTypes[key] = t
 			return t
 
 	def _completeConstruction(genericDef as Box, typeArgs as List<of IType>, key as String)
@@ -392,13 +386,15 @@ class Box
 			_nextNodeSerialNum += 1
 			_name = '[.rootName]<of [key]>'
 			_genericTypeDef = genericDef
-			.cloneCollections()
+			.cloneCollections
 			for i = 0 .. typeArgs.count
 				_params[i] = typeArgs[i]
 			for i = 0 .. _baseInterfaces.count
 				if _baseInterfaces[i].isGenericDef
 					_baseInterfaces[i] = _baseInterfaces[i].constructedTypeFor(typeArgs) to Interface
 
+			# TODO: resolve treatment of .didBindInt and .isBindingInt
+			
 			# TODO: ? should be cloning the declarations to also incorporate the typeArgs where they happen to refer to generic params
 			# ^ or this already covered by DotExpr._bindExpr()?
 
@@ -410,7 +406,7 @@ class Box
 		base.cloneCollections()
 		_params = List<of IType>(_params)  # TODO: Can I just say _params.clone? Do I need the cast?
 		if _constructedTypes
-			_constructedTypes = Dictionary<of String, IType>(_constructedTypes)
+			_constructedTypes = Dictionary<of String, IType>(_constructedTypes)  # TODO: seems unlikely that a constructed type would want a copy of it's genericTypeDef's constructed type
 		_baseInterfaceNodes = List<of INode>(_baseInterfaceNodes)
 		_baseInterfaces = List<of Interface>(_baseInterfaces)
 		_baseInterfaceTypes = List<of IType>(_baseInterfaceTypes)
