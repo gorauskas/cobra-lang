@@ -584,11 +584,20 @@ class IfStmt
 				if left inherits IdentifierExpr
 					leftVar = left.definition
 					if leftVar inherits IVar  # if-inherits smarts only work on variables
-						# if x inherits y ...
-						assert cond.right.namedType, cond.right
+						# if x inherits Y ...
+						assert cond.right.namedType
 						leftVar.ifInheritsStack.push(cond.right.namedType to IType)  # CC: to !
 						ifInherits = true
 						_trueStmts.setIfInherits(leftVar, leftVar.ifInheritsStack.peek)
+				else if left inherits AssignExpr
+					if left.left inherits IdentifierExpr
+						leftVar = (left.left to IdentifierExpr).definition
+						if leftVar inherits IVar
+							# if (x = expr) inherits Y ...
+							assert cond.right.namedType
+							leftVar.ifInheritsStack.push(cond.right.namedType to IType)  # CC: to !
+							ifInherits = true
+							_trueStmts.setIfInherits(leftVar, leftVar.ifInheritsStack.peek)
 			if not ifInherits
 				# check for an if-not-nil
 				if cond inherits TruthExpr
