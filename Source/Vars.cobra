@@ -52,7 +52,13 @@ class AbstractLocalVar
 	def _init(isImplicit as bool)
 		_isImplicit = isImplicit
 		_isTracked = false
-		_useSharpNameStack.push(if(_isImplicit, '', .sharpPrefix)+.name)
+		if _isImplicit
+			sharpPrefix = ''
+		else if Utils.isSharpKeyWord(.name)
+			sharpPrefix = '@'  # C# supports @ as a valid first character for identifiers to escape those that are keywords
+		else
+			sharpPrefix = ''
+		_useSharpNameStack.push(sharpPrefix+.name)
 
 	pro ifInheritsStack from var
 
@@ -125,10 +131,6 @@ class AbstractLocalVar
 	get sharpName as String is override
 		return _useSharpNameStack.peek
 
-	get sharpPrefix as String
-		# note that without a prefix, Cobra users would be surprised when coincidentally using a C# keyword as a parameter or local variable name in Cobra
-		throw FallThroughException()  # CC: should just be abstract method
-
 
 class Param
 	inherits AbstractLocalVar
@@ -144,9 +146,6 @@ class Param
 
 	def init(token as IToken, typeNode as INode, isImplicit as bool)
 		base.init(token, typeNode, isImplicit)
-
-	get sharpPrefix as String is override
-		return 'arg_'
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
@@ -171,9 +170,6 @@ class LocalVar
 	def addMinFields
 		base.addMinFields
 		.addField('isTracked', _isTracked)
-
-	get sharpPrefix as String is override
-		return 'loc_'
 
 
 class ResultVar
