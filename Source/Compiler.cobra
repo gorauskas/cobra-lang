@@ -417,18 +417,41 @@ class Compiler
 		throw StopCompilation(this)
 
 	def printMessages
+		if _options.containsKey('color')
+			assert _options['color'] in [true, false]
+			willColor = _options['color'] to bool
+		else
+			willColor = false
+		savedColor = Console.foregroundColor
+		# bug on mono
+		# TODO: if CobraCore.isRunningOnMono
+		if true
+			savedColor = ConsoleColor.Black
+		print 'saved color = [savedColor]'
 		for obj in _messages
 			if obj inherits CobraException
+				if willColor and not obj inherits CobraWarning
+					Console.foregroundColor = ConsoleColor.Red
+					restoreColor = true
 				print obj.message
+				if restoreColor
+					Console.foregroundColor = savedColor
+					restoreColor = false
 			else if obj inherits String
 				print obj
 			else
 				throw FallThroughException(obj)
 		if _errors.count
+			if willColor
+				Console.foregroundColor = ConsoleColor.Red
 			print 'Compilation failed - ' stop
 			print '[_errors.count] error[if(_errors.count==1,'','s')], [_warnings.count] warning[if(_warnings.count==1,'','s')]'
+			if willColor
+				Console.foregroundColor = savedColor
 		else
 			didPrint = false
+			if willColor
+				Console.foregroundColor = ConsoleColor.Blue
 			if _willPrintSuccessMsg or _warnings.count
 				print 'Compilation succeeded' stop
 				didPrint = true
@@ -437,7 +460,8 @@ class Compiler
 			else
 				if didPrint
 					print
-				
+			if willColor
+				Console.foregroundColor = savedColor
 				
 	##
 	## Services to nodes
