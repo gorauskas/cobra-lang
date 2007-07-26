@@ -842,10 +842,8 @@ class Parser
 #		require
 #			not box inherits Interface
 		body
-			decl as INode?
 			breakLoop = false  # cannot use 'break' to stop a 'while' loop in a branch statement. CC?
 			while not breakLoop
-				decl = nil
 				_isTraceOn = true
 				branch .peek.which
 					on 'PASS'
@@ -856,23 +854,21 @@ class Parser
 					on 'GET': .addDecl(box, .declarePropertyGet)
 					on 'SET': .addDecl(box, .declarePropertySet)
 					on 'PRO': .addDecl(box, .declareProperty)
-					on 'VAR': box.addDecl(.classVarDecl)
+					on 'VAR': .addDecl(box, .classVarDecl)
 					on 'EOL': .oneOrMore('EOL')
-					on 'ENUM': box.addDecl(.enumDecl)
+					on 'ENUM': box.addDecl(.enumDecl)  # CC: .addDecl(box, .enumDecl)  ...when IBoxMember is in effect
 					on 'SHARED': .bodiedBoxMemberDeclsShared(box)
 					on 'TEST': .testSection(box)
 					else
 						.throwError('Got [.peek] when expecting var, def, pro, get, set, enum or shared')
-				if decl
-					box.addDecl(decl to IMember)  # CC: axe typecast when if gets smart about not nil
 			.dedent
 
-	def addDecl(box as Box, member as BoxMember?)
-		"""
-		Created specifically to deal with the fact that overloads should not be added. The methods
-		that encounter overloads will create (or affect existing) MemberOverloads and return nil.
-		"""
+	def addDecl(box as Box, member as BoxMember?)  # TODO: change to IBoxMember (which Enum will implement)
 		if member
+			other = box.declForNameCI(member.name)
+			if other and other.name <> member.name
+				.throwError('Cannot have members with the same name in different case ("[member.name]" here and "[other.name]" on line [(other to SyntaxNode).token.lineNum]).')
+				# TODO: Give another error with the line number of the other definition (and then change message above)
 			box.addDecl(member)
 
 	def bodiedBoxMemberDeclsShared(box as Box)
