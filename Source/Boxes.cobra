@@ -217,36 +217,20 @@ class Box
 		return nil
 
 	get innerType as IType? is override
-		#print
-		trace off
 		getEnum = .symbolForName('getEnumerator', true, true)
-		trace this
-		for decl in .declsInOrder
-			trace decl
-		if false and .genericTypeDef
-			print ' *** '
-			for decl in (.genericTypeDef to dynamic).declsInOrder
-				trace decl
-		trace getEnum
 		if getEnum
-			#print 1
-			# TODO: is this needed
+			# TODO: is this really needed? if so, why?
 			if not getEnum.didBindInt
 				getEnum.bindInt
 			assert getEnum.didBindInt
-			#print 2
 			# can have two getEnumerators -- one generic and the other not. favor the generic one
 			if getEnum inherits MemberOverload
-				#print 3
 				for member in getEnum.members
-					trace member
 					if member inherits Method
-						#print 4
 						if member.resultType <> .compiler.libraryType('System', 'Object')
 							# implementing IEnumerable<of T> which requires two `getEnumerator` members
 							$sharp('getEnum = member')
 							break
-			#print 5
 			rt = getEnum.resultType
 			if rt is .compiler.passThroughType
 				return rt
@@ -410,8 +394,6 @@ class Box
 			key.length
 		body
 			# create a dictionary from the generic params to their effective type
-#			print
-#			trace all
 			gpToType = Dictionary<of GenericParam, IType>()
 			for i = 0 .. typeArgs.count
 				if (p = _params[i]) inherits GenericParam
@@ -456,35 +438,22 @@ class Box
 			.bindInt
 
 	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType is override
-		trace off
-		trace 1, this
-		trace 2, box
 		if _params.count == 0
 			return this
-		# TODO: keep unique
-		# CC: make an expression
 		typeArgs = List<of IType>()
 		params = .params
-		trace 2
 		for param in params
-			trace 3
 			if param inherits GenericParam
 				# doesn't work:
 				# typeArgs.add(gpToType[param])
-				trace 10
 				found as GenericParam?
 				for key as dynamic in gpToType.keys
-					trace 20
 					if key.name == param.name
 						found = key
-				trace 30
 				assert found
 				typeArgs.add(gpToType[found])
-				trace 40
 			else
-				trace 50
 				typeArgs.add(param)
-		trace 60
 		# TODO: I think the following can be axed
 		if box is this or box.genericTypeDef is this
 			sb = StringBuilder('[.rootName]<of ')
@@ -494,9 +463,7 @@ class Box
 				sb.append(arg.name)
 				sep = ', '
 			name = sb.toString
-			Console.out.flush
 			if .name == name
-				trace 70
 				return this
 				
 			assert typeArgs.count == params.count
@@ -513,7 +480,6 @@ class Box
 			if areSame
 				# TODO: does this actually happen?
 				return this  # example: getRange() of List<of int> returns a List<of int>
-		trace 100
 		return .constructedTypeFor(typeArgs)
 
 	def cloneCollections is override
