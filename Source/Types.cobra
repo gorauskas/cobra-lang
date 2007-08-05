@@ -207,6 +207,19 @@ interface IType
 		# TODO: require .isGenericDef; typesArgs.count==.genericParams.count
 		# TODO: should this be moved down to Box?
 
+	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType
+		"""
+		Makes a new generic type, if needed, using the given map from generic params to types.
+		Returns this type if no generic construction is necessary.
+		This method is invoked during the type construction for return types, parameter types, etc.
+		"""
+
+	def isConstructionOf(type as IType) as bool
+		"""
+		Returns true if this type is a construction of the given generic type def, even going more than level deep through `genericTypeDef`.
+		"""
+		# TODO: require type.isGenericDef
+		
 	def greatestCommonDenominatorWith(type as IType) as IType
 		"""
 		Return the most specific type that is compatible with both this type and the arg.
@@ -354,8 +367,21 @@ class CobraType
 			throw Exception('.isGenericDef returns true, but there is no override to constructedTypeFor')
 		else
 			throw Exception('.isGenericDef returns false, so there can be no constructedTypeFor')
-		return CobraType()  # TODO: axe whole line when code flow analysis proves it's not needed
+		return nil to passthrough  # TODO: axe whole line when code flow analysis proves it's not needed
 
+	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType
+		return this
+
+	def isConstructionOf(type as IType) as bool
+		assert type.isGenericDef  # TODO: make a requirement of the interface
+		if .genericTypeDef is nil
+			return false
+		if .genericTypeDef is type
+			return true
+		if .genericTypeDef.genericTypeDef
+			return .genericTypeDef.isConstructionOf(type) # TODO: would iteration be more efficient here?
+		return false
+		
 	def greatestCommonDenominatorWith(type as IType) as IType
 		if this is type
 			return this

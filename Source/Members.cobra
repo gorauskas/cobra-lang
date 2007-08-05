@@ -104,6 +104,7 @@ class BoxMember
 		throw OverrideException(.getType)
 		return CobraType()
 
+
 	## Other
 
 	def defaultToVirtual
@@ -112,6 +113,7 @@ class BoxMember
 		"""
 		require _isNames
 		pass
+
 
 	## INamedNode
 
@@ -129,9 +131,17 @@ class BoxMember
 		if _testMethod
 			_testMethod.bindInt
 
+	def bindImp as INode
+		# TODO: shouldn't even get this message in the first place. investigate.
+		if not _box.isConstructed
+			return base.bindImp
+		else
+			return this
+			
 	def _bindImp is override
 		base._bindImp
 		assert .didBindInt  # class members should have always received a bindInt first
+# TODO:		assert not _box.isConstructed  # not expecting to bindImp on a constructed type
 		if _testMethod
 			_testMethod.bindImp
 
@@ -187,6 +197,15 @@ class BoxMember
 		if _isNames.count
 			.addField('isNames', _isNames)
 		.addField('docString', _docString)
+
+
+	## Generics
+	
+	def constructedFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as BoxMember  # CC: as same
+		newMember = .memberwiseClone to BoxMember
+		newMember._box = box
+		newMember._overloadGroup = nil
+		return newMember
 
 
 	## Code gen
@@ -312,6 +331,13 @@ class ClassVar
 			return t
 		else
 			throw FallThroughException('_type is nil. this=[this]')
+
+	def constructedFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as BoxMember  # CC: as same
+		# TODO: require .type (or assert)
+		newMember = base.constructedFor(box, gpToType) to ClassVar  # CC: this = base. ...
+		assert newMember._type
+		newMember._type = newMember._type.secondaryConstructedTypeFor(box, gpToType)
+		return newMember
 
 	## INamedNode
 
@@ -590,6 +616,14 @@ class AbstractMethod
 		for local in _locals
 			if not local.isUsed
 				.compiler.warning(local, 'The value of variable "[local.name]" is never used.')
+
+	def constructedFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as BoxMember  # CC: as same
+		newMember = base.constructedFor(box, gpToType) to AbstractMethod  # CC: this = base. ...
+		assert newMember._returnType
+		newMember._returnType = newMember._returnType.secondaryConstructedTypeFor(box, gpToType)
+		newMember._params = List<of Param>(for p in _params get p.constructedFor(box, gpToType)) # CC: get rid of list instantiation
+		return newMember
+
 
 	## Code gen
 
@@ -1067,6 +1101,12 @@ class ProperDexer
 		if _setPart
 			_setPart.bindImp
 
+	def constructedFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as BoxMember  # CC: as same
+		newMember = base.constructedFor(box, gpToType) to ProperDexer  # CC: this = base. ...
+		assert newMember._returnType
+		newMember._returnType = newMember._returnType.secondaryConstructedTypeFor(box, gpToType)
+		return newMember
+
 
 	## Code gen
 
@@ -1142,6 +1182,7 @@ class MemberOverload
 	"""
 	Methods and indexers can be overloaded.
 	"""
+	# TODO: Should take a new IOverloadable instead of BoxMember. Only Method and Indexer would implement that interface.
 	
 	var _members as List<of BoxMember>
 
@@ -1184,8 +1225,8 @@ class MemberOverload
 			member is not this
 			not member inherits MemberOverload
 			member.overloadGroup is nil
-			member.name==.name # CC:, '.name=[.name], member.name=[member.name]'
-			.members implies member not in .members # CC: , member
+			member.name==.name
+			.members implies member not in .members
 			.members implies member.getType is .members[0].getType
 		body
 			member.overloadGroup = this

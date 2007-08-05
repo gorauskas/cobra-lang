@@ -217,9 +217,36 @@ class Box
 		return nil
 
 	get innerType as IType? is override
+		#print
+		trace off
 		getEnum = .symbolForName('getEnumerator', true, true)
+		trace this
+		for decl in .declsInOrder
+			trace decl
+		if false and .genericTypeDef
+			print ' *** '
+			for decl in (.genericTypeDef to dynamic).declsInOrder
+				trace decl
+		trace getEnum
 		if getEnum
+			#print 1
+			# TODO: is this needed
+			if not getEnum.didBindInt
+				getEnum.bindInt
 			assert getEnum.didBindInt
+			#print 2
+			# can have two getEnumerators -- one generic and the other not. favor the generic one
+			if getEnum inherits MemberOverload
+				#print 3
+				for member in getEnum.members
+					trace member
+					if member inherits Method
+						#print 4
+						if member.resultType <> .compiler.libraryType('System', 'Object')
+							# implementing IEnumerable<of T> which requires two `getEnumerator` members
+							$sharp('getEnum = member')
+							break
+			#print 5
 			rt = getEnum.resultType
 			if rt is .compiler.passThroughType
 				return rt
@@ -371,17 +398,26 @@ class Box
 			key = Utils.join(',', for type in typeArgs get type.name)
 			if _constructedTypes.containsKey(key)
 				return _constructedTypes[key]
-			t = .memberwiseClone() to Box
-			t._completeConstruction(this, typeArgs, key)
+			t = .memberwiseClone to Box
 			_constructedTypes[key] = t
+			t._completeConstruction(this, typeArgs, key)
 			return t
 
 	def _completeConstruction(genericDef as Box, typeArgs as List<of IType>, key as String)
 		require
-			genericDef.isGeneric
+			genericDef.isGeneric  # TODO: make this stronger: isGenericDef
+			.params.count == typeArgs.count
+			key.length
 		body
-			.setSerialNum(_nextNodeSerialNum)
-			_nextNodeSerialNum += 1
+			# create a dictionary from the generic params to their effective type
+#			print
+#			trace all
+			gpToType = Dictionary<of GenericParam, IType>()
+			for i = 0 .. typeArgs.count
+				if (p = _params[i]) inherits GenericParam
+					gpToType[p] = typeArgs[i]
+				else
+					throw FallThroughException(p)
 			_name = '[.rootName]<of [key]>'
 			_genericTypeDef = genericDef
 			.cloneCollections
@@ -391,14 +427,94 @@ class Box
 				if _baseInterfaces[i].isGenericDef
 					_baseInterfaces[i] = _baseInterfaces[i].constructedTypeFor(typeArgs) to Interface
 
-			# TODO: resolve treatment of .didBindInt and .isBindingInt
-			
-			# TODO: ? should be cloning the declarations to also incorporate the typeArgs where they happen to refer to generic params
-			# ^ or this already covered by DotExpr._bindExpr()?
+			# construct the declarations
+			newDecls = List<of IMember>()
+			for decl in _declsInOrder
+				if decl inherits BoxMember
+					newDecls.add(nd=decl.constructedFor(this, gpToType))
+					assert nd <> decl
+				else
+					throw FallThroughException(decl)
+			_declsInOrder = List<of IMember>()
+			_declsByName = Dictionary<of String, IMember>()
+			_declsByNameCI = Dictionary<of String, IMember>()
+			for decl in newDecls
+				if _declsByName.containsKey(decl.name)
+					other = _declsByName[decl.name]
+					if other inherits MemberOverload
+						overload = other
+						other.addMember(decl to BoxMember)
+					else if other inherits AbstractMethod
+						overload = MemberOverload(other)
+						.registerOverload(overload to MemberOverload)  # CC: axe cast
+					else
+						throw FallThroughException(other)
+				else
+					_declsInOrder.add(decl)
+					_declsByName[decl.name] = decl
+					_declsByNameCI[decl.name.toLower] = decl
+			.bindInt
 
-			#newDecls = List<of IMember>()
-			#for decl in _declsInOrder
-			#	decl = decl.constructedTypeFor(
+	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType is override
+		trace off
+		trace 1, this
+		trace 2, box
+		if _params.count == 0
+			return this
+		# TODO: keep unique
+		# CC: make an expression
+		typeArgs = List<of IType>()
+		params = .params
+		trace 2
+		for param in params
+			trace 3
+			if param inherits GenericParam
+				# doesn't work:
+				# typeArgs.add(gpToType[param])
+				trace 10
+				found as GenericParam?
+				for key as dynamic in gpToType.keys
+					trace 20
+					if key.name == param.name
+						found = key
+				trace 30
+				assert found
+				typeArgs.add(gpToType[found])
+				trace 40
+			else
+				trace 50
+				typeArgs.add(param)
+		trace 60
+		# TODO: I think the following can be axed
+		if box is this or box.genericTypeDef is this
+			sb = StringBuilder('[.rootName]<of ')
+			sep = ''
+			for arg in typeArgs
+				sb.append(sep)
+				sb.append(arg.name)
+				sep = ', '
+			name = sb.toString
+			Console.out.flush
+			if .name == name
+				trace 70
+				return this
+				
+			assert typeArgs.count == params.count
+			count = typeArgs.count
+			areSame = true
+			for i = 0 .. count
+				if typeArgs[i] <> params[i]
+					if typeArgs[i] inherits GenericParam and params[i] inherits GenericParam
+						if (typeArgs[i] to GenericParam).name <> (params[i] to GenericParam).name  # CC: axe casts
+							areSame = false
+							break
+					else
+						areSame = false
+			if areSame
+				# TODO: does this actually happen?
+				return this  # example: getRange() of List<of int> returns a List<of int>
+		trace 100
+		return .constructedTypeFor(typeArgs)
 
 	def cloneCollections is override
 		base.cloneCollections()
@@ -826,6 +942,7 @@ class GenericParam
 	def addSubFields is override
 		base.addSubFields()
 		.addField('constraints', _constraints)
+		.addField('index', _index)
 
 	def declForName(name as String) as IMember? is override
 		for constraint in _constraints
@@ -850,6 +967,10 @@ class GenericParam
 			if constraint.isDescendantOf(type)
 				return true
 		return false
+
+	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType is override
+		assert gpToType.containsKey(this)
+		return gpToType[this]
 
 	def _bindInt is override
 		base._bindInt()
