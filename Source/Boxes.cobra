@@ -57,6 +57,8 @@ class Box
 		else
 			.addField('baseInterfaceNodes', _baseInterfaceNodes)
 
+	get baseInterfaces from var
+	
 	get overloads from var
 
 	get rootName as String
@@ -351,7 +353,7 @@ class Box
 		return _genericTypeDef is not nil
 
 	get isGenericDef as bool is override
-		# TODO: make this more efficient, maybe be computing in the constructor
+		# TODO: make this more efficient, maybe by computing in the constructor
 		if _params.count
 			for param in _params
 				if not param inherits GenericParam
@@ -405,9 +407,9 @@ class Box
 			.cloneCollections
 			for i = 0 .. typeArgs.count
 				_params[i] = typeArgs[i]
+			# TODO: base class
 			for i = 0 .. _baseInterfaces.count
-				if _baseInterfaces[i].isGenericDef
-					_baseInterfaces[i] = _baseInterfaces[i].constructedTypeFor(typeArgs) to Interface
+				_baseInterfaces[i] = _baseInterfaces[i].secondaryConstructedTypeFor(this, gpToType) to Interface
 
 			# construct the declarations
 			newDecls = List<of IMember>()
@@ -453,8 +455,12 @@ class Box
 				assert found
 				typeArgs.add(gpToType[found])
 			else
-				typeArgs.add(param)
-		return .constructedTypeFor(typeArgs)
+				typeArgs.add(param.secondaryConstructedTypeFor(box, gpToType))
+		if .isGenericDef
+			return .constructedTypeFor(typeArgs)
+		else
+			assert .genericTypeDef.isGenericDef  # if this ever fails, we may just need to follow .genericTypeDef back iteratively until we get to the real generic type def
+			return .genericTypeDef.constructedTypeFor(typeArgs)
 
 	def cloneCollections is override
 		base.cloneCollections()
