@@ -273,6 +273,7 @@ class Box
 		base._bindInt()
 		.compiler.boxStack.push(this)
 		try
+			_bindBase
 			_bindInterfaces()
 			for param in _params
 				param.bindInt()
@@ -287,6 +288,11 @@ class Box
 				_testMethod.bindInt()
 		finally
 			.compiler.boxStack.pop()
+
+	def _bindBase
+		# for Class to override
+		# invoked by _bindInt
+		pass
 
 	def _bindInterfaces
 		# structs, classes and interfaces can all have 0 or more interfaces they inherit/implement
@@ -407,7 +413,7 @@ class Box
 			.cloneCollections
 			for i = 0 .. typeArgs.count
 				_params[i] = typeArgs[i]
-			# TODO: base class
+			_completeConstructionOfBase(gpToType)
 			for i = 0 .. _baseInterfaces.count
 				_baseInterfaces[i] = _baseInterfaces[i].secondaryConstructedTypeFor(this, gpToType) to Interface
 
@@ -438,6 +444,10 @@ class Box
 					_declsByName[decl.name] = decl
 					_declsByNameCI[decl.name.toLower] = decl
 			.bindInt
+			
+	def _completeConstructionOfBase(gpToType as Dictionary<of GenericParam, IType>)
+		# invoked by _completeConstruction for the benefit of Class
+		pass
 
 	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType is override
 		if _params.count == 0
@@ -677,7 +687,13 @@ class Class
 			m = _baseClass.memberForName(name)
 		return m
 
-	def _bindInt is override
+	def _completeConstructionOfBase(gpToType as Dictionary<of GenericParam, IType>)
+		base._completeConstructionOfBase(gpToType)
+		assert _baseClass
+		_baseClass = _baseClass.secondaryConstructedTypeFor(this, gpToType) to Class
+
+	def _bindBase
+		base._bindBase
 		if _baseNode
 			_baseNode.bindInt()
 			possible = _baseNode.namedType
@@ -702,14 +718,16 @@ class Class
 					_baseClass = t
 			else
 				throw FallThroughException(t)
+		if _baseClass
+			_baseClass.bindInt
+
+	def _bindInt is override
 		for decl in .declsInOrder
 			if decl inherits Constructor
 				foundConstructor = true
 		if not foundConstructor
 			# TODO: at some point this should be changed to provide cover constructors for each of the public, inherited constructors
 			.addDecl(Constructor(.token, this, List<of Param>(), ['public'], ''))
-		if _baseClass
-			_baseClass.bindInt
 		base._bindInt()
 
 	def _badInterfaceError(type as IType) is override
