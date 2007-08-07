@@ -203,6 +203,14 @@ class Parser
 	def peek as IToken?
 		return .peek(0)
 
+	def replace(token as IToken)
+		"""
+		Replaces the current token in the token stream with the given argument.
+		"""
+		require .peek
+		ensure .peek == token
+		_tokens[_nextTokenIndex] = token
+		
 	def peek(offset as int) as IToken?
 		"""
 		Returns a token without changing the current token, or nil if none left.
@@ -527,7 +535,7 @@ class Parser
 					break
 				if expectComma
 					.expect('COMMA')
-				interfaceName = .type  # using .type since interface could be a generic like IEnumerable(of T)
+				interfaceName = .type  # using .type since interface could be a generic like IEnumerable<of T>
 				interfaceNames.add(interfaceName)
 				expectComma = true
 
@@ -537,7 +545,7 @@ class Parser
 
 		# TODO when supporting nested classes, look at the _boxStack and set a back pointer here
 		_boxStack.push(theClass)
-#		.isNamesStack = Stack(str)
+#		.isNamesStack = Stack<of String>
 		.bodiedBoxMemberDecls(theClass)
 		_boxStack.pop
 
@@ -2474,7 +2482,7 @@ class Parser
 				break
 			if .peek.which=='DOUBLE_GT'
 				# Cobra example: Dictionary<of String, List<of String>>
-				.peek.which = 'GT'  # tricky, but effective
+				.replace(.peek.copy('GT'))  # tricky, but effective. note that modifying the token directly can cause problems when running testify on multiple files (such as a whole directory)--which is the norm
 				break
 			if expectComma
 				.expect('COMMA')
