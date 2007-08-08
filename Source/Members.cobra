@@ -1,5 +1,5 @@
 """
-This module contains ClassMember on down, except Property and Indexer which have their own files.
+This module contains BoxMember on down, except Property and Indexer which have their own files.
 """
 
 class BoxMember
@@ -633,6 +633,7 @@ class AbstractMethod
 		.compiler.codeMemberStack.push(this)
 		try
 			sw.writeAndIndent('{\n')
+			.writeSharpImpHeader(sw)
 			if .compiler.hasSuperStackTraceOption
 				.writeSSTHead(sw)
 			for param in _params
@@ -661,12 +662,19 @@ class AbstractMethod
 				sw.dedentAndWrite('}\n')
 			if .compiler.hasSuperStackTraceOption
 				.writeSSTTail(sw)
+			.writeSharpImpFooter(sw)
 			sw.dedent
 			sw.write('}\n')
 			sw.write('\n')
 		finally
 			.compiler.codeMemberStack.pop
 
+	def writeSharpImpHeader(sw as SharpWriter)
+		pass
+		
+	def writeSharpImpFooter(sw as SharpWriter)
+		pass
+		
 	def writeSharpPassArgs(sw as SharpWriter)
 		.writeSharpPassArgs(sw, '()')
 
@@ -919,6 +927,9 @@ class Method
 	get isCallable as bool is override
 		return true
 
+	get isMain as bool
+		return .name == 'main' and .isShared
+
 	get isMethod as bool is override
 		return true
 
@@ -984,6 +995,18 @@ class Method
 				_ensurePart.writeSharpMethod(sw)
 			.writeSharpTest(sw)
 
+	def writeSharpImpHeader(sw as SharpWriter)
+		base.writeSharpImpHeader(sw)
+		if .isMain and .compiler.hasExceptionReportOption
+			sw.writeLine('try { // Exception Report')
+			sw.indent
+		
+	def writeSharpImpFooter(sw as SharpWriter)
+		base.writeSharpImpFooter(sw)
+		if .isMain and .compiler.hasExceptionReportOption
+			sw.dedent
+			sw.writeLine('} catch (Exception _lh_exceptionReportException) { CobraCore.HandleSuperStackTraceUnhandledException(_lh_exceptionReportException); }')
+				
 	get sharpName as String is override
 		return Utils.capped(.name)
 

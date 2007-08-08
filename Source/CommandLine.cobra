@@ -67,6 +67,13 @@ class CommandLine
 			'args': 'editor_spec_with_FILE_LINE',
 		},
 		{
+			'name': 'exception-report',
+			'synonyms': ['exc-rpt', 'er'],
+			'type': 'bool',
+			'description': 'Turn on an informative HTML report that will be generated if the program throws an uncaught exception.',
+			'default': '1',
+		},
+		{
 			'name': 'help',
 			'synonyms': ['h'],
 			'type': 'main',
@@ -271,7 +278,12 @@ class CommandLine
 			if not d.containsKey('type')
 				d.add('type', 'string')
 
+		# set up initial valueDict
 		valueDict = Dictionary<of String, Object>()
+		for d in _optionSpecs
+			if d.containsKey('default')
+				valueDict[d['name'] to String] = d['default']  # CC: axe cast
+
 		fileList = List<of String>()
 		value = "no-value" to Object  # for typing
 		mainOptions = List<of String>()
@@ -576,11 +588,12 @@ class CommandLine
 			print
 			print '    -[spec["name"]]' stop
 			if spec.containsKey('args')
-				print '=[spec["args"]]'
+				print '=[spec["args"]]' stop
 			else if spec['type']=='bool'
-				print r'[=0|1]'
-			else
-				print
+				print r'[=0|1]' stop
+			if spec.containsKey('default')
+				print '  default is [spec['default']]' stop
+			print
 			if spec.containsKey('synonyms')
 				print '    ' stop
 				sep = ''
@@ -631,9 +644,9 @@ class CommandLine
 		print .versionString
 
 	def boolForString(s as String) as bool
-		if s.toLower in ['', '+', 'on', 'true', 'yes']
+		if s.toLower in ['', '+', 'on', 'true', 'yes', '1', 1]
 			return true
-		else if s.toLower in ['-', 'off', 'false', 'no']
+		else if s.toLower in ['-', 'off', 'false', 'no', '0', 0]
 			return false
 		else
 			throw FormatException()
