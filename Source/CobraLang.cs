@@ -112,6 +112,30 @@ public class AssertException : Exception {
 		return s;
 	}
 	
+	public void ExtendObjectTable(IObjectView view) {
+		// Invoked by the Cobra Exception Report.
+		// By adding the expression breakdown as entries in the view,
+		// object values will be clickable which will lead to their own detailed view.
+		int indentLevel = 0;
+		view.AddEntry("expression breakdown:", new Html(""));
+		int i = 1;
+		while (i < _expressions.Length) {
+			object item = _expressions[i];
+			if (item.Equals(+1)) {
+				indentLevel++;
+				i++;
+			} else if (item.Equals(-1)) {
+				indentLevel--;
+				i++;
+			} else {
+				string source = (string)_expressions[i];
+				object value = _expressions[i+1];
+				view.AddEntry(new String(' ', indentLevel*4)+source, value);
+				i += 2;
+			}
+		}
+	}
+
 }
 
 

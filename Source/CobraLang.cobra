@@ -1,3 +1,6 @@
+use System.Reflection
+
+
 namespace Cobra
 
 	namespace Lang
@@ -343,6 +346,8 @@ namespace Cobra
 						return false
 					if obj inherits bool or obj inherits char
 						return false
+					if obj inherits Html
+						return false
 					if obj.getType.isEnum
 						return false
 					fullName = obj.getType.fullName
@@ -375,7 +380,7 @@ namespace Cobra
 						value = obj.toString to Object
 					catch exc as Exception
 						value = 'Caught exception while reading value: [exc.toString]'
-					_objectPair(tw, 1, 'toString', .htmlFormat(value.toString))
+					_writeObjectPair1(tw, 1, 'toString', .htmlFormat(value.toString))
 					propInfos = List<of System.Reflection.PropertyInfo>(obj.getType.getProperties)
 					# CC: propInfos.sort(def(a as PropertyInfo, b as PropertyInfo)=a.name.compareTo(b.name))
 					# ... sort propInfos by name
@@ -403,8 +408,13 @@ namespace Cobra
 									value = .htmlFormat('Caught exception while reading value: [exc.toString]')
 								success
 									value = _htmlForValue(value, objects)
-							_objectPair(tw, i%2+1, propInfo.name, value)
+							_writeObjectPair1(tw, i%2+1, propInfo.name, value)
 							i += 1
+					extendMethod = obj.getType.getMethod('ExtendObjectTable')
+					if extendMethod
+						view = PrivateObjectViewForExceptionReport(tw, i, objects)
+						extendMethod.invoke(obj, @[view])
+						i = view.rowNum
 					# TODO: ack! cannot do this until qualified type problems are fixed up
 					#if obj inherits System.Collections.IList
 					if obj.getType.name.startsWith('List`')
@@ -417,7 +427,7 @@ namespace Cobra
 								value = .htmlFormat('Caught exception while reading indexed value [j]: [exc.toString]')
 							success
 								value = _htmlForValue(value, objects)
-							_objectPair(tw, i%2+1, r'[' + '[j]]', value)
+							_writeObjectPair1(tw, i%2+1, r'[' + '[j]]', value)
 							i += 1
 					else if obj.getType.name.startsWith('Dictionary')  # TODO: use if implements/inherits
 						dobj = obj to dynamic
@@ -435,7 +445,7 @@ namespace Cobra
 								value = .htmlEncode('Caught exception while reading keyed value [htmlKey]: [exc.toString]')
 							success
 								value = _htmlForValue(value, objects)
-							_objectPair(tw, i%2+1, r'[' + htmlKey + ']', value)
+							_writeObjectPair1(tw, i%2+1, r'[' + htmlKey + ']', value)
 							i += 1
 
 					tw.writeLine('</table>')
@@ -445,6 +455,8 @@ namespace Cobra
 					Returns the .toTechString of the value, encoded for HTML.
 					Gracefully handles exceptions and also creates links to objects.
 					"""
+					if value inherits Html  # this feature is used by AssertException, but it's interesting that this would then make Html() objects less recognizable when they show up in the report as a normal part of the program that failed
+						return value
 					s as dynamic?
 					try
 						try
@@ -475,14 +487,21 @@ namespace Cobra
 							pass  # forget it
 					return s to dynamic
 				
-				def _objectPair(tw as System.IO.TextWriter, i as int, key as String, valueHtml as Object)
+				def _writeObjectPair1(tw as System.IO.TextWriter, i as int, key as String, valueHtml as Object) is internal
 					require
 						i == 1 or i == 2
 						key.length
 					body
 						key = key[0].toString.toLower + key[1:]
 						key = .htmlEncode(key)
-						tw.writeLine('<tr class=keyValue[i]> <td class=key[i]> [key] </td> <td class=value[i]> [valueHtml] </td> </tr>')
+						_writeObjectPair2(tw, i, key, valueHtml)
+
+				def _writeObjectPair2(tw as System.IO.TextWriter, i as int, preFormattedKey as String, valueHtml as Object) is internal
+					require
+						i == 1 or i == 2
+						preFormattedKey.length
+					body
+						tw.writeLine('<tr class=keyValue[i]> <td class=key[i]> [preFormattedKey] </td> <td class=value[i]> [valueHtml] </td> </tr>')
 
 				
 				## Type names and tech strings
@@ -642,6 +661,34 @@ namespace Cobra
 			def toString as String is override
 				return _contents
 
+		interface IObjectView
+			"""
+			TODO: document this
+			"""
+			
+			def addEntry(key as String, value as Object?)
+
+		class PrivateObjectViewForExceptionReport
+			is internal
+			implements IObjectView
+			
+			var _tw as System.IO.TextWriter
+			var _rowNum as int
+			var _objects as ObjectCatalog?
+			
+			def init(tw as System.IO.TextWriter, rowNum as int, objects as ObjectCatalog?)
+				_tw = tw
+				_rowNum = rowNum
+				_objects = objects
+			
+			get rowNum from var
+			
+			def addEntry(key as String, value as Object?)
+				key = CobraCore.htmlEncode(key).replace('  ', '&nbsp;&nbsp;')  # the double space replace here works well with the indentation scheme used in AssertException
+				html = CobraCore._htmlForValue(value, _objects)
+				CobraCore._writeObjectPair2(_tw, _rowNum%2+1, key, html)
+				_rowNum += 1
+				
 		class ObjectCatalog
 
 			test
