@@ -750,13 +750,13 @@ static public class CobraImp {
 
 	/// Super Stack Trace!
 
-	static public bool HasSuperStackTrace {
+	static public bool HasDetailedStackTrace {
 		get {
 			return _badStackCopy!=null || _lastBadStackCopy!=null;
 		}
 	}
 
-	static public Stack<CobraFrame> SuperStackTrace {
+	static public Stack<CobraFrame> DetailedStackTrace {
 		get {
 			Stack<CobraFrame> badStack = _badStackCopy!=null ? _badStackCopy : _lastBadStackCopy;
 			if (badStack == null)
@@ -766,7 +766,7 @@ static public class CobraImp {
 		}
 	}
 	
-	static private Stack<CobraFrame> _superStack = new Stack<CobraFrame>();
+	static private Stack<CobraFrame> _detailedStack = new Stack<CobraFrame>();
 	static public CobraFrame _curFrame = null;
 	static private Stack<CobraFrame> _badStackCopy = null;
 	static private Stack<CobraFrame> _lastBadStackCopy = null;
@@ -774,15 +774,15 @@ static public class CobraImp {
 	static public int _numLastMaxStackFrames = 20;
 
 	static public void PushFrame(string declClassName, string methodName, string fileName, int lineNum, params object[] args) {
-		_superStack.Push(_curFrame = new CobraFrame(declClassName, methodName, fileName, lineNum, args));
+		_detailedStack.Push(_curFrame = new CobraFrame(declClassName, methodName, fileName, lineNum, args));
 		int max = _maxStackFrames;
-		if (max > 0 && _superStack.Count > max) {
+		if (max > 0 && _detailedStack.Count > max) {
 			int num = _numLastMaxStackFrames;
 			if (num < 2)
 				num = 2;
 			Console.WriteLine("Cobra detected stack overflow:");
 			Console.WriteLine("  Last {0} frames:", num);
-			List<CobraFrame> frames = new List<CobraFrame>(_superStack);
+			List<CobraFrame> frames = new List<CobraFrame>(_detailedStack);
 			frames.Reverse();
 			for (int i = max-num; i < frames.Count; i++) {
 				Console.WriteLine("    {0}. {1}", i, frames[i]);
@@ -805,8 +805,8 @@ static public class CobraImp {
 
 	static public void CaughtUncaughtException() {
 		if (_badStackCopy==null) {
-			_badStackCopy = new Stack<CobraFrame>(_superStack.Count);
-			foreach (CobraFrame frame in _superStack)
+			_badStackCopy = new Stack<CobraFrame>(_detailedStack.Count);
+			foreach (CobraFrame frame in _detailedStack)
 				_badStackCopy.Push(frame.Copy());
 		}
 	}
@@ -817,8 +817,8 @@ static public class CobraImp {
 	}
 	
 	static public void PopFrame() {
-		_superStack.Pop();
-		_curFrame = _superStack.Count > 0 ? _superStack.Peek() : null;
+		_detailedStack.Pop();
+		_curFrame = _detailedStack.Count > 0 ? _detailedStack.Peek() : null;
 	}
 
 
