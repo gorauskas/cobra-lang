@@ -59,7 +59,7 @@ class BinaryOpExpr
 
 	pro definition from var
 
-	get hasError as bool is override
+	get hasError as bool
 		if base.hasError
 			return true
 		if _left.hasError
@@ -73,27 +73,27 @@ class BinaryOpExpr
 		# TODO: this will probably go away when a DotExpr subclass is made
 		_receiverType = t
 
-	def bindImp as INode is override
-		base.bindImp()
+	def bindImp as INode
+		base.bindImp
 		assert .didBindImp
-		# TODO: maybe check() should only be invoked if left and right were bound without error
-		.checkAfterBindImp()
-		.checkForVoids()
+		# TODO: maybe checks should only be invoked if left and right were bound without error
+		.checkAfterBindImp
+		.checkForVoids
 		return this
 
-	def _bindImp is override
-		base._bindImp()
+	def _bindImp
+		base._bindImp
 		assert _left is not this, this
 		assert _right is not this, this
 		# The try..catch below enables errors to be detected on both sides of the operator
 		try
-			_left.bindImp()
+			_left.bindImp
 		catch ne1 as NodeException
 			gotError = true
 			if _left.type is nil
 				_left.type = .compiler.passThroughType
 		try
-			_right.bindImp()
+			_right.bindImp
 		catch ne2 as NodeException
 			gotError = true
 			if _right.type is nil
@@ -106,7 +106,7 @@ class BinaryOpExpr
 
 	def checkAfterBindImp
 		"""
-		Invoked after bindImp() in order to do more error checking.
+		Invoked after `bindImp` in order to do more error checking.
 		So this is a hook for subclasses to do error checking after
 		left and right have been successfully bound.
 		"""
@@ -132,18 +132,18 @@ class BinaryOpExpr
 				append = '.'
 			.throwError('There is no type for the right hand side of "[.token.text]"[append] [sugg]')
 
-	def addRefFields is override
-		base.addRefFields()
+	def addRefFields
+		base.addRefFields
 		.addField('definition', _definition)
 
-	def addSubFields is override
-		base.addSubFields()
+	def addSubFields
+		base.addSubFields
 		.addField('op', _op)
 		.addField('left', _left)
 		.addField('right', _right)
 
 	def toCobraSource as String is override
-		return '([_left.toCobraSource()] [.token.text] [_right.toCobraSource()])'
+		return '([_left.toCobraSource] [.token.text] [_right.toCobraSource])'
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		if parens
@@ -180,9 +180,9 @@ class AbstractAssignExpr
 		base.init(opToken, op, left, right)
 		# CC: axe when constructors are inherited
 
-	def checkAfterBindImp is override
-		base.checkAfterBindImp()
-		# can't do the following in a _bindImp() override since type inference is implemented in
+	def checkAfterBindImp
+		base.checkAfterBindImp
+		# can't do the following in a `_bindImp` override since type inference is implemented in
 		# a subclass (_left may not have its _definition until after that executes)
 		if .compiler.hasDetailedStackTraceOption
 			if _left inherits NameExpr
@@ -207,18 +207,18 @@ class AssignExpr
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
 
-	def _bindImp is override
+	def _bindImp
 		left = _left
 		right = _right
 		try
-			base._bindImp()
+			base._bindImp
 		catch NodeMultiException
 			# for a type inference situation, create a var of type passthrough for the left hand side
 			# to prevent superfluous errors in subsequent statements
 			if left inherits IdentifierExpr
 				if left.definition is nil
-					definition = LocalVar(left.token, .compiler.passThroughType).bindAll() to LocalVar  # CC: axe cast when supporting 'this'
-					.compiler.codeMemberStack.peek().addLocal(definition)
+					definition = LocalVar(left.token, .compiler.passThroughType).bindAll to LocalVar  # CC: axe cast when supporting 'as this'
+					.compiler.codeMemberStack.peek.addLocal(definition)
 					left.setDefinition(definition)
 					left.type = definition.type
 			if _type is nil
@@ -233,8 +233,8 @@ class AssignExpr
 					if right.hasError
 						# for a type inference situation, create a var of type passthrough for the left hand side
 						# to prevent superfluous errors in subsequent statements
-						definition = LocalVar(left.token, .compiler.passThroughType).bindAll() to LocalVar  # CC: axe cast when supporting 'this'
-						.compiler.codeMemberStack.peek().addLocal(definition)
+						definition = LocalVar(left.token, .compiler.passThroughType).bindAll to LocalVar  # CC: axe cast when supporting 'as this'
+						.compiler.codeMemberStack.peek.addLocal(definition)
 						left.setDefinition(definition)
 						left.type = definition.type
 						_type = left.type
@@ -243,8 +243,8 @@ class AssignExpr
 						.throwError('Cannot infer type for "[left.name]" because the type of the right hand expression is unknown.')
 				if left.name.startsWith('_')
 					.throwError('No class variable named "[left.name]" exists and local variable declarations cannot start with an underscore (_).')
-				definition = LocalVar(left.token, right.type).bindAll() to LocalVar  # CC: axe cast when supporting 'this'
-				.compiler.codeMemberStack.peek().addLocal(definition)
+				definition = LocalVar(left.token, right.type).bindAll to LocalVar  # CC: axe cast when supporting 'as this'
+				.compiler.codeMemberStack.peek.addLocal(definition)
 				left.setDefinition(definition)
 				left.type = definition.type
 			if left.definition is nil
@@ -254,8 +254,8 @@ class AssignExpr
 		_type = left.type
 		right.contextType = _type
 
-	def checkAfterBindImp is override
-		base.checkAfterBindImp()
+	def checkAfterBindImp
+		base.checkAfterBindImp
 		if _left inherits IdentifierExpr
 			assert _left.definition
 			if _left.definition inherits Param
@@ -322,8 +322,8 @@ class NumericPromoExpr
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
 
-	def _bindImp is override
-		base._bindImp()
+	def _bindImp
+		base._bindImp
 		if _left.type.isDynamic or _right.type.isDynamic
 			_type = .compiler.dynamicType
 			return
@@ -406,8 +406,8 @@ class AugAssignMathExpr
 		base.init(opToken, op, left, right)
 		assert op in ['PLUS_EQUALS', 'MINUS_EQUALS', 'STAR_EQUALS', 'STARSTAR_EQUALS', 'SLASH_EQUALS', 'SLASHSLASH_EQUALS', 'PERCENT_EQUALS']
 
-	def _bindImp is override
-		base._bindImp()
+	def _bindImp
+		base._bindImp
 		# TODO: does NumericPromoExpr cover everything we need?
 
 	def _writeSharpDef(sw as SharpWriter) is override
@@ -463,13 +463,13 @@ class BinaryBoolExpr
 		base.init(opToken, op, left, right)
 		assert op in ['AND', 'OR', 'IMPLIES']
 
-	def _bindImp is override
-		base._bindImp()
+	def _bindImp
+		base._bindImp
 		_type = .compiler.boolType
 		if _left.type is not .compiler.boolType
-			_left = TruthExpr(_left).bindImp() to TruthExpr # CC: axe cast after "as this"
+			_left = TruthExpr(_left).bindImp to TruthExpr # CC: axe cast after "as this"
 		if _right.type is not .compiler.boolType
-			_right = TruthExpr(_right).bindImp() to TruthExpr # CC: axe cast after "as this"
+			_right = TruthExpr(_right).bindImp to TruthExpr # CC: axe cast after "as this"
 
 	def _writeSharpDef(sw as SharpWriter) is override
 		if _op=='IMPLIES'
@@ -509,7 +509,7 @@ class BinaryMathExpr
 		assert op in ['PLUS', 'MINUS', 'STAR', 'SLASH', 'SLASHSLASH', 'PERCENT']
 
 	def _bindImp # TODO: this is all messed up. does this get called? TODO: this is missing, so its not being run. resolve with base class: is override
-		base._bindImp()
+		base._bindImp
 		lt = _left.type
 		if lt inherits NilableType
 			$sharp('lt = ((NilableType)lt).TheWrappedType;')
@@ -622,8 +622,8 @@ class CompareExpr
 		if op == 'ISNOT' and .token.text == 'is'
 			.token.text = 'is not'
 			
-	def _bindImp is override
-		base._bindImp()
+	def _bindImp
+		base._bindImp
 		_type = .compiler.boolType
 		# cannot invoke `isAssignableTo` directory on the types because if one is nilable and the other is not, you can get false, even though that doesn't apply for "is". So:
 		leftType = _left.type
@@ -704,8 +704,8 @@ class DotExpr
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
 
-	def _bindImp is override
-		base._bindImp()
+	def _bindImp
+		base._bindImp
 		if not _type
 			assert _right.type
 			_type = _right.type
@@ -782,8 +782,8 @@ class InExpr
 		base.init(opToken, op, left, right)
 		assert op in ['IN', 'NOTIN']
 
-	def _bindImp is override
-		base._bindImp()
+	def _bindImp
+		base._bindImp
 		_type = .compiler.boolType
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
@@ -805,13 +805,10 @@ class InheritsExpr
 		base.init(opToken, op, left, right)
 		assert op in ['INHERITS', 'IMPLEMENTS']
 		
-	def _bindImp is override
-		base._bindImp()
+	def _bindImp
+		base._bindImp
 		_type = .compiler.boolType
-		# CC: collapse next two lines to:
-		# if (right = .right) inherits IdentifierExpr ...
-		right = .right
-		if right inherits IdentifierExpr
+		if (right = .right) inherits IdentifierExpr
 			defi = right.definition
 			if defi
 				if defi inherits Class
@@ -839,11 +836,11 @@ class AbstractToExpr
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
 
-	def _bindImp is override
-		base._bindImp()
+	def _bindImp
+		base._bindImp
 		if not _right.isKindOf(.compiler.typeType) and not _right.type inherits Box
-			assert _right.toCobraSource(), _right
-			.throwError('The "to" operator does not apply to "[_right.toCobraSource()]". Use a type.')
+			assert _right.toCobraSource, _right
+			.throwError('The "to" operator does not apply to "[_right.toCobraSource]". Use a type.')
 		if _right inherits TypeExpr
 			_type = _right.receiverType
 		else if _right inherits IdentifierExpr
@@ -859,8 +856,8 @@ class ToExpr
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
 
-	def _bindImp is override
-		base._bindImp()
+	def _bindImp
+		base._bindImp
 		if _left inherits NilLiteral and not (_type inherits NilableType or _type inherits PassThroughType)
 			.throwError('Cannot cast nil to a non-nil type.')
 
@@ -881,10 +878,10 @@ class ToQExpr
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
 
-	def _bindImp is override
-		base._bindImp()
+	def _bindImp
+		base._bindImp
 		if not _type inherits NilableType
-			_type = NilableType(_type).bindAll() to NilableType  # CC: axe cast when 'as this' is supported
+			_type = NilableType(_type).bindAll to NilableType  # CC: axe cast when 'as this' is supported
 
 	def _writeSharpDef(sw as SharpWriter) is override
 		# x to? int     --> ((x is int || x is int?) ? (int?)x : (int?)null)
@@ -924,8 +921,8 @@ class CoalesceExpr
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
 
-	def _bindImp is override
-		base._bindImp()
+	def _bindImp
+		base._bindImp
 		ptt = .compiler.passThroughType
 		if _left.type is ptt or _right.type is ptt
 			# x ? y   ...where either is typed as passthrough
@@ -953,8 +950,8 @@ class InverseCoalesceExpr
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
 
-	def _bindImp is override
-		base._bindImp()
+	def _bindImp
+		base._bindImp
 		ptt = .compiler.passThroughType
 		if _left.type is ptt or _right.type is ptt
 			# x ! y   ...where either is typed as passthrough
@@ -984,8 +981,8 @@ class CoalesceAssignExpr
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
 
-	def _bindImp is override
-		base._bindImp()
+	def _bindImp
+		base._bindImp
 		# TODO: error check that the left hand type is nilable?
 		# TODO: error check that the right hand type is not nilable?
 		_type = _right.type
@@ -1008,8 +1005,8 @@ class InverseCoalesceAssignExpr
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
 
-	def _bindImp is override
-		base._bindImp()
+	def _bindImp
+		base._bindImp
 		# TODO: any error checks here?
 		_type = _left.type
 
