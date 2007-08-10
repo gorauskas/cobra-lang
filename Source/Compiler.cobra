@@ -66,6 +66,7 @@ class Compiler
 	var _warnings as List<of CobraWarning>
 	var _messages as List<of Object>  # all errors and warnings
 
+	var _intermediateFileNames as List<of String>
 	var _baseExeFileName as String = ''
 	var _fullExeFileName as String = ''
 
@@ -83,6 +84,7 @@ class Compiler
 		_errors = List<of CobraException>()
 		_messages = List<of Object>()
 		_warnings = List<of CobraWarning>()
+		_intermediateFileNames = List<of String>()
 
 	def toString as String is override
 		return '[.getType.name]([_serialNum])'
@@ -143,6 +145,9 @@ class Compiler
 		else
 			_addError(ce)
 
+	def addIntermediateFile(path as String)
+		_intermediateFileNames.add(path)
+		
 	get cobraExeDir as String
 		"""
 		Returns the directory where cobra.exe is residing.
@@ -790,10 +795,21 @@ class Compiler
 			if hadError  # TODO: change to "if _errors" like bindInt and bindImp and axe hadError
 				_exitFromErrors
 
-			# remove C#
-			if Utils.getSO(_options, 'deletegen', 0)
-				for csFileName in csFileNameList
-					File.delete(csFileName)
+			# remove intermediate files such as *.cobra.cs
+			if _intermediateFileNames.count == 0
+				if _verbosity >= 1
+					print 'No intermediate files to keep or delete.'
+			else
+				if Utils.getSO(_options, 'keep-intermediate-files', 0)
+					if _verbosity >= 1
+						print 'Keeping intermediate files.'
+				else
+					if _verbosity >= 1
+						print 'Deleting intermediate files.'
+					for fileName in _intermediateFileNames
+						if _verbosity >= 3
+							print 'Deleting', fileName
+						File.delete(fileName)
 
 	def cobraLineNumForSharp(fileName as String, lineNum as int) as int
 		"""
