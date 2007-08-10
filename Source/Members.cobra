@@ -270,14 +270,14 @@ class ClassVar
 	inherits BoxMember
 	implements IVar
 
-	var _typeNode as INode
+	var _typeNode as ITypeProxy
 	var _type as IType?
 	var _initExpr as Expr?
 	var _ifInheritsStack as Stack<of IType>
 	var _useSharpNameStack as Stack<of String>
 	var _isAssignedTo as bool
 
-	def init(token as IToken, box as Box, name as String, typeNode as INode, isNames as List<of String>, initExpr as Expr?, docString as String)
+	def init(token as IToken, box as Box, name as String, typeNode as ITypeProxy, isNames as List<of String>, initExpr as Expr?, docString as String)
 		base.init(token, box, name, isNames, docString)
 		_typeNode = typeNode
 		_initExpr = initExpr
@@ -315,7 +315,7 @@ class ClassVar
 				_type = _initExpr.type
 		if _type is nil
 			assert _typeNode, 'typeNode should be set if _type is nil'
-			t = _typeNode.namedType
+			t = _typeNode.realType
 			t.bindInt # axens
 			assert t, _typeNode
 			if _initExpr and not _initExpr.isKindOf(t to IType)  # CC: axe cast when "assert foo" is understood to prove that foo is not nil
@@ -390,7 +390,7 @@ class AbstractMethod
 	Subclasses must set _params.
 	"""
 
-	var _returnTypeNode as INode?
+	var _returnTypeNode as ITypeProxy?
 	var _returnType as IType?
 	var _requirePart as RequirePart?
 	var _ensurePart as EnsurePart?
@@ -535,10 +535,10 @@ class AbstractMethod
 			for param in _params
 				param.bindInt
 			if _returnType is nil
-				if _returnTypeNode is nil
-					_returnType = .compiler.voidType
+				if _returnTypeNode
+					_returnType = _returnTypeNode.realType
 				else
-					_returnType = _returnTypeNode.namedType
+					_returnType = .compiler.voidType
 				assert _returnType, _returnTypeNode
 			_returnType.bindInt  # TODO: needs a test case. like: def foo as String?; return ''  # axens
 			if _requirePart is nil and .willRequire
@@ -905,10 +905,10 @@ class Constructor
 class Method
 	inherits AbstractMethod
 
-	var _implementsTypeNode as ISyntaxNode?
+	var _implementsTypeNode as ITypeProxy?
 	var _implementsType as IType?
 
-	def init(token as IToken, box as Box, name as String, paramsList as List<of Param>, returnTypeNode as INode, implementsTypeNode as ISyntaxNode?, isNames as List<of String>, docString as String)
+	def init(token as IToken, box as Box, name as String, paramsList as List<of Param>, returnTypeNode as ITypeProxy, implementsTypeNode as ITypeProxy?, isNames as List<of String>, docString as String)
 		base.init(token, box, name, paramsList, isNames, docString)
 		_returnTypeNode = returnTypeNode
 		_implementsTypeNode = implementsTypeNode
@@ -957,7 +957,7 @@ class Method
 		numErrors = .compiler.errors.count
 		base._bindImp
 		if _implementsTypeNode
-			_implementsType = _implementsTypeNode.namedType
+			_implementsType = _implementsTypeNode.realType
 			# TODO: make sure the type is among the interfaces of the box
 		if .compiler.errors.count==numErrors and _returnType is not .compiler.voidType and not .hasReturnStmt and not .hasYieldStmt and not .box.isFake and not .box inherits Interface
 			.throwError('Missing return statement for method "[_name]" which returns [_returnType.name].')
@@ -1027,7 +1027,7 @@ class ProperDexer
 	var _coverVar as ClassVar?
 	var _coverAccess as String?
 	var _returnType as IType?
-	var _returnTypeNode as INode?
+	var _returnTypeNode as ITypeProxy?
 
 	def init(token as IToken, box as Box, name as String, isNames as List<of String>, docString as String)
 		base.init(token, box, name, isNames, docString)
@@ -1037,7 +1037,7 @@ class ProperDexer
 		if returnTypeOrNode inherits IType
 			_returnType = returnTypeOrNode
 			_returnTypeNode = nil
-		else if returnTypeOrNode inherits INode
+		else if returnTypeOrNode inherits ITypeProxy
 			_returnType = nil
 			_returnTypeNode = returnTypeOrNode
 		else
@@ -1109,7 +1109,7 @@ class ProperDexer
 				_returnType = _coverVar.resultType
 			else
 				assert _returnTypeNode
-				_returnType = _returnTypeNode.namedType
+				_returnType = _returnTypeNode.realType
 		_returnType.bindInt
 		assert _returnType  # properties always have a return type
 		if _getPart

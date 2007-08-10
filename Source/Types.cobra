@@ -142,8 +142,24 @@ class BasicTypeProvider
 		return vt
 
 
+interface ITypeProxy
+	inherits INode
+	"""
+	An ITypeProxy is a node that *could be* a type.
+	Its realType property will return non-nil if so.
+	Implemented by CobraType, AbstractTypeIdentifier, TypeExpr, IdentifierExpr, DotExpr and IndexExpr.
+	NOTE: Could consider makeing realType returning a non-nil and then having a new IConditionalTypeProxy that return have a `get conditionalType as IType?`. The reason here is that some of the ITypeProxy implementors will never return nil.
+	"""
+	
+	get realType as IType?
+		"""
+		If this node represents a type, this property returns it.
+		Otherwise, returns nil (which is the default behavior).
+		"""
+
+
 interface IType
-	inherits IMember  # TODO: does an IType need to also be an IContainer? TODO: Why does it have to be either?
+	inherits ITypeProxy, IMember  # TODO: does an IType need to also be an IContainer? TODO: Why does it have to be either?
 
 	def isAssignableTo(type as IType) as bool
 
@@ -271,7 +287,7 @@ interface IType
 
 class CobraType
 	inherits Node
-	implements IType
+	implements IType, ITypeProxy
 	"""
 	This is the parent type of all other types.
 	It exists for organizational purposes.
@@ -341,8 +357,7 @@ class CobraType
 	get innerType as IType?
 		return nil
 
-	get namedType as IType? is override
-		# TODO: is this essential? if so, perhaps "namedType" --> "effectiveType"
+	get realType as IType?
 		return this
 
 	get superType from var
@@ -727,7 +742,7 @@ class NilType
 #		RootType.checkBinaryOp(self, op, right, compiler)
 #		if op=='TO':
 #			from Expressions import TypeExpr
-#			type = right.namedType
+#			type = right.realType
 #			assert types, right
 #			assert not inherits(type, NilType)
 #			if not inherits(type, NilableType) and type is not tpassthrough:
@@ -831,16 +846,14 @@ class WrappedType
 		_wrappedType = nil
 		_wrappedTypeNode = wrappedTypeNode
 
-	def addMinFields is override
-		base.addMinFields()
+	def addMinFields
+		base.addMinFields
 		.addField('didResolveType', _didResolveType)
 
 	def addRefFields is override
 		base.addRefFields()
 		.addField('wrappedTypeNode', _wrappedTypeNode)
 		.addField('wrappedType', _wrappedType)
-
-	get didResolveType from var
 
 	def equals(obj as Object) as bool is override
 		if this is obj
@@ -873,6 +886,8 @@ class WrappedType
 	# CC: this should work, but C# don't dig it.
 	#get wrappedType from _wrappedType
 
+	pro didResolveType from var
+	
 	get theWrappedType as IType?
 		return _wrappedType
 
@@ -900,10 +915,9 @@ class WrappedType
 		if _wrappedTypeNode inherits IType
 			_wrappedType = _wrappedTypeNode to passthrough   # CC: shouldn't need the cast here
 			return
-		_wrappedType = _wrappedTypeNode.bindAll().namedType
+		_wrappedType = (_wrappedTypeNode.bindAll() to ITypeProxy).realType
 		if _wrappedType is nil
 			.throwError('Cannot resolve type.')  # TODO: add the name of the wrappedTypeNode or something
-		_didResolveType = true
 
 	get csInit as String is override
 		return _wrappedType.csInit
@@ -1016,17 +1030,12 @@ class QualifiedType
 	var _boundNodes as List<of Container>
 	var _dottedParentNames as String?
 
-	def init(nodes as IList<of ISyntaxNode>)
+	def init(nodes as IList<of AbstractTypeIdentifier>)
 		require
 			nodes
 		body
 			base.init(nodes[nodes.count-1])
-			_initNodes = List<of AbstractTypeIdentifier>()
-			for node in nodes
-				if node inherits AbstractTypeIdentifier
-					_initNodes.add(node)
-				else
-					assert false, node
+			_initNodes = List<of AbstractTypeIdentifier>(nodes)
 			_boundNodes = List<of Container>()  # set by _bindInt()
 			_dottedParentNames = nil
 
@@ -1095,7 +1104,7 @@ class QualifiedType
 			isLast = initNode is _initNodes[_initNodes.count-1]  # CC: ... _initNodes.last
 			if prevNode is nil
 				initNode.bindInt()
-				node = initNode.namedType
+				node = initNode.realType
 				if node inherits Container
 					node.bindInt()
 					_boundNodes.add(node)
@@ -1174,20 +1183,28 @@ class TypeType
 
 class AbstractTypeIdentifier
 	inherits SyntaxNode
+	implements ITypeProxy
 	"""
 	The ancestor class for specific kinds of type identifiers including TypeIdentifier, GenericTypeIdentifier, WrappedTypeIdentifier and more.
 	"""
 
 	var _name as String
-	var _actualType as IType?
+	var _actualType as IType? is private
+	var _didResolveType as bool is private
 
 	def init(token as IToken, name as String)
 		base.init(token)
 		_name = name
 
+	def init(token as IToken, name as String, type as IType)
+		.init(token, name)
+		_actualType = type
+		_didResolveType = true
+
 	def addMinFields is override
 		base.addMinFields()
 		.addField('name', _name)
+		.addField('didResolveType', _didResolveType)
 
 	def addRefFields is override
 		base.addSubFields()
@@ -1197,9 +1214,17 @@ class AbstractTypeIdentifier
 
 	get actualType from var
 
-	get namedType as IType? is override
-		or require .didBindInt or .didBindImp
-		and ensure .actualType
+	get didResolveType from var
+	
+	get realType as IType?
+		ensure .actualType
+		if not .didBindInt
+			.bindInt
+		if not .didResolveType
+			_actualType = _resolveType()  # CC: axe parens
+			assert .actualType
+			didResolveType = true
+		assert _actualType
 		return _actualType
 
 	def equals(other as Object) as bool is override
@@ -1241,7 +1266,16 @@ class AbstractTypeIdentifier
 		# TODO: this may be axeable when QualifiedType is retired
 		# then again, generic types are constructed as well (but then maybe they can be bound upon construction)
 		# TODO: axe this
-		.namedType.bindInt()
+		.realType.bindInt()
+
+	def _resolveType as IType
+		"""
+		Invoked by .realType only when needed.
+		Subclasses must override to compute and return the actual type that this identifier represents (or invoke `.throwError('...')`).
+		Subclasses should not bother with other operations such as checking or setting _actualType or _didResolveType to true.
+		Subclasses need not invoke `base`.
+		"""
+		return nil to passthrough  # CC: throw an exception when Cobra code flow analysis is implemented
 
 
 class WrappedTypeIdentifier
@@ -1278,12 +1312,9 @@ class ArrayTypeIdentifier
 	def memberFrom(container as Container) as IMember? is override
 		return container.memberForName(.theWrappedTypeIdentifier.name)
 
-	get namedType as IType? is override
-		if _actualType
-			return _actualType
-		assert _typeId.namedType
-		_actualType = ArrayType(_typeId.namedType)
-		return _actualType
+	def _resolveType as IType is override
+		assert _typeId.realType
+		return ArrayType(_typeId.realType)
 		
 
 class NilableTypeIdentifier
@@ -1292,12 +1323,9 @@ class NilableTypeIdentifier
 	def init(token as IToken, typeId as AbstractTypeIdentifier)
 		base.init(token, typeId)
 
-	get namedType as IType? is override
-		if _actualType
-			return _actualType
-		assert _typeId.namedType
-		_actualType = NilableType(_typeId.namedType)
-		return _actualType
+	def _resolveType as IType is override
+		assert _typeId.realType
+		return NilableType(_typeId.realType)
 		
 
 class TypeIdentifier
@@ -1326,8 +1354,7 @@ class TypeIdentifier
 		ensure
 			.name
 		body
-			base.init(token, token.text)
-			_actualType = type
+			base.init(token, token.text, type)
 
 	def init(token as IToken, name as String, type as IType)
 		"""
@@ -1339,13 +1366,10 @@ class TypeIdentifier
 		ensure
 			.name
 		body
-			base.init(token, name)
+			base.init(token, name, type)
 			assert name == token.text or type inherits QualifiedType
-			_actualType = type
 
-	get namedType as IType? is override
-		if _actualType
-			return _actualType
+	def _resolveType as IType is override
 		# don't need to check "basic types" like int, bool, etc. here. the parser does those.
 		if Utils.isCapped(_name)
 			symbol = .compiler.symbolForName(.name, true, false)  # nested enum and class types are capped and can be members of the current class
@@ -1358,14 +1382,10 @@ class TypeIdentifier
 				other = .compiler.symbolForName(sugg, true, false)
 				sugg = if(other, ' Try "[sugg]".', '')
 			.throwError('Cannot find type for "[_name]".[sugg]')
-		if symbol inherits IType
-			_actualType = symbol
+		if symbol inherits ITypeProxy
+			return symbol.realType to IType  # CC: axe cast
 		else
-			what = symbol.namedType
-			assert what, symbol
-			_actualType = what
-		assert _actualType
-		return _actualType
+			throw FallThroughException(symbol)
 
 
 class GenericTypeIdentifier
@@ -1378,9 +1398,9 @@ class GenericTypeIdentifier
 	var _fullName as String  # ex: 'List<of String>'
 	var _typeRefName as String # ex: 'List<of>' 'IDictionary<of,>' -- matches the actual box
 
-	var _typeNodes as List<of ISyntaxNode>
+	var _typeNodes as List<of ITypeProxy>
 
-	def init(token as IToken, rootName as String, typeNodes as List<of ISyntaxNode>, fullName as String)
+	def init(token as IToken, rootName as String, typeNodes as List<of ITypeProxy>, fullName as String)
 		require
 			token.which=='OPEN_GENERIC'
 			rootName
@@ -1396,21 +1416,18 @@ class GenericTypeIdentifier
 			_typeRefName += '>'
 
 	def memberFrom(container as Container) as IMember? is override
+		# happens for a qualified generic. See ../Tests/160-qualified/200-qual-generic.cobra
 		genericType = container.memberForName(_typeRefName)
 		assert genericType
-		_locateType(genericType to IMember) # CC: axe cast
-		return _actualType
+		return _locateType(genericType to IMember) # CC: axe cast
 
-	get namedType as IType? is override
-		if _actualType
-			return _actualType
+	def _resolveType as IType is override
 		genericType = .compiler.symbolForName(_typeRefName, Utils.isCapped(_name), false)
 		if genericType is nil
 			.throwError('Cannot find a generic type named "[_typeRefName]".')
-		_locateType(genericType to IMember)  # CC: axe cast
-		return _actualType
+		return _locateType(genericType to IMember)  # CC: axe cast
 
-	def _locateType(genericType as IMember)
+	def _locateType(genericType as IMember) as IType
 		if genericType inherits IType
 			gt as IType = genericType to IType  # CC: shouldn't need this local. if-inherits looks broken for interfaces
 			if not gt.isGeneric
@@ -1418,7 +1435,7 @@ class GenericTypeIdentifier
 			types = List<of IType>()
 			for tn in _typeNodes
 				tn.bindInt()
-				types.add(tn.namedType to IType)  # CC: to !
+				types.add(tn.realType to IType)  # CC: to !
 			if gt.genericParams.count<>types.count
 				.throwError('The generic type "[_rootName]" expects [gt.genericParams.count] type arguments, not [types.count].')
 			t = gt.constructedTypeFor(types)
@@ -1427,10 +1444,11 @@ class GenericTypeIdentifier
 			# TODO: is this a good idea or not? t.bindInt()
 			# assert not t.isGenericDef  Wrong! If some of the parameters are generic, then the constructed type could have generic params...
 			# ... hmmm, but am I using the wrong terms? Maybe the returned type is an open or closed constructed type and never a generic def. TODO: resolve this.
-			_actualType = t
+			return t
 		else
 			assert false, 'When does this happen?'
 			.throwError('The definition for "[_fullName]" is not a type.')
+			return nil to passthrough
 
 
 class QualifiedTypeIdentifier
@@ -1451,9 +1469,7 @@ class QualifiedTypeIdentifier
 		_name = sb.toString
 		# TODO: would it be useful to set the _token.text to the name? Maybe it would help with syntax highlighting
 
-	get namedType as IType? is override
-		if _actualType
-			return _actualType
+	def _resolveType as IType is override
 		member = .compiler.symbolForName(_typeNodes[0].name, true, false)
 #		print
 #		print '_resolveType'
@@ -1476,8 +1492,7 @@ class QualifiedTypeIdentifier
 			else
 				.throwError('"[member]" cannot contain additional members.')
 		if member inherits IType
-			_actualType = member
+			return member
 		else
 			.throwError('The definition for "[_name]" is not a type.')
-		return _actualType
-		
+			return nil to passthrough  # CC: axe when 'always throws' for methods is available

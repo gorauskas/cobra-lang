@@ -14,7 +14,7 @@ class Box
 	var _genericTypeDef as Box?
 	var _constructedTypes as Dictionary<of String, IType>?
 
-	var _baseInterfaceNodes as List<of INode>
+	var _baseInterfaceNodes as List<of ITypeProxy>
 	var _baseInterfaces as List<of Interface>
 	var _baseInterfaceTypes as List<of IType>  # can include interfaces and qualified types (containing interfaces) TODO: another example of why QualifiedType should be replaced by TypeIdentifier
 
@@ -28,7 +28,7 @@ class Box
 		base.init(TokenFix.empty, 'x', List<of String>(), '')
 		assert false, 'CC: remove this constructor when unnecessary return statements can be removed'
 
-	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseInterfaceNodes as List<of INode>, docString as String?)
+	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseInterfaceNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, isNames, docString)
 		_params = paramList
 		for i = 0 .. _params.count
@@ -299,7 +299,7 @@ class Box
 		assert _baseInterfaceNodes, this
 		for node in _baseInterfaceNodes
 			try
-				baseWhat = node.bindInt().namedType
+				baseWhat = (node.bindInt to ITypeProxy).realType  # CC: axe cast
 				# TODO: strongly consider getting rid of QualifiedType and using TypeIdentifier in its place
 				if baseWhat inherits QualifiedType
 					baseWhat.bindInt()
@@ -477,7 +477,7 @@ class Box
 		_params = List<of IType>(_params)  # TODO: Can I just say _params.clone? Do I need the cast?
 		if _constructedTypes
 			_constructedTypes = Dictionary<of String, IType>(_constructedTypes)  # TODO: seems unlikely that a constructed type would want a copy of it's genericTypeDef's constructed type
-		_baseInterfaceNodes = List<of INode>(_baseInterfaceNodes)
+		_baseInterfaceNodes = List<of ITypeProxy>(_baseInterfaceNodes)
 		_baseInterfaces = List<of Interface>(_baseInterfaces)
 		_baseInterfaceTypes = List<of IType>(_baseInterfaceTypes)
 		_overloads = List<of MemberOverload>(_overloads)
@@ -613,9 +613,9 @@ class Class
 	inherits Box
 
 	var _baseClass as Class?
-	var _baseNode as INode?
+	var _baseNode as ITypeProxy?
 
-	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseNode as INode?, implementsNodes as List<of INode>, docString as String?)
+	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseNode as ITypeProxy?, implementsNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, paramList, isNames, implementsNodes, docString)
 		_baseNode = baseNode
 
@@ -696,7 +696,7 @@ class Class
 		base._bindBase
 		if _baseNode
 			_baseNode.bindInt()
-			possible = _baseNode.namedType
+			possible = _baseNode.realType
 			baseName = (_baseNode to AbstractTypeIdentifier).name
 			if possible is nil
 				.throwError('Cannot locate base class named "[baseName]" for class "[_name]".')
@@ -801,7 +801,7 @@ class Class
 class Interface
 	inherits Box
 
-	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseNodes as List<of INode>, docString as String?)
+	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, paramList, isNames, baseNodes, docString)
 
 	get englishName as String is override
@@ -854,7 +854,7 @@ class Interface
 class Struct
 	inherits Box
 
-	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseName as String?, interfaceNodes as List<of INode>, docString as String?)
+	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseName as String?, interfaceNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, paramList, isNames, interfaceNodes, docString)
 
 	def _bindInt is override
@@ -1027,14 +1027,14 @@ class GenericCallableConstraint
 class GenericTypeConstraint
 	inherits GenericConstraint
 	"""
-	Represents the generic constraint callable
+	Represents the generic constraint of a particular type.
 	"""
 
 	var _representedType as IType?
-	var _typeNode as ISyntaxNode
+	var _typeNode as ITypeProxy
 
-	def init(typeNode as ISyntaxNode)
-		base.init(typeNode.token)
+	def init(typeNode as ITypeProxy)
+		base.init((typeNode to ISyntaxNode).token)  # CC: could be potential for making arg a compound interface ISyntaxNode+ITypeProxy from the 'Speculative' list
 		_typeNode = typeNode
 
 	def isDescendantOf(type as IType) as bool is override
@@ -1054,7 +1054,7 @@ class GenericTypeConstraint
 		base._bindInt()
 		if _representedType is nil
 			_typeNode.bindInt()
-			_representedType = _typeNode.namedType
+			_representedType = _typeNode.realType
 			assert _representedType
 		if not _representedType inherits Class and not _representedType inherits Interface
 			.throwError('A generic type constraint must be a class or an interface. "[_representedType.name]" is not.')
