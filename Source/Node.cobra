@@ -1,13 +1,62 @@
-class CobraException
+class SourceException
 	inherits SystemException
+	"""
+	The abstract base class of all exceptions about the source code that is being compiled.
+	This includes both errors and warnings.
+	"""
+	# CC: make abstract
 
 	def init(msg as String)
 		base.init(msg)
 
+	get isError as bool
+		return true
+	
+	get hasSourceInfo as bool
+		"""
+		Return true if the error really has source information (filename and line number). The
+		`fileName` and `lineNum` properties will not be invoked if this returns false.
+		"""
+		return false
+		
+	get fileName as String
+		require .hasSourceInfo
+		return ''  # CC: use abstract
+
+	get lineNum as int
+		require .hasSourceInfo
+		return 0  # CC: use abstract
+	
+	def consoleString as String
+		type = if(.isError, 'error', 'warning')
+		if .hasSourceInfo
+			return '[.fileName]([.lineNum]): [type]: [.message]'
+		else
+			return '(no source info) [type]: ' + .message
+
+	def writeHtmlTo(dest as HtmlWriter)
+		type = if(.isError, 'error', 'warning')
+		tdClass = if(.isError, 'typeError', 'typeWarning')
+		if .hasSourceInfo
+			pathName = Path.combine(Environment.currentDirectory, .fileName)
+			fileLink = '<a class=fileName href="txmt://open/?url=file://[_urlEncode(pathName)]&line=[.lineNum]">[_htmlEncode(.fileName)]</a>'  # TODO: eliminate hard coding of TextMate URL scheme
+			dest.writeHtml('<tr class=[type]> <td class=fileName>[fileLink]</td> <td class=lineNum>[.lineNum]</td> <td class=[tdClass]> [type] </td> <td class=message>[_htmlEncode(.message)]</td> </tr>[dest.newLine]')
+		else
+			dest.writeHtml('<tr class=[type]> <td class=fileName></td> <td class=lineNum></td> <td class=[tdClass]> [type] </td> <td class=message>[_htmlEncode(.message)]</td> </tr>[dest.newLine]')
+
+	get trClass as String
+		return 'error'
+
+	def _htmlEncode(s as String) as String
+		return CobraCore.htmlEncode(s)
+
+	def _urlEncode(s as String) as String
+		return s  # TODO
+
 
 class NodeException
-	inherits CobraException
-
+	inherits SourceException
+	
 	var _node as INode
 	var _message as String
 
@@ -18,12 +67,15 @@ class NodeException
 
 	get node from var
 
-	get message as String is override
-		if _node inherits SyntaxNode
-			return '[_node.token.fileName]([_node.token.lineNum]): [_message]'
-		else
-			return _message
-
+	get hasSourceInfo as bool is override
+		return _node inherits ISyntaxNode
+		
+	get fileName as String is override
+		return (_node to ISyntaxNode).token.fileName
+		
+	get lineNum as int is override
+		return (_node to ISyntaxNode).token.lineNum
+		
 	def prefixMessage(s as String)
 		_message = s + _message
 
@@ -60,27 +112,8 @@ class NodeMultiException
 	get exceptions from var
 
 
-interface ISourceError
-	"""
-	All exceptions that represent errors in the Cobra source code being compiled implement ISourceError.
-	"""
-
-	get hasSourceInfo as bool
-		"""
-		Return true if the error really has source information (filename and line number). The
-		`fileName` and `lineNum` properties will not be invoked if this returns false.
-		"""
-
-	get fileName as String
-		# CC: require .hasSourceInfo
-
-	get lineNum as int
-		# CC: require .lineNum
-
-
 class SyntaxNodeException
 	inherits NodeException
-	implements ISourceError
 
 	var _synNode as ISyntaxNode
 
@@ -93,13 +126,13 @@ class SyntaxNodeException
 			base.init(node, msg)
 			_synNode = node
 
-	get hasSourceInfo as bool
+	get hasSourceInfo as bool is override
 		return true
 
-	get fileName as String
+	get fileName as String is override
 		return _synNode.token.fileName
 
-	get lineNum as int
+	get lineNum as int is override
 		return _synNode.token.lineNum
 
 

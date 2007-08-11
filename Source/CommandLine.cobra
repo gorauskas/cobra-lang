@@ -55,6 +55,19 @@ class CommandLine
 			'args': r'[=0|1|pdbonly|full]'
 		},
 		{
+			'name': 'detailed-stack-trace',
+			'synonyms': ['dst'],
+			'type': 'bool',
+			'description': 'Enable a detailed stack trace which gives great postmortem information for uncaught exceptions, but slows execution. Works in combination with -exception-report.',
+		},
+		{
+			'name': 'exception-report',
+			'synonyms': ['exc-rpt', 'er'],
+			'type': 'bool',
+			'description': 'Turn on an informative HTML report that will be generated if the program throws an uncaught exception.',
+			'default': '1',
+		},
+		{
 			'name': 'files',
 			'isAccumulator': true,
 			'description': 'Specify the files for Cobra to process. One per line; # comments respected.',
@@ -79,6 +92,11 @@ class CommandLine
 			'description': 'Keeps any intermediate files that Cobra generates, which are normally deleted. Example intermediate files are *.cobra.cs.',
 		},
 		{
+			'name': 'output-html',
+			'type': 'bool',
+			'description': "The command line's output will be in HTML.",
+		},
+		{
 			'name': 'reference',
 			'synonyms': ['r'],
 			'isAccumulator': true,
@@ -89,19 +107,6 @@ class CommandLine
 			'name': 'run',
 			'description': 'Runs the Cobra program. This is the default behavior if specify any Cobra source files.',
 			'type': 'main',
-		},
-		{
-			'name': 'exception-report',
-			'synonyms': ['exc-rpt', 'er'],
-			'type': 'bool',
-			'description': 'Turn on an informative HTML report that will be generated if the program throws an uncaught exception.',
-			'default': '1',
-		},
-		{
-			'name': 'detailed-stack-trace',
-			'synonyms': ['dst'],
-			'type': 'bool',
-			'description': 'Enable a detailed stack trace which gives great postmortem information for uncaught exceptions, but slows execution. Works in combination with -exception-report.',
 		},
 		{
 			'name': 'target',
@@ -149,6 +154,7 @@ class CommandLine
 
 	var _optionDict as Dictionary<of String, Object>?
 	var _pathList as List<of String>?
+	var _htmlWriter as HtmlWriter?
 
 	def init
 		_startTime = DateTime.now
@@ -214,34 +220,45 @@ class CommandLine
 			.doAbout
 			return
 		.parseArgs(args)
-		d = _optionDict
-		paths = _pathList to List<of String>  # CC: to !
-		if .verbosity > 0
-			print 'Cobra Command Line [CobraCore.version]'
-			if CobraCore.isRunningOnMono
-				print 'running on Mono'
-			print 'current directory: [Environment.currentDirectory]'
-			print 'option dictionary: [CobraCore.toTechString(d)]'
-			print 'paths: [CobraCore.toTechString(paths)]'
-		# TODO: use reflection here?
-		if _getOne(d, 'testify')
-			.doTestify(paths)
-		else if _getOne(d, 'run')
-			.doRun(paths)
-		else if _getOne(d, 'test')
-			.doTest(paths)
-		else if _getOne(d, 'compile')
-			.doCompile(paths)
-		else if _getOne(d, 'help')
-			.doHelp
-		else if _getOne(d, 'version')
-			.doVersion
-		else if _getOne(d, 'about')
-			.doAbout
-		else if not paths.count
-			.doHelp
+		if _optionDict.containsKey('output-html') and _optionDict['output-html'] to bool
+			dest as TextWriter = HtmlWriter(Console.out)
+			_htmlWriter = dest to HtmlWriter
 		else
-			.doRun(paths)
+			dest = Console.out
+		if _htmlWriter
+			stylePath = Path.combine(Path.getDirectoryName(CobraCore.exePath), 'output-html-styles.css')
+			_htmlWriter.writeHtml('<html><head><link href="file://[stylePath]" rel=stylesheet type="text/css"></head><body>[_htmlWriter.newLine]')
+		print to dest
+			d = _optionDict
+			paths = _pathList to List<of String>  # CC: to !
+			if .verbosity > 0
+				print 'Cobra Command Line [CobraCore.version]'
+				if CobraCore.isRunningOnMono
+					print 'running on Mono'
+				print 'current directory: [Environment.currentDirectory]'
+				print 'option dictionary: [CobraCore.toTechString(d)]'
+				print 'paths: [CobraCore.toTechString(paths)]'
+			# TODO: use reflection here?
+			if _getOne(d, 'testify')
+				.doTestify(paths)
+			else if _getOne(d, 'run')
+				.doRun(paths)
+			else if _getOne(d, 'test')
+				.doTest(paths)
+			else if _getOne(d, 'compile')
+				.doCompile(paths)
+			else if _getOne(d, 'help')
+				.doHelp
+			else if _getOne(d, 'version')
+				.doVersion
+			else if _getOne(d, 'about')
+				.doAbout
+			else if not paths.count
+				.doHelp
+			else
+				.doRun(paths)
+		if _htmlWriter
+			_htmlWriter.writeHtml('</body></html>[_htmlWriter.newLine]')
 
 	def _getOne(d as Dictionary<of String, Object>?, name as String) as bool
 		if d.containsKey(name)
@@ -437,7 +454,7 @@ class CommandLine
 		# set the class vars
 		_optionDict = valueDict
 		_pathList = fileList
-
+		
 	def doCompile(paths as List<of String>) as Compiler
 		return .doCompile(paths, true, false)
 
@@ -445,6 +462,7 @@ class CommandLine
 		c = Compiler(.verbosity)
 		c.options = _optionDict to Dictionary<of String, Object>    # CC: to !, CC: use extended syntax  # TODO
 		c.willPrintSuccessMsg = willPrintSuccessMsg
+		c.htmlWriter = _htmlWriter
 		try
 			c.parseFilesNamed(paths)
 			c.bindInt
@@ -477,7 +495,7 @@ class CommandLine
 				exeName = spec.substring(0, i)
 				args = spec.substring(i+1)
 				for error in c.errors
-					if error inherits ISourceError
+					if error.isError and error.hasSourceInfo
 						if error.fileName and error.fileName.trim <> ''
 							args = args.replace('FILE', error.fileName)
 							args = args.replace('LINE', error.lineNum.toString)
@@ -1012,3 +1030,31 @@ class CommandLine
 			line = line.replace("\t", "    ")
 			print '[lineNum]|[line]'  # CC: right align and pad 0 the lineNum
 			lineNum += 1
+
+
+class HtmlWriter
+	inherits TextWriter
+	"""
+	In support of the output-html option.
+	"""
+	
+	var _otherWriter as TextWriter
+	var _isWritingHtml as bool
+	
+	def init(otherWriter as TextWriter)
+		_otherWriter = otherWriter
+
+	get encoding as Encoding is override
+		return Encoding.default
+
+	def write(c as char) is override
+		_otherWriter.write(c)
+		if not _isWritingHtml and c == c'\n'
+			_otherWriter.write('<br>')
+
+	def writeHtml(html as String)
+		_isWritingHtml = true
+		try
+			.write(html)
+		finally
+			_isWritingHtml = false

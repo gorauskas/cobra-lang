@@ -1,5 +1,4 @@
 use System.Reflection
-use System.Text.RegularExpressions
 
 
 class StopCompilation
@@ -51,6 +50,8 @@ class Compiler
 	var _verbosity as int
 	var _options as Dictionary<of String, Object>
 	var _willPrintSuccessMsg = true
+	var _htmlWriter as HtmlWriter?
+	
 	var _globalNS as NameSpace
 	var _modules as List<of Module>
 	var _firstUserModuleIndex as int
@@ -63,9 +64,9 @@ class Compiler
 	var _isBindingInt as bool
 	var _isBindingImp as bool
 
-	var _errors as List<of CobraException>
-	var _warnings as List<of CobraWarning>
-	var _messages as List<of Object>  # all errors and warnings
+	var _errors as List<of SourceException>
+	var _warnings as List<of SourceException>
+	var _messages as List<of SourceException>  # all errors and warnings
 
 	var _intermediateFileNames as List<of String>
 	var _baseExeFileName as String = ''
@@ -82,9 +83,9 @@ class Compiler
 		_nameSpaceStack = Stack<of NameSpace>()
 		_boxStack = Stack<of Box>()
 		_codeMemberStack = Stack<of AbstractMethod>()
-		_errors = List<of CobraException>()
-		_messages = List<of Object>()
-		_warnings = List<of CobraWarning>()
+		_errors = List<of SourceException>()
+		_messages = List<of SourceException>()
+		_warnings = List<of SourceException>()
 		_intermediateFileNames = List<of String>()
 
 	def toString as String is override
@@ -122,6 +123,11 @@ class Compiler
 
 	get warnings from var
 
+	pro htmlWriter from var
+		"""
+		Set this to support the output-html command line option.
+		"""
+
 	get hasDetailedStackTraceOption as bool
 		# CC: return _options.get('detailed-stack-trace', false) to bool
 		if _options.containsKey('detailed-stack-trace')
@@ -136,15 +142,15 @@ class Compiler
 		else
 			return false
 
-	def recordError(ce as CobraException)
+	def recordError(error as SourceException)
 		"""
 		Node call this to record errors.
 		"""
-		if ce inherits NodeMultiException
-			for exc in ce.exceptions
-				_addError(exc)
+		if error inherits NodeMultiException
+			for exc in error.exceptions
+				_addMessage(exc)
 		else
-			_addError(ce)
+			_addMessage(error)
 
 	def addIntermediateFile(path as String)
 		_intermediateFileNames.add(path)
@@ -193,7 +199,7 @@ class Compiler
 					# @@ TODO: assert _globalNS is parser.nameSpaceStack[0]
 					try
 						module = parser.parseFileNamed(filename)
-					catch ce as CobraException
+					catch ce as SourceException
 						.recordError(ce)
 					success
 						assert module
@@ -339,7 +345,7 @@ class Compiler
 					try
 						_curModule = module
 						_curModule.bindInt
-					catch ce as CobraException
+					catch ce as SourceException
 						.recordError(ce)
 			finally
 				Node.setCompiler(nil)
@@ -360,7 +366,7 @@ class Compiler
 					try
 						_curModule = module
 						_curModule.bindImp
-					catch ce as CobraException
+					catch ce as SourceException
 						.recordError(ce)
 			finally
 				Node.setCompiler(nil)
@@ -428,6 +434,25 @@ class Compiler
 		throw StopCompilation(this)
 
 	def printMessages
+		if .htmlWriter
+			.printHtmlMessages
+		else
+			.printConsoleMessages
+	
+	def printHtmlMessages
+		require .htmlWriter
+		dest = .htmlWriter to HtmlWriter
+		dest.writeHtml('<table class=messages cellpadding=2 cellspacing=2>[dest.newLine]\n')
+		dest.writeHtml('<tr class=headings> <td class=heading> File </td> <td class=heading> Line </td> <td class=heading> Type </td> <td class=heading> Message </td> </tr>\n')
+		for msg in _messages
+			msg.writeHtmlTo(dest)
+		dest.writeHtml('</table>[dest.newLine]')
+		if _errors.count
+			dest.writeHtml('<span class=compilationFailed>[_compilationFailedMessage()]</span><br>\n')  # CC: axe ()s
+		else
+			dest.writeHtml('<span class=compilationSucceeded>Compilation succeeded - [_warnings.count] warning[if(_warnings.count==1,'','s')]</span><br>\n')
+
+	def printConsoleMessages
 		if _options.containsKey('color')
 			assert _options['color'] in [true, false]
 			willColor = _options['color'] to bool
@@ -437,23 +462,17 @@ class Compiler
 		if CobraCore.isRunningOnMono  # bug on mono: the initial Console.foregroundColor is not necessarily accurate (at least in bash on Terminal.app on Mac OS X 10.4.10 on Mono 1.2.4)
 			savedColor = ConsoleColor.Black  # this is really just a guess and possibly a bad one. should be controllable via a cmd line option or argument
 		for obj in _messages
-			if obj inherits CobraException
-				if willColor and not obj inherits CobraWarning
-					Console.foregroundColor = ConsoleColor.Red
-					restoreColor = true
-				print obj.message
-				if restoreColor
-					Console.foregroundColor = savedColor
-					restoreColor = false
-			else if obj inherits String
-				print obj
-			else
-				throw FallThroughException(obj)
+			if willColor and obj.isError
+				Console.foregroundColor = ConsoleColor.Red
+				restoreColor = true
+			print obj.consoleString
+			if restoreColor
+				Console.foregroundColor = savedColor
+				restoreColor = false
 		if _errors.count
 			if willColor
 				Console.foregroundColor = ConsoleColor.Red
-			print 'Compilation failed - ' stop
-			print '[_errors.count] error[if(_errors.count==1,'','s')], [_warnings.count] warning[if(_warnings.count==1,'','s')]'
+			print _compilationFailedMessage()  # CC: axe ()s
 			if willColor
 				Console.foregroundColor = savedColor
 		else
@@ -470,7 +489,10 @@ class Compiler
 					print
 			if willColor
 				Console.foregroundColor = savedColor
-				
+	
+	def _compilationFailedMessage as String
+		return 'Compilation failed - [_errors.count] error[if(_errors.count==1,'','s')], [_warnings.count] warning[if(_warnings.count==1,'','s')]'
+	
 	##
 	## Services to nodes
 	##
@@ -532,6 +554,7 @@ class Compiler
 		.warning(CobraWarning(node.token, msg))
 
 	def warning(cw as CobraWarning)
+		require not cw.isError
 		_warnings.add(cw)
 		_messages.add(cw)
 
@@ -577,13 +600,12 @@ class Compiler
 	## Services to this
 	##
 
-	def _addError(ce as CobraException)
-		_errors.add(ce)
-		_messages.add(ce)
-
-	def _addMessage(msg as String)
-		# typically used for C# compiler output that is auxilliary (extra error info, warnings)
-		_messages.add(msg)
+	def _addMessage(message as SourceException)
+		_messages.add(message)
+		if message.isError
+			_errors.add(message)
+		else
+			_warnings.add(message)
 
 
 	##
@@ -660,8 +682,6 @@ class Compiler
 		[r'/bin/gmcs', 'novell'],
 		[r'/usr/local/bin/gmcs', 'novell'],
 	]
-
-	# CC: when namespace bug is fixed: var _csNumberRegex = Regex(r' CS\d+', RegexOptions.Compiled)  # example: CS0183
 
 	get baseExeFileName from var
 		"""
@@ -779,7 +799,7 @@ class Compiler
 				if not line.length
 					continue
 				if 'error ' in line
-					_addError(SharpCompilationError(line, this))
+					_addMessage(SharpCompilationMessage(line, this))
 					hadError = true
 				else if 'Unreachable code detected' in line
 					# because Cobra forces you to put in a "return" stmt even though you have a "throw" and then C# warns about that  TODO: fix
@@ -794,10 +814,7 @@ class Compiler
 					# Novell Mono
 					pass
 				else
-					# CC: when namepsace bug is fixed, use the class var instead of a local -- cache the regex
-					csNumberRegex = Regex(r' CS\d+')  # example: CS0183
-					line = csNumberRegex.replace(line, '')
-					_addMessage(line)
+					_addMessage(SharpCompilationMessage(line, this))
 			if hadError  # TODO: change to "if _errors" like bindInt and bindImp and axe hadError
 				_exitFromErrors
 
@@ -820,7 +837,7 @@ class Compiler
 	def cobraLineNumForSharp(fileName as String, lineNum as int) as int
 		"""
 		Returns the source cobra line number given a filename (sans ".cs") and line number in the
-		generated C#. Used by SharpCompilationError.
+		generated C#. Used by SharpCompilationMessage.
 		"""
 		# for some reason the C# filenames come in with a lower case drive letter,
 		# and in 2006 strings are *still* case sensitive.
@@ -849,51 +866,55 @@ class Compiler
 			return sharpToCobraLineNum[lineNum]
 
 
-class SharpCompilationError
-	inherits CobraException
-	implements ISourceError
+class SharpCompilationMessage
+	inherits SourceException
 
-	var _msg as String
+	var _message as String
 	var _fileName as String?
 	var _lineNum as int?
-
+	var _isError as bool
+	
 	def init(line as String, compiler as Compiler)
 		base.init(line)
+		# example line:
+		# foo.cobra.cs(14,14): error CS0535: `Foo' does not implement interface member `IFoo.Baz()'
+		# trace line
 		line = line.trim
-		i = line.indexOf(': error')
-		if i<>-1
-			# kill the " error CS0234" part
-			j = line.indexOf(':', i+1)
-			line = line.substring(0, i+': error'.length) + line.substring(j)
-			# kill the ".cs"
-			line = line.replace('.cs', '')
-			# translate the line number
-			i = line.indexOf('(')
-			fileName = line.substring(0, i)
-			j = line.indexOf(',', i)
-			lineStr = line.substring(i+1, j-i-1)
+		i = line.indexOf('(')
+		if i <> -1
+			_fileName = line[:i-3]
+			j1 = line.indexOf(',', i)
+			j2 = line.indexOf(')', i)
+			j = if(j1 < j2, j1, j2)
+			lineStr = line[i+1:j]
 			sharpLineNum as int = int.parse(lineStr)  # CC: axe cast
-			lineNum = compiler.cobraLineNumForSharp(fileName, sharpLineNum)
-			end = line.indexOf(')', j)
-			line = line.substring(0, i+1) + lineNum.toString + line.substring(end)
+			_lineNum = compiler.cobraLineNumForSharp(_fileName to String, sharpLineNum)  # CC: axe cast
+			i = line.indexOf(':')
+			if i <> -1
+				line = line[i+1:].trim
+				_isError = line.startsWith('error')
+				i = line.indexOf(':')
+				if i <> -1 and i < line.length and line[i+1] == ' '
+					line = line[i+1:].trim
 			# add (sharp)
 			if compiler.verbosity or .isDevMachine
 				line += ' (C# [sharpLineNum])'
-			_fileName = fileName
-			_lineNum = lineNum
-		_msg = line
+		_message = line
 
 	get isDevMachine as bool
 		return Environment.getEnvironmentVariable('COBRA_IS_DEV_MACHINE') == '1'
 
+	get isError as bool is override
+		return _isError
+		
 	get message as String is override
-		return _msg
+		return _message
 
-	get hasSourceInfo as bool
+	get hasSourceInfo as bool is override
 		return _fileName is not nil
 
-	get fileName as String
+	get fileName as String is override
 		return _fileName to String  # CC: to !
 
-	get lineNum as int
+	get lineNum as int is override
 		return _lineNum to int  # CC: to !
