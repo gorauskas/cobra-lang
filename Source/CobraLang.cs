@@ -568,7 +568,7 @@ static public class CobraImp {
 			throw new SliceException(string.Format("Cannot use a step of zero for slices."));
 		// step is negative
 		if (start>stop)
-			throw new SliceException(string.Format("start={0} is less than start={1} for a negative step.", start, stop));
+			throw new SliceException(string.Format("start={0} is less than stop={1} for a negative step.", start, stop));
 		if (step>0) {
 			if (step!=1)
 				throw new SliceException(string.Format("step={0}, but only a step of 1 is currently supported", step));
