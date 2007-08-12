@@ -261,10 +261,20 @@ class AssignExpr
 			if _left.definition inherits Param
 				if _right inherits IdentifierExpr
 					if _right.definition inherits ClassVar
-						# TODO: this warning should not apply if this AssignExpr is in an if statement whose cond references the _left.definition
-						# example: if foo is nil; foo = _foo # where foo is an argument
-						# note: this will need a test case that generates no warnings. and the cobra test cases should probably barf on unexpected warnings
-						.compiler.warning(this, 'Setting a parameter to a class variable is often a mistake. You may want to reverse the assignment.')
+						# the exception to this warning is when the statement is guarded by an if which references the _left.definition, as in: if param is nil; param = _param
+						# TODO: this has a test case that generates no warnings. so the cobra test cases should probably barf on unexpected warnings
+						isException = false
+						if .parent inherits BlockStmt and (.parent to BlockStmt).parent inherits IfStmt
+							ifStmt = (.parent to BlockStmt).parent to IfStmt
+							if (bop = ifStmt.cond) inherits BinaryOpExpr
+								if (bop.left inherits NameExpr) and (bop.left to NameExpr).definition is _left.definition
+									isException = true
+								if (bop.right inherits NameExpr) and (bop.right to NameExpr).definition is _right.definition
+									isException = true
+						if not isException
+							leftName = (_left.definition to Param).name
+							rightName = (_right.definition to ClassVar).name
+							.compiler.warning(this, 'Setting a parameter ("[leftName]") to a class variable ("[rightName]") is often a mistake. You may want to reverse the assignment.')
 
 	def _writeSharpDef(sw as SharpWriter) is override
 		# TODO:

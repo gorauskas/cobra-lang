@@ -1,9 +1,18 @@
 class Stmt
 	inherits SyntaxNode
 
+	var _parent as INode?
+	
 	def init(token as IToken)
 		base.init(token)
 
+	pro parent from var
+		"""
+		The node that the statement belongs to. This is being set on an as-needed basis.
+		Typical needs are for error checking, but could also include other purposes such as code generation.
+		The common place to set a node's `parent` is in the `_bindImp` of the parent 
+		"""
+		
 	get lastToken as IToken
 		return .token
 
@@ -253,6 +262,7 @@ class BlockStmt
 	def _bindImp
 		base._bindImp
 		for stmt in _stmts
+			stmt.parent = this
 			try
 				stmt.bindImp
 				stmt.afterStatementBindImp  # to let expressions know when they are used as statements
@@ -563,6 +573,12 @@ class IfStmt
 		_trueStmts  = trueStmts
 		_falseStmts = falseStmts
 
+	get cond from var
+	
+	get trueStmts from var
+	
+	get falseStmts from var
+	
 	get lastToken as IToken is override
 		if _falseStmts
 			return _falseStmts.lastToken
@@ -646,11 +662,13 @@ class IfStmt
 					_trueStmts.setIfInherits(leftVar, leftVar.ifInheritsStack.peek)
 				else
 					throw FallThroughException(leftVar)
+		_trueStmts.parent = this
 		_trueStmts.bindImp
 		if ifInherits
 			if leftVar inherits IVar  # CC: put with above "if" via "and" once "if inherits" is smart enough
 				leftVar.ifInheritsStack.pop
 		if _falseStmts
+			_falseStmts.parent = this
 			_falseStmts.bindImp
 
 	def writeSharpDef(sw as SharpWriter)
