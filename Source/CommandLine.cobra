@@ -821,10 +821,7 @@ class CommandLine
 		if verbose
 			.printSource(source)
 			print bar
-		# TODO: why doesn't the following line work?
-		# firstLine as String = source.split([c'\n'].toArray, 1)[0]  # CC: axe "as String"
-		firstLine = source.split(c'\n')[0] to String
-
+		firstLine = source.split(c'\n')[0]
 		firstLineInsensitive = firstLine.trim.replace(' ', '')
 		if firstLineInsensitive.startsWith('#.error.')
 			# CC: support split with a String extension method
@@ -984,17 +981,24 @@ class CommandLine
 		p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
 		if _verbosity >= 1
 			print 'c.fullExeFileName = "[c.fullExeFileName]"'
-		p.startInfo.fileName = c.baseExeFileName + if(c.platform==PlatformEnum.Novell, '.exe', '')
+		if c.platform == PlatformEnum.Novell
+			# Lameness. The Process class should be able to handle Mono executables directly.
+			p.startInfo.fileName = 'mono'
+			p.startInfo.arguments = c.baseExeFileName + '.exe'
+		else
+			p.startInfo.fileName = c.baseExeFileName
 		if _verbosity >= 2
 			print '[p.startInfo.fileName] [p.startInfo.arguments]'
-		p.startInfo.redirectStandardOutput = true
-		p.startInfo.redirectStandardError = true
-		p.startInfo.useShellExecute = false
-		output = CobraCore.runAndCaptureAllOutput(p)
-
+		output = CobraCore.runAndCaptureAllOutput(p).trim
+		
 		print 'Output:'
-		print output
-		if output.toLower.indexOf('unhandled exception')<>-1
+		if output.length
+			print output
+		if p.exitCode <> 0
+			print 'Exit code = [p.exitCode]'
+			.failed
+			return 0
+		if output.toLower.indexOf('unhandled exception') <> -1
 			.failed
 			return 0
 
