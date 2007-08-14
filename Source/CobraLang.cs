@@ -841,10 +841,15 @@ static public class CobraImp {
 				throw new CannotReadPropertyException(obj, propertyName, type);
 			}
 		} else {
-			FieldInfo fi = type.GetField(propertyName, FieldFlags);
-			if (fi!=null)
-				return fi.GetValue(obj);
-			throw new UnknownMemberException(obj, propertyName, type);
+			MethodInfo mi = type.GetMethod(propertyName, Type.EmptyTypes); // example Cobra that gets here: obj.getType
+			if (mi!=null) {
+				return mi.Invoke(obj, null);
+			} else {
+				FieldInfo fi = type.GetField(propertyName, FieldFlags);
+				if (fi!=null)
+					return fi.GetValue(obj);
+				throw new UnknownMemberException(obj, propertyName, type);
+			}
 		}
 
 	}
