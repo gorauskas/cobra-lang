@@ -708,23 +708,43 @@ class CompareExpr
 			throw FallThroughException(op)
 
 
+interface IDotRightExpr
+	"""
+	IDotRightExpr is an expression that can appear on the right hand side of a DotExpr.
+	Implemented by MemberExpr and CallExpr.
+	"""
+	get name as String
+	get member as IMember?
+	
+
 class DotExpr
 	inherits BinaryOpExpr
 	implements ITypeProxy
+
+	var _dotRightExpr as IDotRightExpr
 	
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
+		require right inherits IDotRightExpr 
 		base.init(opToken, op, left, right)
+		_dotRightExpr = right to IDotRightExpr
 
 	def _bindImp
 		base._bindImp
+
+		# use of base implies override if the containing member is not already marked new
+		if _left inherits BaseLit
+			.compiler.curCodeMember.usesBase
+
 		if not _type
 			assert _right.type
 			_type = _right.type
 		if _left.type.isDynamic
 			_type = .compiler.dynamicType
-		# use of base implies override if the containing member is not already marked new
-		if _left inherits BaseLit
-			.compiler.curCodeMember.usesBase
+		else if not _left.hasErrors and not _right.hasErrors
+			if _left inherits IdentifierExpr
+				if _left.definition inherits Box # CC: combine with above if statement
+					if not _dotRightExpr.member.isShared
+						.throwError('Cannot invoke instance member "[_dotRightExpr.name]" on type "[_left.name]".')
 
 	get realType as IType?
 		# overridden to return the type this dotted expr represents in those cases when it does represent a type

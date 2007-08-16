@@ -337,7 +337,14 @@ class AsExpr
 
 class CallExpr
 	inherits Expr
-
+	implements IDotRightExpr
+	"""
+	A CallExpr may be on the right side of a dot expression as in `obj.foo(x, y)` but it could also be `SomeType()` or `_someMember(x, y)`.
+	
+	It might be a nice clean up in the future to treat `_someMember(x, y)` as `._someMember(x, y)` and transform `SomeType()` to
+	something like an InstantiateExpr. But right now there is no provision for _bindImp being able to transform the current instance.
+	"""
+	
 	var _name as String
 	var _args as List<of Expr>
 	var _definition as INamedNode?
@@ -380,6 +387,9 @@ class CallExpr
 	get args from var
 
 	get definition from var
+
+	get member as IMember?
+		return _definition to? IMember
 
 	def _bindImp is override
 		base._bindImp()
@@ -1087,6 +1097,7 @@ class IsNotNilExpr
 
 class MemberExpr
 	inherits Expr
+	implements IDotRightExpr
 	"""
 	Example members are fields and properties and methods without arguments.
 	"""
@@ -1107,6 +1118,9 @@ class MemberExpr
 		.addField('definition', _definition)
 
 	get definition from var
+
+	get member as IMember?
+		return _definition
 
 	get isCalling as bool is override
 		assert _definition
