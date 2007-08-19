@@ -306,6 +306,19 @@ static public class CobraImp {
 			sb.Append("}");
 			return sb.ToString();
 		}
+		if (x is System.Collections.IEnumerable) {
+			// TODO: should not go into infinite loop for circular references
+			System.Collections.IEnumerable ienum = (System.Collections.IEnumerable)x;
+			StringBuilder sb = new StringBuilder();
+			sb.AppendFormat("{0}{1}", TypeName(x.GetType()), "[");
+			string sep = "";
+			foreach (object item in ienum) {
+				sb.AppendFormat("{0}{1}", sep, ToTechString(item));
+				sep = ", ";
+			}
+			sb.Append("]");
+			return sb.ToString();
+		}
 		if (x is System.Enum) {
 			return x.GetType().Name + "." + x.ToString() + " enum";
 		}
