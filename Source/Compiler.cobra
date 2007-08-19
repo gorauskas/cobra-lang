@@ -796,6 +796,8 @@ class Compiler
 				line = line.trim
 				if not line.length
 					continue
+				if SharpCompilationMessage.willSkipMessage(line)
+					continue
 				if 'error ' in line
 					_addMessage(SharpCompilationMessage(line, this))
 					hadError = true
@@ -867,12 +869,22 @@ class Compiler
 class SharpCompilationMessage
 	inherits SourceException
 
+	def willSkipMessage(msg as String) as bool is shared
+		# comes up on Novell Mono: '/Library/Frameworks/Mono.framework/Versions/1.2.4/lib/mono/2.0/mscorlib.dll (Location of the symbol related to previous error)'
+		if '.dll' in msg
+			if msg.endsWith(' (Location of the symbol related to previous error)')
+				return true
+			if msg.endsWith(' (Location of the symbol related to previous warning)')
+				return true
+		return false
+		
 	var _message as String
 	var _fileName as String?
 	var _lineNum as int?
 	var _isError as bool
 	
 	def init(line as String, compiler as Compiler)
+		require not .willSkipMessage(line)
 		base.init(line)
 		# example line:
 		# foo.cobra.cs(14,14): error CS0535: `Foo' does not implement interface member `IFoo.Baz()'
