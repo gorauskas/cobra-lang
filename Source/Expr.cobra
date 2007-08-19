@@ -76,6 +76,10 @@ class Expr
 			.type
 		body
 			t = _receiverType ? _type  # TODO: change to .receiverType
+			if (type = t) inherits IType
+				member = type.memberForName(name)
+				if member
+					return member
 			# TODO: change code below to something like. if container inherits IContainer ...
 			while true
 				if t inherits QualifiedType  # TODO: another example of QualifiedType being a pain
@@ -910,6 +914,7 @@ class IndexExpr
 	var _target as Expr
 	var _args as List<of Expr>
 	var _isArrayType as bool
+	var _definition as IMember?
 	
 	def init(token as IToken, target as Expr, args as List<of Expr>)
 		base.init(token)
@@ -944,7 +949,8 @@ class IndexExpr
 	def _bindImp is override
 		base._bindImp()
 		_target.bindImp()
-		if _args.count == 0
+		args = _args
+		if args.count == 0
 			if _target.isKindOf(.compiler.libraryType('System', 'Type'))
 				if _target inherits ITypeProxy
 					_type = ArrayType(_target.realType)
@@ -954,22 +960,60 @@ class IndexExpr
 					.throwError('Unknown array type.')
 			else
 				.throwError('Invalid index expression or array type.')
-		for arg in _args
+		hasArgError = false
+		for arg in args
 			try
 				arg.bindImp()
 			catch ne as NodeException
+				hasArgError = true
 				.compiler.recordError(ne)
-		if _type is nil
+		target = .target
+		if hasArgError or target.hasErrors
+			_type = .compiler.passThroughType
+		else if _type is nil
 			# CC: use a list comprehension to get the types
-			# _type = _target.type.indexType(for arg in _args get arg.type)
+			# _type = _target.type.indexType(for arg in args get arg.type)
 			argTypes = List<of IType>()
-			for arg in _args
+			for arg in args
 				argTypes.add(arg.type to IType)  # CC: to !
-			_type = _target.type.indexType(argTypes)
-			if _type is nil
-				name = ns'[]'
-				.throwError('Cannot find a definition for "[name]" in "[_target.type.name]".')
-			# TODO: need to lookup the member and (1) check type compatibility and (2) set context type for each arg
+			_definition = target.memberForName(r'[]')  # TODO: will this need to be 'Index' to match DLLs/C#/VB?
+			if _definition is nil
+				if target.receiverType is .compiler.passThroughType
+					_type = .compiler.passThroughType
+					return
+				if target.receiverType.isDynamic
+					_type = .compiler.dynamicType
+					return
+				.throwError('Cannot find an indexer in "[target.toCobraSource]" whose type is "[target.receiverType.name]".')
+			assert _definition
+			if _definition inherits MemberOverload
+				# TODO
+				pass
+			else if _definition inherits Indexer
+				indexer = _definition to Indexer  # CC: axe cast
+				params = indexer.params
+				if args.count <> params.count
+					.throwError('The method "[_definition.name]" is expecting [params.count] arguments, but [args.count] are being supplied in this call.')
+				for i = 0 .. args.count
+					arg = args[i]
+					param = params[i]
+					if arg.hasError
+						break
+					assert arg.didBindImp, arg
+					assert param.didBindInt, param
+					if arg.canBeAssignedTo(param.type)
+						arg.contextType = param.type
+					else
+						if false
+							print '<> arg = ' stop
+							arg.writeDeepString()
+							print '<> param = ' stop
+							param.writeDeepString()
+						.throwError('Argument [i+1] of indexer expects type [param.type.name], but the call is supplying type [arg.type.name].')
+			else
+				throw FallThroughException(_definition)
+			_type = _definition.resultType
+			assert _type
 
 	def toCobraSource as String is override
 		sb = StringBuilder()
@@ -1153,6 +1197,7 @@ class MemberExpr
 					.binarySuperNode.type = .type
 					return
 				if _name=='toString'
+					# TODO: get rid of this hack. make all structs and interfaces have System.Object as their base
 					_type = .compiler.libraryType('System', 'String')
 					.binarySuperNode.type = .type
 					return
