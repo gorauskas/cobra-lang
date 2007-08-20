@@ -247,6 +247,7 @@ class Tokenizer
 	var _stream as TextReader?
 
 	var _lastToken as IToken?
+	var _curToken as IToken?
 	var _tokenDefsStack = Stack<of TokenDefSet>()
 	var _tokenQueue as Queue<of IToken>  # needed when token methods return lists of tokens
 
@@ -307,6 +308,11 @@ class Tokenizer
 
 	get curTokenDef from var
 
+	get curToken from var
+		"""
+		Returns the current token being processed. Often examined when catching a TokenizerError.
+		"""
+
 	get lastToken from var
 
 	get didStart from var
@@ -319,6 +325,7 @@ class Tokenizer
 	def _reset
 		_fileName = nil
 		_stream = nil
+		_curToken = nil
 		_lastToken = nil
 
 		_sourceLine = nil
@@ -577,9 +584,9 @@ class Tokenizer
 					text = match.toString
 					#print '<> Match! [CobraCore.toTechString(text)] - [tokenDef]'
 					# tok = Token(_fileName, _lineNum, _colNum, _charNum, tokenDef.which, text, text) to ? # CC
-					tok as IToken?
-					tok = Token(_fileName, _lineNum, _colNum, _charNum, tokenDef.which, text, text)
+					tok as IToken? = Token(_fileName, _lineNum, _colNum, _charNum, tokenDef.which, text, text)
 					len = text.length
+					_curToken = tok
 					_colNum += len
 					_charNum += len
 					_sourceLineIndex += len
@@ -599,7 +606,6 @@ class Tokenizer
 					if meth
 						try
 							tok = meth.invoke(this, @[tok]) to IToken  # CC: to IToken?
-							#tok = meth.invoke(this, [tok].toArray()) to IToken  # CC: to IToken?
 						catch tie as TargetInvocationException
 							throw tie.innerException
 						if tok is nil
@@ -637,7 +643,7 @@ class Tokenizer
 				trace _originalSourceLine
 			.throwError('Lexical error: "[_originalSourceLine[_sourceLineIndex]]" ([_originalSourceLine[_sourceLineIndex] to int])')
 			# ^ no source location information is included in the error message as that should be pulled
-			#   from TokenizerError.tokenzier.lastToken.
+			#   from TokenizerError.tokenzier.curToken or .lastToken
 			return nil
 		finally
 			_avgCount += count
