@@ -33,22 +33,22 @@ public class CobraDirectString : Object {
 }
 
 
-public class AssertException : Exception {
+public class AssertException : Exception, IHasSourceInfo {
 
-	protected string   _fileName;
-	protected int      _lineNumber;
-	protected object[] _expressions;
-	protected object   _this;
-	protected object   _info;
+	protected string     _fileName;
+	protected int        _lineNumber;
+	protected SourceInfo _sourceInfo;
+	protected object[]   _expressions;
+	protected object     _this;
+	protected object     _info;
 
-	public AssertException(string fileName, int lineNumber, object[] expressions, object thiss, object info)
-		: this(fileName, lineNumber, expressions, thiss, info, null) {
+	public AssertException(SourceInfo sourceInfo, object[] expressions, object thiss, object info)
+		: this(sourceInfo, expressions, thiss, info, null) {
 	}
 
-	public AssertException(string fileName, int lineNumber, object[] expressions, object thiss, object info, Exception innerExc)
+	public AssertException(SourceInfo sourceInfo, object[] expressions, object thiss, object info, Exception innerExc)
 		: base("assert", innerExc) {
-		_fileName = fileName;
-		_lineNumber = lineNumber;
+		_sourceInfo = sourceInfo;
 		_expressions = expressions;
 		_this = thiss;
 		_info = info;
@@ -57,9 +57,9 @@ public class AssertException : Exception {
 	public override string Message {
 		get {
 			StringBuilder sb = new StringBuilder("\n");
-			sb.AppendFormat("location = {0}:{1}\n", _fileName, _lineNumber);
-			sb.AppendFormat("info     = {0}\n", ToTechString(_info));
-			sb.AppendFormat("this     = {0}\n", ToTechString(_this));
+			sb.AppendFormat("sourceInfo = {0}\n", _sourceInfo);
+			sb.AppendFormat("info       = {0}\n", ToTechString(_info));
+			sb.AppendFormat("this       = {0}\n", ToTechString(_this));
 			int indentLevel = 1;
 			int i = 1;
 			while (i < _expressions.Length) {
@@ -99,6 +99,12 @@ public class AssertException : Exception {
 	public object Info {
 		get {
 			return _info;
+		}
+	}
+
+	public SourceInfo SourceInfo {
+		get {
+			return _sourceInfo;
 		}
 	}
 
@@ -143,12 +149,12 @@ public class RequireException : AssertException {
 
 	RequireException _next;
 
-	public RequireException(string fileName, int lineNumber, object[] expressions, object thiss, object info)
-		: this(fileName, lineNumber, expressions, thiss, info, null) {
+	public RequireException(SourceInfo sourceInfo, object[] expressions, object thiss, object info)
+		: this(sourceInfo, expressions, thiss, info, null) {
 	}
 
-	public RequireException(string fileName, int lineNumber, object[] expressions, object thiss, object info, Exception innerExc)
-		: base(fileName, lineNumber, expressions, thiss, info, innerExc) {
+	public RequireException(SourceInfo sourceInfo, object[] expressions, object thiss, object info, Exception innerExc)
+		: base(sourceInfo, expressions, thiss, info, innerExc) {
 	}
 
 	public RequireException Next {
@@ -165,12 +171,12 @@ public class RequireException : AssertException {
 
 public class EnsureException : AssertException {
 
-	public EnsureException(string fileName, int lineNumber, object[] expressions, object thiss, object info)
-		: this(fileName, lineNumber, expressions, thiss, info, null) {
+	public EnsureException(SourceInfo sourceInfo, object[] expressions, object thiss, object info)
+		: this(sourceInfo, expressions, thiss, info, null) {
 	}
 
-	public EnsureException(string fileName, int lineNumber, object[] expressions, object thiss, object info, Exception innerExc)
-		: base(fileName, lineNumber, expressions, thiss, info, innerExc) {
+	public EnsureException(SourceInfo sourceInfo, object[] expressions, object thiss, object info, Exception innerExc)
+		: base(sourceInfo, expressions, thiss, info, innerExc) {
 	}
 
 }

@@ -629,6 +629,17 @@ class AbstractMethod
 
 	get sharpResultVarName from var
 
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		.compiler.codeMemberStack.push(this)
+		try
+			.innerWriteSharpDef(sw)
+		finally
+			.compiler.codeMemberStack.pop
+
+	def innerWriteSharpDef(sw as SharpWriter)
+		pass
+		
 	def writeSharpImp(sw as SharpWriter, skipFirst as bool)
 		.compiler.codeMemberStack.push(this)
 		try
@@ -866,8 +877,8 @@ class Constructor
 				
 	## Code gen
 
-	def writeSharpDef(sw as SharpWriter) is override
-		base.writeSharpDef(sw)
+	def innerWriteSharpDef(sw as SharpWriter)
+		base.innerWriteSharpDef(sw)
 		first = if(_stmts.count, _stmts[0], nil)
 		callConstructor as String? = nil
 		if first inherits DotExpr
@@ -976,8 +987,8 @@ class Method
 			
 	## Code gen
 
-	def writeSharpDef(sw as SharpWriter) is override
-		base.writeSharpDef(sw)
+	def innerWriteSharpDef(sw as SharpWriter)
+		base.innerWriteSharpDef(sw)
 		name = .sharpName
 		returnType = _returnType ? .compiler.voidType to IType  # CC: axe cast
 		if _implementsType
@@ -1194,8 +1205,8 @@ class ProperDexerXetter
 		# not the get or set part
 		_parent.usesBase
 
-	def writeSharpDef(sw as SharpWriter) is override
-		base.writeSharpDef(sw)
+	def innerWriteSharpDef(sw as SharpWriter)
+		base.innerWriteSharpDef(sw)
 		sw.write(.xetPartName)
 		.writeSharpImp(sw, false)
 
@@ -1490,7 +1501,7 @@ class RequirePart
 			expr.writeSharpDef(sw)
 			sw.write(') ')
 			sw.indent
-			sw.write('throw new RequireException([Utils.csStringLitFor(expr.token.fileName)], [expr.token.lineNum], ')
+			sw.write('throw new RequireException([expr.sharpSourceInfo], ')
 			expr.writeSharpBreakdown(sw)
 			sw.write('[.sharpThis], null);\n')
 			sw.dedent
@@ -1568,7 +1579,7 @@ class EnsurePart
 			expr.writeSharpDef(sw)
 			sw.write(') ')
 			sw.indent
-			sw.write('throw new EnsureException([Utils.csStringLitFor(expr.token.fileName)], [expr.token.lineNum], ')
+			sw.write('throw new EnsureException([expr.sharpSourceInfo], ')
 			expr.writeSharpBreakdown(sw)
 			sw.write('[.sharpThis], null);\n')
 			sw.dedent

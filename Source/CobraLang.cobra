@@ -384,7 +384,11 @@ namespace Cobra
 						value = obj.toString to Object
 					catch exc as Exception
 						value = 'Caught exception while reading value: [exc.toString]'
-					_writeObjectPair1(tw, 1, 'toString', .htmlFormat(value.toString))
+					row = 1
+					if obj inherits IHasSourceInfo
+						_writeObjectPair1(tw, row, 'at', obj.sourceInfo.htmlForAt)
+						row += 1
+					_writeObjectPair1(tw, row, 'toString', .htmlFormat(value.toString))
 					propInfos = List<of System.Reflection.PropertyInfo>(obj.getType.getProperties)
 					# CC: propInfos.sort(def(a as PropertyInfo, b as PropertyInfo)=a.name.compareTo(b.name))
 					# ... sort propInfos by name
@@ -400,7 +404,6 @@ namespace Cobra
 								propInfos[j] = propInfos[j+1]
 								propInfos[j+1] = swap
 								didSort = true
-					i = 1
 					for propInfo as System.Reflection.PropertyInfo in propInfos  # CC: axe explicit type
 						if propInfo.canRead and not propInfo.getGetMethod.isStatic and propInfo.name not in ['Clone', 'Copy', 'Item']
 							if propInfo.name == 'MetadataToken'  # problems on mono. http://bugzilla.ximian.com/show_bug.cgi?id=82161
@@ -412,11 +415,11 @@ namespace Cobra
 									value = .htmlFormat('Caught exception while reading value: [exc.toString]')
 								success
 									value = _htmlForValue(value, objects)
-							_writeObjectPair1(tw, i%2+1, propInfo.name, value)
-							i += 1
+							_writeObjectPair1(tw, row%2+1, propInfo.name, value)
+							row += 1
 					extendMethod = obj.getType.getMethod('ExtendObjectTable')
 					if extendMethod
-						view = PrivateObjectViewForExceptionReport(tw, i, objects)
+						view = PrivateObjectViewForExceptionReport(tw, row, objects)
 						extendMethod.invoke(obj, @[view])
 						i = view.rowNum
 					# TODO: ack! cannot do this until qualified type problems are fixed up
@@ -767,6 +770,9 @@ namespace Cobra
 				"""
 				pass
 
+		interface IHasSourceInfo
+			get sourceInfo as SourceInfo
+
 		class SourceInfo
 			"""
 			A SourceInfo instance captures the source location of a statement or expression, as in the
@@ -789,11 +795,12 @@ namespace Cobra
 				_object = obj
 
 			def toString as String is override
-				fileName = CobraCore.toTechString(_fileName)
-				className = CobraCore.toTechString(_className)
-				memberName = CobraCore.toTechString(_memberName)
-				obj = CobraCore.toTechString(_object)
-				return '[.getType.name]([fileName], [_lineNum], [className], [memberName], [obj])'
+				#fileName = CobraCore.toTechString(_fileName)
+				#className = CobraCore.toTechString(_className)
+				#memberName = CobraCore.toTechString(_memberName)
+				#obj = CobraCore.toTechString(_object)
+				#return '[.getType.name]([fileName], [_lineNum], [className], [memberName], [obj])'
+				return '[_fileName]:[_lineNum] in [_className].[_memberName] for object [CobraCore.toTechString(_object)]'
 
 			get fileName from var
 
@@ -825,6 +832,25 @@ namespace Cobra
 							sb.append('[sep]subclass [name]')
 					return sb.toString
 
+			get htmlForAt as String
+				"""
+				Returns the HTML for the row labeled "at" in the Cobra Exception Report.
+				This will be an actual link if the environment variable COBRA_EDIT_LINK is set.
+				That's what enables clicking on sources in the report to jump to their location in a text editor.
+				"""
+				baseName = System.IO.Path.getFileName(_fileName) # CC: no qual
+				dirName = System.IO.Path.getDirectoryName(_fileName) # CC: no qual
+				if dirName <> ''
+					dirName = ' in ' + (dirName to String)
+				s = 'line [_lineNum] of [baseName][dirName]'
+				editLink = Environment.getEnvironmentVariable('COBRA_EDIT_LINK')
+				if editLink
+					editLink = editLink.replace('FILE', _fileName)  # TODO: url encode the file name
+					editLink = editLink.replace('LINE', _lineNum.toString)
+					s = '<a href="[editLink]">[s]</a>'
+				return s
+
+				
 		class CobraFrame
 		
 			var _declClassName as String

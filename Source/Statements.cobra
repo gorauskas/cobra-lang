@@ -98,6 +98,17 @@ class Stmt
 		_canSetLine = .compiler.hasDetailedStackTraceOption and .compiler.codeMemberStack.count and .compiler.curBox.name <> 'CobraFrame'
 		# the code member stack can be empty because of class vars (ex: var _foo = true)
 
+	get sharpSourceInfo as String
+		codeMember = .compiler.curCodeMember
+		tok = .token
+		fileName = tok.fileName
+		if not Path.isPathRooted(fileName)
+			fileName = Path.combine(Environment.currentDirectory, fileName)
+		fileName = Utils.csStringLitFor(fileName)
+		boxName = Utils.csStringLitFor(codeMember.box.name)
+		memberName = Utils.csStringLitFor(codeMember.name)
+		return 'new SourceInfo([fileName], [tok.lineNum], [boxName], [memberName], [codeMember.sharpThis])'
+
 	get sharpThis as String
 		return .compiler.curCodeMember.sharpThis
 
@@ -140,8 +151,7 @@ class AssertStmt
 		_expr.writeSharpDef(sw)
 		sw.write(') ')
 		sw.indent
-		fileName = Utils.csStringLitFor(.fileName)
-		sw.write('throw new AssertException([fileName], [.lineNum], ')
+		sw.write('throw new AssertException([.sharpSourceInfo], ')
 		_expr.writeSharpBreakdown(sw)
 		sw.write('[.sharpThis], ')
 		if _info
@@ -828,13 +838,6 @@ class TraceStmt
 	def init(token as IToken, codePart as AbstractMethod)
 		base.init(token)
 		_codePart = codePart
-
-	get sharpSourceInfo as String
-		tok = .token
-		fileName = Utils.csStringLitFor(tok.fileName)
-		boxName = Utils.csStringLitFor(_codePart.box.name)
-		memberName = Utils.csStringLitFor(_codePart.name)
-		return 'new SourceInfo([fileName], [tok.lineNum], [boxName], [memberName], [_codePart.sharpThis])'
 
 
 class TraceLocationStmt
