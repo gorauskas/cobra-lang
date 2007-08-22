@@ -521,6 +521,7 @@ class Compiler
 		Used to retrieve types such as System.String.
 		Example:
 			.compiler.libraryType('System', 'String')
+		TODO: In retrospect, the argument should just be 'System.String'
 		"""
 		ns as IContainer = _globalNS
 		thing as IContainer? = nil
@@ -540,6 +541,9 @@ class Compiler
 			return thing
 		else
 			throw FallThroughException('found [name], but it is not an IType. it is [thing]')
+			
+	def classType(names as vari String) as Class
+		return .libraryType(names) to Class
 
 	def suggestionFor(name as String) as String?
 		require name
@@ -893,23 +897,29 @@ class SharpCompilationMessage
 		_isError = ' error ' in line
 		i = line.indexOf('(')
 		if i <> -1
-			_fileName = line[:i-3]
+			fileName = line[:i-3]
 			j1 = line.indexOf(',', i)
 			j2 = line.indexOf(')', i)
 			j = if(j1 < j2, j1, j2)
 			lineStr = line[i+1:j]
-			sharpLineNum as int = int.parse(lineStr)  # CC: axe cast
-			_lineNum = compiler.cobraLineNumForSharp(_fileName to String, sharpLineNum)  # CC: axe cast
-			i = line.indexOf(':')
-			if i <> -1
-				line = line[i+1:].trim
-				_isError = line.startsWith('error')
+			try  # CC: use tryParse
+				sharpLineNum as int = int.parse(lineStr)  # CC: axe cast
+			catch
+				if compiler.verbosity or .isDevMachine
+					line += ' (C#)'
+			success
+				_fileName = fileName
+				_lineNum = compiler.cobraLineNumForSharp(_fileName to String, sharpLineNum)  # CC: axe cast
 				i = line.indexOf(':')
-				if i <> -1 and i < line.length and line[i+1] == ' '
+				if i <> -1
 					line = line[i+1:].trim
-			# add (sharp)
-			if compiler.verbosity or .isDevMachine
-				line += ' (C# [sharpLineNum])'
+					_isError = line.startsWith('error')
+					i = line.indexOf(':')
+					if i <> -1 and i < line.length and line[i+1] == ' '
+						line = line[i+1:].trim
+				# add (sharp)
+				if compiler.verbosity or .isDevMachine
+					line += ' (C# [sharpLineNum])'
 		_message = line
 
 	get isDevMachine as bool

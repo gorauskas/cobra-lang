@@ -14,6 +14,7 @@ class Box
 	var _genericTypeDef as Box?
 	var _constructedTypes as Dictionary<of String, IType>?
 
+	var _baseClass as Class?
 	var _baseInterfaceNodes as List<of ITypeProxy>
 	var _baseInterfaces as List<of Interface>
 	var _baseInterfaceTypes as List<of IType>  # can include interfaces and qualified types (containing interfaces) TODO: another example of why QualifiedType should be replaced by TypeIdentifier
@@ -48,6 +49,7 @@ class Box
 	def addRefFields is override
 		base.addRefFields()
 		.addField('genericTypeDef', _genericTypeDef)
+		.addField('baseClass', _baseClass)
 
 	def addSubFields is override
 		base.addSubFields()
@@ -56,6 +58,8 @@ class Box
 			.addField('baseInterfaces', _baseInterfaces)
 		else
 			.addField('baseInterfaceNodes', _baseInterfaceNodes)
+
+	get baseClass from var
 
 	get baseInterfaces from var
 	
@@ -169,6 +173,8 @@ class Box
 			else
 				return p
 		x = .declForName(name)
+		if x is nil and _baseClass
+			x = _baseClass.symbolForName(name, canBeMember, haveThis)
 		if x is nil
 			x = .interfaceMemberForName(name)
 		if x and not haveThis
@@ -252,30 +258,31 @@ class Box
 
 	## Binding
 
-	def _bindInt is override
-		base._bindInt()
+	def _bindInt
+		base._bindInt
 		.compiler.boxStack.push(this)
 		try
 			_bindBase
-			_bindInterfaces()
+			if _baseClass
+				_baseClass.bindInt
+			_bindInterfaces
 			for param in _params
-				param.bindInt()
+				param.bindInt
 			for decl in _declsInOrder
 				assert not decl is this, this
 				try
-					decl.bindInt()
+					decl.bindInt
 				catch ne as NodeException
 					.compiler.recordError(ne)
 			_finishOverloads
 			if _testMethod
-				_testMethod.bindInt()
+				_testMethod.bindInt
 		finally
-			.compiler.boxStack.pop()
+			.compiler.boxStack.pop
 
 	def _bindBase
-		# for Class to override
 		# invoked by _bindInt
-		pass
+		_baseClass = .compiler.classType('System', 'Object')
 
 	def _bindInterfaces
 		# structs, classes and interfaces can all have 0 or more interfaces they inherit/implement
@@ -595,22 +602,15 @@ class Box
 class Class
 	inherits Box
 
-	var _baseClass as Class?
 	var _baseNode as ITypeProxy?
 
 	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseNode as ITypeProxy?, implementsNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, paramList, isNames, implementsNodes, docString)
 		_baseNode = baseNode
 
-	def addRefFields is override
-		base.addRefFields()
-		.addField('baseClass', _baseClass)
-
 	def addSubFields is override
 		base.addSubFields()
 		.addField('baseNode', _baseNode)
-
-	get baseClass from var
 
 	def isDescendantOf(type as IType) as bool is override
 		if not type.didBindInt
@@ -659,24 +659,12 @@ class Class
 				# TODO: cache the above back into the _decls
 		return m
 
-	def symbolForName(name as String, canBeMember as bool, haveThis as bool) as IMember? is override
-		"""
-		Unlike the inherited declForName(), this method follows the
-		inheritance change and provides options for canBeMember and
-		haveThis.
-		"""
-		m = base.symbolForName(name, canBeMember, haveThis)
-		if m is nil and _baseClass
-			m = _baseClass.memberForName(name)
-		return m
-
 	def _completeConstructionOfBase(gpToType as Dictionary<of GenericParam, IType>)
 		base._completeConstructionOfBase(gpToType)
 		assert _baseClass
 		_baseClass = _baseClass.secondaryConstructedTypeFor(this, gpToType) to Class
 
-	def _bindBase
-		base._bindBase
+	def _bindBase is override
 		if _baseNode
 			_baseNode.bindInt()
 			possible = _baseNode.realType
@@ -701,8 +689,6 @@ class Class
 					_baseClass = t
 			else
 				throw FallThroughException(t)
-		if _baseClass
-			_baseClass.bindInt
 
 	def _bindInt is override
 		for decl in .declsInOrder
@@ -808,8 +794,8 @@ class Interface
 		m = base.memberForName(name)
 		if m is nil
 			m = .interfaceMemberForName(name)
-			if m is nil
-				m = .compiler.libraryType('System', 'Object').memberForName(name)
+			if m is nil and _baseClass
+				m = _baseClass.memberForName(name)
 		return m
 
 	## Code gen
@@ -849,7 +835,7 @@ class Struct
 	## Code gen
 
 	get sharpKeyWord as String is override
-		return 'class'
+		return 'struct'
 
 	get csInit as String is override
 		return ''  # blank to indicate there is no valid init
