@@ -688,6 +688,15 @@ class IdentifierExpr
 		assert _definition
 		return _definition.isMethod
 
+	get isTypeReference as bool
+		"""
+		Returns true if this identifier directly names a type.
+		"""
+		require .didBindImp
+		r = .definition inherits Box and _type.isDescendantOf(.compiler.libraryType('System', 'Type'))
+		assert not r or not .definition.sharpName.startsWith('_lh')
+		return r
+		
 	get realType as IType?
 		# overridden to return the type this identifier represents in those cases when it does represent a type such an "int" or a class
 		assert .didBindImp
@@ -761,30 +770,19 @@ class IdentifierExpr
 		return _name
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		if .superNode inherits DotExpr and .binarySuperNode.right is this
-			assert false, 'does this happen?'  # TODO: if not, axe this portion
-			sw.write(Utils.capped(_name))
-		else
-			# if this names a type and it's not dotted, then C# requires typeof()
-			if _type inherits TypeType
-				if .superNode is nil or .superNode inherits AssignExpr and .binarySuperNode.right is this and not .sharpName.startsWith('_lh')
-					sw.write('typeof('+.sharpName+')')
-					return
-			sw.write(.sharpName)
+		sw.write(.sharpName)
 
 	get sharpName as String
-		assert .didBindImp, this
-		assert .definition, this
+		assert .didBindImp
+		assert .definition
 		assert not .type inherits UnspecifiedType
-		if .superNode
-			if .superNode inherits DotExpr
-				assert this is not (.superNode to DotExpr).right  # should be a CallExpr or MemberExpr instead  # CC: shouldn't need that cast
+		if .superNode inherits DotExpr
+			assert this is not (.superNode to DotExpr).right  # should be a CallExpr or MemberExpr instead
 		defi = .definition
-		if defi inherits Box and _type.isDescendantOf(.compiler.libraryType('System', 'Type'))  # TODO: is the "and ..." part even necessary?
+		if .isTypeReference
 			# C# often requires typeof(Foo) instead of just plain Foo
-			if .superNode is nil or (.superNode inherits AssignExpr and (.superNode to AssignExpr).right is this)
-				if not defi.sharpName.startsWith('_lh')  # TODO: I forget why this has to be guarded against... figure out and put a comment here
-					return 'typeof(' + defi.sharpName + ')'
+			if .superNode is nil or (.superNode inherits BinaryOpExpr and not .superNode inherits DotExpr and not .superNode inherits InheritsExpr) #(.superNode inherits AssignExpr and (.superNode to AssignExpr).right is this)
+				return 'typeof(' + defi.sharpName + ')'
 		return defi.sharpName
 
 	def writeSharpStmt(sw as SharpWriter) is override
