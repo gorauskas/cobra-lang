@@ -33,22 +33,22 @@ public class CobraDirectString : Object {
 }
 
 
-public class AssertException : Exception, IHasSourceInfo {
+public class AssertException : Exception, IHasSourceSite {
 
 	protected string     _fileName;
 	protected int        _lineNumber;
-	protected SourceInfo _sourceInfo;
+	protected SourceSite _sourceSite;
 	protected object[]   _expressions;
 	protected object     _this;
 	protected object     _info;
 
-	public AssertException(SourceInfo sourceInfo, object[] expressions, object thiss, object info)
-		: this(sourceInfo, expressions, thiss, info, null) {
+	public AssertException(SourceSite sourceSite, object[] expressions, object thiss, object info)
+		: this(sourceSite, expressions, thiss, info, null) {
 	}
 
-	public AssertException(SourceInfo sourceInfo, object[] expressions, object thiss, object info, Exception innerExc)
+	public AssertException(SourceSite sourceSite, object[] expressions, object thiss, object info, Exception innerExc)
 		: base("assert", innerExc) {
-		_sourceInfo = sourceInfo;
+		_sourceSite = sourceSite;
 		_expressions = expressions;
 		_this = thiss;
 		_info = info;
@@ -57,7 +57,7 @@ public class AssertException : Exception, IHasSourceInfo {
 	public override string Message {
 		get {
 			StringBuilder sb = new StringBuilder("\n");
-			sb.AppendFormat("sourceInfo = {0}\n", _sourceInfo);
+			sb.AppendFormat("sourceSite = {0}\n", _sourceSite);
 			sb.AppendFormat("info       = {0}\n", ToTechString(_info));
 			sb.AppendFormat("this       = {0}\n", ToTechString(_this));
 			int indentLevel = 1;
@@ -102,9 +102,9 @@ public class AssertException : Exception, IHasSourceInfo {
 		}
 	}
 
-	public SourceInfo SourceInfo {
+	public SourceSite SourceSite {
 		get {
-			return _sourceInfo;
+			return _sourceSite;
 		}
 	}
 
@@ -149,12 +149,12 @@ public class RequireException : AssertException {
 
 	RequireException _next;
 
-	public RequireException(SourceInfo sourceInfo, object[] expressions, object thiss, object info)
-		: this(sourceInfo, expressions, thiss, info, null) {
+	public RequireException(SourceSite sourceSite, object[] expressions, object thiss, object info)
+		: this(sourceSite, expressions, thiss, info, null) {
 	}
 
-	public RequireException(SourceInfo sourceInfo, object[] expressions, object thiss, object info, Exception innerExc)
-		: base(sourceInfo, expressions, thiss, info, innerExc) {
+	public RequireException(SourceSite sourceSite, object[] expressions, object thiss, object info, Exception innerExc)
+		: base(sourceSite, expressions, thiss, info, innerExc) {
 	}
 
 	public RequireException Next {
@@ -171,12 +171,12 @@ public class RequireException : AssertException {
 
 public class EnsureException : AssertException {
 
-	public EnsureException(SourceInfo sourceInfo, object[] expressions, object thiss, object info)
-		: this(sourceInfo, expressions, thiss, info, null) {
+	public EnsureException(SourceSite sourceSite, object[] expressions, object thiss, object info)
+		: this(sourceSite, expressions, thiss, info, null) {
 	}
 
-	public EnsureException(SourceInfo sourceInfo, object[] expressions, object thiss, object info, Exception innerExc)
-		: base(sourceInfo, expressions, thiss, info, innerExc) {
+	public EnsureException(SourceSite sourceSite, object[] expressions, object thiss, object info, Exception innerExc)
+		: base(sourceSite, expressions, thiss, info, innerExc) {
 	}
 
 }
