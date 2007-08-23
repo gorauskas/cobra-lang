@@ -832,21 +832,24 @@ namespace Cobra
 							sb.append('[sep]subclass [name]')
 					return sb.toString
 
-			get htmlForAt as String
+			def htmlForAt as String
+				return .htmlForAtArgs(_fileName, _lineNum)
+
+			def htmlForAtArgs(fileName as String, lineNum as int) as String is shared
 				"""
 				Returns the HTML for the row labeled "at" in the Cobra Exception Report.
 				This will be an actual link if the environment variable COBRA_EDIT_LINK is set.
 				That's what enables clicking on sources in the report to jump to their location in a text editor.
 				"""
-				baseName = System.IO.Path.getFileName(_fileName) # CC: no qual
-				dirName = System.IO.Path.getDirectoryName(_fileName) # CC: no qual
+				baseName = System.IO.Path.getFileName(fileName) # CC: no qual
+				dirName = System.IO.Path.getDirectoryName(fileName) # CC: no qual
 				if dirName <> ''
 					dirName = ' in ' + (dirName to String)
-				s = 'line [_lineNum] of [baseName][dirName]'
+				s = 'line [lineNum] of [baseName][dirName]'
 				editLink = Environment.getEnvironmentVariable('COBRA_EDIT_LINK')
 				if editLink
-					editLink = editLink.replace('FILE', _fileName)  # TODO: url encode the file name
-					editLink = editLink.replace('LINE', _lineNum.toString)
+					editLink = editLink.replace('FILE', fileName)  # TODO: url encode the file name
+					editLink = editLink.replace('LINE', lineNum.toString)
 					s = '<a href="[editLink]">[s]</a>'
 				return s
 
@@ -911,17 +914,13 @@ namespace Cobra
 				# write frame html
 				tw.writeLine()
 				tw.writeLine('<tr class=frameHead> <td class=number> [i]. </td> <td class=qualifiedMember colspan=4> [_declClassName].[_methodName] </td> </tr> ')
-				baseName = System.IO.Path.getFileName(_fileName) # CC: no qual
-				dirName = System.IO.Path.getDirectoryName(_fileName) # CC: no qual
-				if dirName <> ''
-					dirName = ' - ' + (dirName to String)
-				tw.writeLine('<tr class=frameDetails1> <td class=indent> &nbsp; </td> <td class=label> at: </td> <td class=sourceLocation colspan=3> [_lineNum] [baseName] [dirName] </td> </tr>')
+				tw.writeLine('<tr class=frameDetails1> <td class=indent> &nbsp; </td> <td class=label width=1> at: </td> <td class=sourceLocation colspan=3> [SourceSite.htmlForAtArgs(_fileName, _lineNum)] </td> </tr>')
 				rowNum = 1
 				for j = 0 .. _args.length ++ 2
 					name = _args[j] to String
 					value = _args[j+1] to dynamic?
 					label = if(j==0, 'args:', '')
-					tw.write('<tr class=frameDetails[rowNum%2+1]> <td class=indent> &nbsp; </td> <td class=label> [label] </td> <td> [name] </td> <td> &nbsp;=&nbsp; </td>')
+					tw.write('<tr class=frameDetails[rowNum%2+1]> <td class=indent> &nbsp; </td> <td class=label width=1> [label] </td> <td width=1> [name] </td> <td width=1> &nbsp;=&nbsp; </td>')
 					try
 						s = CobraCore.htmlEncode(CobraCore.toTechString(value))
 					catch e as Exception
@@ -935,7 +934,7 @@ namespace Cobra
 					if name == 'this'
 						continue
 					label = if(first, 'locals:', '')
-					tw.write('<tr class=frameDetails[rowNum%2+1] valign=top> <td class=indent> &nbsp; </td> <td class=label> [label] </td> <td> [name] </td> <td> &nbsp;=&nbsp; </td>')
+					tw.write('<tr class=frameDetails[rowNum%2+1] valign=top> <td class=indent> &nbsp; </td> <td class=label width=1> [label] </td> <td width=1> [name] </td> <td width=1> &nbsp;=&nbsp; </td>')
 					value = _locals[name]
 					try
 						s = CobraCore.htmlEncode(CobraCore.toTechString(value))
