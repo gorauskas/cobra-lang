@@ -30,6 +30,10 @@ public class CobraDirectString : Object {
 		}
 	}
 
+	public override string ToString() {
+		return _s;
+	}
+
 }
 
 
@@ -332,7 +336,7 @@ static public class CobraImp {
 		string tts = x.ToString();
 		if (IsInterestingType(x.GetType())) {
 			string typeName = x.GetType().Name;
-			if (!tts.Contains(typeName))
+			if (!tts.Contains(typeName) && !(x is CobraDirectString))
 				tts = string.Format("{0} ({1})", tts, typeName);
 		}
 		return tts;
