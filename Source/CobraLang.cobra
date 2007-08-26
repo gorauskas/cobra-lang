@@ -29,7 +29,7 @@ namespace Cobra
 
 			var _isActive = true
 			var _willAutoFlush = true
-			var _dest as System.IO.TextWriter
+			var _dest as TextWriter
 			var _separator = '; '
 			var _prefix = 'trace: '
 
@@ -39,7 +39,7 @@ namespace Cobra
 				"""
 				.init(Console.out)
 
-			def init(dest as System.IO.TextWriter)
+			def init(dest as TextWriter)
 				base.init
 				_dest = dest
 
@@ -118,7 +118,7 @@ namespace Cobra
 					test
 						assert '.exe' in CobraCore.exePath
 					body
-						return System.Reflection.Assembly.getExecutingAssembly.location
+						return Assembly.getExecutingAssembly.location
 
 
 				## Tracer
@@ -173,7 +173,7 @@ namespace Cobra
 					print 'Unhandled Exception: [ex]'
 					fileName = 'cobra-exception-report.html'
 					print 'Writing exception report to [fileName]...'
-					using tw = System.IO.File.createText(fileName)
+					using tw = File.createText(fileName)
 						CobraCore.dumpStackAsHtml(tw, ex)
 					print 'Wrote [fileName]'
 					envVarName = 'COBRA_OPEN_HTML_SST_COMMAND'
@@ -193,10 +193,10 @@ namespace Cobra
 				def dumpStackAsText
 					.dumpStackAsText(Console.out)
 
-				def dumpStackAsText(tw as System.IO.TextWriter)  # TODO: why does TextWriter have to be qualified?
+				def dumpStackAsText(tw as TextWriter)  # TODO: why does TextWriter have to be qualified?
 					.dumpStackAsText(tw, CobraImp.detailedStackTrace)
 						
-				def dumpStackAsText(tw as System.IO.TextWriter, frames as Stack<of CobraFrame>)
+				def dumpStackAsText(tw as TextWriter, frames as Stack<of CobraFrame>)
 					# dump the most recent stack frames last since the text will output top-down and scroll in the shell
 					tw.writeLine('Stack trace:')
 					if not frames.count
@@ -207,14 +207,14 @@ namespace Cobra
 							frame.dumpText(tw, i)
 							i += 1
 
-				def dumpStackAsHtml(tw as System.IO.TextWriter, exc as Exception?)  # CC: no qual
+				def dumpStackAsHtml(tw as TextWriter, exc as Exception?)
 					.dumpStackAsHtml(tw, exc, CobraImp.detailedStackTrace)
 					Console.out.writeLine()
 				
 				var _dumpObjectCount as int
 				var _maxDumpObjectCount = 250
 				
-				def dumpStackAsHtml(tw as System.IO.TextWriter, exc as Exception?, frames as Stack<of CobraFrame>?)  # CC: no qual
+				def dumpStackAsHtml(tw as TextWriter, exc as Exception?, frames as Stack<of CobraFrame>?)
 					# dump the most recent stack frames first since the HTML file will be displayed at the top in the browser
 					
 					_dumpObjectCount = 0
@@ -233,7 +233,7 @@ namespace Cobra
 					if name.endsWith('mono')
 						for part in Environment.commandLine.split(c' ')
 							if part.endsWith('.exe')
-								name = System.IO.Path.getFileName(part)  # CC: axe namespace
+								name = Path.getFileName(part)
 								break
 					_headerPair(tw, 'Program', name)
 					_headerPair(tw, 'When', DateTime.now)
@@ -285,7 +285,7 @@ namespace Cobra
 					tw.writeLine('</body>')
 					tw.writeLine('</html>')
 
-				def _headerPair(tw as System.IO.TextWriter, key as String, value as Object)
+				def _headerPair(tw as TextWriter, key as String, value as Object)
 					key = .htmlEncode(key)
 					value = .htmlEncode(value.toString)
 					tw.writeLine('<tr class=keyValue> <td class=key> [key] </td> <td> &nbsp;=&nbsp; </td> <td class=value> [value] </td> </tr>')
@@ -319,7 +319,7 @@ namespace Cobra
 				def htmlFormat(s as String) as Html
 					s = .htmlEncode(s)
 					# re = Regex(r'\n[ ]+', ...  # CC: ack, no delegates so can't get length
-					sb as System.Text.StringBuilder = $sharp('new System.Text.StringBuilder(s.Length*2)')
+					sb = StringBuilder(s.length*2)
 					state = 0
 					for c in s
 						branch state
@@ -372,7 +372,7 @@ namespace Cobra
 						return false
 					return true
 					
-				def dumpObjectAsHtml(tw as System.IO.TextWriter, serialNum as int, obj as Object, objects as ObjectCatalog?)
+				def dumpObjectAsHtml(tw as TextWriter, serialNum as int, obj as Object, objects as ObjectCatalog?)
 					if _dumpObjectCount % 10 == 0  # TODO: change 10 to a public property. value < 1 means not to write progress
 						Console.out.write('.')
 						Console.out.flush()
@@ -391,7 +391,7 @@ namespace Cobra
 						_writeObjectPair1(tw, row, 'at', obj.sourceSite.htmlForAt)
 						row += 1
 					_writeObjectPair1(tw, row, 'toString', .htmlFormat(value.toString))
-					propInfos = List<of System.Reflection.PropertyInfo>(obj.getType.getProperties)
+					propInfos = List<of PropertyInfo>(obj.getType.getProperties)
 					# CC: propInfos.sort(def(a as PropertyInfo, b as PropertyInfo)=a.name.compareTo(b.name))
 					# ... sort propInfos by name
 					# TODO: yeah, I know this awful
@@ -406,7 +406,7 @@ namespace Cobra
 								propInfos[j] = propInfos[j+1]
 								propInfos[j+1] = swap
 								didSort = true
-					for propInfo as System.Reflection.PropertyInfo in propInfos  # CC: axe explicit type
+					for propInfo in propInfos
 						if propInfo.canRead and not propInfo.getGetMethod.isStatic and propInfo.name not in ['Clone', 'Copy', 'Item']
 							if propInfo.name == 'MetadataToken'  # problems on mono. http://bugzilla.ximian.com/show_bug.cgi?id=82161
 								value = '(SKIPPED)'
@@ -496,7 +496,7 @@ namespace Cobra
 							pass  # forget it
 					return s to dynamic
 				
-				def _writeObjectPair1(tw as System.IO.TextWriter, i as int, key as String, valueHtml as Object) is internal
+				def _writeObjectPair1(tw as TextWriter, i as int, key as String, valueHtml as Object) is internal
 					require
 						i == 1 or i == 2
 						key.length
@@ -505,7 +505,7 @@ namespace Cobra
 						key = .htmlEncode(key)
 						_writeObjectPair2(tw, i, key, valueHtml)
 
-				def _writeObjectPair2(tw as System.IO.TextWriter, i as int, preFormattedKey as String, valueHtml as Object) is internal
+				def _writeObjectPair2(tw as TextWriter, i as int, preFormattedKey as String, valueHtml as Object) is internal
 					require
 						i == 1 or i == 2
 						preFormattedKey.length
@@ -578,7 +578,7 @@ namespace Cobra
 					if path
 						return path
 					# check for the cobra that created the current executable
-					if System.IO.File.exists(CobraInfo.cobraPath)
+					if File.exists(CobraInfo.cobraPath)
 						return CobraInfo.cobraPath
 					# check COBRA environment variable
 					path = Environment.getEnvironmentVariable('COBRA') ? ''
@@ -587,7 +587,7 @@ namespace Cobra
 						if path
 							return path
 					# check the PATH
-					paths = (Environment.getEnvironmentVariable('PATH') ? '').split(System.IO.Path.pathSeparator)
+					paths = (Environment.getEnvironmentVariable('PATH') ? '').split(Path.pathSeparator)
 					for sysPath in paths
 						path = _findCobraExe(sysPath)
 						if path
@@ -625,20 +625,20 @@ namespace Cobra
 				def _findCobraExe(path as String, firstTime as bool) as String?
 					if path <> CobraCore.exePath and path.endsWith('cobra.exe')
 						# ^ first condition guards against test cases like "invoke-cobra.exe" from endlessly invoking themselves
-						if System.IO.File.exists(path)
+						if File.exists(path)
 							return path
 						else
 							return nil
-					else if System.IO.Directory.exists(path)
-						exe = System.IO.Path.combine(path, 'cobra.exe')
-						if System.IO.File.exists(exe)
+					else if Directory.exists(path)
+						exe = Path.combine(path, 'cobra.exe')
+						if File.exists(exe)
 							return exe
-						exe = System.IO.Path.combine(System.IO.Path.combine(path, 'bin'), 'cobra.exe')
-						if System.IO.File.exists(exe)
+						exe = Path.combine(Path.combine(path, 'bin'), 'cobra.exe')
+						if File.exists(exe)
 							return exe
 						if firstTime
 							# check for a 'Cobra' subdirectory
-							return _findCobraExe(System.IO.Path.combine(path, 'Cobra'), false)
+							return _findCobraExe(Path.combine(path, 'Cobra'), false)
 						else
 							return nil
 					else
@@ -691,11 +691,11 @@ namespace Cobra
 			is internal
 			implements IObjectView
 			
-			var _tw as System.IO.TextWriter
+			var _tw as TextWriter
 			var _rowNum as int
 			var _objects as ObjectCatalog?
 			
-			def init(tw as System.IO.TextWriter, rowNum as int, objects as ObjectCatalog?)
+			def init(tw as TextWriter, rowNum as int, objects as ObjectCatalog?)
 				_tw = tw
 				_rowNum = rowNum
 				_objects = objects
@@ -834,7 +834,7 @@ namespace Cobra
 					si = SourceSite('Foo.cobra', 10, 'Foo', 'bar', Object())
 					assert si.oneLiner('; ') == 'at Foo.cobra:10; in Foo.bar; subclass Object'
 				body
-					sb = $sharp('new System.Text.StringBuilder()') to System.Text.StringBuilder
+					sb = StringBuilder()
 					sb.append('at [_fileName]:[_lineNum][sep]in [_className].[_memberName]')
 					if not _object inherits Type
 						# I guess that condition would preclude reporting the subclass name in a trace statement in subclasses of Type
@@ -853,8 +853,8 @@ namespace Cobra
 				This will be an actual link if the environment variable COBRA_EDIT_LINK is set.
 				That's what enables clicking on sources in the report to jump to their location in a text editor.
 				"""
-				baseName = System.IO.Path.getFileName(fileName) # CC: no qual
-				dirName = System.IO.Path.getDirectoryName(fileName) # CC: no qual
+				baseName = Path.getFileName(fileName)
+				dirName = Path.getDirectoryName(fileName)
 				if dirName <> ''
 					dirName = ' in ' + (dirName to String)
 				s = 'line [lineNum] of [baseName][dirName]'
@@ -895,7 +895,7 @@ namespace Cobra
 					_localNamesInOrder.add(name)
 				_locals[name] = value
 
-			def dumpText(tw as System.IO.TextWriter, i as int)
+			def dumpText(tw as TextWriter, i as int)
 				nameWidth = 8
 				tw.writeLine('\n    [i]. [this]')
 				tw.writeLine('        args')
@@ -917,7 +917,7 @@ namespace Cobra
 						s = 'ToString() Exception: ' + e.message
 					tw.writeLine(s)
 
-			def dumpHtml(tw as System.IO.TextWriter, i as int, objects as ObjectCatalog)
+			def dumpHtml(tw as TextWriter, i as int, objects as ObjectCatalog)
 				# record objects
 				for localValue in _locals.values
 					if localValue

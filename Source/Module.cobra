@@ -1,6 +1,8 @@
 class Module
 	inherits Node
 
+	# TODO: Seems that much of Module's guts should be moved down to CobraModule
+	
 	var _fileName as String
 	var _csFileName as String?
 	var _declsInOrder as List<of IMember>
@@ -128,8 +130,24 @@ class SharpModule
 class CobraModule
 	inherits Module
 
-	def init(fileName as String, verbosity as int, docString as String)
+	var _topNameSpace as NameSpace
+	
+	def init(fileName as String, verbosity as int, docString as String, globalNS as NameSpace)
 		base.init(fileName, verbosity, docString)
+		_topNameSpace = NameSpace(globalNS, '(top namespace for module [fileName])')
+
+	get topNameSpace from var
+	
+	def addDecl(decl as IMember)
+		base.addDecl(decl)
+		if decl inherits NameSpace
+			if decl.superNameSpace is _topNameSpace
+				pass  # was already added probably through NameSpace.getOrMakeNameSpaceNamed
+			else
+				assert decl.superNameSpace is nil
+				_topNameSpace.addDecl(decl)
+		else
+			_topNameSpace.addDecl(decl)
 
 	def writeSharpDef as Dictionary<of int, int> is override
 		base.writeSharpDef()

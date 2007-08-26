@@ -63,6 +63,14 @@ class Box
 
 	get baseInterfaces from var
 	
+	pro nameSpace as NameSpace?
+		get
+			return base.nameSpace
+		set
+			# a box needs to be tied to its local namespace, not the unified one
+			assert (value and .token.text <> '(empty)') implies not value.isUnified
+			base.nameSpace = value
+
 	get overloads from var
 
 	get rootName as String
@@ -82,11 +90,11 @@ class Box
 		ensure
 			not result.startsWith('.')
 			not result.endsWith('.')
-			not .nameSpace.isGlobal implies '.' in result
+			not .nameSpace.isRoot implies '.' in result
 		body
 			nameSpaces = List<of NameSpace>()
 			ns = _nameSpace
-			while ns and not ns.isGlobal
+			while ns and not ns.isRoot
 				nameSpaces.add(ns to passthrough)  # CC: axe cast
 				assert ns is not ns.superNameSpace
 				ns = ns.superNameSpace
@@ -156,10 +164,12 @@ class Box
 		return nil
 
 	def symbolForName(name as String, haveThis as bool) as IMember?
+		return .symbolForName(name, haveThis, true)
+
+	def symbolForName(name as String, haveThis as bool, checkNameSpace as bool) as IMember?
 		"""
 		Unlike the inherited declForName(), this method follows the
-		inheritance change and provides options for canBeMember and
-		haveThis.
+		inheritance change and provides options for haveThis.
 		"""
 		if name == _name
 			return this
@@ -171,12 +181,18 @@ class Box
 				return p
 		x = .declForName(name)
 		if x is nil and _baseClass
-			x = _baseClass.symbolForName(name, haveThis)
+			x = _baseClass.symbolForName(name, haveThis, false)
 		if x is nil
 			x = .interfaceMemberForName(name)
 		if x and not haveThis
 			if x.requiresThis
-				return nil
+				x = nil
+		if x is nil and checkNameSpace
+			if .didBindInt
+				assert _nameSpace
+			if _nameSpace
+				assert not _nameSpace.isUnified
+				x = _nameSpace.symbolForName(name)
 		return x
 
 	## INamedNode
@@ -692,7 +708,7 @@ class Class
 			if decl inherits Constructor
 				foundConstructor = true
 		if not foundConstructor
-			# TODO: at some point this should be changed to provide cover constructors for each of the public, inherited constructors
+			# TODO: this should be changed to provide cover constructors for each of the public, inherited constructors
 			.addDecl(Constructor(.token, this, List<of Param>(), ['public'], ''))
 		base._bindInt()
 
@@ -787,7 +803,6 @@ class Interface
 		return false
 
 	def memberForName(name as String) as IMember? is override
-		assert .didBindInt  # TODO: is this legit? if so, push up to Container
 		m = base.memberForName(name)
 		if m is nil
 			m = .interfaceMemberForName(name)

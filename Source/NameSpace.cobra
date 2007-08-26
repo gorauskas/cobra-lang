@@ -3,9 +3,14 @@
 class NameSpace
 	inherits Container
 
+	var _unifiedNameSpace as NameSpace?
 	var _superNameSpace as NameSpace?
 	var _subNameSpaces as Dictionary<of String, NameSpace>
 
+	def init(unifiedNameSpace as NameSpace, name as String)
+		.init(TokenFix.empty, name)
+		_unifiedNameSpace = unifiedNameSpace
+		
 	def init(token as IToken, name as String)
 		.init(token, name, nil, nil)
 
@@ -20,28 +25,48 @@ class NameSpace
 	get isGlobal as bool
 		return _superNameSpace is nil and _name=='(global)'
 
+	get isRoot as bool
+		"""
+		Returns true if this is a root namespace with no parent namespace.
+		Note that all module top-level namespaces are root as well as their common, unified namespace, the global namespace.
+		"""
+		return _superNameSpace is nil
+		
+	get isUnified as bool
+		return _unifiedNameSpace is nil
+
 	get superNameSpace from var
 
+	get unifiedNameSpace from var
+	
 	def addMinFields is override
 		base.addMinFields()
 		.addField('subCount', _subNameSpaces.count)
+		.addField('isUnified', .isUnified)
 
 	def addRefFields is override
 		base.addRefFields()
 		.addField('superNameSpace', _superNameSpace)
+		.addField('unifiedNameSpace', _unifiedNameSpace)
 
 	def getOrMakeNameSpaceNamed(token as IToken, name as String) as NameSpace  # CC: same
 		"""
 		Returns the existing sub-namespace with the given name or creates it.
 		Raises ValueError if there is a declaration in the namespace with the given name that is not a namespace.
 		"""
+		ensure result.superNameSpace is this
 		# TODO: enforce that case must match and 2 decls cannot be the same but for case. You cannot have a namespace FooBar and class Foobar under the same namespace
 		if _subNameSpaces.containsKey(name)
 			ns = _subNameSpaces[name]
 		else
 			if _declsByName.containsKey(name)
 				throw Exception('There is a non-namespace declaration named "[name]".')
-			ns = NameSpace(token, name, this)  # TODO: replace hardcoded class
+			ns = NameSpace(token, name, this)
+			if not .isUnified
+				# mirror in the unified namespace
+				uns = _unifiedNameSpace.getOrMakeNameSpaceNamed(token, name)
+				assert uns.isUnified
+				ns._unifiedNameSpace = uns
 			.addDecl(ns)
 		return ns
 
@@ -76,57 +101,64 @@ class NameSpace
 			.compiler.nameSpaceStack.pop()
 
 	def symbolForName(name as String) as IMember?
-		# our name?
-		if name==_name
-			return this
+		if not .isUnified
+			x = _unifiedNameSpace.symbolForName(name)
+			if x
+				return x
+			# inside a use directive?
+			return _symbolForNameFromUseDirectives(name)
+		else
+			# our name?
+			if name == _name
+				return this
 
-		# our decl?
-		x = .declForName(name)
-		if x
-			return x
-
-		# a parent namespace?
-		if _superNameSpace and not _superNameSpace.isGlobal  # Compiler will search the global namespace
-			x = _superNameSpace.symbolForName(name)
+			# our decl?
+			# TODO: should this come before checking our name? what does C# do?
+			x = .declForName(name)
 			if x
 				return x
 
-		# inside a use directive?
+			# a parent namespace?
+			if _superNameSpace  # delme and not _superNameSpace.isGlobal  # Compiler will search the global namespace
+				x = _superNameSpace.symbolForName(name)
+				if x
+					return x
+
+		return nil
+
+	def _symbolForNameFromUseDirectives(name as String) as IMember?
 		for decl in _declsInOrder
 			if decl inherits UseDirective
 				x = decl.findSymbol(name)
 				if x
 					return x
-		return nil
-
-# TODO: axe this code
-#		else:
-#			symbol = self.declsByName.get(name, nil)
-#			if symbol is nil:
-#				if name==self.name:
-#					symbol = self
-#				else:
-#					for decl in self.declsInOrder:
-#						if v: print '<> checking %s named %r' % (decl.__class__, decl.name)
-#						if inherits(decl, UseDirective):
-#							if v: print '<> will ask', decl.name, 'for', name
-#							symbol = decl.symbolForName(name)
-#							if symbol:
-#								break
-#		if symbol is nil and self.superNameSpace and self.superNameSpace.superNameSpace:  # that last expr is to avoid searching the global namespace (prematurely; the compiler will search it)
-#			if v: print '<> will call super name space. self=%r, super=%r' % (self.name, self.superNameSpace.name)
-#			symbol = self.superNameSpace.symbolForName(name, canBeMember)
-#		if v:
-#			sys.stdout.dedent()
-#			print '<< NameSpace.symbolForName(%r, %s) self=%s, returning %s' % (name, canBeMember, self.name, symbol)
-#		return symbol
+		if _superNameSpace
+			return _superNameSpace._symbolForNameFromUseDirectives(name)
+		else
+			return nil
 
 	def addDecl(decl as IMember) is override
 		base.addDecl(decl)
 		if decl inherits NameSpace
-			_subNameSpaces.add(decl.name, decl)  # TODO: add some require and ensure around the subNameSpaces
 			assert decl.superNameSpace is this
-		decl.nameSpace = this
+			assert (.isUnified and decl.isUnified) or (not .isUnified and not decl.isUnified)
+			_subNameSpaces.add(decl.name, decl)  # TODO: add some require and ensure around the subNameSpaces
+		if decl inherits NameSpace
+			assert decl.nameSpace is this or decl.nameSpace is nil
+			decl.nameSpace = this
+		else
+			if decl.nameSpace
+				assert decl.nameSpace.unifiedNameSpace is this
+				assert .isUnified
+			else
+				assert not .isUnified
+				decl.nameSpace = this
+		if not .isUnified
+			# mirror the declarations in the unified namespace
+			if decl inherits NameSpace
+				pass
+			else if not decl inherits UseDirective
+				_unifiedNameSpace.addDecl(decl)
 
 	def subNameSpaceForName(name as String) as NameSpace?
 		require name
@@ -181,6 +213,8 @@ class UseDirective
 	pro nameSpace from var
 
 	def findSymbol(name as String) as IMember?
+		if not .didBindInt
+			.bindInt
 		if not .didBindInt
 			return nil
 		return _boundNameSpace.symbolForName(name)

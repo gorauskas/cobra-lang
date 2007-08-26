@@ -122,7 +122,6 @@ class Parser
 		set
 			require _globalNS is nil
 			_globalNS = value
-			_nameSpaceStack.push(_globalNS to passthrough)
 
 	get curBox as Box
 		# yes there is only one box at the moment, but when nested classes and structs are supported there could by many.
@@ -411,7 +410,7 @@ class Parser
 	## Parsing
 	##
 
-	var _module as Module?
+	var _module as CobraModule?
 
 	def parseTokens as Module
 		"""
@@ -421,54 +420,53 @@ class Parser
 			.globalNS
 		body
 			docString = .docString
-			_module = CobraModule(_fileName, _verbosity, docString)  # TODO: does module really need verbosity?
-			if not _fileName.endsWith('SystemInterfaces.cobra')
-				# TODO: make an "implicit" token
-				useToken = Token(_fileName, 1, 1, 1, 'USE', 'use', nil)
-				# default use directives
-				_module.addDecl(UseDirective(useToken, ['System']))
-				_module.addDecl(UseDirective(useToken, ['System', 'Collections', 'Generic']))
-				_module.addDecl(UseDirective(useToken, ['System', 'IO']))
-				_module.addDecl(UseDirective(useToken, ['System', 'Text']))
-				_module.addDecl(UseDirective(useToken, ['Cobra', 'Lang']))
-			what as IMember?
-			keepParsing = true
-			while keepParsing
-				what = nil
-				addToNS = true
-				tok = .peek
-				if tok is nil
-					break
-				branch tok.which
-					on 'STOPSTOP'
-						keepParsing = false
-					on 'USE'
-						what = .useDirective
-						addToNS = false
-					on 'IMPORT'
-						what = .importDirective
-						addToNS = false
-					on 'CLASS'
-						what = .classDecl
-					on 'INTERFACE'
-						what = .interfaceDecl
-					on 'STRUCT'
-						what = .structDecl
-					on 'ENUM'
-						what = .enumDecl
-					on 'EOL'
-						.grab
-					on 'NAMESPACE'
-						what = .nameSpaceDecl
-						addToNS = false
-					else
-						.throwError('Expecting use, import, namespace, class, interface or enum, but got [tok]')
+			_module = CobraModule(_fileName, _verbosity, docString, _globalNS)  # TODO: does module really need verbosity?
+			_nameSpaceStack.push(_module.topNameSpace)
+			try
+				if not _fileName.endsWith('SystemInterfaces.cobra')
+					# TODO: make an "implicit" token
+					useToken = Token(_fileName, 1, 1, 1, 'USE', 'use', nil)
+					# default use directives
+					_module.addDecl(UseDirective(useToken, ['System']))
+					_module.addDecl(UseDirective(useToken, ['System', 'Collections', 'Generic']))
+					_module.addDecl(UseDirective(useToken, ['System', 'IO']))
+					_module.addDecl(UseDirective(useToken, ['System', 'Text']))
+					_module.addDecl(UseDirective(useToken, ['Cobra', 'Lang']))
+				what as IMember?
+				keepParsing = true
+				while keepParsing
+					what = nil
+					tok = .peek
+					if tok is nil
 						break
-				if what
-					_module.addDecl(what to IMember)  # CC: axe typecast
-					if addToNS
-						_globalNS.addDecl(what to IMember)  # CC: axe "to NamedNode"
-
+					branch tok.which
+						on 'STOPSTOP'
+							keepParsing = false
+						on 'USE'
+							what = .useDirective
+						on 'IMPORT'
+							what = .importDirective
+						on 'CLASS'
+							what = .classDecl
+						on 'INTERFACE'
+							what = .interfaceDecl
+						on 'STRUCT'
+							what = .structDecl
+						on 'ENUM'
+							what = .enumDecl
+						on 'EOL'
+							.grab
+						on 'NAMESPACE'
+							what = .nameSpaceDecl
+						else
+							.throwError('Expecting use, import, namespace, class, interface or enum, but got [tok]')
+							break
+					if what
+						_module.addDecl(what to IMember)  # CC: axe typecast
+					if what inherits Box
+						assert what.nameSpace
+			finally
+				_nameSpaceStack.pop
 			return _module to Module # CC: to ! CC: axe cast
 
 	def useDirective as UseDirective
@@ -818,15 +816,17 @@ class Parser
 			on 'STRUCT': return GenericStructConstraint(.grab)
 			on 'CALLABLE': return GenericCallableConstraint(.grab)
 			else: return GenericTypeConstraint(.type)
-		pass  # CC: axe
+		pass # CC: take out
 
 	def nameSpaceDecl as NameSpace
 		require _nameSpaceStack
 		.expect('NAMESPACE')
-		curNameSpace = _nameSpaceStack.peek to NameSpace  # CC: remove "as INode"
+		curNameSpace = _nameSpaceStack.peek
+		assert not curNameSpace.isUnified
 		tok = .expect('ID')
 		name = tok.value to String  # CC: .value should probably be dynamic
 		curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(tok, name)
+		assert not curNameSpace.isUnified
 		_nameSpaceStack.push(curNameSpace)
 		.indent
 		while true
@@ -958,7 +958,7 @@ class Parser
 		if name==curClass.name or Utils.capped(name)==curClass.name
 			.throwError('Method names cannot be the same as their enclosing [curClass.englishName]. Use `def init` for creating a constructor or choose another name.')  # TODO list the enclosing types location
 		overload as MemberOverload? = nil
-		other = curClass.symbolForName(name, true)
+		other = curClass.memberForName(name)
 		if other
 			if name=='destruct'
 				.throwError('Cannot define more than one destruct method.')  # TODO give reference to the other one
@@ -970,7 +970,7 @@ class Parser
 			else
 				.throwError('There is already another class member with the name "[name]".')  # TODO list its location and possibly what it is
 		else
-			other = curClass.symbolForName(name, false)  # TODO: should be a CI there for case-insensitive
+			other = curClass.memberForName(name)  # TODO: should be a CI there for case-insensitive
 			if other
 				.throwError('There is already another class member with the name "[other.name]". You must differentiate member names by more than just case.')
 			if name[0] in _uppercaseLetters
