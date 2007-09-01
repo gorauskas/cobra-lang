@@ -32,6 +32,8 @@ interface ITypeProvider
 
 	get voidType as VoidType
 
+	# TODO: def nilableType() ... just like variType(). cache and get "is" testing
+	
 	def variType(type as IType) as VariType
 
 	def variType(typeNode as INode) as VariType
@@ -292,7 +294,7 @@ class CobraType
 	If you are looking for "object", see ObjectType.
 	"""
 
-	var _nameSpace as NameSpace?
+	var _parentNameSpace as NameSpace?
 	var _superType as IType?
 	var _isUsed as bool
 
@@ -306,7 +308,7 @@ class CobraType
 	get name as String
 		return .getType.toString
 
-	pro nameSpace from var
+	pro parentNameSpace from var
 
 	get isCallable as bool
 		return true
@@ -781,7 +783,7 @@ class PassThroughType
 		return 'null'
 
 	get sharpRef as String is override
-		return 'object'
+		return 'object/*passthrough*/'
 
 
 class VoidType
@@ -1005,130 +1007,6 @@ class VariType
 		return 'params [_wrappedType.sharpRef]' + r'[]'
 
 
-class QualifiedType
-	inherits WrappedType
-	"""
-	Represents types such as SomeNamespace.SomeClass.SomeEnum.
-	The parser has to track these namespace navigations in the code.
-	"""
-
-	var _initNodes as List<of AbstractTypeIdentifier>
-	var _boundNodes as List<of Container>
-	var _dottedParentNames as String?
-
-	def init(nodes as IList<of AbstractTypeIdentifier>)
-		require
-			nodes
-		body
-			base.init(nodes[nodes.count-1])
-			_initNodes = List<of AbstractTypeIdentifier>(nodes)
-			_boundNodes = List<of Container>()  # set by _bindInt()
-			_dottedParentNames = nil
-
-	def addRefFields is override
-		base.addRefFields()
-		.addField('boundNodes', _boundNodes)
-
-	def addSubFields is override
-		base.addSubFields()
-		.addField('initNodes', _initNodes)
-		if _dottedParentNames
-			.addField('dottedParentNames', _dottedParentNames)
-
-	get name as String is override
-		sb = StringBuilder()
-		for ti in _initNodes
-			if sb.length
-				sb.append('.')
-			sb.append(ti.name)
-		return sb.toString
-		# TODO:
-#		if false and _wrappedType
-#			return _dottedParentNames to String + _wrappedType.name  # CC: axe the cast
-#		else
-#			nodes = Utils.join(', ', _initNodes)
-#			return '[.getType.name]([nodes])'
-
-	get englishName as String is override
-		assert .didBindInt # TODO: try moving this to CobraType
-		return _wrappedType.englishName
-
-	def memberForName(name as String) as IMember? is override
-		assert .didBindInt
-		assert _wrappedType  # TODO: can CobraType require a wrappedType
-		return _wrappedType.memberForName(name)
-
-	def toString as String is override
-		if _dottedParentNames is nil
-			return .name
-		else
-			return '[_dottedParentNames].[_wrappedType]'
-
-	def isDescendantOf(type as IType) as bool is override
-		assert .didBindInt
-		return _wrappedType.isDescendantOf(type)
-
-	get isReference as bool is override
-		assert .didBindInt
-		return _wrappedType.isReference
-
-	get innerType as IType? is override
-		assert .didBindInt
-		return _wrappedType.innerType
-
-	def _bindInt is override
-		# TODO?: base._bindInt()
-		_dottedParentNames = ''
-		prevNode as Container? = nil
-		node as INode? = nil
-		sep = ''
-		for initNode in _initNodes
-			isLast = initNode is _initNodes[_initNodes.count-1]  # CC: ... _initNodes.last
-			if prevNode is nil
-				initNode.bindInt()
-				node = initNode.realType
-				if node inherits Container
-					node.bindInt()
-					_boundNodes.add(node)
-					prevNode = node
-					if not isLast
-						_dottedParentNames += sep + node.name
-				else
-					assert false, node
-			else
-				node = initNode.memberFrom(prevNode to Container)  # CC: axe cast if "else" is smart about "not nil"
-				if node is nil
-					# TODO: there is no line number info because this is a type, not a syntax node.
-					# ANOTHER example of how QualifiedType needs to be reworked.
-					.throwError('*** Cannot find "[initNode.name]" in [prevNode.name] at line [initNode.token.lineNum].') #  nodes = [CobraCore.toTechString(_initNodes)]')
-				if node inherits Container
-					node.bindInt()
-					_boundNodes.add(node)
-					prevNode = node
-					if not isLast
-						_dottedParentNames += sep + node.name
-				else
-					assert false, node
-			sep = '.'
-		_wrappedType = _boundNodes[_boundNodes.count-1]
-		base._bindInt()
-
-	get superType as IType? is override
-		assert .didBindInt
-		return _wrappedType.superType
-
-	## Code gen
-
-	get sharpRef as String is override
-		return '[_dottedParentNames].[_wrappedType.sharpRef]'
-
-	get csInit as String is override
-		cs = _wrappedType.csInit
-		if cs<>'null'
-			cs = _dottedParentNames to String + '.' + cs  # CC: axe cast
-		return cs
-
-
 class UnspecifiedType
 	inherits CobraType
 	"""
@@ -1224,7 +1102,7 @@ class AbstractTypeIdentifier
 	def getHashCode as int is override
 		return _name.getHashCode()
 
-	def memberFrom(container as Container) as IMember?
+	def memberFrom(container as IContainer) as IMember?
 		"""
 		Used to get the real member represented by this type identifier in container.
 		Used for qualified types such as:
@@ -1274,6 +1152,10 @@ class WrappedTypeIdentifier
 			base.init(token, token.text)
 			_typeId = typeId
 
+	def addMinFields
+		base.addMinFields
+		.addField('typeId', _typeId)
+		
 	get theWrappedTypeIdentifier from _typeId
 
 	def _bindInt is override
@@ -1291,7 +1173,7 @@ class ArrayTypeIdentifier
 	def init(token as IToken, typeId as AbstractTypeIdentifier)
 		base.init(token, typeId)
 
-	def memberFrom(container as Container) as IMember? is override
+	def memberFrom(container as IContainer) as IMember? is override
 		return container.memberForName(.theWrappedTypeIdentifier.name)
 
 	def _resolveType as IType is override
@@ -1349,7 +1231,7 @@ class TypeIdentifier
 			.name
 		body
 			base.init(token, name, type)
-			assert name == token.text or type inherits QualifiedType
+			assert name == token.text
 
 	def _resolveType as IType is override
 		# don't need to check "basic types" like int, bool, etc. here. the parser does those.
@@ -1376,8 +1258,8 @@ class GenericTypeIdentifier
 	The parser produces these when it encounters "List<of String>", for example.
 	"""
 
-	var _rootName as String  # ex: 'List'
-	var _fullName as String  # ex: 'List<of String>'
+	var _rootName as String    # ex: 'List'
+	var _fullName as String    # ex: 'List<of String>'
 	var _typeRefName as String # ex: 'List<of>' 'IDictionary<of,>' -- matches the actual box
 
 	var _typeNodes as List<of ITypeProxy>
@@ -1393,11 +1275,13 @@ class GenericTypeIdentifier
 			_typeNodes = typeNodes
 			_fullName = fullName
 			_typeRefName = _rootName + '<of'
+			# TODO: String(c',', _typeNodes.count-1) ?
 			for i = 0 .. _typeNodes.count-1
 				_typeRefName += ','
 			_typeRefName += '>'
+			_name = _typeRefName
 
-	def memberFrom(container as Container) as IMember? is override
+	def memberFrom(container as IContainer) as IMember? is override
 		# happens for a qualified generic. See ../Tests/160-qualified/200-qual-generic.cobra
 		genericType = container.memberForName(_typeRefName)
 		assert genericType
@@ -1432,7 +1316,7 @@ class GenericTypeIdentifier
 			.throwError('The definition for "[_fullName]" is not a type.')
 			return nil to passthrough
 
-
+		
 class QualifiedTypeIdentifier
 	inherits AbstractTypeIdentifier
 
@@ -1451,25 +1335,18 @@ class QualifiedTypeIdentifier
 		_name = sb.toString
 		# TODO: would it be useful to set the _token.text to the name? Maybe it would help with syntax highlighting
 
+	get typeNodes from var
+	
 	def _resolveType as IType is override
 		member = .compiler.symbolForName(_typeNodes[0].name, true, false)
-#		print
-#		print '_resolveType'
-#		trace _typeNodes
-#		trace member
 		i = 1
 		while i < _typeNodes.count and member <> nil
 			if member inherits IContainer
-#				trace i
-#				trace _typeNodes[i].name
-				m = member.memberForName(_typeNodes[i].name)
-#				n = member.declForName(_typeNodes[i].name)
-#				trace m
-#				trace n
+				m = _typeNodes[i].memberFrom(member)
 				if m
 					$sharp('member = m')
 				else
-					.throwError('Cannot find "[_name]" at component [i+1].')
+					.throwError('Cannot find "[_typeNodes[i].name]" at component [i+1] of qualified type.')
 				i += 1
 			else
 				.throwError('"[member]" cannot contain additional members.')

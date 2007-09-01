@@ -125,7 +125,10 @@ class Parser
 
 	get curBox as Box
 		# yes there is only one box at the moment, but when nested classes and structs are supported there could by many.
-		return _boxStack.peek to Box  # CC: axe typecast
+		return _boxStack.peek
+
+	get curNameSpace as NameSpace
+		return _nameSpaceStack.peek
 
 	def parseFileNamed(fileName as String) as Module
 		require .typeProvider
@@ -464,7 +467,7 @@ class Parser
 					if what
 						_module.addDecl(what to IMember)  # CC: axe typecast
 					if what inherits Box
-						assert what.nameSpace
+						assert what.parentNameSpace
 			finally
 				_nameSpaceStack.pop
 			return _module to Module # CC: to ! CC: axe cast
@@ -536,7 +539,7 @@ class Parser
 					break
 				if expectComma
 					.expect('COMMA')
-				interfaceName = .type  # using .type since interface could be a generic like IEnumerable<of T>
+				interfaceName = .type  # using .type since interface could be qualified (Foo.Bar) or a generic like IEnumerable<of T>
 				interfaceNames.add(interfaceName)
 				expectComma = true
 
@@ -777,7 +780,11 @@ class Parser
 		.dedent
 		if not enumMembers
 			.throwError('Missing enum members.')
-		return EnumDecl(token, name, isNames, storageType, docString, enumMembers)
+		if _boxStack.count
+			parent = .curBox to Container
+		else
+			parent = .curNameSpace to Container
+		return EnumDecl(parent, token, name, isNames, storageType, docString, enumMembers)
 
 	def genericConstraints(token as IToken, paramsList as List<of GenericParam>)
 		while .optional('WHERE')
@@ -1007,6 +1014,7 @@ class Parser
 					.throwError('Cannot declare parameters for destruct.')
 				if 'shared' in isNames
 					.throwError('Cannot declare a shared destructor.')
+				# TODO: remove
 				assert false
 				# CC: method = Destructor(token, .curBox, isNames, docString)
 			else
@@ -2414,8 +2422,12 @@ class Parser
 		if types.count==1
 			return types[0]
 		else
-			qt = QualifiedType(types)
-			return TypeIdentifier((types[0] to AbstractTypeIdentifier).token, qt.name, qt)
+			# if the last type is an array we need to fix things up--the array applies to the whole qualified type
+			if types[types.count-1] inherits ArrayTypeIdentifier # CC: types.last
+				innerType = QualifiedTypeIdentifier(types[:-1])
+				return ArrayTypeIdentifier(types[types.count-1].token, innerType)  # CC: types.last
+			else
+				return QualifiedTypeIdentifier(types)
 
 	def nonqualifiedType as AbstractTypeIdentifier
 		token = .grab
@@ -2485,7 +2497,7 @@ class Parser
 				fullName += ', '
 			t = .type
 			types.add(t)
-			fullName += 'delme?' # t.token.text # TODO: this is totally wrong because the type could be something complex like a qualified type or a generic type.
+			fullName += t.name
 			expectComma = true
 		fullName += '>'
 		return GenericTypeIdentifier(openGenericToken, rootName, types, fullName)

@@ -53,7 +53,9 @@ class Container
 	Subclasses are responsible for passing bindInt and bindImp to _declsInOrder.
 	"""
 
-	var _nameSpace as NameSpace?
+	var _parentNameSpace as NameSpace?
+	var _parentBox as Box?
+	
 	var _declsInOrder as List<of IMember>  # TODO: can the inner list type be narrowed more? say to IClassMemberDecl or ClassMemberDecl
 	var _declsByName as Dictionary<of String, IMember>
 	var _declsByNameCI as Dictionary<of String, IMember>
@@ -61,20 +63,47 @@ class Container
 	var _isNames as List<of String>
 
 	def init(token as IToken, name as String, isNames as List<of String>, docString as String?)
+		.init(nil, token, name, isNames, docString)
+
+	def init(parent as Container?, token as IToken, name as String, isNames as List<of String>, docString as String?)
+		require parent implies (parent inherits NameSpace or parent inherits Box)
 		base.init(token, name)
+		if parent
+			if parent inherits NameSpace
+				# _parentNameSpace = parent
+				# don't set the parentNameSpace because NameSpace.addDecl does that *and* there it will substitute its .unifiedNameSpace
+				pass
+			else if parent inherits Box
+				_parentBox = parent
+			else
+				throw FallThroughException(parent)
 		_declsInOrder = List<of IMember>()
 		_declsByName = Dictionary<of String, IMember>()
 		_declsByNameCI = Dictionary<of String, IMember>()
 		_isNames = isNames
 		_docString = docString ? ''
 
-	pro nameSpace as NameSpace?
-		get
-			return _nameSpace
-		set
-			_nameSpace = value
-
 	get declsInOrder from var
+
+	pro parentNameSpace from var
+		"""
+		The namespace this container was declared inside of, if any.
+		If nil, the .parentBox should not be.
+		"""
+
+	pro parentBox from var
+		"""
+		The box this container was declared inside of, if any.
+		Consider, for example, an enumeration that is declared inside a class.
+		If nil, the .parentNameSpace should not be.
+		"""
+
+	get parent as Container?
+		if .parentBox
+			return .parentBox
+		if .parentNameSpace
+			return .parentNameSpace
+		return nil
 
 	def addDecl(decl as IMember)
 		require
@@ -281,8 +310,30 @@ class Container
 		return 'shared' in _isNames
 
 	get sharpNameComponent as String
+		"""
+		Returns a string that can be used in a C# identifier. That means it cannot have special symbols such as period or left bracket.
+		"""
 		ensure result.length > 0  # TODO? Move to interface
 		return .sharpRef
+
+	var _sharpRef as String?
+
+	get sharpRef as String is override
+		if _sharpRef is nil and .didBindImp
+			_sharpRef = _computeSharpRef
+			return _sharpRef to String # CC: axe cast
+		else
+			return _computeSharpRef
+	
+	get _computeSharpRef as String
+		if .parent
+			s = .parent.sharpRef
+			if s.length
+				s += '.'
+			s += .sharpName
+		else
+			s = .sharpName
+		return s
 
 	def writeSharpIsNames(sw as SharpWriter)
 		# TODO: cache this somewhere
@@ -369,7 +420,7 @@ interface IMember
 			class, property, method, namespace, etc.
 		"""
 
-	pro nameSpace as NameSpace?
+	pro parentNameSpace as NameSpace?
 		"""
 		The NameSpace that the member directly belongs to, if any.
 		"""

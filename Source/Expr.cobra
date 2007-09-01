@@ -81,16 +81,6 @@ class Expr
 				if member
 					return member
 			# TODO: change code below to something like. if container inherits IContainer ...
-			while true
-				if t inherits QualifiedType  # TODO: another example of QualifiedType being a pain
-					wt = t.theWrappedType
-					if wt is nil
-						t.bindInt()
-						wt = t.theWrappedType
-						assert wt
-					$sharp('t = wt')
-				else
-					break
 			container = t to? IContainer
 			if container
 				return container.memberForName(name)
@@ -353,6 +343,7 @@ class CallExpr
 	var _args as List<of Expr>
 	var _definition as INamedNode?
 	var _isNew as bool  # "Exception('foo')" would be a CallExpr that isNew
+	var _willWriteSharpNew = true
 	var _isCallOnSystemType as bool  # "t()" where t is of System.Type would be a CallExpr that isCallOnSystemType
 
 	def init(token as IToken, name as String, args as List<of Expr>)
@@ -386,6 +377,8 @@ class CallExpr
 	get isCalling as bool is override
 		return true
 
+	get isNew from var
+	
 	get name from var
 
 	get args from var
@@ -394,6 +387,11 @@ class CallExpr
 
 	get member as IMember?
 		return _definition to? IMember
+
+	pro willWriteSharpNew from var
+		"""
+		Only checked when .isNew. Conditionally set to false in DotExpr._writeSharpDef.
+		"""
 
 	def _bindImp is override
 		base._bindImp()
@@ -555,7 +553,8 @@ class CallExpr
 		if _isNew
 			if parens
 				sw.write('(')
-			sw.write('new ')
+			if _willWriteSharpNew
+				sw.write('new ')
 		else
 			if .superNode inherits DotExpr  # otherwise, code could be: _underscoredDoesNotRequireDot()
 				name = Utils.capped(name)

@@ -63,13 +63,13 @@ class Box
 
 	get baseInterfaces from var
 	
-	pro nameSpace as NameSpace?
+	pro parentNameSpace as NameSpace?
 		get
-			return base.nameSpace
+			return base.parentNameSpace
 		set
 			# a box needs to be tied to its local namespace, not the unified one
 			assert (value and .token.text <> '(empty)') implies not value.isUnified
-			base.nameSpace = value
+			base.parentNameSpace = value
 
 	get overloads from var
 
@@ -86,14 +86,14 @@ class Box
 
 	get qualifiedRootName as String
 		require
-			.nameSpace
+			.parentNameSpace
 		ensure
 			not result.startsWith('.')
 			not result.endsWith('.')
-			not .nameSpace.isRoot implies '.' in result
+			not .parentNameSpace.isRoot implies '.' in result
 		body
 			nameSpaces = List<of NameSpace>()
-			ns = _nameSpace
+			ns = .parentNameSpace
 			while ns and not ns.isRoot
 				nameSpaces.add(ns to passthrough)  # CC: axe cast
 				assert ns is not ns.superNameSpace
@@ -188,11 +188,12 @@ class Box
 			if x.requiresThis
 				x = nil
 		if x is nil and checkNameSpace
+			nameSpace = .parentNameSpace
 			if .didBindInt
-				assert _nameSpace
-			if _nameSpace
-				assert not _nameSpace.isUnified
-				x = _nameSpace.symbolForName(name)
+				assert nameSpace
+			if nameSpace
+				assert not nameSpace.isUnified
+				x = nameSpace.symbolForName(name)
 		return x
 
 	## INamedNode
@@ -303,22 +304,12 @@ class Box
 		for node in _baseInterfaceNodes
 			try
 				baseWhat = (node.bindInt to ITypeProxy).realType  # CC: axe cast
-				# TODO: strongly consider getting rid of QualifiedType and using TypeIdentifier in its place
-				if baseWhat inherits QualifiedType
-					baseWhat.bindInt()
 				if baseWhat is nil
 					assert false, 'When does this happen?'
 					.throwError('Cannot locate [node].')
 				else if baseWhat inherits Interface
 					_baseInterfaces.add(baseWhat)
 					_baseInterfaceTypes.add(baseWhat)
-				else if baseWhat inherits QualifiedType
-					if baseWhat.theWrappedType inherits Interface
-						_baseInterfaces.add(baseWhat.theWrappedType to Interface)
-						_baseInterfaceTypes.add(baseWhat)
-					else
-						assert baseWhat.theWrappedType, baseWhat.toTechString()
-						.throwError('Cannot inherit "[baseWhat.theWrappedType.name]" which is a [baseWhat.theWrappedType.englishName].')
 				else
 					_badInterfaceError(baseWhat to IType)  # CC: axe type cast
 			catch ne as NodeException
@@ -393,6 +384,9 @@ class Box
 			key = Utils.join(',', for type in typeArgs get type.name)
 			if _constructedTypes.containsKey(key)
 				return _constructedTypes[key]
+			# TODO: this next if-statement and .bindInt call can be axed if a there is a separate "bind inheritance" phase
+			if not .didBindInt and not .isBindingInt
+				.bindInt
 			t = .memberwiseClone to Box
 			_constructedTypes[key] = t
 			t._completeConstruction(this, typeArgs, key)
@@ -516,7 +510,7 @@ class Box
 	get sharpName as String is override
 		return _name.replace('of', '')
 
-	get sharpRef as String is override
+	get _computeSharpRef as String is override
 		if _params.count
 			sb = StringBuilder()
 			# generic
@@ -529,9 +523,12 @@ class Box
 				sb.append(param.sharpRef)
 				sep = ', '
 			sb.append('>')
-			return sb.toString
+			sharp = sb.toString
 		else
-			return .name
+			sharp = .name
+		if .parentNameSpace and not .parentNameSpace.isRoot
+			sharp = .parentNameSpace.fullName + '.' + sharp
+		return sharp
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
@@ -604,7 +601,7 @@ class Box
 			return
 		if .isFake
 			return
-		assert _nameSpace
+		assert .parentNameSpace
 		sw.write('\t\t[.qualifiedRootName].RunTestsIfNeeded();\n')
 		_didWriteSharpTestInvocation = true
 
@@ -625,6 +622,9 @@ class Class
 		base.addSubFields()
 		.addField('baseNode', _baseNode)
 
+	get isCallable as bool is override
+		return true
+		
 	def isDescendantOf(type as IType) as bool is override
 		if not type.didBindInt
 			type.bindInt()
@@ -684,9 +684,6 @@ class Class
 			baseName = (_baseNode to AbstractTypeIdentifier).name
 			if possible is nil
 				.throwError('Cannot locate base class named "[baseName]" for class "[_name]".')
-			if possible inherits QualifiedType
-				possible.bindInt()  # TODO: another monkey wrench showing how QualifiedType should be retired
-				$sharp('possible = ((QualifiedType)possible).TheWrappedType')
 			if possible inherits Class
 				_baseClass = possible
 			else if possible inherits Interface
@@ -710,6 +707,7 @@ class Class
 		if not foundConstructor
 			# TODO: this should be changed to provide cover constructors for each of the public, inherited constructors
 			.addDecl(Constructor(.token, this, List<of Param>(), ['public'], ''))
+		# Note that the _baseClass is not told to bindInt. That would fail for classes in other namespaces and it's unnecessary s
 		base._bindInt()
 
 	def _badInterfaceError(type as IType) is override
@@ -723,8 +721,6 @@ class Class
 		assert _baseClass or _name=='Object'
 		if _baseClass
 			#assert _baseClass.didBindInt
-			if not _baseClass.didBindInt
-				_baseClass.bindInt
 			for decl in List<of IMember>(_declsInOrder)
 				if decl inherits Method and not decl inherits Constructor
 					other = _baseClass.memberForName(decl.name)
@@ -763,11 +759,13 @@ class Class
 
 	def writeSharpInheritance(sw as SharpWriter) is override
 		sw.write(' : ')
-		if _baseNode inherits TypeIdentifier
-			# needed QualifiedTypes such "inherits System.Collection.ArrayList". See Tests\300-misc\700-use-on-generice-IList
-			sw.write(_baseNode.actualType.sharpRef)
-			didWrite = true
-		else if _baseClass
+# axeqt
+#		if _baseNode inherits TypeIdentifier
+#			# needed QualifiedTypes such "inherits System.Collection.ArrayList". See Tests\300-misc\700-use-on-generice-IList
+#			sw.write(_baseNode.actualType.sharpRef)
+#			didWrite = true
+#		else
+		if _baseClass
 			sw.write(_baseClass.sharpRef)
 			didWrite = true
 		if didWrite
@@ -838,8 +836,8 @@ class Struct
 	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseName as String?, interfaceNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, paramList, isNames, interfaceNodes, docString)
 
-	def _bindInt is override
-		base._bindInt()
+	get isCallable as bool is override
+		return true
 
 	get isReference as bool is override
 		return false

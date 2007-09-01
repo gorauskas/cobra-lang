@@ -49,6 +49,21 @@ class NameSpace
 		.addField('superNameSpace', _superNameSpace)
 		.addField('unifiedNameSpace', _unifiedNameSpace)
 
+	get fullName as String
+		ensure
+			not .isRoot implies .name in result
+			not result.startsWith('.')
+			not result.endsWith('.')
+		body
+			# TODO: cache this
+			t = List<of String>()
+			ns = this to NameSpace?  # CC: to ?
+			while ns and not ns.isRoot
+				t.add(ns.name)
+				ns = ns._superNameSpace
+			t.reverse
+			return Utils.join('.', t)
+		
 	def getOrMakeNameSpaceNamed(token as IToken, name as String) as NameSpace  # CC: same
 		"""
 		Returns the existing sub-namespace with the given name or creates it.
@@ -119,7 +134,7 @@ class NameSpace
 				return x
 
 			# a parent namespace?
-			if _superNameSpace  # delme and not _superNameSpace.isGlobal  # Compiler will search the global namespace
+			if _superNameSpace
 				x = _superNameSpace.symbolForName(name)
 				if x
 					return x
@@ -144,15 +159,15 @@ class NameSpace
 			assert (.isUnified and decl.isUnified) or (not .isUnified and not decl.isUnified)
 			_subNameSpaces.add(decl.name, decl)  # TODO: add some require and ensure around the subNameSpaces
 		if decl inherits NameSpace
-			assert decl.nameSpace is this or decl.nameSpace is nil
-			decl.nameSpace = this
+			assert decl.parentNameSpace is this or decl.parentNameSpace is nil
+			decl.parentNameSpace = this
 		else
-			if decl.nameSpace
-				assert decl.nameSpace.unifiedNameSpace is this
+			if decl.parentNameSpace
 				assert .isUnified
+				assert decl.parentNameSpace.unifiedNameSpace is this
 			else
 				assert not .isUnified
-				decl.nameSpace = this
+				decl.parentNameSpace = this
 		if not .isUnified
 			# mirror the declarations in the unified namespace
 			if decl inherits NameSpace
@@ -166,6 +181,9 @@ class NameSpace
 			return _subNameSpaces[name]
 		else
 			return nil
+
+	get sharpRef as String is override
+		return .fullName
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
@@ -182,8 +200,9 @@ class NameSpace
 class UseDirective
 	inherits SyntaxNode
 	implements IMember  # TODO: why is a UseDirective an IMember???
+	# TODO: it seems that use directives should *not* be declarations of a namespace, but instead the namespace should simply have a list of use directives
 
-	var _nameSpace as NameSpace?
+	var _parentNameSpace as NameSpace?
 	var _nameParts as List<of String>
 	var _boundNameSpace as NameSpace?
 	var _fullName as String
@@ -210,7 +229,7 @@ class UseDirective
 		set
 			pass
 
-	pro nameSpace from var
+	pro parentNameSpace from var
 
 	def findSymbol(name as String) as IMember?
 		if not .didBindInt
