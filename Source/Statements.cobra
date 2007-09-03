@@ -53,6 +53,7 @@ class Stmt
 			# find or infer
 			definition as INamedNode?
 			canBeUndottedMember = .compiler.canNameBeUndottedMember(ve.name)
+			usingExistingLocal = false
 			if canBeUndottedMember
 				assert .compiler.boxStack
 				definition = .compiler.symbolForName(ve.name, canBeUndottedMember, false) to passthrough
@@ -61,15 +62,24 @@ class Stmt
 			else
 				definition = .compiler.findLocal(ve.name)
 				# infer a local var
+				it = .inferredType
+				if it is nil
+					.throwError('Cannot infer the type for "[ve.name]" from the "for" loop.')				
 				if definition is nil
-					it = .inferredType
-					if it
-						definition = LocalVar(ve.token, it).bindAll to INamedNode  # CC: axe cast after "as this"
-						.compiler.curCodeMember.addLocal(definition to LocalVar)
-					else
-						.throwError('Cannot infer the type for "[ve.name]" from the "for" loop.')
+					definition = LocalVar(ve.token, it).bindAll to INamedNode  # CC: axe cast after "as this"
+					.compiler.curCodeMember.addLocal(definition to LocalVar)
+				else
+					# using an existing local. that's fine as long as the types are the name
+					usingExistingLocal = true
 			if definition inherits IVar
 				varr = definition
+				if usingExistingLocal
+					ve.bindImp  # can't do this at the beginning of this method as it interferes with type inference. but here, it's an existing var so no "Unknown identifier" error will occur
+					assert definition.type
+					if definition.type is .compiler.passThroughType
+						varr.type = definition.type
+					else if not it.isAssignableTo(definition.type to IType)  # CC: axe cast
+						.throwError('Cannot redeclare "[ve.name]" as "[it.name]" because it was declared as "[definition.type.name]" earlier.') # TODO: would be nice to give the location of the other declaration				
 			else
 				.throwError('The definition of "[ve.name]" is not a variable which is what the "for" loop requires.')
 			ve.bindImp
@@ -426,6 +436,17 @@ class ForStmt
 		else
 			assert _varExpr.hasError, _varExpr
 		#if not var.isTracked  TODO disabled this to get tests\200-classes\804-test.cobra working.
+		if false
+			varr = .var
+			existingVar = .compiler.curCodeMember.findLocal(varr.name)
+			trace existingVar, varr.name, varr
+			if existingVar
+				# that's fine as long as the types are the name
+				if varr.type is .compiler.passThroughType
+					varr.type = existingVar.type
+				else if existingVar.type is not varr.type
+					.throwError('Cannot redeclare "[varr.name]" as "[varr.type]" because it was declared as "[existingVar.type]" earlier.') # TODO: would be nice to give the location of the other declaration
+			
 # TODO: check for existing  variables
 #		if 1
 #			ns = .compiler.nameSpaceStack.peek
@@ -1044,13 +1065,15 @@ class CatchBlock
 		base._bindImp
 		if _var
 			_var.bindImp
+			# TODO: should this be using .bindVar like others?
+			# TODO: wtf is isTracked again?
 			if not _var.isTracked
 				varr = _var to LocalVar  # CC: axe typecast
 				codePart = .compiler.codeMemberStack.peek
 				existingVar = codePart.findLocal(varr.name)
 				if existingVar
 					if existingVar.type is not varr.type
-						.throwError('Cannot redeclare "[varr.name]" as "[varr.type]" because it was declared as "[existingVar.type]" earlier.')
+						.throwError('Cannot redeclare "[varr.name]" as "[varr.type.name]" because it was declared as "[existingVar.type.name]" earlier.')
 				else
 					codePart.addLocal(varr)
 			if _type is nil
