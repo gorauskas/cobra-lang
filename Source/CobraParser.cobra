@@ -1499,9 +1499,9 @@ class Parser
 		e = .expression
 		.indent
 		onParts = List<of BranchOnPart>()
-		elsePart as BlockStmt? = nil  # CC: axe type decl
-		continuee = true  # CC: axe this when 'break' can be used in a branch inside a loop
-		while continuee
+		elsePart as BlockStmt?
+		shouldContinue = true  # CC: axe this when 'break' can be used in a branch inside a loop
+		while shouldContinue
 			branch .peek.which
 				on 'ON'
 					.grab
@@ -1519,10 +1519,12 @@ class Parser
 						.throwError('Cannot have an "else" in a branch without at least one "on".')
 					elsePart = .branchPartStatements
 				on 'DEDENT'
-					.grab
-					continuee = false  # CC: axe this when we can use break in a branch
+					shouldContinue = false
+				on 'EOL'
+					shouldContinue = false
 				else
 					.throwError('Expecting "on", "else" or end of branch statement. Encountered [.peek.which]')
+		.dedent
 		return BranchStmt(token, e, onParts, elsePart)
 
 	def branchPartStatements as BlockStmt
