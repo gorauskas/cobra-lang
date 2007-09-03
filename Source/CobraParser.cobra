@@ -830,30 +830,43 @@ class Parser
 		.expect('NAMESPACE')
 		curNameSpace = _nameSpaceStack.peek
 		assert not curNameSpace.isUnified
-		tok = .expect('ID')
-		name = tok.value to String  # CC: .value should probably be dynamic
-		curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(tok, name)
-		assert not curNameSpace.isUnified
-		_nameSpaceStack.push(curNameSpace)
-		.indent
+		idTokens = [.expect('ID')]
 		while true
-			peek = .peek
-			if peek is nil
-				.throwError('expecting a namespace member, but source code ended')
-			tok = peek to IToken  # CC: to !
-			if tok.which=='DEDENT'
+			if .peek.which == 'DOT'
+				.grab
+				idTokens.add(.expect('ID'))
+			else
 				break
-			branch tok.which
-				on 'CLASS':  curNameSpace.addDecl(.classDecl)
-				on 'INTERFACE': curNameSpace.addDecl(.interfaceDecl)
-				on 'STRUCT': curNameSpace.addDecl(.structDecl)
-				on 'USE': curNameSpace.addDecl(.useDirective)
-				on 'NAMESPACE': .nameSpaceDecl
-				on 'ENUM': curNameSpace.addDecl(.enumDecl)
-				else: .throwError('expecting a namespace member but got [tok]')
-		.dedent
-		_nameSpaceStack.pop
-		return curNameSpace
+		firstNameSpace as NameSpace?
+		for tok in idTokens
+			name = tok.value to String  # CC: .value should probably be dynamic
+			curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(tok, name)
+			if firstNameSpace is nil
+				firstNameSpace = curNameSpace
+			assert not curNameSpace.isUnified
+			_nameSpaceStack.push(curNameSpace)			
+		try
+			.indent
+			while true
+				peek = .peek
+				if peek is nil
+					.throwError('expecting a namespace member, but source code ended')
+				tok = peek to IToken  # CC: to !
+				if tok.which == 'DEDENT'
+					break
+				branch tok.which
+					on 'CLASS':  curNameSpace.addDecl(.classDecl)
+					on 'INTERFACE': curNameSpace.addDecl(.interfaceDecl)
+					on 'STRUCT': curNameSpace.addDecl(.structDecl)
+					on 'USE': curNameSpace.addDecl(.useDirective)
+					on 'NAMESPACE': .nameSpaceDecl
+					on 'ENUM': curNameSpace.addDecl(.enumDecl)
+					else: .throwError('expecting a namespace member but got [tok]')
+			.dedent
+		finally
+			for tok in idTokens
+				_nameSpaceStack.pop
+		return firstNameSpace to NameSpace # CC: to !
 
 	def bodiedBoxMemberDecls(box as Box)
 # TODO: remove this when SystemInterfaces.cobra and "is fake" goes away
