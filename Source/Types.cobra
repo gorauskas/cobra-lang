@@ -181,7 +181,12 @@ interface IType
 
 	def isComparableTo(t as IType) as bool
 		"""
-		Returns true if this type can be compared to the given type via `is`, `is not`, `==`, `<>`, `>`, etc.
+		Returns true if this type can be compared to the given type via comparison operators such as `>`, `<=`, etc.
+		"""
+
+	def isEquatableTo(t as IType) as bool
+		"""
+		Returns true if this type can be compared to the given type via `is`, `is not`, `==` and `<>`.
 		"""
 
 	get genericTypeDef as IType?
@@ -326,13 +331,27 @@ class CobraType
 	get isShared as bool
 		return true
 
-	def isComparableTo(b as IType) as bool
-		if b inherits NilableType
-			# CC: b = b.theWrappedType
-			$sharp('b = ((NilableType)b).TheWrappedType')
-		if .isAssignableTo(b to IType) or b.isAssignableTo(this)  # CC: to ! or assert above with nil flow analysis
+	def isComparableTo(t as IType) as bool
+		if t inherits NilableType
+			# CC: t = t.theWrappedType
+			$sharp('t = ((NilableType)t).TheWrappedType')
+		compareTo = .memberForName('compareTo')
+		if compareTo and compareTo.isMethod and compareTo.resultType is .compiler.intType and t.isDescendantOf(this)
+			# TODO: check that the compareTo can take a `t` as an argument
 			return true
-		if b inherits NilType # TODO: axe this. but temp reason for this is due to Tests\150-basics-two\100-using.cobra
+		if t inherits DynamicType
+			return true
+		if t inherits NilType  # TODO: is this needed? See comment in isEquatableTo
+			return true
+		return false
+
+	def isEquatableTo(t as IType) as bool
+		if t inherits NilableType
+			# CC: b = b.theWrappedType
+			$sharp('t = ((NilableType)t).TheWrappedType')
+		if .isAssignableTo(t to IType) or t.isAssignableTo(this)  # CC: to ! or assert above with nil flow analysis
+			return true
+		if t inherits NilType # TODO: axe this. but temp reason for this is due to Tests\150-basics-two\100-using.cobra
 			return true
 		return false
 
@@ -435,12 +454,15 @@ class CobraType
 		if this is type
 			return true
 		curType as IType? = this  # CC: change to: curType = this to ?
+		counter = 0
 		while true
 			if curType is type
 				return true
 			curType = curType.superType
 			if curType is nil
 				break
+			counter += 1
+			assert counter < 1000
 		return false
 
 	pro isUsed from var
@@ -521,7 +543,12 @@ class PrimitiveType
 	The base class of BoolType, CharType, etc.
 	Used purely for classification purposes (`t inherits PrimitiveType`).
 	"""
-	pass
+
+	def isComparableTo(t as IType) as bool
+		r = base.isComparableTo(t)
+		if not r and t is this
+			r = true
+		return r
 
 
 class BoolType
@@ -552,6 +579,12 @@ class CharType
 			r = true
 		return r
 
+	def isEquatableTo(t as IType) as bool
+		r = base.isEquatableTo(t)
+		if not r and t is .compiler.libraryType('System', 'String')
+			r = true
+		return r
+
 	get csInit as String is override
 		return '(char)0'
 
@@ -576,6 +609,12 @@ class DynamicType
 		return 'dynamic'
 
 	def isAssignableTo(type as IType) as bool is override
+		return true
+
+	def isComparableTo(type as IType) as bool is override
+		return true
+
+	def isEquatableTo(type as IType) as bool is override
 		return true
 
 	get isDynamic as bool is override
@@ -672,6 +711,9 @@ class NilableType
 
 	def isDescendantOf(type as IType) as bool is override
 		return base.isDescendantOf(type) and _wrappedType.isDescendantOf(type)
+
+	def isEquatableTo(b as IType) as bool is override
+		return _wrappedType.isEquatableTo(b)
 
 	def memberForName(name as String) as IMember? is override
 		assert .didBindInt

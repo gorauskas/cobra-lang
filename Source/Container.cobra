@@ -36,6 +36,15 @@ class Container
 	NamedNode should inherit Node and the token thing done via ISyntaxNode only. At the very
 	least, greatestCommonDenominatorWith() is duplicated. Others may be as well.
 
+		More thoughts on this. NameSpace inherits from Container, but NameSpace is *not* a type.
+		Also, there are several members here that are duplicated from CobraType.
+		I wish .NET had natural support for multiple inheritance
+		So my current thoughts:
+			Container should not implement IType
+			Box should implement IType
+			Live with some duplication for now
+			Later, move duplicated members to the IType interface when Cobra supports interface code
+			
 	A container has:
 		* declarations in a given order, but also accessible by name,
 		  both case-sensitive and non.
@@ -222,14 +231,27 @@ class Container
 					type.writeDeepString()
 			return result_
 
-	def isComparableTo(b as IType) as bool
-		# CC: duplicated from Type
-		if b inherits NilableType
-			# CC: b = b.theWrappedType
-			$sharp('b = ((NilableType)b).TheWrappedType')
-		if this.isAssignableTo(b to IType) or b.isAssignableTo(this)  # CC: to ! or assert above with nil flow analysis
+	# CC: duplicated from Type
+	def isComparableTo(t as IType) as bool
+		if t inherits NilableType
+			# CC: t = t.theWrappedType
+			$sharp('t = ((NilableType)t).TheWrappedType')
+		compareTo = .memberForName('compareTo')
+		if compareTo and compareTo.isMethod and compareTo.resultType is .compiler.intType and t and t.isDescendantOf(this)
+			# TODO: check that the compareTo can take a `t` as an argument
 			return true
-		if b inherits NilType # TODO: axe this. but temp reason for this is due to Tests\150-basics-two\100-using.cobra
+		if t inherits NilType  # TODO: is this needed? See comment in isEquatableTo
+			return true
+		return false
+
+	# CC: duplicated from Type
+	def isEquatableTo(t as IType) as bool
+		if t inherits NilableType
+			# CC: b = b.theWrappedType
+			$sharp('t = ((NilableType)t).TheWrappedType')
+		if .isAssignableTo(t to IType) or t.isAssignableTo(this)  # CC: to ! or assert above with nil flow analysis
+			return true
+		if t inherits NilType # TODO: axe this. but temp reason for this is due to Tests\150-basics-two\100-using.cobra
 			return true
 		return false
 
