@@ -1,16 +1,16 @@
-
-
 class NameSpace
 	inherits Container
 
 	var _unifiedNameSpace as NameSpace?
 	var _superNameSpace as NameSpace?
 	var _subNameSpaces as Dictionary<of String, NameSpace>
+	var _useDirectives as List<of UseDirective>
 
 	def init(unifiedNameSpace as NameSpace, name as String)
 		.init(TokenFix.empty, name)
 		_unifiedNameSpace = unifiedNameSpace
-		
+		_useDirectives = List<of UseDirective>()
+
 	def init(token as IToken, name as String)
 		.init(token, name, nil, nil)
 
@@ -21,6 +21,7 @@ class NameSpace
 		base.init(token, name, List<of String>(), docString)
 		_superNameSpace = superNameSpace
 		_subNameSpaces = Dictionary<of String, NameSpace>()
+		_useDirectives = List<of UseDirective>()
 
 	get isGlobal as bool
 		return _superNameSpace is nil and _name=='(global)'
@@ -39,13 +40,13 @@ class NameSpace
 
 	get unifiedNameSpace from var
 	
-	def addMinFields is override
-		base.addMinFields()
+	def addMinFields
+		base.addMinFields
 		.addField('subCount', _subNameSpaces.count)
 		.addField('isUnified', .isUnified)
 
-	def addRefFields is override
-		base.addRefFields()
+	def addRefFields
+		base.addRefFields
 		.addField('superNameSpace', _superNameSpace)
 		.addField('unifiedNameSpace', _unifiedNameSpace)
 
@@ -97,23 +98,27 @@ class NameSpace
 	get typeForReceiver as IType? is override
 		return this
 
-	def _bindInt is override
-		base._bindInt()
+	def _bindInt
+		base._bindInt
 		.compiler.nameSpaceStack.push(this)
 		try
+			for ud in _useDirectives
+				ud.bindInt
 			for decl in _declsInOrder
-				decl.bindInt()
+				decl.bindInt
 		finally
-			.compiler.nameSpaceStack.pop()
+			.compiler.nameSpaceStack.pop
 
-	def _bindImp is override
-		base._bindImp()
+	def _bindImp
+		base._bindImp
 		.compiler.nameSpaceStack.push(this)
 		try
+			for ud in _useDirectives
+				ud.bindImp
 			for decl in _declsInOrder
-				decl.bindImp()
+				decl.bindImp
 		finally
-			.compiler.nameSpaceStack.pop()
+			.compiler.nameSpaceStack.pop
 
 	def symbolForName(name as String) as IMember?
 		if not .isUnified
@@ -142,11 +147,10 @@ class NameSpace
 		return nil
 
 	def _symbolForNameFromUseDirectives(name as String) as IMember?
-		for decl in _declsInOrder
-			if decl inherits UseDirective
-				x = decl.findSymbol(name)
-				if x
-					return x
+		for ud in _useDirectives
+			x = ud.findSymbol(name)
+			if x
+				return x
 		if _superNameSpace
 			return _superNameSpace._symbolForNameFromUseDirectives(name)
 		else
@@ -172,8 +176,11 @@ class NameSpace
 			# mirror the declarations in the unified namespace
 			if decl inherits NameSpace
 				pass
-			else if not decl inherits UseDirective
+			else
 				_unifiedNameSpace.addDecl(decl)
+
+	def addUseDirective(ud as UseDirective)
+		_useDirectives.add(ud)
 
 	def subNameSpaceForName(name as String) as NameSpace?
 		require name
@@ -190,6 +197,8 @@ class NameSpace
 		base.writeSharpDef(sw)
 		if not .isRoot
 			sw.writeAndIndent('namespace [.name] {\n\n')
+		for ud in _useDirectives
+			ud.writeSharpDef(sw)
 		for decl in _declsInOrder
 			if decl inherits Box
 				.compiler.boxStack.push(decl)
@@ -206,10 +215,7 @@ class NameSpace
 
 class UseDirective
 	inherits SyntaxNode
-	implements IMember  # TODO: why is a UseDirective an IMember???
-	# TODO: it seems that use directives should *not* be declarations of a namespace, but instead the namespace should simply have a list of use directives
 
-	var _parentNameSpace as NameSpace?
 	var _nameParts as List<of String>
 	var _boundNameSpace as NameSpace?
 	var _fullName as String
@@ -217,26 +223,16 @@ class UseDirective
 	def init(token as IToken, nameParts as List<of String>)
 		base.init(token)
 		_nameParts = nameParts
-		# CC: can't use String.join because it takes the parts as an array instead of IEnumerable<of String>. add that as an extension method.
+		# CC: can't use String.join because it takes the parts as an array instead of IEnumerable<of String>. add that as an extension method. (well, could use .toArray)
 		_fullName = Utils.join('.', nameParts)
 
-	def addMinFields is override
-		base.addMinFields()
-		.addField('name', .name)
+	def addMinFields
+		base.addMinFields
+		.addField('fullName', _fullName)
 
-	get isCallable as bool
-		return false
-
-	get isMethod as bool
-		return false
-
-	pro isUsed as bool
-		get
-			return true
-		set
-			pass
-
-	pro parentNameSpace from var
+	def addRefFields
+		base.addRefFields
+		.addField('boundNameSpace', _boundNameSpace)
 
 	def findSymbol(name as String) as IMember?
 		if not .didBindInt
@@ -245,8 +241,8 @@ class UseDirective
 			return nil
 		return _boundNameSpace.symbolForName(name)
 
-	def _bindInt is override
-		base._bindInt()
+	def _bindInt
+		base._bindInt
 		curNS as NameSpace? = .compiler.globalNS  # CC: either "as ?" or "to ?"
 		for name in _nameParts
 			curNS = curNS.subNameSpaceForName(name)
@@ -258,38 +254,5 @@ class UseDirective
 		#assert curNS, 'last name=[name], dottedNames=[.dottedNames]'
 		_boundNameSpace = curNS
 
-	## IMember
-
-	get englishName as String
-		return 'use directive'
-
-	get isShared as bool
-		return true
-
-	get name as String
-		return '!_use_[.serialNum]_[CobraCore.toTechString(_nameParts)]'
-
-	get requiresThis as bool
-		return false
-
-	get resultType as IType
-		throw DoNotUseException('should never use the result type of a UseDirective')
-
-	## INamedNode
-
-	get typeForIdentifier as IType?
-		throw DoNotUseException('not expecting `typeForIdentifier` for UseDirective')
-
-	get typeForReceiver as IType?
-		throw DoNotUseException('not expecting `typeForReceiver` for UseDirective')
-
-	## Code gen
-
 	def writeSharpDef(sw as SharpWriter) is override
 		sw.write('using [_fullName];\n')
-
-	get sharpName as String
-		throw UnexpectedInvocationException(this)
-
-	def writeSharpTestInvocation(sw as SharpWriter)
-		pass
