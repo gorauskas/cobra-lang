@@ -57,7 +57,7 @@ interface IToken
 
 	pro nextToken as IToken
 		"""
-		Use this to "insert" extra tokens into the token stream from an onWHICH() method.
+		Use this to "insert" extra tokens into the token stream from an .onWHICH method.
 		"""
 
 	def toTechString as String
@@ -186,7 +186,7 @@ class Token
 					else: sb.append(c)
 			s = sb.toString
 			if s.length
-				if _which is nil or s.toLower()==_which.toLower()  # if keyword...
+				if _which is nil or s.toLower == _which.toLower  # if keyword...
 					return '"[s]"'
 				else
 					return '"[s]" ([_which])'
@@ -215,7 +215,7 @@ class TokenFix
 class TokenizerError
 	inherits SystemException
 	"""
-	Raised by nextToken() when there are errors in the source trying to be tokenized.
+	Raised by .nextToken when there are errors in the source trying to be tokenized.
 	"""
 
 	var _tokenizer as Tokenizer
@@ -348,7 +348,7 @@ class Tokenizer
 	def startFileNamed(fileName as String) as Tokenizer  # TODO: as this
 		_fileName = fileName
 		_stream = File.openText(fileName)
-		.afterStart()
+		.afterStart
 		return this
 
 	def startSource(source as String) as Tokenizer
@@ -361,7 +361,7 @@ class Tokenizer
 			print '**********************************************************************'
 		_fileName = fileName
 		_stream = StringReader(source)
-		.afterStart()
+		.afterStart
 		return this
 
 	get nextToken as IToken?
@@ -378,7 +378,7 @@ class Tokenizer
 			_avgCountNum = 0
 			# print '*** avg toks to look through: [avgCount:N2] for [_fileName]'
 		if _verbosity>=1
-			print '<> nextToken() returning [_lastToken]'
+			print '<> .nextToken returning [_lastToken]'
 		return _lastToken
 
 	shared
@@ -395,12 +395,12 @@ class Tokenizer
 		body
 			fileName = .fileName to String
 			if not fileName.endsWith('SystemInterfaces.cobra')  # being conservative
-				return .allTokens()
+				return .allTokens
 			# below, we make a copy of the list to keep the cache safe from mods
 			if _cachedTokens.containsKey(fileName)
 				return List<of IToken>(_cachedTokens[fileName])
 			else
-				return List<of IToken>(_cachedTokens[fileName] = .allTokens())
+				return List<of IToken>(_cachedTokens[fileName] = .allTokens)
 
 	def allTokens as List<of IToken>
 		"""
@@ -409,9 +409,10 @@ class Tokenizer
 		tokens = List<of IToken>()
 		while true
 			t = .nextToken
-			if t is nil
+			if t
+				tokens.add(t)
+			else
 				break
-			tokens.add(t to IToken)  # CC: axe cast
 		return tokens
 
 	def restart
@@ -420,7 +421,7 @@ class Tokenizer
 		Normally you would call this after completing the tokenization of a source file.
 		"""
 		if _stream
-			_stream.close()
+			_stream.close
 			$sharp('_stream = null')
 		_reset()
 
@@ -449,13 +450,13 @@ class Tokenizer
 		Returns a TokenDef object for a spec such as
 			r'ID			[A-Za-z_][A-Za-z0-9_]*'
 		"""
-		spec = spec.trim().replace('\t', ' ')
+		spec = spec.trim.replace('\t', ' ')
 
 		# CC: should be something like:
 		# which, re = spec.split(array(c' '), 2)
 		# instead of:
 		partNum = 0
-		for part as String in spec.split([c' '].toArray(), 2)
+		for part in spec.split(@[c' '], 2)
 			if partNum==0
 				which = part
 			else
@@ -463,7 +464,7 @@ class Tokenizer
 			partNum += 1
 		assert partNum==2, 'Got [partNum] part(s) for spec "[spec]" instead of 2'
 
-		re = re.trim()
+		re = re.trim
 		assert which
 		assert re
 		return TokenDef(which, re)
@@ -477,7 +478,7 @@ class Tokenizer
 		ensure
 			_tokenDefs
 		body
-			assert _didReset, 'Have not reset. Probably the subclass overrides _reset() but forgets to invoke base.'
+			assert _didReset, 'Have not reset. Probably the subclass overrides _reset but forgets to invoke base.'
 			# create a single list of all token defs in the correct order
 			_tokenDefs = List<of TokenDef>()
 			if .orderedTokenSpecs.count
@@ -490,14 +491,14 @@ class Tokenizer
 			if .keywords.length
 				t = List<of String>()
 				for line as String in .keywords.split(c'\n')
-					line = line.trim()
+					line = line.trim
 					if not line or line.startsWith('#')
 						continue
 					t.addRange(line.split(nil))
 				for word in t
-					_keywordToWhichToken[word] = word.toUpper()
+					_keywordToWhichToken[word] = word.toUpper
 			# longest tokens need to be matched first
-			# CC: others.sort(def(a, b)=cmp(a.length, b.length))
+			# CC: others.sort(def(a, b)=a.length.compareTo(b.length))
 			didSort = false
 			post while didSort
 				didSort = false
@@ -517,20 +518,19 @@ class Tokenizer
 			result implies _sourceLine
 			result implies _lineNum == old _lineNum + 1
 		body
-			_sourceLine = _originalSourceLine = _stream.readLine()
+			_sourceLine = _originalSourceLine = _stream.readLine
 			if _sourceLine is nil
 				# end of source
 				return false
 			numLines = Utils.countChars(_sourceLine to String, c'\n')  # CC: to !
-			if numLines==0
-				if _willAlwaysEndWithNewLine
-					_sourceLine += "\n"
+			if numLines == 0 and _willAlwaysEndWithNewLine
+				_sourceLine += "\n"
 			#trace sourceLine
 			if numLines
 				if numLines==1
 					assert _sourceLine.endsWith('\n')
 				else
-					assert false, 'Expecting readline() to return one line instead of many.'
+					assert false, 'Expecting readLine to return one line instead of many.'
 			_sourceLineIndex = 0
 			_lineNum += 1
 			_colNum = 1
@@ -548,7 +548,7 @@ class Tokenizer
 		try
 			if _tokenQueue.count
 				# eat up queue first
-				return _tokenQueue.dequeue()
+				return _tokenQueue.dequeue
 			if not _sourceLine or not _sourceLine.length
 				if not _obtainSource()
 					return nil
@@ -584,7 +584,7 @@ class Tokenizer
 						continue
 					assert match.index==0
 					_lastTokenDef = _curTokenDef
-					_curTokenDef = tokenDef  # this enables onTOKENWHICH() methods to access the current tokenDef
+					_curTokenDef = tokenDef  # this enables .onTOKENWHICH methods to access the current tokenDef
 					text = match.toString
 					#print '<> Match! [CobraCore.toTechString(text)] - [tokenDef]'
 					# tok = Token(_fileName, _lineNum, _colNum, _charNum, tokenDef.which, text, text) to ? # CC
@@ -609,7 +609,7 @@ class Tokenizer
 						
 					if meth
 						try
-							tok = meth.invoke(this, @[tok]) to IToken  # CC: to IToken?
+							tok = meth.invoke(this, @[tok]) to IToken?
 						catch tie as TargetInvocationException
 							throw tie.innerException
 						if tok is nil
@@ -686,7 +686,7 @@ class Tokenizer
 					t.addRange(unknownFirstCharDefs)
 					# sort by number
 					# CC: should specify the comparison here I think, since there is another place where they are sorted by length
-					t.sort()
+					t.sort
 					if v
 						print '{[key]}'
 						for i = 0 .. t.count
@@ -700,9 +700,9 @@ class Tokenizer
 		require
 			_tokenDefsStack.count > 0
 		body
-			_tokenDefsStack.pop()
+			_tokenDefsStack.pop
 			if _tokenDefsStack.count
-				tokenDefSet as TokenDefSet = _tokenDefsStack.peek() to TokenDefSet # CC: shouldn't need the 'as' or the 'to'
+				tokenDefSet = _tokenDefsStack.peek
 				defs = tokenDefSet.defs # CC: add: to ?
 				defsByWhich = tokenDefSet.defsByWhich # CC: add: to ?
 				defsByFirstChar = tokenDefSet.defsByFirstChar
@@ -837,8 +837,10 @@ class TokenDef
 	def compareTo(obj as Object) as int
 		if obj is nil
 			return 0
-		assert obj inherits TokenDef
-		return _number - (obj to TokenDef).number  # CC: axe cast
+		if obj inherits TokenDef
+			return _number - obj.number
+		else
+			return .getType.name.compareTo(obj.getType.name)
 
 
 class TokenDefSet
@@ -892,7 +894,7 @@ class TestTokenizer
 		return 'assert if else'
 
 	def _reset is override
-		base._reset()
+		base._reset
 		_idCount = 0
 
 	def onID(tok as IToken) as IToken?
@@ -913,20 +915,20 @@ class TestTokenizer
 		# basics
 		tt = TestTokenizer()
 		tt.startSource('hello there')
-		tokens = tt.allTokens()
+		tokens = tt.allTokens
 		.checkTokens(tokens, 'ID ID NEWLINE')
 		assert tt.idCount==2
 
 		# the tokenizer lets methods insert tokens
-		tt.restart()
+		tt.restart
 		tt.startSource('hello.there')
-		tokens = tt.allTokens()
+		tokens = tt.allTokens
 		.checkTokens(tokens, 'ID DOT DOT ID NEWLINE')
 
 		# tokens know their line numbers and columns and lengths
-		tt.restart()
+		tt.restart
 		tt.startSource('hello\nthere\n you\n ')
-		tokens = tt.allTokens()
+		tokens = tt.allTokens
 		# CC: tokens = for tok in tokens select tok if tok.which<>'NEWLINE' -- or something like that
 		for i = 0 .. tokens.count
 			if tokens[i].which=='NEWLINE'
