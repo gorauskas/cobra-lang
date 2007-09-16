@@ -105,8 +105,8 @@ class Stmt
 
 	def _bindImp
 		base._bindImp
-		_canSetLine = .compiler.hasDetailedStackTraceOption and .compiler.codeMemberStack.count and .compiler.curBox.name <> 'CobraFrame'
-		# the code member stack can be empty because of class vars (ex: var _foo = true)
+		_canSetLine = .compiler.willTrackLocals
+		# note that the code member stack can be empty because of class vars (ex: var _foo = true)
 
 	get sharpSourceSite as String
 		codeMember = .compiler.curCodeMember
@@ -507,8 +507,14 @@ class ForNumericStmt
 	def writeSharpDef(sw as SharpWriter)
 		base.writeSharpDef(sw)
 		csVar = _var.sharpName
-		sw.write('for ([csVar]=')
+		trackLocals = .compiler.willTrackLocals
+		if trackLocals
+			sw.write('for (CobraImp.SetLocal("[.var.name]", [csVar]=')
+		else
+			sw.write('for ([csVar]=')
 		_start.writeSharpDef(sw)
+		if trackLocals
+			sw.write(')')
 		if _var.type.isDynamic
 			sw.write('; CobraImp.DynamicCompare([csVar], ')
 			_stop.writeSharpDef(sw, false)
@@ -588,7 +594,11 @@ class ForEnumerableStmt
 			_what.writeSharpDef(sw, false)
 
 		sw.write(')')
-		_block.writeSharpDef(sw, '[_var.sharpName] = [helperName];\n')
+		stmt = '[.var.sharpName] = [helperName]'
+		if .compiler.willTrackLocals
+			stmt = 'CobraImp.SetLocal("[.var.name]", [stmt])'
+		stmt += ';\n'
+		_block.writeSharpDef(sw, stmt)
 
 
 class IfStmt

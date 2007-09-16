@@ -83,23 +83,6 @@ class Module
 		base.addMinFields()
 		.addField('fileName', _fileName)
 
-	def _bindInt is override
-		base._bindInt()
-		for decl in _declsInOrder
-			try
-				decl.bindInt()
-			catch ne as NodeException
-				.compiler.recordError(ne)
-
-	def _bindImp is override
-		base._bindImp()
-		assert .didBindInt
-		for decl in _declsInOrder
-			try
-				decl.bindImp()
-			catch ne as NodeException
-				.compiler.recordError(ne)
-
 	def writeSharpDef as Dictionary<of int, int>
 		# CC: mark abstract
 		return nil to passthrough
@@ -137,6 +120,10 @@ class CobraModule
 		_topNameSpace = NameSpace(globalNS, '(top namespace for module [fileName])')
 
 	get topNameSpace from var
+		"""
+		Returns the top namespace for this module.
+		This is an implicit namespace that is not unified (its unified namespace is the global namespace).
+		"""
 	
 	def addDecl(decl as IMember)
 		base.addDecl(decl)
@@ -149,6 +136,15 @@ class CobraModule
 		else
 			_topNameSpace.addDecl(decl)
 
+	def _bindInt is override
+		base._bindInt
+		.topNameSpace.bindInt
+
+	def _bindImp is override
+		base._bindImp()
+		assert .didBindInt
+		.topNameSpace.bindImp
+
 	def writeSharpDef as Dictionary<of int, int> is override
 		base.writeSharpDef()
 		_csFileName = _fileName + '.cs'
@@ -160,8 +156,6 @@ class CobraModule
 			sw.write('// on [DateTime.now]\n')
 			# TODO: list op sys
 			sw.write('\n')
-
-			for decl in _declsInOrder
-				decl.writeSharpDef(sw)
+			.topNameSpace.writeSharpDef(sw)
 			d = sw.sharpToCobraLineNum
 		return d

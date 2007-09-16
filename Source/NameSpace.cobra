@@ -28,7 +28,7 @@ class NameSpace
 	get isRoot as bool
 		"""
 		Returns true if this is a root namespace with no parent namespace.
-		Note that all module top-level namespaces are root as well as their common, unified namespace, the global namespace.
+		All module top-level namespaces are root as well as their common, unified namespace, the global namespace.
 		"""
 		return _superNameSpace is nil
 		
@@ -186,11 +186,18 @@ class NameSpace
 		return .fullName
 
 	def writeSharpDef(sw as SharpWriter) is override
+		assert not .isUnified
 		base.writeSharpDef(sw)
-		sw.writeAndIndent('namespace [.name] {\n\n')
+		if not .isRoot
+			sw.writeAndIndent('namespace [.name] {\n\n')
 		for decl in _declsInOrder
+			if decl inherits Box
+				.compiler.boxStack.push(decl)
 			decl.writeSharpDef(sw)
-		sw.dedentAndWrite('} // namespace [.name]\n')
+			if decl inherits Box
+				.compiler.boxStack.pop
+		if not .isRoot
+			sw.dedentAndWrite('} // namespace [.name]\n')
 
 	def writeSharpTestInvocation(sw as SharpWriter) is override
 		for decl in _declsInOrder
