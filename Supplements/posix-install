@@ -1,0 +1,150 @@
+#!/bin/bash
+
+# Posix install script for the Cobra programming language.
+# For use on Mac OS X, Linux, BSD and other UNIX-like operating systems.
+#
+# Installs Cobra to /usr/local/cobra/cobra-X.Y.Z and makes a /usr/local/cobra/current link to it.
+# Also adds a link from /usr/bin/cobra-X.Y.Z to the new current cobra command line executable, and
+# makes a /usr/bin/cobra link to that.
+#
+# You should probably run this as root with "sudo install" or:
+#   su -
+#   ./install
+#
+# After installing, you should be able to run this at the command line as any user:
+#   cobra -h
+#
+# It's okay to rerun this install script.
+# It's okay to have multiple versions of Cobra on the same machine.
+#
+# You can tweak variables below to change where Cobra is installed to if you don't want the defaults.
+#
+# See also: http://cobralang.com
+
+
+# Configuration variables
+
+VERSION=0.6.0
+TOP_INSTALL_DIR=/usr/local
+BIN_DIR=/usr/bin
+SOURCE_DIR=`dirname $0`
+
+# for testing out of the workspace
+SOURCE_DIR=../Source
+
+
+# Implementation
+
+echo "Cobra Programming Language $VERSION"
+echo "POSIX Installer"
+echo
+echo "System is:"
+uname -rsv
+echo
+
+echo "Checking for Novell Mono..."
+MONO=`which mono`
+if [ -z "$MONO" ]; then
+	echo "Cannot find 'mono'. Please download and install from http://www.mono-project.com/"
+	# TODO: check for Portable.NET
+	exit 1
+fi
+echo Found `mono --version | head -1`
+echo
+
+# TODO: check mono min version 1.2.4
+
+
+# Check for bad variables
+
+if [ -z "$VERSION" ]; then
+	echo "error: VERSION is empty."
+	exit 1
+fi
+
+if [ -z "$TOP_INSTALL_DIR" ]; then
+	echo "error: TOP_INSTALL_DIR is empty."
+	exit 1
+fi
+
+if [ -z "$SOURCE_DIR" ]; then
+	echo "error: SOURCE_DIR is empty."
+	exit 1
+fi
+
+if [ -d "$SOURCE_DIR" ]; then
+	echo "" > /dev/null
+else
+	echo "error: Cannot find source directory: $SOURCE_DIR"
+	exit 1
+fi
+
+if [ -d "$TOP_INSTALL_DIR" ]; then
+	echo "" > /dev/null
+else
+	echo "error: Cannot find install directory: $TOP_INSTALL_DIR"
+	exit 1
+fi
+
+echo "Will install to $TOP_INSTALL_DIR and $BIN_DIR"
+echo
+
+# INSTALL_DIR= @@
+
+# Copy files, etc.
+
+echo "Copying files to $TOP_INSTALL_DIR/cobra/cobra-$VERSION..."
+mkdir -p "$TOP_INSTALL_DIR/cobra"
+rm -rf "$TOP_INSTALL_DIR/cobra/cobra-$VERSION"
+cp -pr "$SOURCE_DIR" "$TOP_INSTALL_DIR/cobra/cobra-$VERSION"
+
+CURRENT="$TOP_INSTALL_DIR/cobra/current"
+echo "Creating link at $CURRENT..."
+rm -rf "$CURRENT"
+ln -s "$TOP_INSTALL_DIR/cobra-$VERSION" "$CURRENT"
+
+if [ -d "$TOP_INSTALL_DIR/cobra/cobra-$VERSION/snapshot" ]; then
+	# if testing out of the workspace
+	mv "$TOP_INSTALL_DIR/cobra/cobra-$VERSION/snapshot" "$TOP_INSTALL_DIR/cobra/cobra-$VERSION/bin"
+fi
+
+echo "Finishing up..."
+
+CMD="$TOP_INSTALL_DIR/cobra/cobra-$VERSION/bin/cobra"
+if [ -f "$CMD" ]; then
+	echo "" > /dev/null
+else
+	echo "error: cannot find 'cobra' at $CMD"
+fi
+
+chmod -R a+rX "$TOP_INSTALL_DIR"
+
+
+# Set up executable links
+
+if [ -n "$BIN_DIR" ]; then
+	rm -f "/usr/bin/cobra-$VERSION"
+	ln -s "$TOP_INSTALL_DIR/cobra/cobra-$VERSION/bin/cobra" "/usr/bin/cobra-$VERSION"
+	rm -f "$BIN_DIR/cobra"
+	ln -s "$TOP_INSTALL_DIR/cobra/cobra-$VERSION/bin/cobra" "$BIN_DIR/cobra"
+	chmod -R a+rx "$BIN_DIR/cobra"
+fi
+
+# Show what Cobra files are now present
+
+echo
+echo "Cobra file listings:"
+echo
+cmd="ls -l $TOP_INSTALL_DIR/cobra"
+echo $cmd
+$cmd
+
+echo
+echo "ls -l $BIN_DIR/cobra*"
+ls -l "$BIN_DIR"/cobra*
+
+
+# Done!
+
+echo
+echo "Finished installing."
