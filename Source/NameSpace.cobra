@@ -3,8 +3,10 @@ class NameSpace
 
 	var _unifiedNameSpace as NameSpace?
 	var _superNameSpace as NameSpace?
-	var _subNameSpaces as Dictionary<of String, NameSpace>
+	var _subNameSpacesByName as Dictionary<of String, NameSpace>
+	var _subNameSpacesList as List<of NameSpace>
 	var _useDirectives as List<of UseDirective>
+	var _didBindUse as bool
 
 	def init(unifiedNameSpace as NameSpace, name as String)
 		.init(TokenFix.empty, name)
@@ -20,7 +22,8 @@ class NameSpace
 	def init(token as IToken, name as String, superNameSpace as NameSpace?, docString as String?)
 		base.init(token, name, List<of String>(), docString)
 		_superNameSpace = superNameSpace
-		_subNameSpaces = Dictionary<of String, NameSpace>()
+		_subNameSpacesByName = Dictionary<of String, NameSpace>()
+		_subNameSpacesList = List<of NameSpace>()
 		_useDirectives = List<of UseDirective>()
 
 	get isGlobal as bool
@@ -42,8 +45,9 @@ class NameSpace
 	
 	def addMinFields
 		base.addMinFields
-		.addField('subCount', _subNameSpaces.count)
+		.addField('subCount', _subNameSpacesList.count)
 		.addField('isUnified', .isUnified)
+		.addField('didBindUse', _didBindUse)
 
 	def addRefFields
 		base.addRefFields
@@ -72,8 +76,8 @@ class NameSpace
 		"""
 		ensure result.superNameSpace is this
 		# TODO: enforce that case must match and 2 decls cannot be the same but for case. You cannot have a namespace FooBar and class Foobar under the same namespace
-		if _subNameSpaces.containsKey(name)
-			ns = _subNameSpaces[name]
+		if _subNameSpacesByName.containsKey(name)
+			ns = _subNameSpacesByName[name]
 		else
 			if _declsByName.containsKey(name)
 				throw Exception('There is a non-namespace declaration named "[name]".')
@@ -98,8 +102,16 @@ class NameSpace
 	get typeForReceiver as IType? is override
 		return this
 
+	def bindUse
+		for ud in _useDirectives
+			ud.bindUse
+		for ns in _subNameSpacesList
+			ns.bindUse
+		_didBindUse = true
+
 	def _bindInt
 		base._bindInt
+		assert _didBindUse
 		.compiler.nameSpaceStack.push(this)
 		try
 			for ud in _useDirectives
@@ -113,8 +125,6 @@ class NameSpace
 		base._bindImp
 		.compiler.nameSpaceStack.push(this)
 		try
-			for ud in _useDirectives
-				ud.bindImp
 			for decl in _declsInOrder
 				decl.bindImp
 		finally
@@ -161,7 +171,8 @@ class NameSpace
 		if decl inherits NameSpace
 			assert decl.superNameSpace is this
 			assert (.isUnified and decl.isUnified) or (not .isUnified and not decl.isUnified)
-			_subNameSpaces.add(decl.name, decl)  # TODO: add some require and ensure around the subNameSpaces
+			_subNameSpacesByName.add(decl.name, decl)  # TODO: add some require and ensure around the subNameSpaces
+			_subNameSpacesList.add(decl)
 		if decl inherits NameSpace
 			assert decl.parentNameSpace is this or decl.parentNameSpace is nil
 			decl.parentNameSpace = this
@@ -184,8 +195,8 @@ class NameSpace
 
 	def subNameSpaceForName(name as String) as NameSpace?
 		require name
-		if _subNameSpaces.containsKey(name)
-			return _subNameSpaces[name]
+		if _subNameSpacesByName.containsKey(name)
+			return _subNameSpacesByName[name]
 		else
 			return nil
 
@@ -219,6 +230,7 @@ class UseDirective
 	var _nameParts as List<of String>
 	var _boundNameSpace as NameSpace?
 	var _fullName as String
+	var _didBindUse as bool
 
 	def init(token as IToken, nameParts as List<of String>)
 		base.init(token)
@@ -229,20 +241,19 @@ class UseDirective
 	def addMinFields
 		base.addMinFields
 		.addField('fullName', _fullName)
+		.addField('didBindUse', _didBindUse)
 
 	def addRefFields
 		base.addRefFields
 		.addField('boundNameSpace', _boundNameSpace)
 
+	get didBindUse from var
+
 	def findSymbol(name as String) as IMember?
-		if not .didBindInt
-			.bindInt
-		if not .didBindInt
-			return nil
+		require .didBindUse
 		return _boundNameSpace.symbolForName(name)
 
-	def _bindInt
-		base._bindInt
+	def bindUse
 		curNS as NameSpace? = .compiler.globalNS  # CC: either "as ?" or "to ?"
 		for name in _nameParts
 			curNS = curNS.subNameSpaceForName(name)
@@ -253,6 +264,7 @@ class UseDirective
 		# TODO: this assertion can be re-established when Cobra reads DLLs
 		#assert curNS, 'last name=[name], dottedNames=[.dottedNames]'
 		_boundNameSpace = curNS
+		_didBindUse = true
 
 	def writeSharpDef(sw as SharpWriter) is override
 		sw.write('using [_fullName];\n')

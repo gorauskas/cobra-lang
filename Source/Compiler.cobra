@@ -61,6 +61,7 @@ class Compiler
 	var _boxStack as Stack<of Box>
 	var _codeMemberStack as Stack<of AbstractMethod>
 
+	var _isBindingUse as bool
 	var _isBindingInt as bool
 	var _isBindingImp as bool
 
@@ -92,6 +93,8 @@ class Compiler
 		return '[.getType.name]([_serialNum])'
 
 	get verbosity from var
+
+	get isBindingUse from var
 
 	get isBindingInt from var
 
@@ -338,47 +341,73 @@ class Compiler
 	## Binding
 	##
 
-	def bindInt
-		assert not _isBindingInt
-		assert not _isBindingImp
-		# TODO: bindInt to all existing types
-		_isBindingInt = true
-		try
-			Node.setCompiler(this)
+	def bindUse
+		require
+			not .isBindingUse
+			not .isBindingInt
+			not .isBindingImp
+		body
+			_isBindingUse = true
 			try
-				for module in _modules  # CC: make that _curModule and axe following assignment statement
-					try
-						_curModule = module
-						_curModule.bindInt
-					catch ce as SourceException
-						.recordError(ce)
+				Node.setCompiler(this)
+				try
+					for _curModule in _modules
+						try
+							_curModule.bindUse
+						catch ce as SourceException
+							.recordError(ce)
+				finally
+					Node.setCompiler(nil)
 			finally
-				Node.setCompiler(nil)
-		finally
-			_isBindingInt = false
-		if _errors.count
-			_exitFromErrors
+				_isBindingUse = false
+			if _errors.count
+				_exitFromErrors
+
+	def bindInt
+		require
+			not .isBindingUse
+			not .isBindingInt
+			not .isBindingImp
+		body
+			# TODO: bindInt to all existing types
+			_isBindingInt = true
+			try
+				Node.setCompiler(this)
+				try
+					for _curModule in _modules
+						try
+							_curModule.bindInt
+						catch ce as SourceException
+							.recordError(ce)
+				finally
+					Node.setCompiler(nil)
+			finally
+				_isBindingInt = false
+			if _errors.count
+				_exitFromErrors
 
 	def bindImp
-		assert not _isBindingInt
-		assert not _isBindingImp
-		# TODO: bindImp to all existing types
-		_isBindingImp = true
-		try
-			Node.setCompiler(this)
+		require
+			not .isBindingUse
+			not .isBindingInt
+			not .isBindingImp
+		body
+			# TODO: bindImp to all existing types
+			_isBindingImp = true
 			try
-				for module in _modules  # CC: make that _curModule and axe following assignment statement
-					try
-						_curModule = module
-						_curModule.bindImp
-					catch ce as SourceException
-						.recordError(ce)
+				Node.setCompiler(this)
+				try
+					for _curModule in _modules
+						try
+							_curModule.bindImp
+						catch ce as SourceException
+							.recordError(ce)
+				finally
+					Node.setCompiler(nil)
 			finally
-				Node.setCompiler(nil)
-		finally
-			_isBindingImp = false
-		if _errors.count
-			_exitFromErrors
+				_isBindingImp = false
+			if _errors.count
+				_exitFromErrors
 
 	def symbolForName(name as String, canBeMember as bool, haveThis as bool) as IMember?
 		"""
