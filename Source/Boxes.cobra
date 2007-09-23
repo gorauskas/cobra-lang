@@ -409,7 +409,7 @@ class Box
 				return _constructedTypes[key]
 			# TODO: this next if-statement and .bindInt call can be axed if a there is a separate "bind inheritance" phase
 			if not .didBindInt and not .isBindingInt
-				.bindInt
+				.bindInt  # but this creates a problem with overloads not getting bindInt... see fix in _completeConstruction
 			t = .memberwiseClone to Box
 			_constructedTypes[key] = t
 			t._completeConstruction(this, typeArgs, key)
@@ -438,6 +438,7 @@ class Box
 				_baseInterfaces[i] = _baseInterfaces[i].secondaryConstructedTypeFor(this, gpToType) to Interface
 
 			# construct the declarations
+			_overloads = List<of MemberOverload>()
 			newDecls = List<of IMember>()
 			for decl in _declsInOrder
 				if decl inherits BoxMember
@@ -450,20 +451,23 @@ class Box
 			_declsByNameCI = Dictionary<of String, IMember>()
 			for decl in newDecls
 				if _declsByName.containsKey(decl.name)
+					overload = nil to MemberOverload?
 					other = _declsByName[decl.name]
 					if other inherits MemberOverload
 						overload = other
-						other.addMember(decl to BoxMember)
 					else if other inherits AbstractMethod
 						overload = MemberOverload(other)
 						.registerOverload(overload to MemberOverload)  # CC: axe cast
 					else
 						throw FallThroughException(other)
+					overload.addMember(decl to BoxMember)
 				else
 					_declsInOrder.add(decl)
 					_declsByName[decl.name] = decl
 					_declsByNameCI[decl.name.toLower] = decl
 			.bindInt
+			# TODO: this next statement can be axed if a there is a separate "bind inheritance" phase
+			_finishOverloads
 			
 	def _completeConstructionOfBase(gpToType as Dictionary<of GenericParam, IType>)
 		# invoked by _completeConstruction for the benefit of Class
@@ -499,7 +503,7 @@ class Box
 			_constructedTypes = Dictionary<of String, IType>(_constructedTypes)  # TODO: seems unlikely that a constructed type would want a copy of it's genericTypeDef's constructed type
 		_baseInterfaceNodes = List<of ITypeProxy>(_baseInterfaceNodes)
 		_baseInterfaces = List<of Interface>(_baseInterfaces)
-		_overloads = List<of MemberOverload>(_overloads)
+		# _overloads = List<of MemberOverload>(_overloads)  # these will be recreated
 
 	def typeForGenericParam(gp as GenericParam) as IType # TODO: is this needed for NilableType?
 		"""
