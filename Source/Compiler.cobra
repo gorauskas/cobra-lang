@@ -181,6 +181,7 @@ class Compiler
 			true
 		body
 			if _modules.count == 0
+				.writeSharpInfoClass
 				path = Path.combine(.cobraExeDir, 'SystemInterfaces.cobra')
 				assert File.exists(path), path
 				filenames.insert(0, path)
@@ -676,25 +677,29 @@ class Compiler
 				print '}'
 		_modules.add(SharpModule(fileName, _verbosity))
 
+	var _didWriteSharpInfoClass as bool
+
 	def writeSharpInfoClass
 		"""
 		The Cobra.Lang.Info class is compiled into the program and contains, at least, the path to the cobra.exe.
 		This is used for, at least, the implementation of CobraCore.findCobra.
 		"""
-		# CC: path = CobraCore.exePath
-		path = Assembly.getExecutingAssembly.getModules[0].fullyQualifiedName
-		assert File.exists(path)
-		infoPath = Path.combine(Path.getDirectoryName(path), 'CobraInfo.cs')
+		if _didWriteSharpInfoClass
+			return
+		cobraExePath = CobraCore.exePath
+		assert File.exists(cobraExePath)
+		infoPath = Path.combine(Path.getDirectoryName(cobraExePath), 'CobraInfo.cs')
 		using sw = File.createText(infoPath)
 			print to sw
 				print 'using System;'
 				print 'namespace Cobra.Lang {'
 				print '    class CobraInfo {'
 				print '        static public String CobraPath {'
-				print '            get { return @"[path]"; }'
+				print '            get { return @"[cobraExePath]"; }'
 				print '        }'
 				print '    }'
 				print '}'
+		_didWriteSharpInfoClass = true
 
 	var _cscExecPaths = [
 		[r'\WINDOWS\Microsoft.NET\Framework\v2.0.50727\csc', 'ms'],  # common
@@ -727,7 +732,6 @@ class Compiler
 			.modules
 			.modules[0].fileName.endsWith('SystemInterfaces.cobra')
 		body
-			.writeSharpInfoClass
 			# locate the C# compiler
 			found = false
 			for execPathSpec in _cscExecPaths
