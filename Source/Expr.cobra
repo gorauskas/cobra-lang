@@ -453,7 +453,7 @@ class CallExpr
 					definition = .compiler.findLocal(_name)
 				if definition is nil
 					.throwError('Cannot find "[_name]".')
-				_isCallOnSystemType = not definition inherits Box and not definition inherits Method and not definition inherits MemberOverload
+				_isCallOnSystemType = not definition inherits Box and not definition inherits GenericParam and not definition inherits Method and not definition inherits MemberOverload
 			if definition
 				if definition inherits IVar
 					# such as having:
@@ -473,6 +473,9 @@ class CallExpr
 					else
 						# not ever expected since the three Box types are covered above
 						throw FallThroughException(definition)
+				else if definition inherits GenericParam
+					# TODO: check that the GenericParam is callable (has the callable constraint)
+					type = definition
 				else if definition inherits BoxMember
 					type = definition.resultType  # NOTE: used to have .realType at the end
 					if definition inherits MemberOverload
@@ -524,7 +527,7 @@ class CallExpr
 			if _definition
 				definition.isUsed = true
 			_type = type
-		_isNew = _definition inherits Box
+		_isNew = _definition inherits Box or _definition inherits GenericParam
 		assert _type, 'this=[this], def=[_definition]'
 
 	def toCobraSource as String is override
@@ -543,9 +546,10 @@ class CallExpr
 		name = .name
 		if _isCallOnSystemType
 			defi = _definition
-			what = if(defi inherits Class, 'typeof([_definition.name])', defi.sharpName)
-			if (defi to IVar).type.isDynamic
-				what = '(System.Type)' + what
+			what = if(defi inherits Class, 'typeof([_definition.name])', defi.sharpName)  # TODO: use sharpName in the texpr
+			if defi inherits IVar
+				if defi.type.isDynamic
+					what = '(System.Type)' + what
 			sw.write('Activator.CreateInstance([what]')
 			sep = ','  # TODO: sep = ', '
 			for arg in _args
