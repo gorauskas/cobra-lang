@@ -816,17 +816,13 @@ class Compiler
 			output = CobraCore.runAndCaptureAllOutput(p)
 			# TODO: check p.exitCode, especially if output is empty
 
-			hadError = false
 			for line as String in output.split(c'\n')  # CC: axe as
 				line = line.trim
 				if not line.length
 					continue
 				if SharpCompilationMessage.willSkipMessage(line)
 					continue
-				if 'error ' in line
-					_addMessage(SharpCompilationMessage(line, this))
-					hadError = true
-				else if 'Unreachable code detected' in line
+				if 'Unreachable code detected' in line
 					# because Cobra forces you to put in a "return" stmt even though you have a "throw" and then C# warns about that  TODO: fix
 					pass
 				else if 'is assigned but its value' in line
@@ -840,7 +836,7 @@ class Compiler
 					pass
 				else
 					_addMessage(SharpCompilationMessage(line, this))
-			if hadError  # TODO: change to "if _errors" like bindInt and bindImp and axe hadError
+			if .errors.count
 				_exitFromErrors
 
 			# remove intermediate files such as *.cobra.cs
@@ -911,36 +907,41 @@ class SharpCompilationMessage
 	def init(line as String, compiler as Compiler)
 		require not .willSkipMessage(line)
 		base.init(line)
-		# example line:
+		# example lines:
 		# foo.cobra.cs(14,14): error CS0535: `Foo' does not implement interface member `IFoo.Baz()'
+		# error CS5001: Program `bugs/bugs-no-main.exe' does not contain a static `Main' method suitable for an entry point
 		# trace line
 		line = line.trim
-		_isError = ' error ' in line
-		i = line.indexOf('(')
-		if i <> -1
-			fileName = line[:i-3]
-			j1 = line.indexOf(',', i)
-			j2 = line.indexOf(')', i)
-			j = if(j1 < j2, j1, j2)
-			lineStr = line[i+1:j]
-			try  # CC: use tryParse
-				sharpLineNum as int = int.parse(lineStr)  # CC: axe cast
-			catch
-				if compiler.verbosity or .isDevMachine
-					line += ' (C#)'
-			success
-				_fileName = fileName
-				_lineNum = compiler.cobraLineNumForSharp(_fileName to String, sharpLineNum)  # CC: axe cast
-				i = line.indexOf(':')
-				if i <> -1
-					line = line[i+1:].trim
-					_isError = line.startsWith('error')
+		_isError = 'error ' in line
+		if line.startsWith('error CS')
+			i = line.indexOf(': ')
+			line = line[i+2:]
+		else
+			i = line.indexOf('(')
+			if i <> -1
+				fileName = line[:i-3]
+				j1 = line.indexOf(',', i)
+				j2 = line.indexOf(')', i)
+				j = if(j1 < j2, j1, j2)
+				lineStr = line[i+1:j]
+				try  # CC: use tryParse
+					sharpLineNum as int = int.parse(lineStr)  # CC: axe cast
+				catch
+					if compiler.verbosity or .isDevMachine
+						line += ' (C#)'
+				success
+					_fileName = fileName
+					_lineNum = compiler.cobraLineNumForSharp(_fileName to String, sharpLineNum)  # CC: axe cast
 					i = line.indexOf(':')
-					if i <> -1 and i < line.length and line[i+1] == ' '
+					if i <> -1
 						line = line[i+1:].trim
-				# add (sharp)
-				if compiler.verbosity or .isDevMachine
-					line += ' (C# [sharpLineNum])'
+						_isError = line.startsWith('error')
+						i = line.indexOf(':')
+						if i <> -1 and i < line.length and line[i+1] == ' '
+							line = line[i+1:].trim
+					# add (sharp)
+					if compiler.verbosity or .isDevMachine
+						line += ' (C# [sharpLineNum])'
 		_message = line
 
 	get isDevMachine as bool
