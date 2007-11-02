@@ -151,6 +151,8 @@ interface INode
 
 	pro superNode as INode?
 
+	get hasError as bool
+
 
 	##
 	## Binding
@@ -236,14 +238,17 @@ class Node
 	# CC: use a `private` section instead
 	var _serialNum as int is private
 
-	var _didBindInt as bool is private
-	var _didBindImp as bool is private
+	var _didStartBindInt as bool is private
+	var _didStartBindImp as bool is private
 
 	var _isBindingInt as bool is private
 	var _isBindingImp as bool is private
 
 	var _didBindIntBase as bool is private
 	var _didBindImpBase as bool is private
+
+	var _didBindInt as bool is private
+	var _didBindImp as bool is private
 
 	var _superNode as INode?
 		"""
@@ -302,6 +307,7 @@ class Node
 			if v > 3 and _isBindingInt
 				print '<> currently in bind int. this = [this]'
 			if not _didBindInt and not _isBindingInt
+				_didStartBindInt = true
 				_isBindingInt = true
 				try
 					_didBindIntBase = false
@@ -325,7 +331,7 @@ class Node
 		Bind interface elements such as return types and parameter types.
 		Override this method; do not send it. Invoke base.
 		"""
-		require .isBindingInt
+		require .didStartBindInt and .isBindingInt
 		_didBindIntBase = true
 
 	def bindImp as INode  # CC: as this
@@ -337,6 +343,7 @@ class Node
 			.compiler.globalNS
 		body
 			if not _didBindImp and not _isBindingImp
+				_didStartBindImp = true
 				_isBindingImp = true
 				try
 					_didBindImpBase = false
@@ -355,13 +362,17 @@ class Node
 		Bind implementation elements such as statements and expressions.
 		Override this method; do not send it. Invoke base.
 		"""
-		require .isBindingImp
+		require .didStartBindImp and .isBindingImp
 		_didBindImpBase = true
 
 	def bindAll as INode  # CC: as this
 		.bindInt
 		.bindImp
 		return this
+
+	get didStartBindInt from var
+	
+	get didStartBindImp from var
 
 	get isBindingInt from var
 
@@ -371,6 +382,10 @@ class Node
 
 	get didBindImp from var
 
+	get didBindIntBase from var
+	
+	get didBindImpBase from var
+
 
 	##
 	## Errors
@@ -378,7 +393,7 @@ class Node
 
 	var _errors as List<of NodeException>?
 
-	get hasErrors as bool
+	get hasError as bool
 		return _errors and _errors.count > 0
 
 	get errors from var
@@ -463,9 +478,13 @@ class Node
 		"""
 		Subclasses should override to add minimal fields.
 		"""
+		if .didStartBindInt
+			.addField('didStartBindInt', .didStartBindInt)
 		if .isBindingInt
 			.addField('isBindingInt', .isBindingInt)
 		.addField('didBindInt', .didBindInt)
+		if .didStartBindImp
+			.addField('didStartBindImp', .didStartBindImp)
 		if .isBindingImp
 			.addField('isBindingImp', .isBindingImp)
 		.addField('didBindImp', .didBindImp)
@@ -613,6 +632,8 @@ class Node
 		node = base.memberwiseClone to Node
 		node.setSerialNum(_nextNodeSerialNum)
 		_nextNodeSerialNum += 1
+		node._didStartBindInt = false
+		node._didStartBindImp = false
 		node._isBindingInt = false
 		node._isBindingImp = false
 		return node
