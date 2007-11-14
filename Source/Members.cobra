@@ -476,13 +476,22 @@ class AbstractMethod
 
 	def addLocal(local as LocalVar)
 		require
-			local.name
-			.findLocal(local.name) is nil  # TODO: , 'symbol=[symbol], symbolForName=[.symbolForName(symbol.name)]'
+			.findLocal(local.name) is nil
 		body
 			other = .findLocalCI(local.name)
 			if other
 				.throwError('Parameters and locals must vary by more than just their case. Change "[local.name]" or "[other.name]" to match, or rename one of them to something different.')
 			local.isTracked = true
+			_locals.add(local)
+	
+	def replaceLocal(local as LocalVar)
+		"""
+		A utility method for EnsurePart to slip in the `result`.
+		"""
+		require
+			.findLocal(local.name)
+		body
+			_locals.remove(.findLocal(local.name) to LocalVar)
 			_locals.add(local)
 
 	def removeLocal(name as String)
@@ -1337,10 +1346,9 @@ class TestMethod
 			_name = value
 
 
-class ConditionPart
+class ContractPart
 	inherits SyntaxNode
 	"""
-	TODO: Rename to ContractPart
 	TODO: make abstract
 	The abstract base class for RequirePart and EnsurePart.
 	"""
@@ -1386,13 +1394,13 @@ class ConditionPart
 		if not _isImplicit
 			if _connectToken
 				if 'override' not in isNames
-					.recordError('The contract was specified with "[_connectToken.text]", but the code member is neither an "override" or "new".')
+					.recordError('The contract was specified with "[_connectToken.text]", but the code member is neither an "override" nor "new".')
 			else
 				if 'override' in isNames
 					what = if('override' in isNames, 'override', 'new')
 					.recordError('The contract requires an "[.connectWord]" because the code member is "[what]".')
 		i = 0
-		for expr as Expr in _exprs.toArray  # CC: axe as
+		for expr in _exprs
 			expr.bindImp  # TODO: error recovery
 			assert expr.type
 			if expr.type is not .compiler.boolType
@@ -1422,7 +1430,7 @@ class ConditionPart
 		
 
 class RequirePart
-	inherits ConditionPart
+	inherits ContractPart
 
 	def init(codeMember as AbstractMethod)
 		base.init(codeMember)
@@ -1507,7 +1515,7 @@ class RequirePart
 		sw.write('}\n\n')
 
 class EnsurePart
-	inherits ConditionPart
+	inherits ContractPart
 
 	def init(codeMember as AbstractMethod)
 		base.init(codeMember)
@@ -1524,11 +1532,19 @@ class EnsurePart
 		if _codeMember.resultType is .compiler.voidType
 			base._bindImp
 		else
-			_codeMember.addLocal(ResultVar(.token, _codeMember))
+			resultLocal = _codeMember.findLocal('result')
+			resultBuiltIn = ResultVar(.token, _codeMember)
+			if resultLocal
+				_codeMember.replaceLocal(resultBuiltIn)
+			else
+				_codeMember.addLocal(resultBuiltIn)
 			try
 				base._bindImp
 			finally
-				_codeMember.removeLocal('result')
+				if resultLocal
+					_codeMember.replaceLocal(resultLocal to LocalVar)
+				else
+					_codeMember.removeLocal('result')
 
 	get sharpMethodName as String
 		return _sharpMethodName('ensure')
