@@ -1,3 +1,6 @@
+use System.Reflection
+
+
 class Box
 	inherits Container
 	"""
@@ -23,6 +26,7 @@ class Box
 
 	var _testMethod as TestMethod?
 
+	var _clrType as Type?
 
 	def init
 		base.init(TokenFix.empty, 'x', List<of String>(), '')
@@ -56,6 +60,7 @@ class Box
 			.addField('baseInterfaces', _baseInterfaces)
 		else
 			.addField('baseInterfaceNodes', _baseInterfaceNodes)
+		.addField('clrType', _clrType)
 
 	get baseClass from var
 
@@ -636,6 +641,41 @@ class Box
 		return ''
 
 
+class ClrTypeProxy
+	inherits Node
+	implements ITypeProxy
+	"""
+	Acts as an ITypeProxy where the CLR type is known.
+	Typically used when scanning DLLs.
+	"""
+
+	var _clrType as Type
+
+	def init(clrType as Type)
+		base.init
+		_clrType = clrType
+
+	get realType as IType?
+		# modeled after QualifiedTypeIdentifier
+		nameParts = _clrType.fullName.split(c'.')
+		member = .compiler.symbolForName(nameParts[0], true, false)
+		i = 1
+		while i < nameParts.length and member <> nil
+			if member inherits IContainer
+				m = member.memberForName(nameParts[i])
+				if m
+					$sharp('member = m')
+				else
+					.throwError('Cannot find "[nameParts[i]]" at component [i+1] of qualified type.')
+				i += 1
+			else
+				.throwError('"[member]" cannot contain additional members.')
+		if member inherits IType
+			return member
+		else
+			throw FallThroughException(member)
+
+
 class Class
 	inherits Box
 
@@ -645,6 +685,155 @@ class Class
 		base.init(token, name, paramList, isNames, implementsNodes, docString)
 		_baseNode = baseNode
 
+	def init(clrType as Type)
+		base.init(TokenFix.empty, clrType.name, List<of IType>(), List<of String>(), List<of ITypeProxy>(), nil)
+		_clrType = clrType
+		# TODO: set isNames
+		assert false
+		if clrType.baseType
+			_baseNode = ClrTypeProxy(clrType.baseType)
+		for interf in clrType.getInterfaces
+			_baseInterfaceNodes.add(ClrTypeProxy(interf))
+		_scanInitializers
+		_scanProperties
+		_scanMethods
+		# TODO: _scanEnums
+		# TODO: scan fields/vars
+		# TODO: scan all other nested types
+
+	def _scanInitializers
+		for conInfo in _clrType.getConstructors
+			if conInfo.declaringType is not _clrType
+				continue
+			params = _scanParams(conInfo.getParameters)
+			isNames = _isNamesForMethodInfo(conInfo)
+			docString = ''  # TODO: get doc string for class?
+			initer = Constructor(TokenFix.empty, this, params, isNames, docString)
+			overload as MemberOverload? = nil
+			other = .memberForName('init')
+			if other
+				if other inherits MemberOverload
+					overload = other
+				else if other inherits AbstractMethod
+					overload = MemberOverload(other)
+					.registerOverload(overload to MemberOverload)  # CC: axe cast
+				else
+					throw FallThroughException([this, initer, other])
+			if overload
+				overload.addMember(initer)  # CC: axe cast when above assert is recoginzed as making method non-null
+			else
+				.addDecl(initer)
+
+	def _scanProperties
+		for propInfo in _clrType.getProperties
+			if propInfo.declaringType is not _clrType
+				continue
+			if propInfo.name == 'Item'
+				_scanIndexer(propInfo)
+				continue
+			# TODO: get attributes
+			docString = ''  # TODO: get doc string for class?
+			# TODO: eventually the isNames need to be an the property part level (get or set) rather than the property level, like in C# and the CLR runtime
+			if propInfo.canRead
+				isNames = _isNamesForMethodInfo(propInfo.getGetMethod(true))
+			else if propInfo.canWrite
+				isNames = _isNamesForMethodInfo(propInfo.getSetMethod(true))
+			else
+				throw FallThroughException(propInfo)
+			prop = Property(TokenFix.empty, this, Utils.uncapped(propInfo.name), ClrTypeProxy(propInfo.propertyType), isNames, docString)
+			if propInfo.canRead
+				prop.makeGetPart(TokenFix.empty)
+			if propInfo.canWrite
+				prop.makeSetPart(TokenFix.empty)
+			.addDecl(prop)
+
+	def _scanIndexer(propInfo as PropertyInfo)
+		params = _scanParams(propInfo.getIndexParameters)
+		docString = ''  # TODO: get doc string for class?
+		if propInfo.canRead
+			isNames = _isNamesForMethodInfo(propInfo.getGetMethod(true))
+		else if propInfo.canWrite
+			isNames = _isNamesForMethodInfo(propInfo.getSetMethod(true))
+		else
+			throw FallThroughException(propInfo)
+		indexer = Indexer(TokenFix.empty, this, r'[]', params, ClrTypeProxy(propInfo.propertyType), isNames, docString)
+		overload as MemberOverload? = nil
+		other = .memberForName(r'[]')
+		if other
+			if other inherits MemberOverload
+				overload = other
+			else if other inherits Indexer
+				overload = MemberOverload(other)
+				.registerOverload(overload to MemberOverload)  # CC: axe cast
+			else
+				throw FallThroughException([this, indexer, other])
+		if overload
+			overload.addMember(indexer)
+		else
+			.addDecl(indexer)
+
+	def _scanMethods
+		for methInfo in _clrType.getMethods
+			if methInfo.declaringType is not _clrType
+				continue
+			name = Utils.uncapped(methInfo.name)
+			if name == 'init'
+				# there is at least one of these: System.Runtime.Remoting.Messaging.MethodCall.init
+				# TODO: What to do? Change 'def init' to 'def .init' or 'def .ctor'? No quadruple underscores.
+				continue
+			params = _scanParams(methInfo.getParameters)
+			isNames = _isNamesForMethodInfo(methInfo)
+			# TODO: get attributes
+			docString = ''  # TODO: get doc string for class?
+			implementsTypeNode as ITypeProxy?  # TODO: explicit interface implementation?
+			method = Method(TokenFix.empty, this, name, params, ClrTypeProxy(methInfo.returnType), implementsTypeNode, isNames, docString)
+			overload as MemberOverload? = nil
+			other = .memberForName(name)
+			if other
+				if other inherits MemberOverload
+					overload = other
+				else if other inherits AbstractMethod
+					overload = MemberOverload(other)
+					.registerOverload(overload to MemberOverload)  # CC: axe cast
+				else
+					throw FallThroughException([this, method, other])
+			if overload
+				overload.addMember(method)  # CC: axe cast when above assert is recoginzed as making method non-null
+			else
+				.addDecl(method)
+	
+	def _scanParams(paramInfos as ParameterInfo[]) as List<of Param>
+		"""
+		Returns a list of Cobra parameters given a list of CLR Reflection ParameterInfos.
+		"""
+		params = List<of Param>()
+		if paramInfos and paramInfos.length
+			for paramInfo in paramInfos
+				# TODO: vari args
+				# TODO: out, inout
+				params.add(Param(paramInfo.name, ClrTypeProxy(paramInfo.parameterType)))
+		return params
+
+	def _isNamesForMethodInfo(mi as MethodBase) as List<of String>
+		"""
+		Returns the Cobra "is names" such as ['public', 'nonvirtual'] that correspond to the properties of the CLR MethodInfo.
+		"""
+		isNames = List<of String>(8)
+		if mi.isAbstract
+			isNames.add('abstract')
+		if mi.isFamily
+			isNames.add('protected')
+		# TODO: isFamilyAndAssembly, isFamilyOrAssembly
+		if mi.isPrivate
+			isNames.add('private')
+		if mi.isPublic
+			isNames.add('public')
+		if mi.isStatic
+			isNames.add('shared')
+		if not mi.isVirtual
+			isNames.add('nonvirtual')
+		return isNames
+			
 	def addSubFields is override
 		base.addSubFields()
 		.addField('baseNode', _baseNode)

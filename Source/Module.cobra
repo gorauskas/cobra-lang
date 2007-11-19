@@ -1,3 +1,5 @@
+use System.Reflection
+
 class Module  # CC: mark abstract
 	inherits Node
 
@@ -111,6 +113,39 @@ class SharpModule
 		for i = 1 .. Utils.countChars(File.readAllText(_csFileName to String), c'\n')+1  # CC: to !
 			d[i] = i
 		return d
+
+
+class AssemblyModule
+	inherits Module
+	"""
+	An assembly module represents a .dll
+	"""
+	
+	var _topNameSpace as NameSpace
+
+	def init(ass as Assembly, globalNS as NameSpace)
+		.init(ass, 0, globalNS)
+
+	def init(ass as Assembly, verbosity as int, globalNS as NameSpace)
+		base.init(ass.location, verbosity, '')
+		_topNameSpace = NameSpace(globalNS, '(top namespace for assembly [ass])')
+
+	get topNameSpace from var
+		"""
+		Returns the top namespace for this module.
+		This is an implicit namespace that is not unified (its unified namespace is the global namespace).
+		"""
+
+	def bindUse is override
+		base.bindUse
+		.topNameSpace.bindUse
+
+	def _bindInt is override
+		base._bindInt
+		.topNameSpace.bindInt
+
+	def writeSharpDef as Dictionary<of int, int> is override
+		return Dictionary<of int, int>()	
 
 
 class CobraModule
