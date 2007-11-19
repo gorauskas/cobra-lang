@@ -160,6 +160,41 @@ interface ITypeProxy
 		"""
 
 
+class ClrTypeProxy
+	inherits Node
+	implements ITypeProxy
+	"""
+	Acts as an ITypeProxy where the CLR type is known.
+	Typically used when scanning DLLs.
+	"""
+
+	var _clrType as Type
+
+	def init(clrType as Type)
+		base.init
+		_clrType = clrType
+
+	get realType as IType?
+		# modeled after QualifiedTypeIdentifier
+		nameParts = _clrType.fullName.split(c'.')
+		member = .compiler.symbolForName(nameParts[0], true, false)
+		i = 1
+		while i < nameParts.length and member <> nil
+			if member inherits IContainer
+				m = member.memberForName(nameParts[i])
+				if m
+					$sharp('member = m')
+				else
+					.throwError('Cannot find "[nameParts[i]]" at component [i+1] of qualified type.')
+				i += 1
+			else
+				.throwError('"[member]" cannot contain additional members.')
+		if member inherits IType
+			return member
+		else
+			throw FallThroughException(member)
+
+
 interface IType
 	inherits ITypeProxy, IMember  # TODO: does an IType need to also be an IContainer? TODO: Why does it have to be either?
 

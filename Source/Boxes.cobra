@@ -534,195 +534,15 @@ class Box
 		return false
 
 
-	## Code gen
+	## Reading DLLs
 
-	get sharpKeyWord as String
-		throw OverrideException(.getType)
-
-	get sharpName as String is override
-		return _name.replace('of', '')
-
-	get _computeSharpRef as String is override
-		if _params.count
-			sb = StringBuilder()
-			# generic
-			name = .rootName
-			sb.append(name)
-			sb.append('<')
-			sep = ''
-			for param in _params
-				sb.append(sep)
-				sb.append(param.sharpRef)
-				sep = ', '
-			sb.append('>')
-			sharp = sb.toString
-		else
-			sharp = .name
-		if .parentNameSpace and not .parentNameSpace.isRoot
-			sharp = .parentNameSpace.fullName + '.' + sharp
-		return sharp
-
-	def writeSharpDef(sw as SharpWriter) is override
-		base.writeSharpDef(sw)
-		if .isFake
-			return
-		assert not .isConstructed
-		.writeSharpIsNames(sw)
-		sw.write('[.sharpKeyWord] [.rootName]')
-		if _params.count
-			sw.write('<')
-			sep = ''
-			for param in _params
-				sw.write(sep)
-				param.writeSharpDef(sw)
-				sep = ', '
-			sw.write('>')
-
-		.writeSharpInheritance(sw)
-
-		sep = ''
-		for inter in _baseInterfaces
-			sw.write(sep)
-			sw.write(inter.sharpRef)
-			sep = ', '
-
-		if _params.count
-			sw.indent()
-			for param in _params
-				if param inherits GenericParam
-					param.writeSharpConstraint(sw)
-			sw.dedent()
-
-		sw.writeAndIndent('{\n')
-		if _testMethod
-			_testMethod.writeSharpDef(sw)
-		for decl in _declsInOrder
-			decl.writeSharpDef(sw)
-		.writeSharpTest(sw)
-		sw.dedentAndWrite('} // [.sharpKeyWord] [.name]\n')
-		sw.write('\n')
-
-	def writeSharpInheritance(sw as SharpWriter)
-		"""
-		Class uses this to write its base class declaration.
-		No box uses this to write interface implementation--that's handled in the Box class.
-		"""
+	def _scanIsNames
+		# TODO
 		pass
 
-	def writeSharpTest(sw as SharpWriter)
-		sw.write('\nstatic [.rootName]() { RunTestsIfNeeded(); }\n')
-		sw.write('\nprivate static bool __didStartTests = false;\n')
-		newWord = .newForSharpTest
-		sw.write('\npublic static[newWord] void RunTestsIfNeeded() { if (!__didStartTests) RunTests(); }\n')
-		sw.write('\npublic static[newWord] void RunTests()')
-		sw.writeAndIndent(' {\n')
-		sw.write('__didStartTests = true;\n')
-		sw.write('CobraImp.TestBegan("[.name]");\n')
-		if _testMethod
-			sw.write('[_testMethod.sharpName]();\n')
-		for decl in _declsInOrder
-			decl.writeSharpTestInvocation(sw)
-		sw.write('CobraImp.TestEnded("[.name]");\n')
-		sw.dedentAndWrite('}\n')
-
-	var _didWriteSharpTestInvocation = false
-
-	def writeSharpTestInvocation(sw as SharpWriter) is override
-		# used by the test option
-		if _didWriteSharpTestInvocation
-			return
-		if .isFake
-			return
-		assert .parentNameSpace
-		sw.write('\t\t[.qualifiedRootName].RunTestsIfNeeded();\n')
-		_didWriteSharpTestInvocation = true
-
-	get newForSharpTest as String
-		return ''
-
-
-class ClrTypeProxy
-	inherits Node
-	implements ITypeProxy
-	"""
-	Acts as an ITypeProxy where the CLR type is known.
-	Typically used when scanning DLLs.
-	"""
-
-	var _clrType as Type
-
-	def init(clrType as Type)
-		base.init
-		_clrType = clrType
-
-	get realType as IType?
-		# modeled after QualifiedTypeIdentifier
-		nameParts = _clrType.fullName.split(c'.')
-		member = .compiler.symbolForName(nameParts[0], true, false)
-		i = 1
-		while i < nameParts.length and member <> nil
-			if member inherits IContainer
-				m = member.memberForName(nameParts[i])
-				if m
-					$sharp('member = m')
-				else
-					.throwError('Cannot find "[nameParts[i]]" at component [i+1] of qualified type.')
-				i += 1
-			else
-				.throwError('"[member]" cannot contain additional members.')
-		if member inherits IType
-			return member
-		else
-			throw FallThroughException(member)
-
-
-class Class
-	inherits Box
-
-	var _baseNode as ITypeProxy?
-
-	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseNode as ITypeProxy?, implementsNodes as List<of ITypeProxy>, docString as String?)
-		base.init(token, name, paramList, isNames, implementsNodes, docString)
-		_baseNode = baseNode
-
-	def init(clrType as Type)
-		base.init(TokenFix.empty, clrType.name, List<of IType>(), List<of String>(), List<of ITypeProxy>(), nil)
-		_clrType = clrType
-		# TODO: set isNames
-		assert false
-		if clrType.baseType
-			_baseNode = ClrTypeProxy(clrType.baseType)
-		for interf in clrType.getInterfaces
+	def _scanInterfaces
+		for interf in _clrType.getInterfaces
 			_baseInterfaceNodes.add(ClrTypeProxy(interf))
-		_scanInitializers
-		_scanProperties
-		_scanMethods
-		# TODO: _scanEnums
-		# TODO: scan fields/vars
-		# TODO: scan all other nested types
-
-	def _scanInitializers
-		for conInfo in _clrType.getConstructors
-			if conInfo.declaringType is not _clrType
-				continue
-			params = _scanParams(conInfo.getParameters)
-			isNames = _isNamesForMethodInfo(conInfo)
-			docString = ''  # TODO: get doc string for class?
-			initer = Constructor(TokenFix.empty, this, params, isNames, docString)
-			overload as MemberOverload? = nil
-			other = .memberForName('init')
-			if other
-				if other inherits MemberOverload
-					overload = other
-				else if other inherits AbstractMethod
-					overload = MemberOverload(other)
-					.registerOverload(overload to MemberOverload)  # CC: axe cast
-				else
-					throw FallThroughException([this, initer, other])
-			if overload
-				overload.addMember(initer)  # CC: axe cast when above assert is recoginzed as making method non-null
-			else
-				.addDecl(initer)
 
 	def _scanProperties
 		for propInfo in _clrType.getProperties
@@ -834,6 +654,160 @@ class Class
 			isNames.add('nonvirtual')
 		return isNames
 			
+
+	## Code gen
+
+	get sharpKeyWord as String
+		throw OverrideException(.getType)
+
+	get sharpName as String is override
+		return _name.replace('of', '')
+
+	get _computeSharpRef as String is override
+		if _params.count
+			sb = StringBuilder()
+			# generic
+			name = .rootName
+			sb.append(name)
+			sb.append('<')
+			sep = ''
+			for param in _params
+				sb.append(sep)
+				sb.append(param.sharpRef)
+				sep = ', '
+			sb.append('>')
+			sharp = sb.toString
+		else
+			sharp = .name
+		if .parentNameSpace and not .parentNameSpace.isRoot
+			sharp = .parentNameSpace.fullName + '.' + sharp
+		return sharp
+
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		if .isFake
+			return
+		assert not .isConstructed
+		.writeSharpIsNames(sw)
+		sw.write('[.sharpKeyWord] [.rootName]')
+		if _params.count
+			sw.write('<')
+			sep = ''
+			for param in _params
+				sw.write(sep)
+				param.writeSharpDef(sw)
+				sep = ', '
+			sw.write('>')
+
+		.writeSharpInheritance(sw)
+
+		sep = ''
+		for inter in _baseInterfaces
+			sw.write(sep)
+			sw.write(inter.sharpRef)
+			sep = ', '
+
+		if _params.count
+			sw.indent()
+			for param in _params
+				if param inherits GenericParam
+					param.writeSharpConstraint(sw)
+			sw.dedent()
+
+		sw.writeAndIndent('{\n')
+		if _testMethod
+			_testMethod.writeSharpDef(sw)
+		for decl in _declsInOrder
+			decl.writeSharpDef(sw)
+		.writeSharpTest(sw)
+		sw.dedentAndWrite('} // [.sharpKeyWord] [.name]\n')
+		sw.write('\n')
+
+	def writeSharpInheritance(sw as SharpWriter)
+		"""
+		Class uses this to write its base class declaration.
+		No box uses this to write interface implementation--that's handled in the Box class.
+		"""
+		pass
+
+	def writeSharpTest(sw as SharpWriter)
+		sw.write('\nstatic [.rootName]() { RunTestsIfNeeded(); }\n')
+		sw.write('\nprivate static bool __didStartTests = false;\n')
+		newWord = .newForSharpTest
+		sw.write('\npublic static[newWord] void RunTestsIfNeeded() { if (!__didStartTests) RunTests(); }\n')
+		sw.write('\npublic static[newWord] void RunTests()')
+		sw.writeAndIndent(' {\n')
+		sw.write('__didStartTests = true;\n')
+		sw.write('CobraImp.TestBegan("[.name]");\n')
+		if _testMethod
+			sw.write('[_testMethod.sharpName]();\n')
+		for decl in _declsInOrder
+			decl.writeSharpTestInvocation(sw)
+		sw.write('CobraImp.TestEnded("[.name]");\n')
+		sw.dedentAndWrite('}\n')
+
+	var _didWriteSharpTestInvocation = false
+
+	def writeSharpTestInvocation(sw as SharpWriter) is override
+		# used by the test option
+		if _didWriteSharpTestInvocation
+			return
+		if .isFake
+			return
+		assert .parentNameSpace
+		sw.write('\t\t[.qualifiedRootName].RunTestsIfNeeded();\n')
+		_didWriteSharpTestInvocation = true
+
+	get newForSharpTest as String
+		return ''
+
+
+class Class
+	inherits Box
+
+	var _baseNode as ITypeProxy?
+
+	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseNode as ITypeProxy?, implementsNodes as List<of ITypeProxy>, docString as String?)
+		base.init(token, name, paramList, isNames, implementsNodes, docString)
+		_baseNode = baseNode
+
+	def init(clrType as Type)
+		base.init(TokenFix.empty, clrType.name, List<of IType>(), List<of String>(), List<of ITypeProxy>(), nil)
+		if clrType.baseType
+			_baseNode = ClrTypeProxy(clrType.baseType)
+		_clrType = clrType
+		_scanIsNames
+		_scanInterfaces
+		_scanInitializers
+		_scanProperties
+		_scanMethods
+		# TODO: _scanEnums
+		# TODO: scan fields/vars
+		# TODO: scan all other nested types
+
+	def _scanInitializers
+		for conInfo in _clrType.getConstructors
+			if conInfo.declaringType is not _clrType
+				continue
+			params = _scanParams(conInfo.getParameters)
+			isNames = _isNamesForMethodInfo(conInfo)
+			docString = ''  # TODO: get doc string for class?
+			initer = Constructor(TokenFix.empty, this, params, isNames, docString)
+			overload as MemberOverload? = nil
+			other = .memberForName('init')
+			if other
+				if other inherits MemberOverload
+					overload = other
+				else if other inherits AbstractMethod
+					overload = MemberOverload(other)
+					.registerOverload(overload to MemberOverload)  # CC: axe cast
+				else
+					throw FallThroughException([this, initer, other])
+			if overload
+				overload.addMember(initer)  # CC: axe cast when above assert is recoginzed as making method non-null
+			else
+				.addDecl(initer)
+
 	def addSubFields is override
 		base.addSubFields()
 		.addField('baseNode', _baseNode)
@@ -999,6 +973,14 @@ class Interface
 
 	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, paramList, isNames, baseNodes, docString)
+
+	def init(clrType as Type)
+		base.init(TokenFix.empty, clrType.name, List<of IType>(), List<of String>(), List<of ITypeProxy>(), nil)
+		_clrType = clrType
+		_scanIsNames
+		_scanInterfaces
+		_scanProperties
+		_scanMethods
 
 	get englishName as String is override
 		return 'interface'
