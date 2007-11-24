@@ -75,6 +75,9 @@ class Compiler
 
 
 	def init(verbosity as int)
+		.init(verbosity, nil)
+
+	def init(verbosity as int, initialModules as IList<of Module>?)
 		_nextSerialNum += 1
 		_serialNum = _nextSerialNum
 		_verbosity = verbosity
@@ -88,7 +91,15 @@ class Compiler
 		_messages = List<of SourceException>()
 		_warnings = List<of SourceException>()
 		_intermediateFileNames = List<of String>()
-		.readSystemTypes
+		if initialModules
+			if false  # TODO: the idea is to cache modules during testify, but it's not working right now
+				for mod in initialModules
+					if mod inherits AssemblyModule
+						ns = mod.topNameSpace
+						assert not ns.superNameSpace
+						ns.reassignTo(_globalNS)
+					# TODO: handle CobraModule too
+					_modules.add(mod)
 
 	def toString as String is override
 		return '[.getType.name]([_serialNum])'
@@ -181,8 +192,10 @@ class Compiler
 		ensure
 			true
 		body
-			if _modules.count == 0
+			if _modules.count == 0  # attempt at caching modules during testify. incomplete.
 				.writeSharpInfoClass
+				.readSystemTypes
+			if true # _modules.count == 0
 				path = Path.combine(.cobraExeDir, 'SystemInterfaces.cobra')
 				assert File.exists(path), path
 				filenames.insert(0, path)
@@ -341,48 +354,98 @@ class Compiler
 
 	def readSystemTypes
 		# TODO: should pick up mscorlib.dll instead and based on what CLR version we're targeting. but that can wait for much later.
-		return
 		t = Object
-		.readSystemTypes(t.assembly)
+		.readSystemTypes(t.assembly) # mscorlib.dll
+		t = $sharp('typeof(System.Diagnostics.Process)')
+		.readSystemTypes(t.assembly) # System.dll
+		.fixNonNilableMemberSigs  # TODO: this needs to happen after bindInh or before bindInt. unfortunately, bindInh isn't implemented yet!
 
 	def readSystemTypes(ass as Assembly)
+		namespaceQualNameToNameSpaceObject = Dictionary<of String, NameSpace>()
 		module = AssemblyModule(ass, .globalNS)
-		trace ass
-		trace ass.location
-		count = 0
+		_modules.add(module)
 		for type in ass.getExportedTypes
-			print
+			if type.namespace == 'System.Configuration'
+				# TODO
+				# having various problems with System.Configuration
+				continue
+			if type.baseType and 'System.Configuration.dll' in type.baseType.assembly.location
+				# TODO
+				# this class is in System.dll but its base class is not there nor in mscorlib
+				# instead its in an optional DLL called System.Configuration.dll that you don't even have to reference/link to 
+				# one example class that is like this is ApplicationSettingsGroup
+				# how does that work???
+				continue
 			if '__CompilerGenerated' in type.name  # TODO: does that work in .NET?
 				continue
-			if type.declaringType
+			if type.isNested or type.declaringType
 				# TODO: nested types
+				# print '### skipping [type.name] in [type.namespace]. isNested=[type.isNested], declaringType=[type.declaringType]'
 				continue
 			if '`' in type.name
-				print 'skip generic:'
-				trace type.name
-				trace type.namespace
 				continue
-			# TODO: cache the full dotted name
-			curNameSpace = module.topNameSpace
-			for name in type.namespace.split(c'.')
-				curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(Token.empty, name)
-				assert not curNameSpace.isUnified
-			print '** encountered [type] in curNameSpace = [curNameSpace.fullName]'
-			count += 1
-			trace type
+			if namespaceQualNameToNameSpaceObject.containsKey(type.namespace)
+				curNameSpace = namespaceQualNameToNameSpaceObject[type.namespace]
+			else
+				curNameSpace = module.topNameSpace
+				for name in type.namespace.split(c'.')
+					curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(Token.empty, name)
+					assert not curNameSpace.isUnified
+				namespaceQualNameToNameSpaceObject[type.namespace] = curNameSpace
 			if type.isClass
 				curNameSpace.addDecl(Class(type))
 			else if type.isInterface
 				curNameSpace.addDecl(Interface(type))
-			else if type.isValueType
-				trace type
 			else if type.isEnum
-				trace type
+				curNameSpace.addDecl(EnumDecl(curNameSpace, type, List<of String>(), ''))  # TODO: isNames; docString?
+			else if type.isValueType
+				curNameSpace.addDecl(Struct(type))
+			else if type.isAnsiClass
+				# The Enum class is an example that returns false for .isClass but true for .isAnsiClass
+				curNameSpace.addDecl(Class(type))
 			else
-				assert type
-			#curNameSpace.addDecl(
-		trace count
-		Environment.exit(0)
+				throw FallThroughException(type)
+
+	def fixNonNilableMemberSigs
+		# TODO: look to see if what the Spec# team put together can be leveraged instead of recreating all this work!
+		# fix up member sigs regarding nilable
+		# hard coded below. TODO: read from a Cobra config file
+		_fix('System.Object', 'toString getType memberwiseClone')
+			# ^ regarding .toString, not technically true, but common enough and life is too painful when the return type is nilable
+		_fix('System.String', 'replace toLower toUpper trim')
+		_fix('System.Type', 'name')
+		_fix('System.Environment', 'commandLine currentDirectory newLine version')
+		_fix('System.IO.TextWriter', 'newLine')
+		_fix('System.IO.Path', 'combine')
+		# args: System.IO.Path.combine(arg1 as String, arg2 as String) as String
+		_fix('System.Text.StringBuilder', 'toString')
+		_fix('System.Diagnostics.Process', 'processName')
+		_fix('System.Reflection.MemberInfo', 'name')
+
+		# TODO: String really has no indexer? wtf? it has a char enumerator so why didn't they give it an indexer?
+		stringClass = .libraryType('System', 'String') to Class
+		stringClass.addDecl(Indexer(TokenFix.empty, stringClass, r'[]', [Param('index', .intType)], .charType, ['public'], ''))
+
+		# TODO: axe these when .fixNonNilableMemberSigs is invoked after bindInh and before bindInterface
+		_fix('System.IO.StringWriter', 'toString')
+
+	def _fix(className as String, memberNames as String)
+		_fix(.libraryType(className), memberNames)
+
+	def _fix(t as IType, memberNames as String)
+		for name in memberNames.split
+			m = t.memberForName(name)
+			if m
+				m.unNilReturnType
+				if t inherits Class
+					if m inherits BoxMember
+						if 'virtual' in m.isNames
+							for sub in t.subclasses
+								if sub.declForName(name)
+									_fix(sub, name)
+			else
+				# TODO: print 'Cobra warning: Cannot find "[name]" in [t.name]'
+				pass
 
 	##
 	## Binding
@@ -468,15 +531,18 @@ class Compiler
 		body
 			# TODO: remove canBeMember arg
 			assert _curModule
-			assert _boxStack.count
-			#print '>> .compiler.symbolForName([name], [canBeMember], [haveThis])'
-			if name[0].toString.toLower==name[0] and name[0]>=c'a' and name[0]<=c'z'  # CC: if name[0].isLower
-				assert false, 'use findLocal instead. [name]'
-				return nil
-			m = _boxStack.peek.symbolForName(name, haveThis)
-			#print '<< .compiler.symbolForName returning', m
-			#print
-			return m
+			if _boxStack.count
+				#print '>> .compiler.symbolForName([name], [canBeMember], [haveThis])'
+				if name[0].toString.toLower==name[0] and name[0]>=c'a' and name[0]<=c'z'  # CC: if name[0].isLower
+					assert false, 'use findLocal instead. [name]'
+					return nil
+				m = _boxStack.peek.symbolForName(name, haveThis)
+				#print '<< .compiler.symbolForName returning', m
+				#print
+				return m
+			else
+				# example is an enum directly in a namespace with a ClrType instance created from clrType.getUnderlyingType
+				return ((_curModule to dynamic).topNameSpace).symbolForName(name)  # TODO: cast is kind of weird, but SharpModule has no .topNameSpace
 
 	def dumpModulesForTestify(output as IndentedWriter)
 		.dumpModulesForTestify(output, 'Modules')
@@ -606,7 +672,11 @@ class Compiler
 			return thing
 		else
 			throw FallThroughException('found [name], but it is not an IType. it is [thing]')
-			
+	
+	def libraryType(qualifiedName as String) as IType
+		names = qualifiedName.split(c'.')
+		return .libraryType(names to passthrough)
+
 	def classType(names as vari String) as Class
 		return .libraryType(names) to Class
 
@@ -777,7 +847,9 @@ class Compiler
 		require
 			.options
 			.modules
-			.modules[0].fileName.endsWith('SystemInterfaces.cobra')
+			# CC: why does the folowing expression generate C# errors? 2007-11-21 Novell Mono 1.2.4. Could be code gen problem
+			# 'SystemInterfaces' in (for mod in .modules get mod.fileName)  # TODO: food for thought: this is inefficent because all fileNames are collected when we could just get out upon hitting the first SystemInterfaces
+#			.modules[0].fileName.endsWith('SystemInterfaces.cobra')  # no longer the first module
 		body
 			# locate the C# compiler
 			found = false

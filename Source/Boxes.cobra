@@ -226,6 +226,8 @@ class Box
 		return name
 
 	get innerType as IType? is override
+		if this is .compiler.libraryType('System', 'String')  # TODO: hacky
+			return .compiler.charType
 		getEnum = .symbolForName('getEnumerator', true)
 		if getEnum
 			# TODO: is this really needed? if so, why?
@@ -245,6 +247,9 @@ class Box
 				return rt
 			if rt.isDynamic
 				return rt
+			if rt inherits NilableType
+				# nilable is not a concern; unwrap it:
+				$sharp('rt = ((NilableType)rt).TheWrappedType')
 			if rt.isGeneric
 				# TODO: this is a hack. should check for IEnumerator and 'current' like we do for non-generics further below
 				# assert not rt.isGenericDef
@@ -262,8 +267,6 @@ class Box
 					return rt.memberForName('current').resultType
 				else
 					throw FallThroughException(rt)
-		if this is .compiler.libraryType('System', 'String')  # TODO: hacky
-			return .compiler.charType
 		return nil
 
 	def isEquatableTo(t as IType) as bool
@@ -538,18 +541,72 @@ class Box
 
 	def _scanIsNames
 		# TODO
-		pass
+		assert _isNames
+		_isNames.add('fake')  # to make the box like the ones that were in SystemInterfaces.cobra
 
-	def _scanInterfaces
+	def _scanImplements
 		for interf in _clrType.getInterfaces
+			if _badRelatedType(interf)
+				continue
 			_baseInterfaceNodes.add(ClrTypeProxy(interf))
 
+	def _scanFields
+		for fieldInfo in _clrType.getFields($sharp('BindingFlags.Instance|BindingFlags.Static|BindingFlags.DeclaredOnly|BindingFlags.Public'))
+			if fieldInfo.declaringType is not _clrType
+				continue
+			if fieldInfo.isPrivate
+				continue
+			if fieldInfo.isInitOnly or fieldInfo.isLiteral
+				# TODO: kind of weird to use properties
+				isNames = ['nonvirtual']
+				if fieldInfo.isPublic
+					isNames.add('public')
+				else
+					isNames.add('private')
+				if fieldInfo.isStatic
+					isNames.add('shared')
+				prop = Property(TokenFix.empty, this, Utils.uncapped(fieldInfo.name), _memberTypeProxy(fieldInfo.fieldType), isNames, '')
+				prop.makeGetPart(TokenFix.empty)
+				.addDecl(prop)
+		
+	def _scanInitializers
+		for conInfo in _clrType.getConstructors  # TODO: get protected constructors
+			if conInfo.declaringType is not _clrType
+				continue
+			skip = false
+			for paramInfo in conInfo.getParameters
+				if _badRelatedType(paramInfo.parameterType)
+					skip = true
+					break
+			if skip
+				continue
+			params = _scanParams(conInfo.getParameters)
+			isNames = _isNamesForMethodInfo(conInfo)
+			docString = ''  # TODO: get doc string for class?
+			initer = Constructor(TokenFix.empty, this, params, isNames, docString)
+			overload as MemberOverload? = nil
+			other = .memberForName('init')
+			if other
+				if other inherits MemberOverload
+					overload = other
+				else if other inherits AbstractMethod
+					overload = MemberOverload(other)
+					.registerOverload(overload to MemberOverload)  # CC: axe cast
+				else
+					throw FallThroughException([this, initer, other])
+			if overload
+				overload.addMember(initer)  # CC: axe cast when above assert is recoginzed as making method non-null
+			else
+				.addDecl(initer)
+
 	def _scanProperties
-		for propInfo in _clrType.getProperties
+		for propInfo in _clrType.getProperties($sharp('BindingFlags.Instance|BindingFlags.Static|BindingFlags.DeclaredOnly|BindingFlags.Public|BindingFlags.NonPublic'))
 			if propInfo.declaringType is not _clrType
 				continue
 			if propInfo.name == 'Item'
 				_scanIndexer(propInfo)
+				continue
+			if _badRelatedType(propInfo.propertyType)
 				continue
 			# TODO: get attributes
 			docString = ''  # TODO: get doc string for class?
@@ -560,7 +617,7 @@ class Box
 				isNames = _isNamesForMethodInfo(propInfo.getSetMethod(true))
 			else
 				throw FallThroughException(propInfo)
-			prop = Property(TokenFix.empty, this, Utils.uncapped(propInfo.name), ClrTypeProxy(propInfo.propertyType), isNames, docString)
+			prop = Property(TokenFix.empty, this, Utils.uncapped(propInfo.name), _memberTypeProxy(propInfo.propertyType), isNames, docString)
 			if propInfo.canRead
 				prop.makeGetPart(TokenFix.empty)
 			if propInfo.canWrite
@@ -568,6 +625,9 @@ class Box
 			.addDecl(prop)
 
 	def _scanIndexer(propInfo as PropertyInfo)
+		for paramInfo in propInfo.getIndexParameters
+			if _badRelatedType(paramInfo.parameterType)
+				return
 		params = _scanParams(propInfo.getIndexParameters)
 		docString = ''  # TODO: get doc string for class?
 		if propInfo.canRead
@@ -576,7 +636,7 @@ class Box
 			isNames = _isNamesForMethodInfo(propInfo.getSetMethod(true))
 		else
 			throw FallThroughException(propInfo)
-		indexer = Indexer(TokenFix.empty, this, r'[]', params, ClrTypeProxy(propInfo.propertyType), isNames, docString)
+		indexer = Indexer(TokenFix.empty, this, r'[]', params, _memberTypeProxy(propInfo.propertyType), isNames, docString)
 		overload as MemberOverload? = nil
 		other = .memberForName(r'[]')
 		if other
@@ -593,20 +653,39 @@ class Box
 			.addDecl(indexer)
 
 	def _scanMethods
-		for methInfo in _clrType.getMethods
+		for methInfo in _clrType.getMethods($sharp('BindingFlags.Instance|BindingFlags.Static|BindingFlags.DeclaredOnly|BindingFlags.Public|BindingFlags.NonPublic'))
+			if methInfo.isPrivate
+				continue
 			if methInfo.declaringType is not _clrType
+				continue
+			skip = false
+			if _badRelatedType(methInfo.returnType)
+				skip = true
+			else
+				for paramInfo in methInfo.getParameters
+					if _badRelatedType(paramInfo.parameterType)
+						skip = true
+						break
+			if skip
+				continue
+			# TODO: handle generic methods
+			if methInfo.isGenericMethod or methInfo.isGenericMethodDefinition
+				continue
+			if '.' in methInfo.name
+				# TODO: these are mostly (maybe all) explicit implementations of interfaces
 				continue
 			name = Utils.uncapped(methInfo.name)
 			if name == 'init'
 				# there is at least one of these: System.Runtime.Remoting.Messaging.MethodCall.init
 				# TODO: What to do? Change 'def init' to 'def .init' or 'def .ctor'? No quadruple underscores.
+				# or allow it in DLLs and use a different underlying name in the decl dict for constructors like the CLR name .ctor
 				continue
 			params = _scanParams(methInfo.getParameters)
 			isNames = _isNamesForMethodInfo(methInfo)
 			# TODO: get attributes
 			docString = ''  # TODO: get doc string for class?
 			implementsTypeNode as ITypeProxy?  # TODO: explicit interface implementation?
-			method = Method(TokenFix.empty, this, name, params, ClrTypeProxy(methInfo.returnType), implementsTypeNode, isNames, docString)
+			method = Method(TokenFix.empty, this, name, params, _memberTypeProxy(methInfo.returnType), implementsTypeNode, isNames, docString)
 			overload as MemberOverload? = nil
 			other = .memberForName(name)
 			if other
@@ -631,7 +710,7 @@ class Box
 			for paramInfo in paramInfos
 				# TODO: vari args
 				# TODO: out, inout
-				params.add(Param(paramInfo.name, ClrTypeProxy(paramInfo.parameterType)))
+				params.add(Param(paramInfo.name, _memberTypeProxy(paramInfo.parameterType)))
 		return params
 
 	def _isNamesForMethodInfo(mi as MethodBase) as List<of String>
@@ -653,7 +732,28 @@ class Box
 		if not mi.isVirtual
 			isNames.add('nonvirtual')
 		return isNames
-			
+
+	def _badRelatedType(t as Type) as bool
+		"""
+		Returns true if the given type, which comes from a parameter or return value, is unsupported.
+		For example, it's not public or it's nested. Members with bad types are skipped when scanning DLLs.
+		"""
+		if t.isNested
+			return true
+		if t.isNotPublic
+			return true
+		return false
+
+	def _memberTypeProxy(clrType as Type) as ITypeProxy
+		"""
+		Returns a type proxy for a member type such as a parameter type or method return type.
+		In CLR, reference types are nilable by default.
+		"""
+		if clrType.isValueType
+			return ClrTypeProxy(clrType)
+		else
+			return NilableTypeProxy(ClrTypeProxy(clrType))
+
 
 	## Code gen
 
@@ -766,6 +866,7 @@ class Class
 	inherits Box
 
 	var _baseNode as ITypeProxy?
+	var _subclasses = List<of Class>()
 
 	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseNode as ITypeProxy?, implementsNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, paramList, isNames, implementsNodes, docString)
@@ -777,36 +878,14 @@ class Class
 			_baseNode = ClrTypeProxy(clrType.baseType)
 		_clrType = clrType
 		_scanIsNames
-		_scanInterfaces
+		_scanImplements
+		_scanFields
 		_scanInitializers
 		_scanProperties
 		_scanMethods
 		# TODO: _scanEnums
 		# TODO: scan fields/vars
 		# TODO: scan all other nested types
-
-	def _scanInitializers
-		for conInfo in _clrType.getConstructors
-			if conInfo.declaringType is not _clrType
-				continue
-			params = _scanParams(conInfo.getParameters)
-			isNames = _isNamesForMethodInfo(conInfo)
-			docString = ''  # TODO: get doc string for class?
-			initer = Constructor(TokenFix.empty, this, params, isNames, docString)
-			overload as MemberOverload? = nil
-			other = .memberForName('init')
-			if other
-				if other inherits MemberOverload
-					overload = other
-				else if other inherits AbstractMethod
-					overload = MemberOverload(other)
-					.registerOverload(overload to MemberOverload)  # CC: axe cast
-				else
-					throw FallThroughException([this, initer, other])
-			if overload
-				overload.addMember(initer)  # CC: axe cast when above assert is recoginzed as making method non-null
-			else
-				.addDecl(initer)
 
 	def addSubFields is override
 		base.addSubFields()
@@ -831,6 +910,8 @@ class Class
 
 	get isReference as bool is override
 		return true
+
+	get subclasses from var
 
 	def memberForName(name as String) as IMember? is override
 		# the next assertion fails for Tests\600-misc\404-implement-IEnumerable
@@ -860,6 +941,7 @@ class Class
 					on 's'
 						m = pd.setPart
 				# TODO: cache the above back into the _decls
+			# TODO: ? else, throw FallThroughException(...)
 		return m
 
 	def _completeConstructionOfBase(gpToType as Dictionary<of GenericParam, IType>)
@@ -871,16 +953,20 @@ class Class
 		if _baseNode
 			_baseNode.bindInt()
 			possible = _baseNode.realType
-			baseName = (_baseNode to AbstractTypeIdentifier).name
+			baseName = if(_baseNode inherits AbstractTypeIdentifier, (_baseNode to AbstractTypeIdentifier).name, nil)  # CC: if-inherits should work for expressions too
 			if possible is nil
+				assert baseName
 				.throwError('Cannot locate base class named "[baseName]" for class "[_name]".')
 			if possible inherits Class
 				_baseClass = possible
 			else if possible inherits Interface
+				assert baseName
 				.throwError('The base "[baseName]" is an interface. Try "implements" instead of "inherits".')
 			else if possible inherits Struct
+				assert baseName
 				.throwError('The base "[baseName]" is a struct. Classes cannot inherit from structs.')
 			else
+				assert baseName
 				.throwError('The base class "[baseName]" is not actually a class, it is a "[possible.englishName]".')
 		else
 			t = .compiler.libraryType('System', 'Object')
@@ -889,6 +975,8 @@ class Class
 					_baseClass = t
 			else
 				throw FallThroughException(t)
+		if _baseClass
+			_baseClass._subclasses.add(this)
 
 	def _bindInt is override
 		for decl in .declsInOrder
@@ -978,7 +1066,8 @@ class Interface
 		base.init(TokenFix.empty, clrType.name, List<of IType>(), List<of String>(), List<of ITypeProxy>(), nil)
 		_clrType = clrType
 		_scanIsNames
-		_scanInterfaces
+		_scanImplements
+		_scanFields
 		_scanProperties
 		_scanMethods
 
@@ -1034,6 +1123,16 @@ class Struct
 	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseName as String?, interfaceNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, paramList, isNames, interfaceNodes, docString)
 
+	def init(clrType as Type)
+		base.init(TokenFix.empty, clrType.name, List<of IType>(), List<of String>(), List<of ITypeProxy>(), nil)
+		_clrType = clrType
+		_scanIsNames
+		_scanImplements
+		_scanFields
+		_scanInitializers
+		_scanProperties
+		_scanMethods
+		
 	get isCallable as bool is override
 		return true
 

@@ -1,3 +1,21 @@
+# CC: axe this when pushed back to SystemInterfaces.cobra or DLLs are read
+namespace System
+
+	class Enum
+		is fake
+		
+		shared
+			
+			def getValues(t as Type) as Array
+				pass
+			
+			def getNames(t as Type) as Array
+				pass
+				
+			def getUnderlyingType(t as Type) as Type
+				pass
+
+
 class EnumDecl
 	inherits Container
 
@@ -5,6 +23,7 @@ class EnumDecl
 
 	var _storageTypeNode as ITypeProxy?
 	var _storageType as IType?
+	var _clrType as Type?
 
 	def init(parent as Container, token as IToken, name as String, isNames as List<of String>, storageTypeNode as ITypeProxy?, docString as String, enumMembers as List<of EnumMember>)
 		base.init(parent, token, name, isNames, docString)
@@ -12,6 +31,29 @@ class EnumDecl
 		for em in enumMembers
 			.addDecl(em)
 			em.enumDecl = this
+
+	def init(parent as Container, clrType as Type, isNames as List<of String>, docString as String?)
+		base.init(parent, TokenFix.empty, clrType.name, isNames, docString)
+		_clrType = clrType
+		_storageTypeNode = ClrTypeProxy(Enum.getUnderlyingType(clrType))
+		isByte = Enum.getUnderlyingType(clrType).name == 'Byte'
+		is64 = Enum.getUnderlyingType(clrType).name == 'Int64'
+		values = Enum.getValues(clrType)
+		i = 0
+		for name in Enum.getNames(clrType)
+			value = values.getValue(i)
+			# CC: lameness follows
+			if isByte
+				intValue = int.parse($sharp('((byte)value).ToString()')) to int
+			else if is64
+				try
+					intValue = int.parse($sharp('((Int64)value).ToString()')) to int
+				catch OverflowException
+					intValue = 999  # CC: omg. but probably doesn't affect anything. we're reading the DLL here, not creating one
+			else
+				intValue = value to int
+			.addDecl(EnumMember(name to String, intValue))
+			i += 1
 
 	get defaultAccessLevel as String is override
 		return 'public'
@@ -94,6 +136,10 @@ class EnumMember
 		base.init(token, token.text)
 		_value = value
 
+	def init(name as String, value as int)
+		base.init(name)
+		_value = value
+
 	def addMinFields is override
 		base.addMinFields()
 		.addField('value', _value)
@@ -125,6 +171,10 @@ class EnumMember
 		return _enumDecl to IType # CC: axe typecast
 
 	get value from var
+
+	def unNilReturnType
+		# TODO: can this be axed when IMember gets broken up?
+		pass
 
 	def writeSharpTestInvocation(sw as SharpWriter)
 		pass

@@ -114,6 +114,14 @@ class BoxMember
 		require _isNames
 		pass
 
+	def unNilReturnType
+		"""
+		Subclasses should override to change their "return type node" to non-nilable.
+		No need to invoke `base`.
+		This is invoked to fix up the CLR library which does not indicate, for example, that StringBuilder.toString returns String not String?
+		"""
+		pass
+
 
 	## INamedNode
 
@@ -513,6 +521,12 @@ class AbstractMethod
 		Use .addOldExpr(e) instead of method.oldExprs.add().
 		"""
 
+	def unNilReturnType is override
+		if _returnTypeNode inherits NilableTypeProxy
+			$sharp('_returnTypeNode = ((NilableTypeProxy)_returnTypeNode).InnerTypeProxy')
+		else
+			throw FallThroughException({'this': this, 'returnTypeNode': _returnTypeNode})
+		
 	def addRefFields is override
 		base.addRefFields
 		.addField('returnTypeNode', _returnTypeNode)
@@ -1117,6 +1131,12 @@ class ProperDexer
 		else
 			return ''
 
+	def unNilReturnType is override
+		if _returnTypeNode inherits NilableTypeProxy
+			$sharp('_returnTypeNode = ((NilableTypeProxy)_returnTypeNode).InnerTypeProxy')
+		else
+			throw FallThroughException({'this': this, 'returnTypeNode': _returnTypeNode})
+
 	def _bindInt is override
 		base._bindInt
 		if _returnType is nil
@@ -1288,6 +1308,10 @@ class MemberOverload
 		assert .didBindInt
 		assert _members[0] is not this
 		return _members[0].resultType
+
+	def unNilReturnType is override
+		for member in _members
+			member.unNilReturnType
 
 	def _bindInt is override
 		base._bindInt

@@ -41,7 +41,7 @@ class NameSpace
 
 	get superNameSpace from var
 
-	get unifiedNameSpace from var
+	get unifiedNameSpace from var  # TODO: add an ensure that the return value is nil or .isUnified
 	
 	def addMinFields
 		base.addMinFields
@@ -68,7 +68,7 @@ class NameSpace
 				ns = ns._superNameSpace
 			t.reverse
 			return Utils.join('.', t)
-		
+
 	def getOrMakeNameSpaceNamed(token as IToken, name as String) as NameSpace  # CC: same
 		"""
 		Returns the existing sub-namespace with the given name or creates it.
@@ -170,7 +170,7 @@ class NameSpace
 		base.addDecl(decl)
 		if decl inherits NameSpace
 			assert decl.superNameSpace is this
-			assert (.isUnified and decl.isUnified) or (not .isUnified and not decl.isUnified)
+			assert (.isUnified and decl.isUnified) or (not .isUnified and not decl.isUnified)  # TODO: uh, just change to ==
 			_subNameSpacesByName.add(decl.name, decl)  # TODO: add some require and ensure around the subNameSpaces
 			_subNameSpacesList.add(decl)
 		if decl inherits NameSpace
@@ -199,6 +199,29 @@ class NameSpace
 			return _subNameSpacesByName[name]
 		else
 			return nil
+
+	def reassignTo(newParent as NameSpace)
+		"""
+		This is built for the very specific purpose of caching modules during "testify" (see CommandLine.cobra and Compiler.init).
+		TODO: this is not working right now
+		"""
+		require
+			newParent is not this
+			newParent.declForName(.name) is nil
+			not .isUnified
+			newParent.isUnified
+		body
+			_superNameSpace = newParent
+			for decl in .declsInOrder
+				if decl inherits NameSpace
+					assert not decl.isUnified
+					uns = decl.unifiedNameSpace
+					assert uns.isUnified
+					uns._parentNameSpace = newParent
+					uns._superNameSpace = newParent
+					newParent.addDecl(uns)
+				else
+					assert false, decl
 
 	get sharpRef as String is override
 		return .fullName

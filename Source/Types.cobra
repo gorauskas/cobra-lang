@@ -150,14 +150,48 @@ interface ITypeProxy
 	An ITypeProxy is a node that *could be* a type.
 	Its realType property will return non-nil if so.
 	Implemented by CobraType, AbstractTypeIdentifier, TypeExpr, IdentifierExpr, DotExpr and IndexExpr.
-	NOTE: Could consider makeing realType returning a non-nil and then having a new IConditionalTypeProxy that return have a `get conditionalType as IType?`. The reason here is that some of the ITypeProxy implementors will never return nil.
+	NOTE: Could consider makeing realType returning a non-nil and then having a new IConditionalTypeProxy that has a `get conditionalType as IType?`. The reason here is that some of the ITypeProxy implementors will never return nil.
 	"""
 	
+	# TODO: See above NOTE and consider adding name below. Also see _bindBase in Boxes.cobra which would benefit from .name
+#	get name as String
+#		"""
+#		Return the name of the type.
+#		"""
+
 	get realType as IType?
 		"""
 		If this node represents a type, this property returns it.
 		Otherwise, returns nil (which is the default behavior).
 		"""
+
+
+class NilableTypeProxy
+	inherits Node
+	implements ITypeProxy
+	"""
+	Returns the type proxy it is given wrapped in a NilableType.
+	Used when scanning, for example, method arguments in DLLs. See _scan* in Box.
+	"""
+	
+	var _innerType as ITypeProxy
+	
+	def init(innerType as ITypeProxy)
+		_innerType = innerType
+
+	get innerTypeProxy as ITypeProxy
+		return _innerType
+
+	def addMinFields
+		base.addMinFields
+		.addField('innerTypeProxy', .innerTypeProxy)
+
+	get realType as IType?
+		t = _innerType.realType
+		if t
+			return NilableType(t)
+		else
+			return nil
 
 
 class ClrTypeProxy
@@ -168,32 +202,143 @@ class ClrTypeProxy
 	Typically used when scanning DLLs.
 	"""
 
+	shared
+	
+		var _cobraNameForSharpGenericNameCache = Dictionary<of String, String>()
+		
+		def _cobraNameForSharpGenericName(name as String) as String
+			"""
+			Return 'Foo<of,>' for 'Foo`2'
+			"""
+			require
+				Utils.countChars(name, c'`') == 1
+			body
+				if _cobraNameForSharpGenericNameCache.containsKey(name)
+					return _cobraNameForSharpGenericNameCache[name]
+				else
+					parts = name.split(c'`')
+					count = int.parse(parts[1]) to int # CC: axe cast
+					cobraName = parts[0] + '<of'
+					for i = 1 .. count
+						cobraName += ','
+					cobraName += '>'
+					_cobraNameForSharpGenericNameCache[name] = cobraName
+					return cobraName				
+
 	var _clrType as Type
 
 	def init(clrType as Type)
 		base.init
 		_clrType = clrType
 
-	get realType as IType?
-		# modeled after QualifiedTypeIdentifier
-		nameParts = _clrType.fullName.split(c'.')
-		member = .compiler.symbolForName(nameParts[0], true, false)
-		i = 1
-		while i < nameParts.length and member <> nil
-			if member inherits IContainer
-				m = member.memberForName(nameParts[i])
-				if m
-					$sharp('member = m')
-				else
-					.throwError('Cannot find "[nameParts[i]]" at component [i+1] of qualified type.')
-				i += 1
-			else
-				.throwError('"[member]" cannot contain additional members.')
-		if member inherits IType
-			return member
-		else
-			throw FallThroughException(member)
+	def addMinFields
+		base.addMinFields
+		.addField('clrType', _clrType)
 
+	get realType as IType?
+		return _realType(_clrType)
+		
+	def _realType(clrType as Type) as IType?
+		# TODO: having problems with System.Configuration
+		if clrType.namespace == 'System.Configuration'
+			return _hack(clrType)
+		if clrType.namespace.startsWith('Mono.')
+			# TODO: having problems with this too
+			# error: Cannot find top level namespace "Mono" of CLR type "Mono.Security.X509.X509Certificate".
+			# error: Cannot find top level namespace "Mono" of CLR type "Mono.Security.X509.X509Store".
+			return _hack(clrType)
+		# TODO: either map primitive CLR types to their Cobra types, or make them compatible so the following is not even necessary
+		if clrType is $sharp('typeof(System.Boolean)')
+			return .compiler.boolType
+		if clrType is $sharp('typeof(System.Char)')
+			return .compiler.boolType
+		if clrType is $sharp('typeof(System.Int32)')
+			return .compiler.intType
+		nameParts = clrType.namespace.split(c'.')
+		member = .compiler.symbolForName(nameParts[0], true, false)
+		if member inherits NameSpace
+			curNS = member
+		else
+			.throwError('Cannot find top level namespace "[nameParts[0]]" of CLR type "[clrType.fullName]".')
+		i = 1
+		while i < nameParts.length
+			possible = curNS.declForName(nameParts[i])
+			if possible is nil
+				# .throwError('Cannot find "[nameParts[i]]" at component [i+1] of CLR type "[clrType.fullName]".')
+				# TODO:
+				# error: Cannot find "Xml" at component 2 of CLR type "System.Xml.XmlNode".
+				# error: Cannot find "ObjectModel" at component 3 of CLR type "System.Collections.ObjectModel.Collection`1[[System.Net.Mail.AlternateView, System, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]]".
+				return _hack(clrType)
+			else if possible inherits NameSpace
+				curNS = possible
+			else
+				.throwError('Found "[nameParts[i]]" at component [i+1] of CLR type "[clrType.fullName]", but it is a [possible.englishName].')
+			i += 1
+		isArray = false
+		typeName = clrType.name
+		if '`' in typeName
+			# generic like IComparable`1
+			assert r'[' not in typeName
+			typeName = _cobraNameForSharpGenericName(typeName)
+		else if clrType.isArray
+			# assert clrType.name.endsWith(r'[]') # could be [,] so TODO: handle multidim arrays
+			return ArrayType(_realType(clrType.getElementType))
+		else if clrType.isPointer
+			assert clrType.name.endsWith('*')
+			# TODO: handle pointer types
+			return _realType(clrType.getElementType)
+		else if clrType.isByRef
+			assert clrType.name.endsWith('&')
+			# TODO: handle ref types
+			return _realType(clrType.getElementType)
+		else if clrType.isNested		
+			typeName = 'Object'
+			# TODO: handle nested types
+		else if typeName == 'IBuiltInEvidence' or typeName == 'IConstantMembershipCondition'
+			# TODO: wow really weird.  2007-11-20.  problem on Mono. How about on .NET?
+			typeName = 'IMembershipCondition'
+		else if $sharp(r'char.IsLetterOrDigit(typeName[typeName.Length-1])')
+			pass
+		else
+			print
+			print clrType
+			print clrType.namespace
+			print clrType.name
+			print clrType.fullName
+			assert false, clrType
+			return nil
+		if r'[]' in typeName or '*' in typeName
+			# TODO: example: System.Object[]&: that's a ref to an array of Object. so we probably need recursive unpacking of the CLR type
+			# in the mean time, give up:
+			typeName = 'Object'
+		member = curNS.declForName(typeName)
+		if member inherits IType
+			if isArray
+				return ArrayType(member)
+			else
+				return member
+		else
+			curNS.dumpDeclNames
+			t = Type
+			for pi in t.getProperties
+				if pi.canRead and pi.name.startsWith('Is')
+					print '[pi.name] = [pi.getValue(clrType, nil)]'
+			trace curNS
+			trace member
+			trace typeName
+			trace clrType
+			trace clrType.namespace
+			trace clrType.assembly.location
+			#assert false
+			Environment.exit(1)
+			return nil
+#			throw FallThroughException({'curNS': curNS, 'member': member, 'typeName': typeName})
+
+	def _hack(clrType as Type) as IType?
+		if clrType.isInterface
+			return ClrTypeProxy($sharp('typeof(ICloneable)')).realType
+		else
+			return ClrTypeProxy(Object).realType
 
 interface IType
 	inherits ITypeProxy, IMember  # TODO: does an IType need to also be an IContainer? TODO: Why does it have to be either?
@@ -526,6 +671,10 @@ class CobraType
 	def getHashCode as int is override
 		return .serialNum.getHashCode()
 
+	def unNilReturnType
+		# ack! apparently CobraType inherits IMember
+		pass
+		
 	## Code gen
 
 	get csInit as String
