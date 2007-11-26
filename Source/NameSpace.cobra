@@ -200,28 +200,30 @@ class NameSpace
 		else
 			return nil
 
-	def reassignTo(newParent as NameSpace)
+	def unifyInto(newGlobal as NameSpace)
 		"""
 		This is built for the very specific purpose of caching modules during "testify" (see CommandLine.cobra and Compiler.init).
-		TODO: this is not working right now
 		"""
 		require
-			newParent is not this
-			newParent.declForName(.name) is nil
+			newGlobal.isGlobal
+			newGlobal is not this
 			not .isUnified
-			newParent.isUnified
+			newGlobal.isUnified
 		body
-			_superNameSpace = newParent
+			_unifyInto(newGlobal)
+			
+	def _unifyInto(uni as NameSpace)
+		require
+			uni.isUnified
+			not .isUnified
+		body
+			_unifiedNameSpace = uni
 			for decl in .declsInOrder
 				if decl inherits NameSpace
-					assert not decl.isUnified
-					uns = decl.unifiedNameSpace
-					assert uns.isUnified
-					uns._parentNameSpace = newParent
-					uns._superNameSpace = newParent
-					newParent.addDecl(uns)
+					newUniForDecl = uni.getOrMakeNameSpaceNamed(decl.token, decl.name)
+					decl._unifyInto(newUniForDecl)
 				else
-					assert false, decl
+					uni.addDecl(decl)
 
 	get sharpRef as String is override
 		return .fullName
