@@ -18,7 +18,7 @@ class Box
 	var _constructedTypes as Dictionary<of String, IType>?
 
 	var _baseClass as Class?
-	var _baseInterfaceNodes as List<of ITypeProxy>
+	var _baseInterfaceNodes as List<of ITypeProxy>  # TODO: rename to _baseInterfaceProxies
 	var _baseInterfaces as List<of Interface>
 
 	var _overloads as List<of MemberOverload>
@@ -27,6 +27,7 @@ class Box
 	var _testMethod as TestMethod?
 
 	var _clrType as Type?
+	var _needScanClrType as bool
 
 	def init
 		base.init(TokenFix.empty, 'x', List<of String>(), '')
@@ -42,6 +43,13 @@ class Box
 		_baseInterfaceNodes = baseInterfaceNodes
 		_baseInterfaces = List<of Interface>()
 		_overloads = List<of MemberOverload>()
+
+	def _scanClrType
+		"""
+		Subclasses should invoke base.
+		"""
+		_needScanClrType = false
+		# print '[.name] in [_parentNameSpace.fullName]'
 
 	def addMinFields is override
 		base.addMinFields()
@@ -119,10 +127,14 @@ class Box
 	get params from var
 
 	def isDescendantOfInterface(inter as Interface) as bool
+		if _baseInterfaces.count == 0 and _baseInterfaceNodes.count
+			.bindInt
+		if .compiler
+			inter.bindInt
 		if this is inter
 			return true
 		assert .serialNum <> inter.serialNum
-		assert .didBindInt
+		assert _baseInterfaceNodes.count == 0 or _baseInterfaces.count == _baseInterfaceNodes.count
 		for bit in _baseInterfaces
 			if bit.isDescendantOfInterface(inter)
 				return true
@@ -142,6 +154,13 @@ class Box
 		n = _nextPrivateSerialNumber
 		_nextPrivateSerialNumber += 1
 		return n
+
+	def memberForName(name as String) as IMember? is override
+		if .compiler and .compiler.isBindingImp
+			.bindInt  # this is for DLL types which get bindInt only on demand. (otherwise reading system DLLs slows things down)
+		else if _needScanClrType
+			_scanClrType  # also needed for DLL types. execution gets here due to Compiler.fixNonNilableMemberSigs
+		return base.memberForName(name)
 
 	def registerOverload(ol as MemberOverload)
 		require
@@ -291,6 +310,8 @@ class Box
 		base._bindInt
 		.compiler.boxStack.push(this)
 		try
+			if _needScanClrType
+				_scanClrType
 			_bindBase
 			if _baseClass
 				_baseClass.bindInt
@@ -323,6 +344,7 @@ class Box
 					assert false, 'When does this happen?'
 					.throwError('Cannot locate [node].')
 				else if baseWhat inherits Interface
+					baseWhat.bindInt  # just as with the base class; .bindInt on parents
 					_baseInterfaces.add(baseWhat)
 				else
 					_badInterfaceError(baseWhat to IType)  # CC: axe type cast
@@ -654,6 +676,9 @@ class Box
 
 	def _scanMethods
 		for methInfo in _clrType.getMethods($sharp('BindingFlags.Instance|BindingFlags.Static|BindingFlags.DeclaredOnly|BindingFlags.Public|BindingFlags.NonPublic'))
+			name = methInfo.name
+			if name.startsWith('get_') or name.startsWith('set_')
+				continue
 			if methInfo.isPrivate
 				continue
 			if methInfo.declaringType is not _clrType
@@ -877,6 +902,10 @@ class Class
 		if clrType.baseType
 			_baseNode = ClrTypeProxy(clrType.baseType)
 		_clrType = clrType
+		_needScanClrType = true
+
+	def _scanClrType is override
+		base._scanClrType
 		_scanIsNames
 		_scanImplements
 		_scanFields
@@ -895,16 +924,19 @@ class Class
 		return true
 		
 	def isDescendantOf(type as IType) as bool is override
-		if not type.didBindInt
+		if not .baseClass and _baseNode
+			.bindInt
+		if .compiler
 			type.bindInt()
 		if this is type
 			return true
 		if type inherits Interface
 			if .isDescendantOfInterface(type)
 				return true
-		assert .baseClass is not this, this  # check for direct cycles
-		if .baseClass
-			return .baseClass.isDescendantOf(type)
+		baseClass = .baseClass
+		assert baseClass is not this, this  # check for direct cycles
+		if baseClass
+			return baseClass.isDescendantOf(type)
 		else
 			return false
 
@@ -1065,6 +1097,10 @@ class Interface
 	def init(clrType as Type)
 		base.init(TokenFix.empty, clrType.name, List<of IType>(), List<of String>(), List<of ITypeProxy>(), nil)
 		_clrType = clrType
+		_needScanClrType = true
+
+	def _scanClrType is override
+		base._scanClrType
 		_scanIsNames
 		_scanImplements
 		_scanFields
@@ -1078,8 +1114,6 @@ class Interface
 		return true
 
 	def isDescendantOf(type as IType) as bool is override
-		if not type.didBindInt
-			type.bindInt()
 		if this is type
 			return true
 		if type inherits Interface
@@ -1126,6 +1160,10 @@ class Struct
 	def init(clrType as Type)
 		base.init(TokenFix.empty, clrType.name, List<of IType>(), List<of String>(), List<of ITypeProxy>(), nil)
 		_clrType = clrType
+		_needScanClrType = true
+
+	def _scanClrType is override
+		base._scanClrType
 		_scanIsNames
 		_scanImplements
 		_scanFields
