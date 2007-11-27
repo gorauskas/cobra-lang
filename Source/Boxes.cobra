@@ -18,7 +18,7 @@ class Box
 	var _constructedTypes as Dictionary<of String, IType>?
 
 	var _baseClass as Class?
-	var _baseInterfaceNodes as List<of ITypeProxy>  # TODO: rename to _baseInterfaceProxies
+	var _baseInterfaceProxies as List<of ITypeProxy>
 	var _baseInterfaces as List<of Interface>
 
 	var _overloads as List<of MemberOverload>
@@ -29,10 +29,6 @@ class Box
 	var _clrType as Type?
 	var _needScanClrType as bool
 
-	def init
-		base.init(TokenFix.empty, 'x', List<of String>(), '')
-		assert false, 'CC: remove this constructor when unnecessary return statements can be removed'
-
 	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseInterfaceNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, isNames, docString)
 		_params = paramList
@@ -40,7 +36,7 @@ class Box
 			p = _params[i]
 			if p inherits GenericParam
 				p.index = i
-		_baseInterfaceNodes = baseInterfaceNodes
+		_baseInterfaceProxies = baseInterfaceNodes
 		_baseInterfaces = List<of Interface>()
 		_overloads = List<of MemberOverload>()
 
@@ -51,23 +47,23 @@ class Box
 		_needScanClrType = false
 		# print '[.name] in [_parentNameSpace.fullName]'
 
-	def addMinFields is override
-		base.addMinFields()
+	def addMinFields
+		base.addMinFields
 		.addField('isGeneric', .isGeneric)
 		.addField('isGenericDef', .isGenericDef)
 
-	def addRefFields is override
-		base.addRefFields()
+	def addRefFields
+		base.addRefFields
 		.addField('genericTypeDef', _genericTypeDef)
 		.addField('baseClass', _baseClass)
 
-	def addSubFields is override
-		base.addSubFields()
+	def addSubFields
+		base.addSubFields
 		.addField('params', _params)
 		if _baseInterfaces.count
 			.addField('baseInterfaces', _baseInterfaces)
 		else
-			.addField('baseInterfaceNodes', _baseInterfaceNodes)
+			.addField('baseInterfaceNodes', _baseInterfaceProxies)
 		.addField('clrType', _clrType)
 
 	get baseClass from var
@@ -127,14 +123,14 @@ class Box
 	get params from var
 
 	def isDescendantOfInterface(inter as Interface) as bool
-		if _baseInterfaces.count == 0 and _baseInterfaceNodes.count
+		if _baseInterfaces.count == 0 and _baseInterfaceProxies.count
 			.bindInt
 		if .compiler
 			inter.bindInt
 		if this is inter
 			return true
 		assert .serialNum <> inter.serialNum
-		assert _baseInterfaceNodes.count == 0 or _baseInterfaces.count == _baseInterfaceNodes.count
+		assert _baseInterfaceProxies.count == 0 or _baseInterfaces.count == _baseInterfaceProxies.count
 		for bit in _baseInterfaces
 			if bit.isDescendantOfInterface(inter)
 				return true
@@ -155,7 +151,7 @@ class Box
 		_nextPrivateSerialNumber += 1
 		return n
 
-	def memberForName(name as String) as IMember? is override
+	def memberForName(name as String) as IMember?
 		if .compiler and .compiler.isBindingImp
 			.bindInt  # this is for DLL types which get bindInt only on demand. (otherwise reading system DLLs slows things down)
 		else if _needScanClrType
@@ -169,7 +165,7 @@ class Box
 		body
 			_overloads.add(ol)
 			_declsByName[ol.name] = ol
-			_declsByName[ol.name.toLower()] = ol
+			_declsByName[ol.name.toLower] = ol
 
 	def addDeclFromOverload(decl as IMember, ol as MemberOverload)
 		require
@@ -190,7 +186,7 @@ class Box
 
 	def symbolForName(name as String, haveThis as bool, checkNameSpace as bool) as IMember?
 		"""
-		Unlike the inherited declForName(), this method follows the
+		Unlike the inherited .declForName, this method follows the
 		inheritance change and provides options for haveThis.
 		"""
 		if name == _name
@@ -336,8 +332,8 @@ class Box
 
 	def _bindInterfaces
 		# structs, classes and interfaces can all have 0 or more interfaces they inherit/implement
-		assert _baseInterfaceNodes, this
-		for node in _baseInterfaceNodes
+		assert _baseInterfaceProxies, this
+		for node in _baseInterfaceProxies
 			try
 				baseWhat = (node.bindInt to ITypeProxy).realType  # CC: axe cast
 				if baseWhat is nil
@@ -358,30 +354,30 @@ class Box
 		# this method is broken out so Class can override and deal with inheritance and overloads
 		for ol in _overloads
 			try
-				ol.bindInt()
+				ol.bindInt
 			catch ne as NodeException
 				.compiler.recordError(ne)
 
-	def _bindImp is override
-		base._bindImp()
+	def _bindImp
+		base._bindImp
 		assert .didBindInt
 		.compiler.boxStack.push(this)
 		try
 			for decl in _declsInOrder
 				assert not decl is this, this
 				try
-					decl.bindImp()
+					decl.bindImp
 				catch ne as NodeException
 					.compiler.recordError(ne)
 			for ol in _overloads
 				try
-					ol.bindImp()
+					ol.bindImp
 				catch ne as NodeException
 					.compiler.recordError(ne)
 			if _testMethod
-				_testMethod.bindImp()
+				_testMethod.bindImp
 		finally
-			.compiler.boxStack.pop()
+			.compiler.boxStack.pop
 
 	## Generics
 
@@ -527,12 +523,12 @@ class Box
 			assert .genericTypeDef.isGenericDef  # if this ever fails, we may just need to follow .genericTypeDef back iteratively until we get to the real generic type def
 			return .genericTypeDef.constructedTypeFor(typeArgs)
 
-	def cloneCollections is override
-		base.cloneCollections()
+	def cloneCollections
+		base.cloneCollections
 		_params = List<of IType>(_params)  # TODO: Can I just say _params.clone? Do I need the cast?
 		if _constructedTypes
 			_constructedTypes = Dictionary<of String, IType>(_constructedTypes)  # TODO: seems unlikely that a constructed type would want a copy of it's genericTypeDef's constructed type
-		_baseInterfaceNodes = List<of ITypeProxy>(_baseInterfaceNodes)
+		_baseInterfaceProxies = List<of ITypeProxy>(_baseInterfaceProxies)
 		_baseInterfaces = List<of Interface>(_baseInterfaces)
 		# _overloads = List<of MemberOverload>(_overloads)  # these will be recreated
 
@@ -570,7 +566,7 @@ class Box
 		for interf in _clrType.getInterfaces
 			if _badRelatedType(interf)
 				continue
-			_baseInterfaceNodes.add(ClrTypeProxy(interf))
+			_baseInterfaceProxies.add(ClrTypeProxy(interf))
 
 	def _scanFields
 		for fieldInfo in _clrType.getFields($sharp('BindingFlags.Instance|BindingFlags.Static|BindingFlags.DeclaredOnly|BindingFlags.Public'))
@@ -808,7 +804,7 @@ class Box
 			sharp = .parentNameSpace.fullName + '.' + sharp
 		return sharp
 
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as SharpWriter)
 		base.writeSharpDef(sw)
 		if .isFake
 			return
@@ -833,11 +829,11 @@ class Box
 			sep = ', '
 
 		if _params.count
-			sw.indent()
+			sw.indent
 			for param in _params
 				if param inherits GenericParam
 					param.writeSharpConstraint(sw)
-			sw.dedent()
+			sw.dedent
 
 		sw.writeAndIndent('{\n')
 		if _testMethod
@@ -904,7 +900,7 @@ class Class
 		_clrType = clrType
 		_needScanClrType = true
 
-	def _scanClrType is override
+	def _scanClrType
 		base._scanClrType
 		_scanIsNames
 		_scanImplements
@@ -916,8 +912,8 @@ class Class
 		# TODO: scan fields/vars
 		# TODO: scan all other nested types
 
-	def addSubFields is override
-		base.addSubFields()
+	def addSubFields
+		base.addSubFields
 		.addField('baseNode', _baseNode)
 
 	get isCallable as bool is override
@@ -927,7 +923,7 @@ class Class
 		if not .baseClass and _baseNode
 			.bindInt
 		if .compiler
-			type.bindInt()
+			type.bindInt
 		if this is type
 			return true
 		if type inherits Interface
@@ -945,10 +941,10 @@ class Class
 
 	get subclasses from var
 
-	def memberForName(name as String) as IMember? is override
+	def memberForName(name as String) as IMember?
 		# the next assertion fails for Tests\600-misc\404-implement-IEnumerable
 		# could not fix. I'm confused. Something to do with generics. So bail on generics:
-		# asserting .didBindInt is difficult because memberForName() gets invoked during bindInt
+		# asserting .didBindInt is difficult because .memberForName gets invoked during bindInt
 		# if not .isGeneric
 		# 	assert .didBindInt  # TODO: is this legit? if so, push up to Container
 		m = base.memberForName(name)
@@ -983,7 +979,7 @@ class Class
 
 	def _bindBase is override
 		if _baseNode
-			_baseNode.bindInt()
+			_baseNode.bindInt
 			possible = _baseNode.realType
 			baseName = if(_baseNode inherits AbstractTypeIdentifier, (_baseNode to AbstractTypeIdentifier).name, nil)  # CC: if-inherits should work for expressions too
 			if possible is nil
@@ -1010,7 +1006,7 @@ class Class
 		if _baseClass
 			_baseClass._subclasses.add(this)
 
-	def _bindInt is override
+	def _bindInt
 		for decl in .declsInOrder
 			if decl inherits Constructor
 				foundConstructor = true
@@ -1018,7 +1014,7 @@ class Class
 			# TODO: this should be changed to provide cover constructors for each of the public, inherited constructors
 			.addDecl(Constructor(.token, this, List<of Param>(), ['public'], ''))
 		# Note that the _baseClass is not told to bindInt. That would fail for classes in other namespaces and it's unnecessary s
-		base._bindInt()
+		base._bindInt
 
 	def _badInterfaceError(type as IType) is override
 		msg = 'Cannot implement "[type.name]" which is a [type.englishName].'
@@ -1099,7 +1095,7 @@ class Interface
 		_clrType = clrType
 		_needScanClrType = true
 
-	def _scanClrType is override
+	def _scanClrType
 		base._scanClrType
 		_scanIsNames
 		_scanImplements
@@ -1121,7 +1117,7 @@ class Interface
 				return true
 		return false
 
-	def memberForName(name as String) as IMember? is override
+	def memberForName(name as String) as IMember?
 		m = base.memberForName(name)
 		if m is nil
 			m = .interfaceMemberForName(name)
@@ -1162,7 +1158,7 @@ class Struct
 		_clrType = clrType
 		_needScanClrType = true
 
-	def _scanClrType is override
+	def _scanClrType
 		base._scanClrType
 		_scanIsNames
 		_scanImplements
@@ -1205,7 +1201,7 @@ class GenericParam
 
 	def init(name as String)
 		require name
-		base.init()
+		base.init
 		_name = name
 		_constraints = List<of GenericConstraint>()
 
@@ -1221,12 +1217,12 @@ class GenericParam
 		# TODO: if there are constraints on the generic param, examine them to determine answer
 		return true
 
-	def addMinFields is override
-		base.addMinFields()
+	def addMinFields
+		base.addMinFields
 		.addField('name', _name)
 
-	def addSubFields is override
-		base.addSubFields()
+	def addSubFields
+		base.addSubFields
 		.addField('constraints', _constraints)
 		.addField('index', _index)
 
@@ -1258,16 +1254,16 @@ class GenericParam
 		assert gpToType.containsKey(this)
 		return gpToType[this]
 
-	def _bindInt is override
-		base._bindInt()
+	def _bindInt
+		base._bindInt
 		_objectClass = .compiler.classType('System', 'Object')
 		for constraint in _constraints
-			constraint.bindInt()
+			constraint.bindInt
 
 	get csInit as String is override
 		return 'default([_name])'
 
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as SharpWriter)
 		base.writeSharpDef(sw)
 		sw.write(.name)
 
@@ -1303,8 +1299,8 @@ class GenericConstraint
 		"""
 		return nil
 
-	def _bindInt is override
-		base._bindInt()
+	def _bindInt
+		base._bindInt
 
 
 class GenericClassConstraint
@@ -1372,10 +1368,10 @@ class GenericTypeConstraint
 		assert _representedType
 		return _representedType.memberForName(name)
 
-	def _bindInt is override
-		base._bindInt()
+	def _bindInt
+		base._bindInt
 		if _representedType is nil
-			_typeNode.bindInt()
+			_typeNode.bindInt
 			_representedType = _typeNode.realType
 			assert _representedType
 		if not _representedType inherits Class and not _representedType inherits Interface
