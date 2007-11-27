@@ -1628,7 +1628,7 @@ class TruthExpr
 class TypeExpr
 	inherits Expr
 	implements ITypeProxy
-	
+
 	var _typeNode as ITypeProxy?
 	var _containedType as IType?
 
@@ -2365,3 +2365,114 @@ class DictLit
 			keyExpr.writeSharpBreakdownItems(sw)
 			valueExpr.writeSharpBreakdownItems(sw)
 		sw.write(', -1')
+
+
+class ToNilableOrNotExpr  # CC: is abstract
+	inherits Expr
+	"""
+	The abstract base class for ToNilableExpr and ToNonNilableExpr which have much in common.
+	"""
+	
+	var _rightTok as IToken
+	var _expr as Expr
+
+	def init(opToken as IToken, rightTok as IToken, expr as Expr)
+		base.init(opToken)
+		_rightTok = rightTok
+		_expr = expr
+
+	get rightTok from var
+	
+	get expr from var
+
+	def _bindImp
+		base._bindImp
+		_expr.bindImp
+
+	def toCobraSource as String is override
+		sb = StringBuilder()
+		sb.append(_expr.toCobraSource)
+		sb.append(' to ')
+		sb.append(_rightTok.text)
+		return sb.toString
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		_expr.writeSharpBreakdownItems(sw)
+
+
+class ToNilableExpr
+	inherits ToNilableOrNotExpr
+	"""
+	Casts an expression to the nilable version of its type.
+	
+	When coding in Cobra:
+
+	You would do this primarily when the expression is on the right hand side of an assignment and
+	you want the left hand var to by implicitly typed as nilable so you can assign nil to it later.
+	
+	ex: name = obj.name to ?
+	ex: age = customer.age to ?
+	"""
+	
+	def init(opToken as IToken, rightTok as IToken, expr as Expr)
+		base.init(opToken, rightTok, expr)
+
+	def _bindImp
+		base._bindImp
+		if _expr.type inherits NilableType
+			_type = _expr.type
+			.compiler.warning(this, 'The given expression is already nilable so "to ?" is redundant.')  # TODO: needs test case
+		else
+			_type = NilableType(_expr.type)
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if _expr.type.isReference
+			# In C#/.NET, reference types are always "nilable"
+			_expr.writeSharpDef(sw)
+		else
+			# ex: ((int?)x)
+			# ex: ((Color?)Color.Black)
+			sw.write('(([_expr.type.sharpRef]?)')
+			_expr.writeSharpDef(sw, false)
+			sw.write(')')
+
+
+class ToNonNilableExpr
+	inherits ToNilableOrNotExpr
+	"""
+	Casts an expression to the non-nilable version of its type.
+	
+	When coding in Cobra:
+
+	You would do this when trying to use a nilable expression where a non-nil type is expected and
+	you know that at run-time the expression won't actually by nil (presumably due to the logic of
+	your code).
+	
+	Or you might do this to affect type inference.
+	
+	ex: name = obj.name to !
+	ex: obj.foo(age to !)
+	"""
+	
+	def init(opToken as IToken, rightTok as IToken, expr as Expr)
+		base.init(opToken, rightTok, expr)
+
+	def _bindImp
+		base._bindImp
+		if (et = _expr.type) inherits NilableType
+			_type = et.theWrappedType
+		else
+			.compiler.warning(this, 'The given expression is already non-nilable so "to !" is redundant.') # TODO: needs test case
+			_type = _expr.type
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if _expr.type.isReference
+			# TODO: when generating IL code, I think we can sneak in a check and a throw if the type is nil. that would be good from a "detect errors early" perspective. of course, such a run-time check should have a switch to turn off
+			_expr.writeSharpDef(sw)
+		else
+			# ex: (x).Value
+			# ex: (obj.foo).Value
+			sw.write('(')
+			_expr.writeSharpDef(sw, false)
+			sw.write(').Value')

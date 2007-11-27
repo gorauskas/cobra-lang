@@ -2058,12 +2058,22 @@ class Parser
 			.opStack.push(op to String)  # CC: axe cast or !
 			try
 				prec = if(OperatorSpecs.rightAssoc.containsKey(op to String), binaryOpPrec, binaryOpPrec+1)  # CC: axe cast or !
-				if getTypeExprForRightHandSide
-					right = .typeExpr to Expr
+				if op == 'TO' and .peek.which in ['QUESTION', 'BANG']
+					# ex: x to !
+					# ex: x to ?
 					getTypeExprForRightHandSide = false
+					rightTok = .grab to IToken # CC: to !
+					branch rightTok.which
+						on 'QUESTION': left = ToNilableExpr(opToken to IToken, rightTok, left to Expr)
+						on 'BANG': left = ToNonNilableExpr(opToken to IToken, rightTok, left to Expr)
+						else: throw FallThroughException(rightTok.which)
 				else
-					right = .expression(prec)
-				left = BinaryOpExpr.make(opToken to IToken, op to String, left to Expr, right to Expr)  # CC: assert opToken up higher and remove cast
+					if getTypeExprForRightHandSide
+						right = .typeExpr to Expr
+						getTypeExprForRightHandSide = false
+					else
+						right = .expression(prec)
+					left = BinaryOpExpr.make(opToken to IToken, op to String, left to Expr, right to Expr)  # CC: assert opToken up higher and remove cast
 			finally
 				.opStack.pop
 				_leftStack.pop
