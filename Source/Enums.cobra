@@ -24,6 +24,7 @@ class EnumDecl
 	var _storageTypeNode as ITypeProxy?
 	var _storageType as IType?
 	var _clrType as Type?
+	var _needScanClrType as bool
 
 	def init(parent as Container, token as IToken, name as String, isNames as List<of String>, storageTypeNode as ITypeProxy?, docString as String, enumMembers as List<of EnumMember>)
 		base.init(parent, token, name, isNames, docString)
@@ -36,7 +37,11 @@ class EnumDecl
 		base.init(parent, TokenFix.empty, clrType.name, isNames, docString)
 		_clrType = clrType
 		_storageTypeNode = ClrTypeProxy(Enum.getUnderlyingType(clrType))
-		# TODO: can the scanning of enum members be delayed until the enum is actually used? like we do with classes?
+		_needScanClrType = true
+	
+	def _scanClrType
+		_needScanClrType = false
+		clrType = _clrType to Type  # to !
 		isByte = Enum.getUnderlyingType(clrType).name == 'Byte'
 		is64 = Enum.getUnderlyingType(clrType).name == 'Int64'
 		values = Enum.getValues(clrType)
@@ -86,10 +91,13 @@ class EnumDecl
 
 	def _bindImp() is override
 		base._bindImp()
+		# TODO: can this be removed? since the storage type is always something primitive like 'int', there should be no need for enum to give it .bindImp
 		if _storageType
 			_storageType.bindImp()
 
 	def memberForName(name as String) as IMember?
+		if _needScanClrType
+			_scanClrType
 		m = base.memberForName(name)
 		if m is nil
 			objClass = .compiler.libraryType('System', 'Object')
