@@ -180,7 +180,7 @@ class Compiler
 		Returns the directory where cobra.exe is residing.
 		Related resources such as CobraLang.cs reside there.
 		"""
-		return Path.getDirectoryName(Assembly.getEntryAssembly.location)
+		return Path.getDirectoryName(Assembly.getEntryAssembly.location) to !  # not really true. if you stuck Cobra in the root dir, the .getDirectoryName docs say it will return nil
 
 	def parseFilesNamed(filenames as List<of String>) as List<of Module>
 		"""
@@ -205,7 +205,7 @@ class Compiler
 				path = Path.combine(.cobraExeDir, 'CobraInfo.cs')
 				assert File.exists(path), path
 				filenames.insert(2, path)
-				_firstUserModuleIndex = 3
+				_firstUserModuleIndex = 3 + 2 # + 2 for .readSystemTypes
 			modules = List<of Module>()
 			for filename in filenames
 				if filename.endsWith('.cs')
@@ -384,14 +384,15 @@ class Compiler
 				continue
 			if '`' in type.name
 				continue
-			if namespaceQualNameToNameSpaceObject.containsKey(type.namespace)
-				curNameSpace = namespaceQualNameToNameSpaceObject[type.namespace]
+			namespaceName = type.namespace to !  # .namespace returns nil for generic params, but not expecting that here
+			if namespaceQualNameToNameSpaceObject.containsKey(namespaceName) 
+				curNameSpace = namespaceQualNameToNameSpaceObject[namespaceName]
 			else
 				curNameSpace = module.topNameSpace
 				for name in type.namespace.split(c'.')
 					curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(Token.empty, name)
 					assert not curNameSpace.isUnified
-				namespaceQualNameToNameSpaceObject[type.namespace] = curNameSpace
+				namespaceQualNameToNameSpaceObject[namespaceName] = curNameSpace
 			if type.isClass
 				curNameSpace.addDecl(Class(type))
 			else if type.isInterface
@@ -415,11 +416,15 @@ class Compiler
 		_fix('System.Console', 'out')
 		_fix('System.String', 'replace substring toLower toUpper trim')
 		_fix('System.Type', 'name')
+			# namespace can return nil if the Type is a generic parameter
 		_fix('System.Environment', 'commandLine currentDirectory newLine version')
 		_fix('System.Exception', 'message')
 		_fix('System.IO.File', 'readAllText')
 		_fix('System.IO.TextWriter', 'newLine')
 		_fix('System.IO.Path', 'combine getFullPath')
+			# getDirectoryName does return String?
+			# getFileName does return String?
+			# TODO: Add something like CobraUtils.getDirectoryName and .getFileName that return String instead
 		# args: System.IO.Path.combine(arg1 as String, arg2 as String) as String
 		_fix('System.Text.StringBuilder', 'toString')
 		_fix('System.Text.RegularExpressions.Regex', 'match')

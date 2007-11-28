@@ -630,9 +630,9 @@ class Box
 			docString = ''  # TODO: get doc string for class?
 			# TODO: eventually the isNames need to be an the property part level (get or set) rather than the property level, like in C# and the CLR runtime
 			if propInfo.canRead
-				isNames = _isNamesForMethodInfo(propInfo.getGetMethod(true))
+				isNames = _isNamesForMethodInfo(propInfo.getGetMethod(true) to !)
 			else if propInfo.canWrite
-				isNames = _isNamesForMethodInfo(propInfo.getSetMethod(true))
+				isNames = _isNamesForMethodInfo(propInfo.getSetMethod(true) to !)
 			else
 				throw FallThroughException(propInfo)
 			prop = Property(TokenFix.empty, this, Utils.uncapped(propInfo.name), _memberTypeProxy(propInfo.propertyType), isNames, docString)
@@ -649,9 +649,9 @@ class Box
 		params = _scanParams(propInfo.getIndexParameters)
 		docString = ''  # TODO: get doc string for class?
 		if propInfo.canRead
-			isNames = _isNamesForMethodInfo(propInfo.getGetMethod(true))
+			isNames = _isNamesForMethodInfo(propInfo.getGetMethod(true) to !)
 		else if propInfo.canWrite
-			isNames = _isNamesForMethodInfo(propInfo.getSetMethod(true))
+			isNames = _isNamesForMethodInfo(propInfo.getSetMethod(true) to !)
 		else
 			throw FallThroughException(propInfo)
 		indexer = Indexer(TokenFix.empty, this, r'[]', params, _memberTypeProxy(propInfo.propertyType), isNames, docString)
@@ -722,7 +722,7 @@ class Box
 			else
 				.addDecl(method)
 	
-	def _scanParams(paramInfos as ParameterInfo[]) as List<of Param>
+	def _scanParams(paramInfos as ParameterInfo[]?) as List<of Param>
 		"""
 		Returns a list of Cobra parameters given a list of CLR Reflection ParameterInfos.
 		"""
@@ -754,23 +754,27 @@ class Box
 			isNames.add('nonvirtual')
 		return isNames
 
-	def _badRelatedType(t as Type) as bool
+	def _badRelatedType(t as Type?) as bool
 		"""
 		Returns true if the given type, which comes from a parameter or return value, is unsupported.
 		For example, it's not public or it's nested. Members with bad types are skipped when scanning DLLs.
 		"""
+		if t is nil
+			return false
 		if t.isNested
 			return true
 		if t.isNotPublic
 			return true
 		return false
 
-	def _memberTypeProxy(clrType as Type) as ITypeProxy
+	def _memberTypeProxy(clrType as Type?) as ITypeProxy
 		"""
 		Returns a type proxy for a member type such as a parameter type or method return type.
 		In CLR, reference types are nilable by default.
 		"""
-		if clrType.isValueType
+		if clrType is nil
+			return .compiler.voidType
+		else if clrType.isValueType
 			return ClrTypeProxy(clrType)
 		else
 			return NilableTypeProxy(ClrTypeProxy(clrType))
