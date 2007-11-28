@@ -118,7 +118,7 @@ namespace Cobra
 					test
 						assert '.exe' in CobraCore.exePath
 					body
-						return Assembly.getExecutingAssembly.location
+						return Assembly.getExecutingAssembly.location to String  # CC: to ! or annotate .location
 
 
 				## Tracer
@@ -241,7 +241,7 @@ namespace Cobra
 					if name.endsWith('mono')
 						for part in Environment.commandLine.split(c' ')
 							if part.endsWith('.exe')
-								name = Path.getFileName(part)
+								name = Path.getFileName(part) to String  # CC: method should have: ensure arg and arg.length implies result; um, that'll be awhile to both put in and interpret at compile time!
 								break
 					_headerPair(tw, 'Program', name)
 					_headerPair(tw, 'When', DateTime.now)
@@ -250,7 +250,7 @@ namespace Cobra
 					_headerPair(tw, 'Machine Name', Environment.machineName)
 					_headerPair(tw, 'Cobra', CobraCore.version)
 					_headerPair(tw, 'CLR', Environment.version)
-					if Environment.workingSet
+					if Environment.workingSet to decimal  # CC: axe cast. workingSet is really C# 'long' or Cobra 'int64'
 						_headerPair(tw, 'Working Set', Environment.workingSet)
 					tw.writeLine('</table>')
 					tw.writeLine('</div> <!-- section -->')
@@ -293,8 +293,9 @@ namespace Cobra
 					tw.writeLine('</body>')
 					tw.writeLine('</html>')
 
-				def _headerPair(tw as TextWriter, key as String, value as Object)
+				def _headerPair(tw as TextWriter, key as String, value as Object?)
 					key = .htmlEncode(key)
+					value ?= ''
 					value = .htmlEncode(value.toString)
 					tw.writeLine('<tr class=keyValue> <td class=key> [key] </td> <td> &nbsp;=&nbsp; </td> <td class=value> [value] </td> </tr>')
 
@@ -392,7 +393,7 @@ namespace Cobra
 					tw.writeLine('<table class=object border=0 cellpadding=0 cellspacing=0>')
 					tw.writeLine('<tr class=objectTitle> <td class=objectTitle colspan=2> [.htmlEncode(.typeName(obj.getType))] &nbsp; <font size=-1>([serialNum])</font> </td> </tr>')
 					try
-						value = obj.toString to Object
+						value = obj.toString to Object?
 					catch exc as Exception
 						value = 'Caught exception while reading value: [exc.toString]'
 					row = 1
@@ -505,7 +506,7 @@ namespace Cobra
 							pass  # forget it
 					return s to dynamic
 				
-				def _writeObjectPair1(tw as TextWriter, i as int, key as String, valueHtml as Object) is internal
+				def _writeObjectPair1(tw as TextWriter, i as int, key as String, valueHtml as Object?) is internal
 					require
 						i == 1 or i == 2
 						key.length
@@ -514,12 +515,12 @@ namespace Cobra
 						key = .htmlEncode(key)
 						_writeObjectPair2(tw, i, key, valueHtml)
 
-				def _writeObjectPair2(tw as TextWriter, i as int, preFormattedKey as String, valueHtml as Object) is internal
+				def _writeObjectPair2(tw as TextWriter, i as int, preFormattedKey as String, valueHtml as Object?) is internal
 					require
 						i == 1 or i == 2
 						preFormattedKey.length
 					body
-						tw.writeLine('<tr class=keyValue[i]> <td class=key[i]> [preFormattedKey] </td> <td class=value[i]> [valueHtml] </td> </tr>')
+						tw.writeLine('<tr class=keyValue[i]> <td class=key[i]> [preFormattedKey] </td> <td class=value[i]> [valueHtml ? ''] </td> </tr>')
 
 				
 				## Type names and tech strings
@@ -660,7 +661,7 @@ namespace Cobra
 				
 				get isRunningOnMono as bool
 					if _isRunningOnMono is nil
-						_isRunningOnMono = Type.getType('Mono.Runtime') is not nil
+						_isRunningOnMono = $sharp('Type.GetType("Mono.Runtime")') is not nil
 					return _isRunningOnMono to bool  # CC: axe cast
 					
 				def runAndCaptureAllOutput(process as Object) as String
