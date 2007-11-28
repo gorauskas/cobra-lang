@@ -263,62 +263,62 @@ class Compiler
 	get boolType as BoolType
 		if _boolType is nil
 			_boolType = BoolType()
-		return _boolType to BoolType  # CC: to ! | CC: axe to !
+		return _boolType to !
 
 	get charType as CharType
 		if _charType is nil
 			_charType = CharType()
-		return _charType to CharType  # CC: to! | CC: axe to !
+		return _charType to !
 
 	get decimalType as DecimalType
 		if _decimalType is nil
 			_decimalType = DecimalType()
-		return _decimalType to DecimalType  # CC: to! | CC: axe to !
+		return _decimalType to !
 
 	get dynamicType as DynamicType
 		if _dynamicType is nil
 			_dynamicType = DynamicType()
-		return _dynamicType to DynamicType
+		return _dynamicType to !
 
 	get intType as IntType
 		if _intType is nil
 			_intType = IntType()
-		return _intType to IntType  # CC: to! | CC: axe to !
+		return _intType to !
 
 	get floatType as FloatType
 		if _floatType is nil
 			_floatType = FloatType()
-		return _floatType to FloatType  # CC: to! | CC: axe to !
+		return _floatType to !
 
 	get nilType as NilType
 		if _nilType is nil
 			_nilType = NilType()
-		return _nilType to NilType  # CC: to! | CC: axe to !
+		return _nilType to !
 
 	get numberType as NumberType
 		if _numberType is nil
 			_numberType = NumberType()
-		return _numberType to NumberType  # CC: to! | CC: axe to !
+		return _numberType to !
 
 	get passThroughType as PassThroughType
 		if _passThroughType is nil
 			_passThroughType = PassThroughType()
-		return _passThroughType to PassThroughType  # CC: to ! | CC: axe to !
+		return _passThroughType to !
 
 	get typeType as TypeType
 		if _typeType is nil
 			_typeType = TypeType()
-		return _typeType to TypeType  # CC: to ! | CC: axe to !
+		return _typeType to !
 
 	get unspecifiedType as UnspecifiedType
 		if _unspecifiedType is nil
 			_unspecifiedType = UnspecifiedType()
-		return _unspecifiedType to UnspecifiedType  # CC: to ! | CC: axe to !
+		return _unspecifiedType to !
 
 	get voidType as VoidType
 		if _voidType is nil
 			_voidType = VoidType()
-		return _voidType to VoidType  # CC: to ! | CC: axe to !
+		return _voidType to !
 
 	def variType(type as IType) as VariType
 		if _variTypes is nil
@@ -346,11 +346,7 @@ class Compiler
 		if t inherits NilableType
 			return t
 		else
-			# CC: after supporting "as this" for return types, the following 3 lines can be:
-			# return NilableType(t).bindAll
-			t = NilableType(t)
-			t.bindAll
-			return t to NilableType  # CC: axe cast after code flow picks up on assignments
+			return NilableType(t).bindAll to NilableType  # CC: axe cast after "as this"
 
 	def readSystemTypes
 		# TODO: should pick up mscorlib.dll instead and based on what CLR version we're targeting. but that can wait for much later.
@@ -770,12 +766,11 @@ class Compiler
 		Node.setCompiler(this)
 		try
 			_moduleFileName_to_sharpToCobraLineNum = Dictionary<of String, Dictionary<of int, int>>()
-			for module in _modules  # CC: make that _curModule and axe following assignment statement
-				if not module.fileName.endsWith('SystemInterfaces.cobra')
-					_curModule = module
+			for _curModule in _modules
+				if not _curModule.fileName.endsWith('SystemInterfaces.cobra')
 					sharpToCobraLineNum = _curModule.writeSharpDef
-					_moduleFileName_to_sharpToCobraLineNum[module.fileName] = sharpToCobraLineNum
-					_moduleFileName_to_sharpToCobraLineNum[Path.getFullPath(module.fileName)] = sharpToCobraLineNum
+					_moduleFileName_to_sharpToCobraLineNum[_curModule.fileName] = sharpToCobraLineNum
+					_moduleFileName_to_sharpToCobraLineNum[Path.getFullPath(_curModule.fileName)] = sharpToCobraLineNum
 		finally
 			Node.setCompiler(nil)
 
@@ -885,13 +880,12 @@ class Compiler
 			optChar = if(platform=='ms', '/', '-')  # option prefix character
 
 			# exe names
-			# CC: exe = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName, _modules[_firstUserModuleIndex].csFileName)
 			outName = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName, _modules[_firstUserModuleIndex].csFileName)
 			if outName.endsWith('.cs')
 				outName = outName.substring(0, outName.length-3)  # CC: cannot slice nilable, [:-3]
 			if outName.endsWith('.cobra')
 				outName = outName.substring(0, outName.length-6)  # CC: cannot slice nilable, [:-6]
-			_baseExeFileName = outName to String  # CC: to !  CC: axe cast
+			_baseExeFileName = outName to !
 
 			# options
 			options = ''
@@ -909,7 +903,7 @@ class Compiler
 					else: throw FallThroughException(target)
 			else
 				outName += '.exe'
-			_fullExeFileName = outName to String  # CC: to !  CC: axe cast
+			_fullExeFileName = outName to !
 
 			thing = Utils.getSO(_options, 'reference', List<of String>()) to List<of String>  # CC: cleanup
 			for refer in thing
@@ -930,8 +924,8 @@ class Compiler
 
 			# .cs files
 			csFileNameList = List<of String>()
-			for module in _modules.getRange(1, _modules.count-1)  # CC: use range
-				csFileNameList.add('"' + module.csFileName to String + '"')  # CC: shouldn't need cast
+			for module in _modules[1:]
+				csFileNameList.add('"' + module.csFileName to ! + '"')
 			csFileNames = Utils.join(' ', csFileNameList)
 
 			# compilation command
@@ -948,7 +942,7 @@ class Compiler
 			output = CobraCore.runAndCaptureAllOutput(p)
 			# TODO: check p.exitCode, especially if output is empty
 
-			for line as String in output.split(c'\n')  # CC: axe as
+			for line in output.split(c'\n') 
 				line = line.trim
 				if not line.length
 					continue
@@ -1063,7 +1057,7 @@ class SharpCompilationMessage
 						line += ' (C#)'
 				success
 					_fileName = fileName
-					_lineNum = compiler.cobraLineNumForSharp(_fileName to String, sharpLineNum)  # CC: axe cast
+					_lineNum = compiler.cobraLineNumForSharp(fileName, sharpLineNum)
 					i = line.indexOf(':')
 					if i <> -1
 						line = line[i+1:].trim
@@ -1089,7 +1083,7 @@ class SharpCompilationMessage
 		return _fileName is not nil
 
 	get fileName as String is override
-		return _fileName to String  # CC: to !
+		return _fileName to !
 
 	get lineNum as int is override
-		return _lineNum to int  # CC: to !
+		return _lineNum to !
