@@ -159,10 +159,9 @@ interface ITypeProxy
 #		Return the name of the type.
 #		"""
 
-	get realType as IType?
+	get realType as IType
 		"""
-		If this node represents a type, this property returns it.
-		Otherwise, returns nil (which is the default behavior).
+		Returns the type that this node represents .throwError if the type cannot be located.
 		"""
 
 
@@ -186,12 +185,8 @@ class NilableTypeProxy
 		base.addMinFields
 		.addField('innerTypeProxy', .innerTypeProxy)
 
-	get realType as IType?
-		t = _innerType.realType
-		if t
-			return NilableType(t)
-		else
-			return nil
+	get realType as IType
+		return NilableType(_innerType.realType)
 
 
 class ClrTypeProxy
@@ -236,10 +231,10 @@ class ClrTypeProxy
 		base.addMinFields
 		.addField('clrType', _clrType)
 
-	get realType as IType?
+	get realType as IType
 		return _realType(_clrType)
 		
-	def _realType(clrType as Type) as IType?
+	def _realType(clrType as Type) as IType
 		# TODO: having problems with System.Configuration
 		if clrType.namespace  # a generic param has no namespace
 			if clrType.namespace == 'System.Configuration'
@@ -297,7 +292,7 @@ class ClrTypeProxy
 			print clrType.name
 			print clrType.fullName
 			assert false, clrType
-			return nil
+			.throwError('Cannot locate CLR type "[_clrType]".')
 
 		# compute namespace
 		nameParts = clrType.namespace.split(c'.')
@@ -330,7 +325,7 @@ class ClrTypeProxy
 				# otherwise, we would just end up returning the generic definition 
 				args = List<of IType>()
 				for genArg in clrType.getGenericArguments
-					args.add(_realType(genArg) to !)
+					args.add(_realType(genArg))
 				member = (member to Box).constructedTypeFor(args)
 			return member 
 		else
@@ -348,11 +343,10 @@ class ClrTypeProxy
 			trace clrType.assembly.location
 			trace curNS.declForName('IComparable')
 			#assert false
-			Environment.exit(1)
-			return nil
-#			throw FallThroughException({'curNS': curNS, 'member': member, 'typeName': typeName})
+			.throwError('Cannot locate CLR type "[_clrType]".')
+		return .compiler.intType  # CC: to make C# code gen happy.
 
-	def _hack(clrType as Type) as IType?
+	def _hack(clrType as Type) as IType
 		if clrType.isInterface
 			return ClrTypeProxy($sharp('typeof(ICloneable)')).realType
 		else
@@ -568,7 +562,7 @@ class CobraType
 	get innerType as IType?
 		return nil
 
-	get realType as IType?
+	get realType as IType
 		return this
 
 	get superType from var
@@ -1335,7 +1329,7 @@ class AbstractTypeIdentifier
 
 	get didResolveType from var
 	
-	get realType as IType?
+	get realType as IType
 		ensure .actualType
 		if not .didBindInt
 			.bindInt
@@ -1344,7 +1338,7 @@ class AbstractTypeIdentifier
 			assert .actualType
 			_didResolveType = true
 		assert _actualType
-		return _actualType
+		return _actualType to !
 
 	def equals(other as Object) as bool is override
 		if other is nil
@@ -1506,7 +1500,7 @@ class TypeIdentifier
 				sugg = if(other, ' Try "[sugg]".', '')
 			.throwError('Cannot find type for "[_name]".[sugg]')
 		if symbol inherits ITypeProxy
-			return symbol.realType to !
+			return symbol.realType
 		else
 			throw FallThroughException(symbol)
 
