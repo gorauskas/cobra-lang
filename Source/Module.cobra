@@ -4,21 +4,15 @@ class Module  # CC: mark abstract
 	inherits Node
 
 	# TODO: Seems that much of Module's guts should be moved down to CobraModule
-	
+
 	var _fileName as String
-	var _csFileName as String?
-	var _declsInOrder as List<of IMember>
-	var _declsByName as Dictionary<of String, IMember>
-	var _declsByNameCI as Dictionary<of String, IMember>
+	var _csFileName = ''
 	var _docString as String?
 
 	def init(fileName as String, verbosity as int, docString as String)
 		require fileName
-		base.init()
+		base.init
 		_fileName = fileName
-		_declsInOrder = List<of IMember>()
-		_declsByName = Dictionary<of String, IMember>()
-		_declsByNameCI = Dictionary<of String, IMember>()
 		_docString = docString
 		# TODO: what's going on with verbosity?
 
@@ -31,58 +25,14 @@ class Module  # CC: mark abstract
 	get isCobraLibrary as bool
 		return _fileName.endsWith('CobraLang.cobra') or _fileName.endsWith('CobraLang.cs') or _fileName.endsWith('SystemInterfaces.cobra')
 
-	get declsInOrder as List<of IMember>
-		return _declsInOrder
-
-	def addDecl(decl as IMember)
-		require decl.name
-		if decl in _declsInOrder
-			# happens with double "namespace Foo" in the same module
-			assert decl inherits NameSpace
-			return
-		if _declsByName.containsKey(decl.name)
-			duplicate = true
-			suffix = ''
-			other = _declsByName[decl.name]
-		else if _declsByNameCI.containsKey(decl.name.toLower())
-			duplicate = true
-			suffix = ' Declaration names must be unique (beyond just case).'
-			other = _declsByNameCI[decl.name.toLower()]
-		else
-			_declsByName[decl.name] = decl
-			_declsByNameCI[decl.name.toLower()] = decl
-		if duplicate
-			msg = 'The name "[decl.name]" was already declared'
-			if other inherits ISyntaxNode
-				msg += ' at line [other.token.lineNum]'
-			msg += '. [suffix]'
-			decl.throwError(msg)
-		else
-			_declsInOrder.add(decl)
-
 	get csSource as String
-		if _csFileName
-			return File.readAllText(_csFileName to String)  # CC: axe cast
+		if _csFileName.length
+			return File.readAllText(_csFileName)
 		else
-			throw FallThroughException(_csFileName)
+			throw FallThroughException('csFileName is blank')
 
-	def addSubFields is override
-		.addField('declsInOrder', _declsInOrder)
-
-	def symbolForName(name as String) as IMember?
-		# TODO: make faster?
-		for decl in _declsInOrder
-			if decl.name==name
-				return decl
-		for decl in _declsInOrder
-			if decl inherits UseDirective
-				x = decl.findSymbol(name)
-				if x
-					return x
-		return nil
-
-	def addMinFields is override
-		base.addMinFields()
+	def addMinFields
+		base.addMinFields
 		.addField('fileName', _fileName)
 
 	def bindUse
@@ -93,8 +43,8 @@ class Module  # CC: mark abstract
 		return nil to passthrough
 
 	def writeSharpTestInvocation(sw as SharpWriter)
-		for decl in _declsInOrder
-			decl.writeSharpTestInvocation(sw)
+		pass
+
 
 class SharpModule
 	inherits Module
@@ -110,7 +60,7 @@ class SharpModule
 	def writeSharpDef as Dictionary<of int, int> is override
 		# kind of silly, but it works:
 		d = Dictionary<of int, int>()
-		for i = 1 .. Utils.countChars(File.readAllText(_csFileName to String), c'\n')+1  # CC: to !
+		for i = 1 .. Utils.countChars(File.readAllText(_csFileName), c'\n')+1
 			d[i] = i
 		return d
 
@@ -129,6 +79,7 @@ class AssemblyModule
 	def init(ass as Assembly, verbosity as int, globalNS as NameSpace)
 		base.init(ass.location, verbosity, '')
 		_topNameSpace = NameSpace(globalNS, '(top namespace for assembly [ass])')
+		_csFileName = ''
 
 	get topNameSpace from var
 		"""
@@ -136,11 +87,11 @@ class AssemblyModule
 		This is an implicit namespace that is not unified (its unified namespace is the global namespace).
 		"""
 
-	def bindUse is override
+	def bindUse
 		base.bindUse
 		.topNameSpace.bindUse
 
-	def _bindInt is override
+	def _bindInt
 		base._bindInt
 		# .topNameSpace.bindInt - It's too expensive to scan all types in a DLL. Do them as needed.
 
@@ -156,6 +107,8 @@ class CobraModule
 	def init(fileName as String, verbosity as int, docString as String, globalNS as NameSpace)
 		base.init(fileName, verbosity, docString)
 		_topNameSpace = NameSpace(globalNS, '(top namespace for module [fileName])')
+		if not _fileName.endsWith('SystemInterfaces.cobra')
+			_csFileName = _fileName + '.cs'
 
 	get topNameSpace from var
 		"""
@@ -163,36 +116,24 @@ class CobraModule
 		This is an implicit namespace that is not unified (its unified namespace is the global namespace).
 		"""
 	
-	def addDecl(decl as IMember)
-		base.addDecl(decl)
-		if decl inherits NameSpace
-			if decl.superNameSpace is _topNameSpace
-				pass  # was already added probably through NameSpace.getOrMakeNameSpaceNamed
-			else
-				assert decl.superNameSpace is nil
-				_topNameSpace.addDecl(decl)
-		else
-			_topNameSpace.addDecl(decl)
-
-	def bindUse is override
+	def bindUse
 		base.bindUse
 		.topNameSpace.bindUse
 
-	def _bindInt is override
+	def _bindInt
 		base._bindInt
 		.topNameSpace.bindInt
 
-	def _bindImp is override
-		base._bindImp()
+	def _bindImp
+		base._bindImp
 		assert .didBindInt
 		.topNameSpace.bindImp
 
 	def writeSharpDef as Dictionary<of int, int> is override
-		base.writeSharpDef()
-		_csFileName = _fileName + '.cs'
-		file = File.createText(_csFileName to String)  # CC: axe cast
+		base.writeSharpDef
+		file = File.createText(_csFileName)
 		using sw = SharpWriter(file)
-			.compiler.addIntermediateFile(_csFileName to String)  # CC: axe cast
+			.compiler.addIntermediateFile(_csFileName)
 			sw.write('// [_csFileName]\n')
 			sw.write('// Generated by Cobra\n')  # TODO: put version number here
 			sw.write('// on [DateTime.now]\n')
@@ -201,3 +142,6 @@ class CobraModule
 			.topNameSpace.writeSharpDef(sw)
 			d = sw.sharpToCobraLineNum
 		return d
+
+	def writeSharpTestInvocation(sw as SharpWriter) is override
+		.topNameSpace.writeSharpTestInvocation(sw)
