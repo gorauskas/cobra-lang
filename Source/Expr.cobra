@@ -1,5 +1,14 @@
+interface IExpr
+	"""
+	This is just used for categorization for now.
+	To see what really makes an expression, see the Expr class.
+	"""
+	pass
+
+
 class Expr
 	inherits Stmt
+	implements IExpr
 
 	var _type as IType?
 	var _receiverType as IType?
@@ -208,6 +217,20 @@ class Expr
 
 	def writeSharpDefForBreakdown(sw as SharpWriter)
 		.writeSharpDef(sw)
+
+
+interface IPotentialTypeExpr
+	inherits IExpr
+	"""
+	An implementor of IPotentialType *could* be a representation of a type.
+	This is used by expressions such as DotExpr, IdentifierExpr, IndexExpr and TypeExpr.
+	The "inherits IExpr" is there just to emphasize and verify that fact.
+	"""
+
+	get potentialType as IType?
+		"""
+		Returns the type that this object represents, or nil if it does not represent a type.
+		"""
 
 
 class NameExpr
@@ -798,7 +821,7 @@ class ForExpr
 
 class IdentifierExpr
 	inherits NameExpr
-	implements ITypeProxy
+	implements IPotentialTypeExpr
 	
 	def init(token as IToken, name as String, definition as INamedNode?)
 		base.init(token)
@@ -822,7 +845,7 @@ class IdentifierExpr
 		assert not r or not .definition.sharpName.startsWith('_lh')
 		return r
 		
-	get realType as IType?
+	get potentialType as IType?
 		# overridden to return the type this identifier represents in those cases when it does represent a type such an "int" or a class
 		assert .didBindImp
 		assert .type
@@ -1032,7 +1055,7 @@ class IfExpr
 
 class IndexExpr
 	inherits Expr
-	implements ITypeProxy  # because String[] is a type, not an indexer invocation
+	implements IPotentialTypeExpr  # because String[] is a type, not an indexer invocation
 
 	var _target as Expr
 	var _args as List<of Expr>
@@ -1065,7 +1088,7 @@ class IndexExpr
 
 	get isArrayType from var
 	
-	get realType as IType?
+	get potentialType as IType?
 		assert .didBindImp
 		return if(.isArrayType, .type, nil)
 	
@@ -1075,8 +1098,8 @@ class IndexExpr
 		args = _args
 		if args.count == 0
 			if _target.isKindOf(.compiler.libraryType('System', 'Type')) or _target.type inherits TypeType  # TODO: lameness. Make TypeType() inherit System.Type, or lose TypeType and/or have an .isAType property and use everywhere
-				if _target inherits ITypeProxy
-					_type = ArrayType(_target.realType)
+				if _target inherits IPotentialTypeExpr and (pt = (_target to IPotentialTypeExpr).potentialType)
+					_type = ArrayType(pt)
 					_isArrayType = true
 					return
 				else
@@ -1448,9 +1471,9 @@ class PostCallExpr
 			_type = _expr.containedType
 		else if _expr inherits IndexExpr
 			# could be array instantiation or calling the result of stuff[i] which could be System.Type, a delegate or what-have-you
-			if (target = _expr.target) inherits ITypeProxy
-				_type = target.realType
-				assert _type
+			if (target = _expr.target) inherits IPotentialTypeExpr
+				_type = target.potentialType
+				assert _type, target
 			else
 				assert false, 'what is this? _expr=[_expr]'
 		else
@@ -1749,8 +1772,12 @@ class TruthExpr
 
 class TypeExpr
 	inherits Expr
-	implements ITypeProxy
-
+	implements IPotentialTypeExpr, ITypeProxy
+	"""
+	Unlike the other expressions that implement IPotentialType, a TypeExpr always represents a type.
+	Hence it implements ITypeProxy as well.
+	"""
+	
 	var _typeNode as ITypeProxy?
 	var _containedType as IType?
 
@@ -1759,8 +1786,8 @@ class TypeExpr
 		_typeNode = typeNode
 
 	def init(typeNode as ITypeProxy)
-		.init((typeNode to ISyntaxNode).token, typeNode)
-		
+		.init((typeNode to ISyntaxNode).token, typeNode)  # TODO: hmmm this is kind of weird
+
 	def init(token as IToken, type as IType)
 		base.init(token)
 		_containedType = type
@@ -1771,11 +1798,14 @@ class TypeExpr
 
 	get containedType from var
 
+	get potentialType as IType?
+		return .realType
+
 	get realType as IType?
 		assert .didBindImp
 		assert _containedType
 		return _containedType
-
+		
 	get typeNode from var
 
 	def addRefFields is override
