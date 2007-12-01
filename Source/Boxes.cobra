@@ -40,9 +40,14 @@ class Box
 		_baseInterfaces = List<of Interface>()
 		_overloads = List<of MemberOverload>()
 
+	def _initClrType(t as Type)
+		_clrType = t
+		_needScanClrType = true
+		_scanGenericArgs
+
 	def _scanClrType
 		"""
-		Subclasses should invoke base.
+		Subclasses should invoke base and then invoke the various _scanFoo methods that are appropriate for them.
 		"""
 		_needScanClrType = false
 		# print '[.name] in [_parentNameSpace.fullName]'
@@ -513,7 +518,7 @@ class Box
 				for key as dynamic in gpToType.keys
 					if key.name == param.name
 						found = key
-				assert found
+				assert found, {'param': param, 'gpToType.keys': gpToType.keys}
 				typeArgs.add(gpToType[found to !])
 			else
 				typeArgs.add(param.secondaryConstructedTypeFor(box, gpToType))
@@ -561,6 +566,11 @@ class Box
 		# TODO
 		assert _isNames
 		_isNames.add('fake')  # to make the box like the ones that were in SystemInterfaces.cobra
+
+	def _scanGenericArgs
+		if _clrType.isGenericType
+			for genArg in _clrType.getGenericArguments
+				_params.add(GenericParam(genArg))
 
 	def _scanImplements
 		for interf in _clrType.getInterfaces
@@ -690,6 +700,7 @@ class Box
 				continue
 			# TODO: handle generic methods
 			if methInfo.isGenericMethod or methInfo.isGenericMethodDefinition
+				# print 'xxx generic, methInfo, [methInfo.isGenericMethod], [methInfo.isGenericMethodDefinition], [methInfo]'
 				continue
 			if '.' in methInfo.name
 				# TODO: these are mostly (maybe all) explicit implementations of interfaces
@@ -897,11 +908,10 @@ class Class
 		_baseNode = baseNode
 
 	def init(clrType as Type)
-		base.init(TokenFix.empty, clrType.name, List<of IType>(), List<of String>(), List<of ITypeProxy>(), nil)
+		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(clrType.name), List<of IType>(), List<of String>(), List<of ITypeProxy>(), nil)
 		if clrType.baseType
 			_baseNode = ClrTypeProxy(clrType.baseType)
-		_clrType = clrType
-		_needScanClrType = true
+		_initClrType(clrType)
 
 	def _scanClrType
 		base._scanClrType
@@ -1094,9 +1104,8 @@ class Interface
 		base.init(token, name, paramList, isNames, baseNodes, docString)
 
 	def init(clrType as Type)
-		base.init(TokenFix.empty, clrType.name, List<of IType>(), List<of String>(), List<of ITypeProxy>(), nil)
-		_clrType = clrType
-		_needScanClrType = true
+		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(clrType.name), List<of IType>(), List<of String>(), List<of ITypeProxy>(), nil)
+		_initClrType(clrType)
 
 	def _scanClrType
 		base._scanClrType
@@ -1157,9 +1166,8 @@ class Struct
 		base.init(token, name, paramList, isNames, interfaceNodes, docString)
 
 	def init(clrType as Type)
-		base.init(TokenFix.empty, clrType.name, List<of IType>(), List<of String>(), List<of ITypeProxy>(), nil)
-		_clrType = clrType
-		_needScanClrType = true
+		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(clrType.name), List<of IType>(), List<of String>(), List<of ITypeProxy>(), nil)
+		_initClrType(clrType)
 
 	def _scanClrType
 		base._scanClrType
@@ -1201,13 +1209,19 @@ class GenericParam
 	var _constraints as List<of GenericConstraint>
 	var _index as int
 	var _objectClass as Class?
+	var _clrType as Type?
 
 	def init(name as String)
-		require name
+		require name.length
 		base.init
 		_name = name
 		_constraints = List<of GenericConstraint>()
 
+	def init(genArgType as Type)
+		.init(genArgType.name)
+		_clrType = genArgType
+		# TODO: scan Constraints
+		
 	get name as String is override
 		return _name
 

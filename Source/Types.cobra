@@ -241,7 +241,7 @@ class ClrTypeProxy
 		
 	def _realType(clrType as Type) as IType?
 		# TODO: having problems with System.Configuration
-		if clrType.namespace.length  # a generic param has no namespace
+		if clrType.namespace  # a generic param has no namespace
 			if clrType.namespace == 'System.Configuration'
 				return _hack(clrType)
 			if clrType.namespace.startsWith('Mono.')
@@ -271,6 +271,10 @@ class ClrTypeProxy
 			assert clrType.name.endsWith('&')
 			# TODO: handle ref types
 			return _realType(clrType.getElementType to !)
+
+		# generic parameters
+		if clrType.isGenericParameter
+			return GenericParam(clrType)
 
 		# compute type name
 		typeName = clrType.name
@@ -320,7 +324,15 @@ class ClrTypeProxy
 		# return namespace member
 		member = curNS.declForName(typeName)
 		if member inherits IType
-			return member
+			if false and clrType.isGenericType and not clrType.isGenericTypeDefinition # TODO: finish this
+				# so we have something like ICollection<of KeyValuePair<of TKey,TValue>> which is all CLR types
+				# we need the Cobra types of those args so we can construct the Cobra type from the generic cobra type
+				# otherwise, we would just end up returning the generic definition 
+				args = List<of IType>()
+				for genArg in clrType.getGenericArguments
+					args.add(_realType(genArg) to !)
+				member = (member to Box).constructedTypeFor(args)
+			return member 
 		else
 			# TODO: wipe out the following when Cobra is more mature. 2007-11-28
 			curNS.dumpDeclNames
@@ -334,6 +346,7 @@ class ClrTypeProxy
 			trace clrType
 			trace clrType.namespace
 			trace clrType.assembly.location
+			trace curNS.declForName('IComparable')
 			#assert false
 			Environment.exit(1)
 			return nil
