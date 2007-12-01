@@ -342,6 +342,7 @@ class CallExpr
 	var _isNew as bool  # "Exception('foo')" would be a CallExpr that isNew
 	var _willWriteSharpNew = true
 	var _isCallOnSystemType as bool  # "t()" where t is of System.Type would be a CallExpr that isCallOnSystemType
+	var _altForm as Expr?  # TODO: having to check for _altForm all over the place sucks. Change _bindImp to return 'same' and change .bindImp to require its return value to be used
 
 	def init(token as IToken, name as String, args as List<of Expr>)
 		base.init(token)
@@ -362,6 +363,8 @@ class CallExpr
 		.addField('isNew', _isNew)
 		.addField('isCallOnSystemType', _isCallOnSystemType)
 		.addField('args', _args)
+
+	get altForm from var
 
 	get hasError as bool is override
 		if base.hasError
@@ -385,6 +388,9 @@ class CallExpr
 	get member as IMember?
 		return _definition to? IMember
 
+	get type as IType?
+		return if(_altForm, _altForm.type, base.type)
+
 	pro willWriteSharpNew from var
 		"""
 		Only checked when .isNew. Conditionally set to false in DotExpr._writeSharpDef.
@@ -392,6 +398,16 @@ class CallExpr
 
 	def _bindImp is override
 		base._bindImp()
+
+		# check for EnumName(MemberA, MemberB)
+		if not _superNode inherits DotExpr
+			if _definition is nil and Utils.isCapped(.name)
+				defin = .compiler.symbolForName(.name, true, false)
+				if defin inherits EnumDecl
+					_altForm = EnumCallExpr(.token, _name, _args, defin)
+					_altForm.bindImp  # CC: combine this line into above
+					_type = _altForm.type
+					return
 
 		num = 1
 		for arg in _args
@@ -527,6 +543,12 @@ class CallExpr
 		_isNew = _definition inherits Box or _definition inherits GenericParam
 		assert _type, 'this=[this], def=[_definition]'
 
+	def postBindImpAssertType
+		if _altForm
+			_altForm.postBindImpAssertType
+		else
+			base.postBindImpAssertType
+
 	def toCobraSource as String is override
 		sb = StringBuilder()
 		sb.append(_name)
@@ -540,6 +562,9 @@ class CallExpr
 		return sb.toString
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if _altForm
+			_altForm.writeSharpDef(sw, parens)
+			return
 		name = .name
 		if _isCallOnSystemType
 			defi = _definition
@@ -573,11 +598,108 @@ class CallExpr
 			sw.write(')')
 
 	def writeSharpBreakdownItems(sw as SharpWriter) is override
+		if _altForm
+			_altForm.writeSharpBreakdownItems(sw)
+			return
 		# leaving out the base call is intentional:
 		# base.writeSharpBreakdownItems(sw)
 		sw.write(', +1')
 		for expr in _args
 			expr.writeSharpBreakdownItems(sw)
+		sw.write(', -1')
+
+
+class EnumCallExpr
+	inherits Expr
+	"""
+	Represents an enumeration call like: AnchorStyle(Left, Right)
+	Created by CallExpr._bindImp
+	"""
+
+	var _name as String
+	var _args as List<of Expr>
+	var _definition as EnumDecl?
+	var _members as List<of EnumMember>
+		"""
+		Parallels the args with the enum members found during _bindImp.
+		"""
+
+	def init(token as IToken, name as String, args as List<of Expr>, definition as EnumDecl)
+		require Utils.isCapped(name)
+		base.init(token)
+		_name = name
+		_args = args
+		_definition = definition
+		_members = List<of EnumMember>()
+	
+	get name from var
+	
+	get args from var
+	
+	get definition from var
+	
+	get hasError as bool is override
+		if base.hasError
+			return true
+		for arg in _args
+			if arg.hasError
+				return true
+		return false
+
+	def toCobraSource as String is override
+		sb = StringBuilder()
+		sb.append(_name)
+		sb.append('(')
+		sep = ''
+		for arg in _args
+			sb.append(sep)
+			sb.append(arg.toCobraSource)
+			sep = ', '
+		sb.append(')')
+		return sb.toString
+
+	def _bindImp
+		base._bindImp
+		if not _definition
+			possible = .compiler.symbolForName(.name, true, false)
+			if not possible
+				.throwError('Cannot locate enumeration type "[.name]".')
+			else if possible inherits EnumDecl
+				_definition = possible
+			else
+				.throwError('"[.name]" is not an enumeration type.')
+		if not _type
+			_type = _definition
+		# TODO: support EnumName(someInt) and EnumName(someString) (and multiple args)
+		for arg in _args
+			if arg inherits IdentifierExpr
+				member = _definition.memberForName(arg.name) to EnumMember?
+				if member
+					arg.setDefinition(member)
+					_members.add(member)  # for use in code generation
+				else
+					arg.recordError('Cannot find "[arg.name]" in enumeration "[.name]"')
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if parens
+			sw.write('(')
+		if _args.count == 0
+			sw.write('default([_definition.sharpRef])')
+		else
+			sep = ''
+			for member in _members
+				sw.write(sep)
+				sw.write(member.sharpRef)
+				sep = '|'
+		if parens
+			sw.write(')')
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		sw.write(', +1')
+		for member in _members
+			sw.write(', ')
+			sw.write(member.sharpRef)
 		sw.write(', -1')
 
 
