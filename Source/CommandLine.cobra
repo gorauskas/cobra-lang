@@ -167,13 +167,12 @@ class CommandLine
 			# Dictionary<of String, String> then _optionSpecs ends up being
 			# Dictionary<of String, Object>
 
-			# CC: if foo is Dictionary<of String, Object>  ... does not seem to work
 			if specObj inherits Dictionary<of String, Object>
 				d = specObj
 			else if specObj inherits Dictionary<of String, String>
 				d = Dictionary<of String, Object>()
-				for key in $sharp('((Dictionary<String, String>)specObj).Keys')
-					d[key to String] = $sharp(r'((Dictionary<String, String>)specObj)[(String)key]')
+				for key in specObj.keys
+					d[key to String] = specObj[key]
 			else
 				throw FallThroughException(specObj.getType)
 			_optionSpecs.add(d)
@@ -223,8 +222,8 @@ class CommandLine
 			return
 		.parseArgs(args)
 		if _optionDict.containsKey('output-html') and _optionDict['output-html'] to bool
-			dest as TextWriter = HtmlWriter(Console.out)
-			_htmlWriter = dest to HtmlWriter
+			_htmlWriter = HtmlWriter(Console.out)
+			dest = _htmlWriter to TextWriter
 		else
 			dest = Console.out
 		if _htmlWriter
@@ -232,7 +231,7 @@ class CommandLine
 			_htmlWriter.writeHtml('<html><head><link href="file://[stylePath]" rel=stylesheet type="text/css"></head><body>[_htmlWriter.newLine]')
 		print to dest
 			d = _optionDict
-			paths = _pathList to List<of String>  # CC: to !
+			paths = _pathList to !
 			if .verbosity > 0
 				print 'Cobra Command Line [CobraCore.version]'
 				if CobraCore.isRunningOnMono
@@ -295,7 +294,7 @@ class CommandLine
 			specDict[d['name'] to String] = d
 			if d.containsKey('synonyms')
 				syns = d['synonyms']
-				for syn as String in (syns to System.Collections.IList) # CC: shouldn't need either cast
+				for syn as String in (syns to System.Collections.IList)
 					assert not specDict.containsKey(syn)
 					specDict[syn] = d
 					synToName[syn] = d['name'] to String
@@ -307,7 +306,7 @@ class CommandLine
 		valueDict = Dictionary<of String, Object>()
 		for d in _optionSpecs
 			if d.containsKey('default')
-				valueDict[d['name'] to String] = d['default']  # CC: axe cast
+				valueDict[d['name'] to String] = d['default']
 
 		fileList = List<of String>()
 		value = "no-value" to Object  # for typing
@@ -320,8 +319,8 @@ class CommandLine
 			else
 				isOption = false
 			if isOption
-				parts = List<of String>(arg.split(@[valuePrefix], 2))  # CC: should not need the List<of String>() call
-				if parts.count==1
+				parts = arg.split(@[valuePrefix], 2)
+				if parts.length == 1
 					name = parts[0] to String
 					if name.endsWith('+')
 						name = name[:-1]
@@ -332,7 +331,7 @@ class CommandLine
 					else
 						valueStr = 'on'
 				else
-					assert parts.count==2
+					assert parts.length == 2
 					name = parts[0]
 					valueStr = parts[1]
 				assert name, parts
@@ -411,10 +410,10 @@ class CommandLine
 		# TODO: make the option names case-insensitive
 
 		# handle synonyms
-		for syn2 in synList  # CC: change syn2 to syn
-			if valueDict.containsKey(syn2)
-				valueDict[synToName[syn2]] = valueDict[syn2]
-				valueDict.remove(syn2)
+		for syn in synList
+			if valueDict.containsKey(syn)
+				valueDict[synToName[syn]] = valueDict[syn]
+				valueDict.remove(syn)
 
 		# check for more than one main option
 		if mainOptions.count > 1
@@ -430,7 +429,7 @@ class CommandLine
 		if valueDict.containsKey('files')
 			for fileName as String in (valueDict['files'] to System.Collections.IList)
 				try
-					for line as String in File.readAllLines(fileName)
+					for line in File.readAllLines(fileName)
 						line = line.trim
 						if line.length==0 or line.startsWith('#')
 							continue
@@ -460,7 +459,7 @@ class CommandLine
 
 	def doCompile(paths as List<of String>, willPrintSuccessMsg as bool, writeTestInvocation as bool) as Compiler
 		c = Compiler(.verbosity)
-		c.options = _optionDict to Dictionary<of String, Object>    # CC: to !, CC: use extended syntax  # TODO
+		c.options = _optionDict to !
 		c.willPrintSuccessMsg = willPrintSuccessMsg
 		c.htmlWriter = _htmlWriter
 		try
@@ -500,7 +499,7 @@ class CommandLine
 						if error.fileName and error.fileName.trim <> ''
 							args = args.replace('FILE', error.fileName)
 							args = args.replace('LINE', error.lineNum.toString)
-							p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
+							p = System.Diagnostics.Process()
 							p.startInfo.fileName = exeName
 							p.startInfo.arguments = args
 							if _verbosity >= 3
@@ -521,7 +520,7 @@ class CommandLine
 		assert testInvoker.fileName.startsWith('test-')
 		File.delete(testInvoker.fileName)
 		try
-			p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
+			p = System.Diagnostics.Process()
 			# TODO: support args to the program with a - or -- separator
 			branch c.platform
 				on PlatformEnum.Microsoft
@@ -548,7 +547,7 @@ class CommandLine
 		if c.errors.count
 			print 'Not running due to errors above.'
 		else
-			p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
+			p = System.Diagnostics.Process()
 			branch c.platform
 				on PlatformEnum.Microsoft
 					p.startInfo.fileName = c.baseExeFileName
@@ -622,7 +621,7 @@ class CommandLine
 			if spec.containsKey('synonyms')
 				print '    ' stop
 				sep = ''
-				for syn as String in (spec['synonyms'] to System.Collections.IList) # CC: shouldn't need either cast
+				for syn as String in (spec['synonyms'] to System.Collections.IList)
 					print '[sep]-[syn]' stop
 					sep = ', '
 				print
@@ -737,8 +736,8 @@ class CommandLine
 		.testifyFinish(if(_failureCount, 'Failure.', 'Success.'))
 
 	def testifyFinish(message as String)
-		_testifyFinish(message, _statusWriter to TextWriter)  # CC: to !
-		_testifyFinish(message, _resultsWriter to TextWriter)  # CC: to !
+		_testifyFinish(message, _statusWriter to !)
+		_testifyFinish(message, _resultsWriter to !)
 
 	def _testifyFinish(message as String, writer as TextWriter)
 		print to writer
@@ -754,9 +753,8 @@ class CommandLine
 		"""
 		Returns the number tests that passed.
 		"""
-		# CC: baseNamex --> baseName
-		baseNamex = Path.getFileName(dirName)  # gets rid of "." and ".." as prefix for relative dirs
-		if baseNamex.startsWith('.') or baseNamex.startsWith('_')
+		baseName = Path.getFileName(dirName) to !  # gets rid of "." and ".." as prefix for relative dirs
+		if baseName.startsWith('.') or baseName.startsWith('_')
 			# examples: .svn, _svn. Also, _ is a nice way to temporarily exclude a directory if possible
 			return
 		_statusWriter.writeLine('[dirName]')
@@ -844,10 +842,10 @@ class CommandLine
 					print bar
 			catch StopCompilation
 				assert c.errors
-				expectedErrors = List<of String>(error.split(c'&')) # CC: axe List<of String> instantiation
-				for i = 0 .. expectedErrors.count
+				expectedErrors = error.split(c'&')
+				for i = 0 .. expectedErrors.length
 					expectedError = expectedErrors[i].trim
-					print 'Expecting error substring [i+1] of [expectedErrors.count]: **[expectedError]**'
+					print 'Expecting error substring [i+1] of [expectedErrors.length]: **[expectedError]**'
 					if i >= c.errors.count
 						print 'Ran out of real errors.'
 						.failed
@@ -859,10 +857,10 @@ class CommandLine
 						return 0
 					else
 						print 'Matches: "[actualError.message]"'
-				if c.errors.count > expectedErrors.count
+				if c.errors.count > expectedErrors.length
 					print 'There are more actual errors than expected errors:'
-					for j = expectedErrors.count .. c.errors.count  # CC: say for i
-						print 'Another actual error: [c.errors[j].message]'
+					for i = expectedErrors.length .. c.errors.count
+						print 'Another actual error: [c.errors[i].message]'
 					.failed
 					return 0
 			catch exc as Exception
@@ -902,10 +900,10 @@ class CommandLine
 				print 'Internal exception: [exc]'
 				.failed
 				return 0
-			expectedWarnings = List<of String>(warning.split(c'&')) # CC: axe List<of String> instantiation
-			for i = 0 .. expectedWarnings.count
+			expectedWarnings = warning.split(c'&')
+			for i = 0 .. expectedWarnings.length
 				expectedWarning = expectedWarnings[i].trim
-				print 'Expecting warning substring [i+1] of [expectedWarnings.count]: **[expectedWarning]**'
+				print 'Expecting warning substring [i+1] of [expectedWarnings.length]: **[expectedWarning]**'
 				if i >= c.warnings.count
 					print 'Ran out of real warnings.'
 					.failed
@@ -917,10 +915,10 @@ class CommandLine
 					return 0
 				else
 					print 'Matches: "[actualWarning.message]"'
-			if c.warnings.count > expectedWarnings.count
+			if c.warnings.count > expectedWarnings.length
 				print 'There are more actual warnings than expected warnings:'
-				for j = expectedWarnings.count .. c.warnings.count  # CC: say for i
-					print 'Another actual warning: [c.warnings[j].message]'
+				for i = expectedWarnings.length .. c.warnings.count
+					print 'Another actual warning: [c.warnings[i].message]'
 				.failed
 				return 0
 			return 1
@@ -939,7 +937,7 @@ class CommandLine
 
 		if firstLineInsensitive.startsWith('#.multi.')
 			print 'Running multiple files.'
-			for fileName as String in firstLine.substring(firstLine.indexOf('.multi.')+8).split  # CC: axe "as String"
+			for fileName in firstLine.substring(firstLine.indexOf('.multi.')+8).split
 				if fileName.length
 					fileNames.add(Utils.combinePaths(Path.getDirectoryName(baseName) to !, fileName))
 			print 'Filenames:', Utils.join(', ', fileNames)
@@ -966,10 +964,9 @@ class CommandLine
 			print 'Generate C#:'
 			c.writeSharp
 			if verbose
-				# CC: shouldn't need to rename to 'module2'
-				for module2 as Module in c.modules
-					if not module2.isCobraLibrary
-						.printSource(module2.csSource)
+				for module in c.modules
+					if not module.isCobraLibrary
+						.printSource(module.csSource)
 				print bar
 
 			print 'Compile C#:'
@@ -986,7 +983,7 @@ class CommandLine
 			return 0
 
 		print 'Run:'
-		p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
+		p = System.Diagnostics.Process()
 		if _verbosity >= 1
 			print 'c.fullExeFileName = "[c.fullExeFileName]"'
 		if c.platform == PlatformEnum.Novell
@@ -1012,13 +1009,7 @@ class CommandLine
 
 		print bar
 
-# TODO CC TRY THIS
-#		cachedModules = for mod in c.modules where mod inherits AssemblyModule get mod
-		if not _cachedTestifyModules
-			_cachedTestifyModules = List<of Module>()
-			for mod in c.modules
-				if mod inherits AssemblyModule
-					_cachedTestifyModules.add(mod)
+		_cachedTestifyModules = for mod in c.modules where mod inherits AssemblyModule get mod
 		
 		return 1
 
@@ -1048,7 +1039,7 @@ class CommandLine
 
 	def printSource(src as String)
 		lineNum = 1
-		for line as String in src.split(c'\n')  # CC: axe "as String"
+		for line in src.split(c'\n')
 			line = line.replace("\t", "    ")
 			print '[lineNum]|[line]'  # CC: right align and pad 0 the lineNum
 			lineNum += 1
