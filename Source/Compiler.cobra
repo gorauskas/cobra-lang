@@ -54,13 +54,14 @@ class Compiler
 	
 	var _globalNS as NameSpace
 	var _modules as List<of Module>
-	var _firstUserModuleIndex as int
+	var _firstFileName as String?
 
 	var _curModule as Module?  # set during bindInt and bindImp
 	var _nameSpaceStack as Stack<of NameSpace>
 	var _boxStack as Stack<of Box>
 	var _codeMemberStack as Stack<of AbstractMethod>
 
+	# TODO: could collapse these down to IsBindingEnum: None, Use, Int, Inh
 	var _isBindingUse as bool
 	var _isBindingInt as bool
 	var _isBindingImp as bool
@@ -188,13 +189,15 @@ class Compiler
 		Also, extends _modules with those modules.
 		"""
 		require
-			filenames
+			filenames.count
 		ensure
 			true
 		body
+			_firstFileName = filenames[0]
 			if _modules.count == 0  # attempt at caching modules during testify. incomplete.
 				.writeSharpInfoClass
 				.readSystemTypes
+				.readAssemblyTypes
 			if true # _modules.count == 0
 				path = Path.combine(.cobraExeDir, 'SystemInterfaces.cobra')
 				assert File.exists(path), path
@@ -205,7 +208,6 @@ class Compiler
 				path = Path.combine(.cobraExeDir, 'CobraInfo.cs')
 				assert File.exists(path), path
 				filenames.insert(2, path)
-				_firstUserModuleIndex = 3 + 2 # + 2 for .readSystemTypes
 			modules = List<of Module>()
 			for filename in filenames
 				if filename.endsWith('.cs')
@@ -351,16 +353,64 @@ class Compiler
 	def readSystemTypes
 		# TODO: should pick up mscorlib.dll instead and based on what CLR version we're targeting. but that can wait for much later.
 		t = Object
-		.readSystemTypes(t.assembly) # mscorlib.dll
+		.readAssembly(t.assembly to !) # mscorlib.dll
 		t = $sharp('typeof(System.Diagnostics.Process)')
-		.readSystemTypes(t.assembly) # System.dll
+		.readAssembly(t.assembly to !) # System.dll
 		.fixNonNilableMemberSigs  # TODO: this needs to happen after bindInh or before bindInt. unfortunately, bindInh isn't implemented yet!
 
-	def readSystemTypes(ass as Assembly)
+	def readAssemblyTypes
+		if .options.containsKey('reference')
+			# Here be "reflectionOnlyLoad" code... which does not work on Mono 1.2.4
+			# The run-time error message says:
+			#   ** (./cobra.exe:24284): WARNING **: Cannot resolve dependency to assembly 'System, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089' because it has not been preloaded. When using the ReflectionOnly APIs, dependent assemblies must be pre-loaded or loaded on demand through the ReflectionOnlyAssemblyResolve event.
+			# But hooking ReflectionOnlyAssemblyResolve has no effect as it never gets called.
+			# Looks like others are having problems too:
+			#   http://csammisrun.net/shaim/viewtopic.php?t=29&sid=e46dc962b1e4d14a5210ae2852ac7d87
+			# General references:
+			# * "Reflection Only Assembly Loading" blog entry by Junfeng Zhang
+			#   http://blogs.msdn.com/junfeng/archive/2004/08/24/219691.aspx
+			# * http://forums.microsoft.com/MSDN/ShowPost.aspx?PostID=2485940&SiteID=1
+			#   Justin Pinnix from MSFT says "Once our assembly resolver finds your DLL, it calls
+			#   Assembly.LoadFrom().  So, even though your code calls Assembly.Load, we still
+			#   call Assembly.LoadFrom"
+			# TODO: try this out on MS .NET and if it works there, use it there
+			# TODO: file a Mono bug report (or ping an existing one)
+			# curDomain = AppDomain.currentDomain
+			# $sharp('curDomain.ReflectionOnlyAssemblyResolve += _resolveEvent')
+			for reference as String in .options['reference'] to List<of String>
+				if .verbosity > 0
+					print 'Loading reference:', reference
+				if false
+					# Does not work on Novell Mono. See notes above.
+					referredAss = Assembly.reflectionOnlyLoadFrom(reference)
+					# TODO: handle all the exceptions from Assembly.loadFrom
+				else
+					referredAss = Assembly.loadFrom(reference)
+					# TODO: handle all the exceptions from Assembly.loadFrom
+				if referredAss
+					.readAssembly(referredAss, reference <> 'Cobra.Lang.dll')
+				else
+					_addMessage(SourceException('Cannot load assembly reference for unknown reasons.'))
+
+	def _resolveEvent(sender as Object, args as ResolveEventArgs) as Assembly?
+		return nil
+		
+	def readAssembly(ass as Assembly)
+		.readAssembly(ass, false)
+
+	def readAssembly(ass as Assembly, skipCobra as bool)
+		"""
+		Reads the contents of an assembly (.DLL) so that they are accessible to the program.
+		In other words, this method reads libraries.
+		"""
 		namespaceQualNameToNameSpaceObject = Dictionary<of String, NameSpace>()
 		module = AssemblyModule(ass, .globalNS)
 		_modules.add(module)
 		for type in ass.getExportedTypes
+			if skipCobra and type.namespace and (type.namespace == 'Cobra' or type.namespace.startsWith('Cobra.'))
+				# this is a huge hack to get around the repetition of the Cobra run-time support which gets embedded in both programs and libraries
+				# TODO: this should go away
+				continue
 			if type.namespace == 'System.Configuration'
 				# TODO
 				# having various problems with System.Configuration
@@ -380,16 +430,21 @@ class Compiler
 				# print '### skipping [type.name] in [type.namespace]. isNested=[type.isNested], declaringType=[type.declaringType]'
 				continue
 			if '`' in type.name
+				# not reading generics yet
 				continue
-			namespaceName = type.namespace to !  # .namespace returns nil for generic params, but not expecting that here
-			if namespaceQualNameToNameSpaceObject.containsKey(namespaceName) 
-				curNameSpace = namespaceQualNameToNameSpaceObject[namespaceName]
-			else
+			if type.namespace is nil or type.namespace == ''
+				# happens for classes etc. that are not declared in a namespace
 				curNameSpace = module.topNameSpace
-				for name in type.namespace.split(c'.')
-					curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(Token.empty, name)
-					assert not curNameSpace.isUnified
-				namespaceQualNameToNameSpaceObject[namespaceName] = curNameSpace
+			else
+				namespaceName = type.namespace to !
+				if namespaceQualNameToNameSpaceObject.containsKey(namespaceName) 
+					curNameSpace = namespaceQualNameToNameSpaceObject[namespaceName]
+				else
+					curNameSpace = module.topNameSpace
+					for name in type.namespace.split(c'.')
+						curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(Token.empty, name)
+						assert not curNameSpace.isUnified
+					namespaceQualNameToNameSpaceObject[namespaceName] = curNameSpace
 			if type.isClass
 				curNameSpace.addDecl(Class(type))
 			else if type.isInterface
@@ -412,7 +467,7 @@ class Compiler
 			# ^ regarding .toString, not technically true, but common enough and life is too painful when the return type is nilable
 		_fix('System.Console', 'out')
 		_fix('System.String', 'replace substring toLower toUpper trim')
-		_fix('System.Type', 'name toString')
+		_fix('System.Type', 'assembly name toString')
 			# namespace can return nil if the Type is a generic parameter
 		_fix('System.Environment', 'commandLine currentDirectory newLine version')
 		_fix('System.Exception', 'message')
@@ -881,7 +936,7 @@ class Compiler
 			optChar = if(platform=='ms', '/', '-')  # option prefix character
 
 			# exe names
-			outName = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName, _modules[_firstUserModuleIndex].csFileName)
+			outName = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName, _firstFileName to !)
 			if outName.endsWith('.cs')
 				outName = outName.substring(0, outName.length-3)  # CC: cannot slice nilable, [:-3]
 			if outName.endsWith('.cobra')
@@ -1027,7 +1082,6 @@ class SharpCompilationMessage
 				return true
 		return false
 		
-	var _message as String
 	var _fileName as String?
 	var _lineNum as int?
 	var _isError as bool
@@ -1078,9 +1132,6 @@ class SharpCompilationMessage
 	get isError as bool is override
 		return _isError
 		
-	get message as String is override
-		return _message
-
 	get hasSourceSite as bool is override
 		return _fileName is not nil
 
