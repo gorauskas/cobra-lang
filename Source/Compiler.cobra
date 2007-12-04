@@ -181,7 +181,7 @@ class Compiler
 		Returns the directory where cobra.exe is residing.
 		Related resources such as CobraLang.cs reside there.
 		"""
-		return Path.getDirectoryName(Assembly.getEntryAssembly.location) to !  # not really true. if you stuck Cobra in the root dir, the .getDirectoryName docs say it will return nil
+		return Path.getDirectoryName(Assembly.getEntryAssembly.location) to !  # actually could be nil: if you stuck Cobra in the root dir, the .getDirectoryName docs say it will return nil
 
 	def parseFilesNamed(filenames as List<of String>) as List<of Module>
 		"""
@@ -205,13 +205,16 @@ class Compiler
 				path = Path.combine(.cobraExeDir, 'CobraLang.cobra')
 				assert File.exists(path), path
 				filenames.insert(1, path)
-				path = Path.combine(.cobraExeDir, 'CobraInfo.cs')
+				path = Path.combine(.cobraExeDir, 'CobraLang.cs')
 				assert File.exists(path), path
 				filenames.insert(2, path)
+				path = Path.combine(.cobraExeDir, 'CobraInfo.cs')
+				assert File.exists(path), path
+				filenames.insert(3, path)
 			modules = List<of Module>()
 			for filename in filenames
 				if filename.endsWith('.cs')
-					if _verbosity>1
+					if _verbosity
 						print 'Noting [filename]'
 					modules.add(SharpModule(filename, _verbosity))
 				else
@@ -816,7 +819,7 @@ class Compiler
 	## Generating and compiling C#
 	##
 
-	var _moduleFileName_to_sharpToCobraLineNum as Dictionary<of String, Dictionary<of int, int>>?
+	var _moduleFileName_to_sharpToCobraLineNum as Dictionary<of String, Dictionary<of int, int>?>?
 
 	def writeSharp
 		Node.setCompiler(this)
@@ -986,14 +989,11 @@ class Compiler
 			csFileNames = Utils.join(' ', csFileNameList)
 
 			# compilation command
-			cobraLangPath = Path.combine(.cobraExeDir, 'CobraLang.cs')
-			assert File.exists(cobraLangPath), cobraLangPath
-
 			if _verbosity
 				print 'Compiling to produce [outName]'
-			p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
+			p = System.Diagnostics.Process()
 			p.startInfo.fileName = cscPath
-			p.startInfo.arguments = '[options] [csFileNames] "[cobraLangPath]"'
+			p.startInfo.arguments = '[options] [csFileNames]'
 			if _verbosity >= 2
 				print '[p.startInfo.fileName] [p.startInfo.arguments]'
 			output = CobraCore.runAndCaptureAllOutput(p)
@@ -1051,13 +1051,8 @@ class Compiler
 
 		# TODO: handle relative paths like ..\foo.cobra which C# spells out as absolute paths
 
-		# TODO: take out next 3 lines someday. was put in 2006-11-12
 		if not _moduleFileName_to_sharpToCobraLineNum.containsKey(fileName)
-			if 'CobraLang.cs' not in fileName
-				print '<> Cannot find fileName "[fileName]" in:'
-				for obj in _moduleFileName_to_sharpToCobraLineNum
-					print '   [obj]'
-			return lineNum  # better than not getting the error message
+			return lineNum
 		sharpToCobraLineNum = _moduleFileName_to_sharpToCobraLineNum[fileName]
 		if sharpToCobraLineNum.containsKey(lineNum)
 			return sharpToCobraLineNum[lineNum]
