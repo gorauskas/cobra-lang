@@ -86,6 +86,12 @@ class CommandLine
 			'description': 'Display this help message.',
 		},
 		{
+			'name': 'include-tests',
+			'type': 'bool',
+			'description': 'Includes unit tests for classes and members in the output assembly.',
+			'default': '1',
+		},
+		{
 			'name': 'keep-intermediate-files',
 			'synonyms': ['kif'],
 			'type': 'bool',
@@ -270,6 +276,20 @@ class CommandLine
 				throw FallThroughException(value)
 		else
 			return false
+
+	def testifyOptions as Dictionary<of String, Object>
+		# TODO: this doesn't even work...
+		# CC: use out args when available
+		save1 = _optionDict
+		save2 = _pathList
+		.parseArgs(List<of String>())
+		r = _optionDict to !
+		_pathList = save2
+		_optionDict = save1
+		# trace r
+		r = Dictionary<of String, Object>()
+		r['include-tests'] = '1'
+		return r
 
 	def parseArgs(args as List<of String>)
 		"""
@@ -834,6 +854,7 @@ class CommandLine
 			error = firstLine.substring(index+7).trim.toLower
 			try
 				c = Compiler(_verbosity, _cachedTestifyModules)
+				c.options = .testifyOptions
 				c.parseFilesNamed([baseName])
 				if verbose
 					c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
@@ -886,6 +907,7 @@ class CommandLine
 			# TODO: the following code both checks for warnings to be thrown as well as going through a list of warnings. Seems like it should just need to do one or the other.
 			try
 				c = Compiler(_verbosity, _cachedTestifyModules)
+				c.options = .testifyOptions
 				c.parseFilesNamed([baseName])
 				if verbose
 					c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
@@ -947,6 +969,7 @@ class CommandLine
 			print 'Filenames:', Utils.join(', ', fileNames)
 
 		c = Compiler(_verbosity, _cachedTestifyModules)
+		c.options = .testifyOptions
 
 		try
 			c.parseFilesNamed(fileNames)
