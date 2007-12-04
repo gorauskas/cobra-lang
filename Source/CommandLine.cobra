@@ -61,6 +61,13 @@ class CommandLine
 			'description': 'Enable a detailed stack trace which gives great postmortem information for uncaught exceptions, but slows execution. Works in combination with -exception-report.',
 		},
 		{
+			'name': 'embed-run-time',
+			'synonyms': ['ert'],
+			'type': 'bool',
+			'default': '1',
+			'description': 'Embed the Cobra run-time support code (approx. 80KB) in the assembly so that no reference to an external Cobra.Lang.dll is required.',
+		},
+		{
 			'name': 'exception-report',
 			'synonyms': ['exc-rpt', 'er'],
 			'type': 'bool',
@@ -88,8 +95,8 @@ class CommandLine
 		{
 			'name': 'include-tests',
 			'type': 'bool',
-			'description': 'Includes unit tests for classes and members in the output assembly.',
 			'default': '1',
+			'description': 'Includes unit tests for classes and members in the output assembly.',
 		},
 		{
 			'name': 'keep-intermediate-files',
@@ -243,8 +250,12 @@ class CommandLine
 				if CobraCore.isRunningOnMono
 					print 'running on Mono'
 				print 'current directory: [Environment.currentDirectory]'
-				print 'option dictionary: [CobraCore.toTechString(d)]'
-				print 'paths: [CobraCore.toTechString(paths)]'
+				print 'option dictionary:'
+				for key in d.keys
+					print '    [key]: [CobraCore.toTechString(d[key])]'
+				print 'paths:'
+				for path in paths
+					print '    [path]'
 			# TODO: use reflection here?
 			if _getOne(d, 'testify')
 				.doTestify(paths)
@@ -287,8 +298,12 @@ class CommandLine
 		_pathList = save2
 		_optionDict = save1
 		# trace r
+		# remember that you cannot use synonyms below. you must use the canonical name of the option
+		# also, default options are not included (which is lame), so you must specify them here
 		r = Dictionary<of String, Object>()
 		r['include-tests'] = '1'
+		r['embed-run-time'] = true
+		r['verbosity'] = 2
 		return r
 
 	def parseArgs(args as List<of String>)
@@ -324,9 +339,6 @@ class CommandLine
 
 		# set up initial valueDict
 		valueDict = Dictionary<of String, Object>()
-		for d in _optionSpecs
-			if d.containsKey('default')
-				valueDict[d['name'] to String] = d['default']
 
 		fileList = List<of String>()
 		value = "no-value" to Object  # for typing
@@ -383,34 +395,15 @@ class CommandLine
 							success
 								value = if(value, '+', '-')
 					else
-						branch spec['type'] to String
-							on 'main'
-								mainOptions.add(name)
-								value = true
-							on 'bool'
-								try
-									value = .boolForString(valueStr)
-								catch FormatException
-									cannotProcess = true
-							on 'int'
-								if valueStr == 'on'  # set internally when there is no value
-									valueStr = '1'
-								try
-									value = int.parse(valueStr)
-								catch FormatException
-									cannotProcess = true
-								catch OverflowException
-									cannotProcess = true
-								# TODO: check min and max
-							on 'string'
-								value = valueStr
-							on 'menu'
-								if valueStr.length==0
-									cannotProcess = true
-								if not (spec['choices'] to System.Collections.IList).contains(valueStr)
-									cannotProcess = true
-								else
-									value = valueStr
+						if spec['type'] == 'main'
+							mainOptions.add(name)
+							value = true
+						else
+							possible = .interpretValue(valueStr, spec)
+							if possible is not nil
+								value = possible
+							else
+								cannotProcess = value is nil							
 					if cannotProcess
 						.error('Cannot process value "[valueStr]" for option "[name]".')
 					valueDict[name] = value
@@ -427,13 +420,22 @@ class CommandLine
 						msg += ' If you meant to specify an option, use dash (-) instead of slash (/).'
 					.error(msg)
 
-		# TODO: make the option names case-insensitive
-
 		# handle synonyms
 		for syn in synList
 			if valueDict.containsKey(syn)
 				valueDict[synToName[syn]] = valueDict[syn]
 				valueDict.remove(syn)
+
+		# add in defaults
+		for d in _optionSpecs
+			defaultName = d['name'] to String
+			if not valueDict.containsKey(defaultName) and d.containsKey('default')
+				defaultValue = .interpretValue(d['default'] to String, d) to !
+				if .verbosity
+					print 'Setting option "[defaultName]" to default value [defaultValue].'
+				valueDict[defaultName] = defaultValue
+
+		# TODO: make the option names case-insensitive
 
 		# check for more than one main option
 		if mainOptions.count > 1
@@ -474,6 +476,38 @@ class CommandLine
 		_optionDict = valueDict
 		_pathList = fileList
 		
+	def interpretValue(valueStr as String, spec as Dictionary<of String, Object>) as dynamic?
+		value as dynamic?
+		branch spec['type'] to String
+			on 'main'
+				throw InvalidOperationException('This method does not handle the main type.')
+			on 'bool'
+				try
+					value = .boolForString(valueStr)
+				catch FormatException
+					cannotProcess = true
+			on 'int'
+				if valueStr == 'on'  # set internally when there is no value
+					valueStr = '1'
+				try
+					value = int.parse(valueStr)
+				catch FormatException
+					cannotProcess = true
+				catch OverflowException
+					cannotProcess = true
+				# TODO: check min and max
+			on 'string'
+				value = valueStr
+			on 'menu'
+				if valueStr.length==0
+					cannotProcess = true
+				if not (spec['choices'] to System.Collections.IList).contains(valueStr)
+					cannotProcess = true
+				else
+					value = valueStr
+		r = if(cannotProcess, nil, value)
+		return r
+			
 	def doCompile(paths as List<of String>) as Compiler
 		return .doCompile(paths, true, false)
 
@@ -688,9 +722,9 @@ class CommandLine
 		print .versionString
 
 	def boolForString(s as String) as bool
-		if s.toLower in ['', '+', 'on', 'true', 'yes', '1', 1]
+		if s.toLower in ['', '+', 'on', 'true', 't', 'yes', 'y', '1']
 			return true
-		else if s.toLower in ['-', 'off', 'false', 'no', '0', 0]
+		else if s.toLower in ['-', 'off', 'false', 'f', 'no', 'n', '0']
 			return false
 		else
 			throw FormatException()
@@ -823,6 +857,7 @@ class CommandLine
 
 	def _testifyFile(baseName as String) as int
 		verbose = not _firstAttempt
+		compilerVerbosity = if(_verbosity, _verbosity, if(verbose, 1, 0))
 		if Path.pathSeparator in baseName
 			return .testifyFilePath(baseName)
 
@@ -853,7 +888,7 @@ class CommandLine
 			index = firstLine.indexOf('.error.')
 			error = firstLine.substring(index+7).trim.toLower
 			try
-				c = Compiler(_verbosity, _cachedTestifyModules)
+				c = Compiler(compilerVerbosity, _cachedTestifyModules)
 				c.options = .testifyOptions
 				c.parseFilesNamed([baseName])
 				if verbose
@@ -906,7 +941,7 @@ class CommandLine
 			warning = firstLine.substring(index+9).trim.toLower
 			# TODO: the following code both checks for warnings to be thrown as well as going through a list of warnings. Seems like it should just need to do one or the other.
 			try
-				c = Compiler(_verbosity, _cachedTestifyModules)
+				c = Compiler(compilerVerbosity, _cachedTestifyModules)
 				c.options = .testifyOptions
 				c.parseFilesNamed([baseName])
 				if verbose
@@ -968,7 +1003,7 @@ class CommandLine
 					fileNames.add(Utils.combinePaths(Path.getDirectoryName(baseName) to !, fileName))
 			print 'Filenames:', Utils.join(', ', fileNames)
 
-		c = Compiler(_verbosity, _cachedTestifyModules)
+		c = Compiler(compilerVerbosity, _cachedTestifyModules)
 		c.options = .testifyOptions
 
 		try
@@ -988,7 +1023,7 @@ class CommandLine
 				c.dumpModulesForTestify(_resultsWriter, 'Modules after binding')
 				print bar
 
-			print 'Generate C#:'
+			print 'Generated C#:'
 			c.writeSharp
 			if verbose
 				for module in c.modules

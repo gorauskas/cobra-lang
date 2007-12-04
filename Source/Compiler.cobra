@@ -162,7 +162,7 @@ class Compiler
 	get hasExceptionReportOption as bool
 		# CC: return _options.get('exception-report', false) to bool
 		if _options.containsKey('exception-report')
-			return if(_options['exception-report'], true, false)
+			return _options['exception-report'] to bool
 		else
 			return false
 
@@ -197,28 +197,48 @@ class Compiler
 			true
 		body
 			_firstFileName = filenames[0]
+
+			embedRunTime = .options.containsKey('embed-run-time') and .options['embed-run-time'] to bool
+			
+			if not embedRunTime
+				# then reference it
+				if not .options.containsKey('reference')
+					.options['reference'] = List<of String>()
+				refs = .options['reference'] to List<of String>
+				libName = 'Cobra.Lang.dll'
+				if libName not in refs
+					if .verbosity
+						print 'Adding reference to [libName]'
+					refs.add(libName)
+
 			if _modules.count == 0  # attempt at caching modules during testify. incomplete.
 				.writeSharpInfoClass
 				.readSystemTypes
 				.readAssemblyTypes
+
 			if true # _modules.count == 0
 				path = Path.combine(.cobraExeDir, 'SystemInterfaces.cobra')
 				assert File.exists(path), path
 				filenames.insert(0, path)
-				path = Path.combine(.cobraExeDir, 'CobraLang.cobra')
-				assert File.exists(path), path
-				filenames.insert(1, path)
-				path = Path.combine(.cobraExeDir, 'CobraLang.cs')
-				assert File.exists(path), path
-				filenames.insert(2, path)
+
 				path = Path.combine(.cobraExeDir, 'CobraInfo.cs')
 				assert File.exists(path), path
-				filenames.insert(3, path)
+				filenames.insert(1, path)
+
+				if embedRunTime
+					path = Path.combine(.cobraExeDir, 'CobraLang.cobra')
+					assert File.exists(path), path
+					filenames.insert(2, path)
+
+					path = Path.combine(.cobraExeDir, 'CobraLang.cs')
+					assert File.exists(path), path
+					filenames.insert(3, path)
+
 			modules = List<of Module>()
 			for filename in filenames
 				if filename.endsWith('.cs')
 					if _verbosity
-						print 'Noting [filename]'
+						print 'Noting  [filename]'  # extra space to line up with 'Parsing [filename]'
 					modules.add(SharpModule(filename, _verbosity))
 				else
 					parser = Parser()
@@ -383,7 +403,9 @@ class Compiler
 			# TODO: file a Mono bug report (or ping an existing one)
 			# curDomain = AppDomain.currentDomain
 			# $sharp('curDomain.ReflectionOnlyAssemblyResolve += _resolveEvent')
-			for reference as String in .options['reference'] to List<of String>
+			i = 0
+			references = .options['reference'] to List<of String>
+			for reference in references
 				if .verbosity > 0
 					print 'Loading reference:', reference
 				if false
@@ -391,12 +413,18 @@ class Compiler
 					referredAss = Assembly.reflectionOnlyLoadFrom(reference)
 					# TODO: handle all the exceptions from Assembly.loadFrom
 				else
-					referredAss = Assembly.loadFrom(reference)
+					if File.exists(reference)
+						referredAss = Assembly.loadFrom(reference)
+					else
+						path = Path.combine(Path.getDirectoryName(CobraCore.exePath), reference)
+						referredAss = Assembly.loadFrom(path)
+						references[i] = path
 					# TODO: handle all the exceptions from Assembly.loadFrom
 				if referredAss
 					.readAssembly(referredAss, reference <> 'Cobra.Lang.dll')
 				else
 					_addMessage(SourceException('Cannot load assembly reference for unknown reasons.'))
+				i += 1
 
 	def _resolveEvent(sender as Object, args as ResolveEventArgs) as Assembly?
 		return nil
