@@ -10,6 +10,15 @@ using System.Text;
 namespace Cobra.Lang {
 
 
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.ReturnValue, AllowMultiple = false)]
+public class NotNull : Attribute {
+
+	public NotNull() {
+	}
+
+}
+
+
 public interface ICallable {
 	// object Call(object[] args);
 	object Call(object arg);

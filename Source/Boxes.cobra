@@ -593,7 +593,7 @@ class Box
 					isNames.add('private')
 				if fieldInfo.isStatic
 					isNames.add('shared')
-				prop = Property(TokenFix.empty, this, Utils.uncapped(fieldInfo.name), _memberTypeProxy(fieldInfo.fieldType), isNames, '')
+				prop = Property(TokenFix.empty, this, Utils.uncapped(fieldInfo.name), _memberTypeResultProxy(fieldInfo, fieldInfo.fieldType), isNames, '')
 				prop.makeGetPart(TokenFix.empty)
 				.addDecl(prop)
 		
@@ -645,7 +645,7 @@ class Box
 				isNames = _isNamesForMethodInfo(propInfo.getSetMethod(true) to !)
 			else
 				throw FallThroughException(propInfo)
-			prop = Property(TokenFix.empty, this, Utils.uncapped(propInfo.name), _memberTypeProxy(propInfo.propertyType), isNames, docString)
+			prop = Property(TokenFix.empty, this, Utils.uncapped(propInfo.name), _memberTypeResultProxy(propInfo, propInfo.propertyType), isNames, docString)
 			if propInfo.canRead
 				prop.makeGetPart(TokenFix.empty)
 			if propInfo.canWrite
@@ -664,7 +664,7 @@ class Box
 			isNames = _isNamesForMethodInfo(propInfo.getSetMethod(true) to !)
 		else
 			throw FallThroughException(propInfo)
-		indexer = Indexer(TokenFix.empty, this, r'[]', params, _memberTypeProxy(propInfo.propertyType), isNames, docString)
+		indexer = Indexer(TokenFix.empty, this, r'[]', params, _memberTypeResultProxy(propInfo, propInfo.propertyType), isNames, docString)
 		overload as MemberOverload? = nil
 		other = .memberForName(r'[]')
 		if other
@@ -716,7 +716,7 @@ class Box
 			# TODO: get attributes
 			docString = ''  # TODO: get doc string for class?
 			implementsTypeNode as ITypeProxy?  # TODO: explicit interface implementation?
-			method = Method(TokenFix.empty, this, name, params, _memberTypeProxy(methInfo.returnType), implementsTypeNode, isNames, docString)
+			method = Method(TokenFix.empty, this, name, params, _memberTypeResultProxy(methInfo, methInfo.returnType), implementsTypeNode, isNames, docString)
 			overload as MemberOverload? = nil
 			other = .memberForName(name)
 			if other
@@ -788,6 +788,29 @@ class Box
 			return ClrTypeProxy(clrType)
 		else
 			return NilableTypeProxy(ClrTypeProxy(clrType))
+
+	def _memberTypeResultProxy(member as MemberInfo, clrType as Type?) as ITypeProxy
+		"""
+		Returns a type proxy for a member type such as a parameter type or method return type.
+		In CLR, reference types are nilable by default.
+		"""
+		if clrType is nil
+			return .compiler.voidType
+		else if clrType.isValueType
+			return ClrTypeProxy(clrType)
+		else
+			notNull = false
+			for attr in member.getCustomAttributes(true)
+				# The idea below in using the type name is to try for some compatibility with other languages that might also mark things "NotNull"
+				# such as Eiffel, XC#, Spec#, etc. I haven't checked to see what degree of compatibility has been achieved.
+				name = attr.getType.name
+				if name == 'NotNull' or name == 'NotNullAttribute' 
+					notNull = true
+					break
+			# CC: could the above be a one-liner?
+			# notNull = for attr in member.getCustomAttributes(true) where attr.getType.name == 'NotNull' get one true;
+			t = ClrTypeProxy(clrType) to ITypeProxy
+			return if(notNull, t, NilableTypeProxy(t))
 
 
 	## Code gen
