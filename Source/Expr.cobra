@@ -236,6 +236,7 @@ interface IPotentialTypeExpr
 class NameExpr
 	inherits Expr
 	"""
+	CC: is abstract
 	The base class for IdentifierExpr and AsExpr.
 	"""
 	# TODO: is abstract
@@ -1350,7 +1351,10 @@ class MemberExpr
 					sugg = 'If the name is essentially correct, try the lowercase version ("[Utils.uncapped(_name)]") instead.'
 				else
 					sugg = ''
-				.throwError('Cannot find a definition for "[_name]" in "[.binarySuperNode.left.toCobraSource]" whose type is "[.binarySuperNode.left.receiverType.name]". [sugg]')
+				left = .binarySuperNode.left
+				isBoxAccess = left inherits IdentifierExpr and (left to IdentifierExpr).definition inherits Box  # like "Console.writeLn" where the receiver is a literal class or struct reference
+				whoseTypeIs = if(isBoxAccess, '', 'whose type is "[left.receiverType.name]"')
+				.throwError('Cannot find a definition for "[_name]" in "[left.toCobraSource]"[whoseTypeIs]. [sugg]')
 			assert _definition
 			if _definition inherits IType
 				effectiveType as IType = .compiler.typeType  # namespace, class, interface
