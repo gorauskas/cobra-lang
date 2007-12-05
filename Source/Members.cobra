@@ -282,9 +282,17 @@ class BoxMember
 			sw.write(' ')
 
 
-class ClassVar
+class BoxVar
 	inherits BoxMember
 	implements IVar
+	"""
+	A BoxVar is a variable declared for a box, whether instance or shared. For example:
+		var _x as int is shared
+
+	Classes and structs can have vars, but interfaces cannot.
+	
+	In CLR terminology, these are called "fields".
+	"""
 
 	var _typeNode as ITypeProxy
 	var _type as IType?
@@ -350,7 +358,7 @@ class ClassVar
 
 	def constructedFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as BoxMember  # CC: as same
 		# TODO: require .type (or assert)
-		newMember = base.constructedFor(box, gpToType) to ClassVar  # CC: this = base. ...
+		newMember = base.constructedFor(box, gpToType) to BoxVar  # CC: this = base. ...
 		assert newMember._type
 		newMember._type = newMember._type.secondaryConstructedTypeFor(box, gpToType)
 		return newMember
@@ -873,7 +881,7 @@ class Constructor  # CC: rename to initializer
 			token.incLineNum
 			stmts = List<of Stmt>()
 			for decl in _box.declsInOrder
-				if decl inherits ClassVar
+				if decl inherits BoxVar
 					assert decl.type
 					if not decl.type inherits NilableType and decl.type.isReference and not decl.isShared
 						stmts.add(AssertStmt(token, IsNotNilExpr(token, IdentifierExpr(token, decl.name, decl)), nil))
@@ -1066,7 +1074,7 @@ class ProperDexer
 
 	var _getPart as ProperDexerXetter?
 	var _setPart as ProperDexerXetter?
-	var _coverVar as ClassVar?
+	var _coverVar as BoxVar?
 	var _coverAccess as String?
 	var _returnType as IType?
 	var _returnTypeNode as ITypeProxy?
