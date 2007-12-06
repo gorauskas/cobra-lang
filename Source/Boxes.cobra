@@ -327,7 +327,6 @@ class Box
 			return
 		base.bindInh
 		.compiler.boxStack.push(this)
-		# TODO: do we really need to .bindInh on the bases here? Will that screw up namespace searches?
 		try
 			if _needScanClrType
 				_scanClrType
@@ -373,13 +372,10 @@ class Box
 	def _bindInterfaces
 		# structs, classes and interfaces can all have 0 or more interfaces they inherit/implement
 		assert _baseInterfaceProxies, this
-		for node in _baseInterfaceProxies
+		for interfaceProxy in _baseInterfaceProxies
 			try
-				baseWhat = (node.bindInt to ITypeProxy).realType  # CC: axe cast
-				if baseWhat is nil
-					assert false, 'When does this happen?'
-					.throwError('Cannot locate [node].')
-				else if baseWhat inherits Interface
+				baseWhat = interfaceProxy.realType
+				if baseWhat inherits Interface
 					baseWhat.bindInt  # just as with the base class; .bindInt on parents
 					_baseInterfaces.add(baseWhat)
 				else
@@ -1051,7 +1047,6 @@ class Class
 
 	def _bindBase is override
 		if _baseNode
-			_baseNode.bindInt
 			possible = _baseNode.realType
 			baseName = if(_baseNode inherits AbstractTypeIdentifier, (_baseNode to AbstractTypeIdentifier).name, nil)  # CC: if-inherits should work for expressions too
 			if possible is nil
@@ -1447,7 +1442,6 @@ class GenericTypeConstraint
 	def _bindInt
 		base._bindInt
 		if _representedType is nil
-			_typeNode.bindInt
 			_representedType = _typeNode.realType
 			assert _representedType
 		if not _representedType inherits Class and not _representedType inherits Interface
