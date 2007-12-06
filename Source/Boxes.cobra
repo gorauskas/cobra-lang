@@ -54,6 +54,7 @@ class Box
 
 	def addMinFields
 		base.addMinFields
+		.addField('didBindInh', .didBindInh)
 		.addField('isGeneric', .isGeneric)
 		.addField('isGenericDef', .isGenericDef)
 
@@ -61,6 +62,7 @@ class Box
 		base.addRefFields
 		.addField('genericTypeDef', _genericTypeDef)
 		.addField('baseClass', _baseClass)
+		.addField('clrType', _clrType)
 
 	def addSubFields
 		base.addSubFields
@@ -74,7 +76,10 @@ class Box
 	get baseClass from var
 
 	get baseInterfaces from var
-	
+
+	get isSystemObjectClass as bool
+		return .name == 'Object' and .parentNameSpace and .parentNameSpace.fullName == 'System'
+
 	pro parentNameSpace as NameSpace?
 		get
 			return base.parentNameSpace
@@ -158,7 +163,9 @@ class Box
 
 	def memberForName(name as String) as IMember?
 		if .compiler and .compiler.isBindingImp
-			.bindInt  # this is for DLL types which get bindInt only on demand. (otherwise reading system DLLs slows things down)
+			# this is for DLL types which get bindInh & bindInt only on demand. (otherwise reading system DLLs slows things down)
+			.bindInh
+			.bindInt
 		else if _needScanClrType
 			_scanClrType  # also needed for DLL types. execution gets here due to Compiler.fixNonNilableMemberSigs
 		return base.memberForName(name)
@@ -307,16 +314,44 @@ class Box
 
 	## Binding
 
+	def bindAll as INode
+		.bindInh
+		return base.bindAll
+
+	var _didBindInh as bool
+
+	get didBindInh from var
+
+	def bindInh
+		if _didBindInh
+			return
+		base.bindInh
+		.compiler.boxStack.push(this)
+		# TODO: do we really need to .bindInh on the bases here? Will that screw up namespace searches?
+		try
+			if _needScanClrType
+				_scanClrType
+			_bindBase
+		finally
+			.compiler.boxStack.pop
+		_didBindInh = true
+
+	def bindInt as INode
+		# because DLL boxes get bindInh and bindInt on demand, check this:
+		if not _didBindInh
+			.bindInh
+		return base.bindInt
+		# TODO: may be able to axe this method when .bindInt is no longer sent "sideways" in addition to top down (note that .memberForName already does this check)
+
 	def _bindInt
 		base._bindInt
 		.compiler.boxStack.push(this)
 		try
 			if _needScanClrType
 				_scanClrType
-			_bindBase
+			_bindInterfaces
 			if _baseClass
 				_baseClass.bindInt
-			_bindInterfaces
 			for param in _params
 				param.bindInt
 			for decl in _declsInOrder
@@ -613,7 +648,7 @@ class Box
 			docString = ''  # TODO: get doc string for class?
 			initer = Constructor(TokenFix.empty, this, params, isNames, docString)
 			overload as MemberOverload? = nil
-			other = .memberForName('init')
+			other = .declForName('init')
 			if other
 				if other inherits MemberOverload
 					overload = other
@@ -666,7 +701,7 @@ class Box
 			throw FallThroughException(propInfo)
 		indexer = Indexer(TokenFix.empty, this, r'[]', params, _memberTypeResultProxy(propInfo, propInfo.propertyType), isNames, docString)
 		overload as MemberOverload? = nil
-		other = .memberForName(r'[]')
+		other = .declForName(r'[]')
 		if other
 			if other inherits MemberOverload
 				overload = other
@@ -718,7 +753,7 @@ class Box
 			implementsTypeNode as ITypeProxy?  # TODO: explicit interface implementation?
 			method = Method(TokenFix.empty, this, name, params, _memberTypeResultProxy(methInfo, methInfo.returnType), implementsTypeNode, isNames, docString)
 			overload as MemberOverload? = nil
-			other = .memberForName(name)
+			other = .declForName(name)
 			if other
 				if other inherits MemberOverload
 					overload = other
@@ -1050,7 +1085,7 @@ class Class
 		if not foundConstructor
 			# TODO: this should be changed to provide cover constructors for each of the public, inherited constructors
 			.addDecl(Constructor(.token, this, List<of Param>(), ['public'], ''))
-		# Note that the _baseClass is not told to bindInt. That would fail for classes in other namespaces and it's unnecessary s
+		# Note that the _baseClass is not told to bindInt. That would fail for classes in other namespaces and it's unnecessary
 		base._bindInt
 
 	def _badInterfaceError(type as IType) is override
@@ -1061,7 +1096,7 @@ class Class
 
 	def _finishOverloads
 		# deal with inheritance and overloads
-		assert _baseClass or _name=='Object'
+		assert _baseClass or .isSystemObjectClass
 		if _baseClass
 			#assert _baseClass.didBindInt
 			for decl in List<of IMember>(_declsInOrder)

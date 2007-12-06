@@ -63,6 +63,7 @@ class Compiler
 
 	# TODO: could collapse these down to IsBindingEnum: None, Use, Int, Inh
 	var _isBindingUse as bool
+	var _isBindingInh as bool
 	var _isBindingInt as bool
 	var _isBindingImp as bool
 
@@ -111,6 +112,8 @@ class Compiler
 		return .options.containsKey('include-tests') and .options['include-tests'] in (['1', 1, true] to dynamic)  # TODO: cleanup
 
 	get isBindingUse from var
+
+	get isBindingInh from var
 
 	get isBindingInt from var
 
@@ -559,6 +562,7 @@ class Compiler
 	def bindUse
 		require
 			not .isBindingUse
+			not .isBindingInh
 			not .isBindingInt
 			not .isBindingImp
 		body
@@ -578,9 +582,44 @@ class Compiler
 			if _errors.count
 				_exitFromErrors
 
+#	var _incompletes = List<of Box>()
+#	
+#	def addIncompleteGenerics(box as Box)
+#		_incompletes.add(box)
+
+	def bindInh
+		require
+			not .isBindingUse
+			not .isBindingInh
+			not .isBindingInt
+			not .isBindingImp
+		body
+			_isBindingInh = true
+			try
+				Node.setCompiler(this)
+				try
+					for _curModule in _modules
+						try
+							_curModule.bindInh
+						catch ce as SourceException
+							.recordError(ce)
+#					if false # delme
+#						while _incompletes.count
+#							incompletes = _incompletes
+#							_incompletes = List<of Box>()
+#							for box in incompletes
+#								box.completeMemberConstructionIfNeeded
+				finally
+					Node.setCompiler(nil)
+			finally
+				_isBindingInh = false
+			if _errors.count
+				_exitFromErrors
+	
 	def bindInt
 		require
 			not .isBindingUse
+			not .isBindingInh
 			not .isBindingInt
 			not .isBindingImp
 		body
@@ -604,6 +643,7 @@ class Compiler
 	def bindImp
 		require
 			not .isBindingUse
+			not .isBindingInh
 			not .isBindingInt
 			not .isBindingImp
 		body
@@ -656,10 +696,15 @@ class Compiler
 		print '[title]:'
 		output.indent
 		try
-			for module in _modules
-				if module.isCobraLibrary
-					continue
-				module.writeDeepString(output)
+			print to output
+				i = 1
+				for module in _modules
+					print '[i]. ' stop
+					if module.isCobraLibrary
+						print to output, module
+					else
+						module.writeDeepString(output)
+					i += 1
 		finally
 			output.dedent
 

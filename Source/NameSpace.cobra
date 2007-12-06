@@ -7,6 +7,7 @@ class NameSpace
 	var _subNameSpacesList as List<of NameSpace>
 	var _useDirectives as List<of UseDirective>
 	var _didBindUse as bool
+	var _didBindInh as bool
 
 	def init(unifiedNameSpace as NameSpace, name as String)
 		.init(TokenFix.empty, name)
@@ -25,6 +26,10 @@ class NameSpace
 		_subNameSpacesByName = Dictionary<of String, NameSpace>()
 		_subNameSpacesList = List<of NameSpace>()
 		_useDirectives = List<of UseDirective>()
+
+	get didBindUse from var
+
+	get didBindInh from var
 
 	get isGlobal as bool
 		return _superNameSpace is nil and _name=='(global)'
@@ -103,15 +108,36 @@ class NameSpace
 		return this
 
 	def bindUse
-		for ud in _useDirectives
-			ud.bindUse
-		for ns in _subNameSpacesList
-			ns.bindUse
+		if _didBindUse
+			return
+		.compiler.nameSpaceStack.push(this)
+		try
+			for ud in _useDirectives
+				ud.bindUse
+			for ns in _subNameSpacesList
+				ns.bindUse
+		finally
+			.compiler.nameSpaceStack.pop		
 		_didBindUse = true
+
+	def bindInh
+		base.bindInh
+		assert _didBindUse
+		if _didBindInh
+			return
+		.compiler.nameSpaceStack.push(this)
+		try
+			for decl in _declsInOrder
+				decl.bindInh
+			for ns in _subNameSpacesList
+				ns.bindInh
+		finally
+			.compiler.nameSpaceStack.pop		
+		_didBindInh = true
 
 	def _bindInt
 		base._bindInt
-		assert _didBindUse
+		assert _didBindInh
 		.compiler.nameSpaceStack.push(this)
 		try
 			for ud in _useDirectives
