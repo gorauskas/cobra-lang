@@ -382,8 +382,6 @@ class Compiler
 		t = $sharp('typeof(System.Diagnostics.Process)') to System.Type
 		.readAssembly(t.assembly) # System.dll
 
-		.fixNonNilableMemberSigs  # TODO: this needs to happen after bindInh or before bindInt. unfortunately, bindInh isn't implemented yet!
-
 	def readAssemblyTypes
 		if .options.containsKey('reference')
 			# Here be "reflectionOnlyLoad" code... which does not work on Mono 1.2.4
@@ -527,26 +525,32 @@ class Compiler
 		stringClass = .libraryType('System', 'String') to Class
 		stringClass.addDecl(Indexer(TokenFix.empty, stringClass, r'[]', [Param('index', .intType)], .charType, ['public'], ''))
 
-		# TODO: axe these when .fixNonNilableMemberSigs is invoked after bindInh and before bindInterface
+		# TODO: shouldn't need the following. see comment in _fixSubs
 		_fix('System.IO.StringWriter', 'toString')
 
 	def _fix(className as String, memberNames as String)
-		_fix(.libraryType(className), memberNames)
+		_fix(.libraryType(className), memberNames, true)
 
-	def _fix(t as IType, memberNames as String)
+	def _fix(t as IType, memberNames as String, checkSubs as bool)
 		for name in memberNames.split
 			m = t.memberForName(name)
 			if m
 				m.unNilReturnType
-				if t inherits Class
-					if m inherits BoxMember
-						if 'virtual' in m.isNames
-							for sub in t.subclasses
-								if sub.declForName(name)
-									_fix(sub, name)
+				if checkSubs
+					if t inherits Class
+						if m inherits BoxMember
+							if 'virtual' in m.isNames
+								_fixSubs(t, name)
 			else
 				# TODO: print 'Cobra warning: Cannot find "[name]" in [t.name]'
 				pass
+
+	def _fixSubs(c as Class, name as String)
+		# TODO: eh, this doesn't really work because of the delayed .bindInh on DLL types. So we really need do some fixing in Box._bindInt
+		for sub in c.subclasses
+			if sub.declForName(name)
+				_fix(sub, name, false)  # false to prevent redundant visitations
+			_fixSubs(sub, name)  # don't rely on _fix for descendant traversal because there could be gaps where there is no declaration
 
 	##
 	## Binding
@@ -621,6 +625,7 @@ class Compiler
 			try
 				Node.setCompiler(this)
 				try
+					.fixNonNilableMemberSigs
 					for _curModule in _modules
 						try
 							_curModule.bindInt
