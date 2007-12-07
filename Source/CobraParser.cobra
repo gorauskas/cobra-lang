@@ -1298,15 +1298,12 @@ class Parser
 				.expect('COMMA')
 			param = .paramDecl
 			paramsList.add(param)
-			if paramsList.count==1 and param.name=='self' and param.type is _typeProvider.dynamicType
+			if paramsList.count==1 and param.name=='self' and param.isMissingType
 				_warning('The first parameter is "self" which may be a Python carry-over on your part. Cobra does not require that (and calls it "this" anyway).')
 			expectComma = true
 		return paramsList
 
 	def paramDecl as Param
-		return .paramDecl(_typeProvider.dynamicType)
-
-	def paramDecl(defaultType as IType) as Param
 		"""
 		Example source:
 			x as int
@@ -1333,20 +1330,19 @@ class Parser
 		type as ITypeProxy?
 		if .peek.which=='AS'
 			.grab
-			varii = .optional('VARI')
-			type = .type
-			if varii
-				type = _typeProvider.variType(type)
+			variToken = .optional('VARI')
+			if variToken
+				type = VariTypeIdentifier(variToken, .type)
+			else
+				type = .type
+			isMissingType = false
 		else
-			type = defaultType
-		if type inherits IType
-			param = Param(token, type)
-		else if type inherits ITypeProxy
-			param = Param(token, type)
-		else
-			throw FallThroughException(type)
-		# print param
-		return param
+			type = TypeProxy(_typeProvider.dynamicType)  # the default type for a parameter is dynamic
+			isMissingType = true
+		# note: isTypeless is currently used to generate a warning in .paramDecls above, but in the future it may also be needed for when parameter types are inferred for anon methods
+		p = Param(token, type) # CC: put property set in constructor
+		p.isMissingType = isMissingType
+		return p
 
 
 	##

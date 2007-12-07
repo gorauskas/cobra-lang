@@ -253,6 +253,10 @@ class Box
 		return name
 
 	get innerType as IType? is override
+		if .compiler and .compiler.isBindingImp
+			# this is for DLL types which get bindInh & bindInt only on demand. (otherwise reading system DLLs slows things down)
+			.bindInh
+			.bindInt
 		if this is .compiler.libraryType('System', 'String')  # TODO: hacky
 			return .compiler.charType
 		getEnum = .symbolForName('getEnumerator', true)
@@ -317,10 +321,6 @@ class Box
 	def bindAll as INode
 		.bindInh
 		return base.bindAll
-
-	var _didBindInh as bool
-
-	get didBindInh from var
 
 	def bindInh
 		if _didBindInh
@@ -1095,7 +1095,7 @@ class Class
 		if _baseClass
 			#assert _baseClass.didBindInt
 			for decl in List<of IMember>(_declsInOrder)
-				if decl inherits Method and not decl inherits Constructor  # TODO: I don't this captures Indexers. Make a test case if needed, write: if decl.canBeOverloaded
+				if decl inherits Method and not decl inherits Constructor  # TODO: I don't think this captures Indexers. Make a test case if needed, write: if decl.canBeOverloaded or if decl inherits ICanBeOverloaded
 					other = _baseClass.memberForName(decl.name)
 					if other
 						if decl inherits MemberOverload
@@ -1119,7 +1119,10 @@ class Class
 		return 'class'
 
 	get superType as IType? is override
-		assert .didBindInt
+		or require true
+		if not _didBindInh
+			.bindInh
+		assert .didBindInh
 		return _baseClass
 
 	## Code gen
@@ -1132,12 +1135,6 @@ class Class
 
 	def writeSharpInheritance(sw as SharpWriter) is override
 		sw.write(' : ')
-# axeqt
-#		if _baseNode inherits TypeIdentifier
-#			# needed QualifiedTypes such "inherits System.Collection.ArrayList". See Tests\300-misc\700-use-on-generice-IList
-#			sw.write(_baseNode.actualType.sharpRef)
-#			didWrite = true
-#		else
 		if _baseClass
 			sw.write(_baseClass.sharpRef)
 			didWrite = true

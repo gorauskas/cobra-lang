@@ -36,8 +36,6 @@ interface ITypeProvider
 	
 	def variType(type as IType) as VariType
 
-	def variType(typeNode as ITypeProxy) as VariType
-
 
 class BasicTypeProvider
 	implements ITypeProvider
@@ -57,7 +55,7 @@ class BasicTypeProvider
 	var _typeType			as TypeType?
 	var _unspecifiedType	as UnspecifiedType?
 	var _voidType			as VoidType?
-	var _variTypes			as Dictionary<of INode, VariType>?
+	var _variTypes			as Dictionary<of IType, VariType>?
 
 	def typeForName(name as String) as IType
 		assert false, 'TODO'
@@ -129,18 +127,10 @@ class BasicTypeProvider
 
 	def variType(type as IType) as VariType
 		if _variTypes is nil
-			_variTypes = Dictionary<of INode, VariType>()
+			_variTypes = Dictionary<of IType, VariType>()
 		else if _variTypes.containsKey(type)
 			return _variTypes[type]
 		_variTypes[type] = vt = VariType(type)
-		return vt
-
-	def variType(typeProxy as ITypeProxy) as VariType
-		if _variTypes is nil
-			_variTypes = Dictionary<of INode, VariType>()
-		else if _variTypes.containsKey(typeProxy)
-			return _variTypes[typeProxy]
-		_variTypes[typeProxy] = vt = VariType(typeProxy)
 		return vt
 
 
@@ -160,13 +150,37 @@ interface ITypeProxy
 
 	get realType as IType
 		"""
-		Returns the type that this node represents .throwError if the type cannot be located.
+		Returns the type that this node represents or .throwError if the type cannot be located.
 		"""
 
 
-class NilableTypeProxy
+class AbstractTypeProxy
+	# CC: is abstract
 	inherits Node
 	implements ITypeProxy
+
+	get realType as IType # CC: is abstract
+		throw Exception('abstract')
+
+
+class TypeProxy
+	inherits AbstractTypeProxy
+	"""
+	Once in awhile you might need to pass or use an ITypeProxy even though you already know the type (probably because it is a builtin type such as `int` or `dynamic`.
+	In that case, you can use TypeProxy(someType)
+	"""
+	
+	var _type as IType
+	
+	def init(type as IType)
+		_type = type
+	
+	get realType as IType is override
+		return _type
+
+
+class NilableTypeProxy
+	inherits AbstractTypeProxy
 	"""
 	Returns the type proxy it is given wrapped in a NilableType.
 	Used when scanning, for example, method arguments in DLLs. See _scan* in Box.
@@ -184,13 +198,12 @@ class NilableTypeProxy
 		base.addMinFields
 		.addField('innerTypeProxy', .innerTypeProxy)
 
-	get realType as IType
+	get realType as IType is override
 		return NilableType(_innerType.realType)
 
 
 class ClrTypeProxy
-	inherits Node
-	implements ITypeProxy
+	inherits AbstractTypeProxy
 	"""
 	Acts as an ITypeProxy where the CLR type is known.
 	Typically used when scanning DLLs.
@@ -230,7 +243,7 @@ class ClrTypeProxy
 		base.addMinFields
 		.addField('clrType', _clrType)
 
-	get realType as IType
+	get realType as IType is override
 		return _realType(_clrType)
 		
 	def _realType(clrType as Type) as IType
@@ -351,6 +364,7 @@ class ClrTypeProxy
 		else
 			return ClrTypeProxy(Object).realType
 
+
 interface IType
 	inherits ITypeProxy, IMember  # TODO: does an IType need to also be an IContainer? TODO: Why does it have to be either?
 
@@ -445,6 +459,12 @@ interface IType
 	get innerType as IType?
 		"""
 		Used by the enumerable for statement to infer the type of the control variable.
+		Examples:
+		 	List<of int> --> int
+			List<of dynamic> --> dynamic
+			ArrayList --> Object
+			String --> char
+			Object --> nil
 		"""
 
 	get superType as IType?
@@ -895,12 +915,8 @@ class NilableType
 		base.init(t)
 
 	get name as String is override
-		if _wrappedType
-			return _wrappedType.name + '?'
-		else if _wrappedTypeNode
-			return _wrappedTypeNode.toString + '?'
-		else
-			throw FallThroughException(this)
+		assert _wrappedType
+		return _wrappedType.name + '?'
 
 	get isDynamic as bool is override
 		return _wrappedType.isDynamic
@@ -916,8 +932,7 @@ class NilableType
 		if type inherits PassThroughType
 			return true
 		if type inherits NilableType
-			assert _wrappedType
-			return _wrappedType.isAssignableTo(type.theWrappedType to !)
+			return _wrappedType.isAssignableTo(type.theWrappedType)
 		return false
 
 	def isComparableTo(b as IType) as bool is override
@@ -943,7 +958,7 @@ class NilableType
 			if _wrappedType is type.theWrappedType
 				return this
 			else
-				return NilableType(_wrappedType.greatestCommonDenominatorWith(type.theWrappedType to !))
+				return NilableType(_wrappedType.greatestCommonDenominatorWith(type.theWrappedType))
 		return NilableType(_wrappedType.greatestCommonDenominatorWith(type))
 
 	get csInit as String is override
@@ -1068,29 +1083,16 @@ class VoidType
 class WrappedType
 	inherits CobraType
 
-	var _wrappedType as IType?
-	var _wrappedTypeNode as ITypeProxy?
+	var _wrappedType as IType
 	var _hashCode as int?
-	var _didResolveType as bool
 
 	def init(wrappedType as IType)
 		base.init  # TODO: ? pass wrappedType.superType
 		assert not wrappedType inherits NameSpace  # TODO: remove this when NameSpace is no longer an IType
 		_wrappedType = wrappedType
-		_wrappedTypeNode = nil
-
-	def init(wrappedTypeProxy as ITypeProxy)
-		base.init
-		_wrappedType = nil
-		_wrappedTypeNode = wrappedTypeProxy
-
-	def addMinFields
-		base.addMinFields
-		.addField('didResolveType', _didResolveType)
 
 	def addRefFields is override
 		base.addRefFields
-		.addField('wrappedTypeNode', _wrappedTypeNode)
 		.addField('wrappedType', _wrappedType)
 
 	def equals(obj as Object) as bool is override
@@ -1100,62 +1102,25 @@ class WrappedType
 			return false
 		if this.getType is not obj.getType
 			return false
-		# at this point, not the identical object, but the type is the same
-		assert obj inherits WrappedType
-		wt = obj to WrappedType  # CC: shouldn't need this due to the assertion just above
-		if _wrappedType and wt._wrappedType
-			return _wrappedType.equals(wt._wrappedType)
-		else if _wrappedTypeNode and wt._wrappedTypeNode
-			return _wrappedTypeNode.equals(wt._wrappedTypeNode)
+		# at this point, not the identical object, but the class of obj is the same as ours
+		if obj inherits WrappedType
+			return _wrappedType.equals(obj._wrappedType)
 		else
 			throw FallThroughException([this, obj])
-		return false
 
 	def getHashCode as int is override
 		if _hashCode is nil
-			if _wrappedTypeNode
-				_hashCode = _wrappedTypeNode.getHashCode
-			else if _wrappedType
-				_hashCode = _wrappedType.getHashCode
-			else
-				_hashCode = base.getHashCode
+			_hashCode = _wrappedType.getHashCode   # TODO: should be combined with something else so no collision with the actual wrapped type.
 		return _hashCode to !
 
 	# CC: this should work, but C# don't dig it.
 	#get wrappedType from _wrappedType
 
-	pro didResolveType from var
-	
-	get theWrappedType as IType?
+	get theWrappedType as IType
 		return _wrappedType
 
 	get innerType as IType? is override
-		# TODO: why doesn't this `require` work?
-		# require .didResolveType
-		# doing this instead
-		if not .didResolveType
-			_resolveType()
-			_wrappedType.bindInt
 		return _wrappedType.innerType
-
-	def _bindInt
-		base._bindInt
-		_resolveType()
-
-	def _bindImp
-		base._bindImp
-		_resolveType()
-
-	def _resolveType
-		require _wrappedType or _wrappedTypeNode
-		if _wrappedType
-			return
-		if _wrappedTypeNode inherits IType
-			_wrappedType = _wrappedTypeNode to passthrough   # CC: shouldn't need the cast here
-			return
-		_wrappedType = (_wrappedTypeNode.bindAll to ITypeProxy).realType
-		if _wrappedType is nil
-			.throwError('Cannot resolve type.')  # TODO: add the name of the wrappedTypeNode or something
 
 	get csInit as String is override
 		return _wrappedType.csInit
@@ -1183,9 +1148,6 @@ class ArrayType
 	def init(wrappedType as IType)
 		base.init(wrappedType)
 
-	def init(wrappedTypeProxy as ITypeProxy)
-		base.init(wrappedTypeProxy)
-
 	get englishName as String is override
 		return 'array of ' + ''  # TODO: causes the compiler to choke: if(wrappedType, wrappedType.name, wrappedTypeNode.name)
 
@@ -1196,10 +1158,7 @@ class ArrayType
 		return true
 
 	get name as String is override
-		if _wrappedType
-			return _wrappedType.name+r'[]'
-		else
-			return 'array UNBOUND'
+		return _wrappedType.name+r'[]'
 
 	def isAssignableTo(type as IType) as bool is override
 		if base.isAssignableTo(type)
@@ -1242,20 +1201,14 @@ class VariType
 	def init(wrappedType as IType)
 		base.init(wrappedType)
 
-	def init(wrappedTypeProxy as ITypeProxy)
-		base.init(wrappedTypeProxy)
-
 	get englishName as String is override
 		return 'variable args type'
 
-	get innerType as IType? is override
+	get innerType as IType? is override 
 		return _wrappedType
 
 	get name as String is override
-		if _wrappedType
-			return 'vari ' + _wrappedType.name
-		else
-			return 'vari UNBOUND'
+		return 'vari ' + _wrappedType.name
 
 	get sharpRef as String is override
 		return 'params [_wrappedType.sharpRef]' + r'[]'
@@ -1431,7 +1384,6 @@ class ArrayTypeIdentifier
 		return container.memberForName(.theWrappedTypeIdentifier.name)
 
 	def _resolveType as IType is override
-		assert _typeId.realType
 		return ArrayType(_typeId.realType)
 		
 
@@ -1442,9 +1394,18 @@ class NilableTypeIdentifier
 		base.init(token, typeId)
 
 	def _resolveType as IType is override
-		assert _typeId.realType
 		return NilableType(_typeId.realType)
-		
+
+
+class VariTypeIdentifier
+	inherits WrappedTypeIdentifier
+	
+	def init(token as IToken, typeId as AbstractTypeIdentifier)
+		base.init(token, typeId)
+
+	def _resolveType as IType is override
+		return VariType(_typeId.realType)
+
 
 class TypeIdentifier
 	inherits AbstractTypeIdentifier

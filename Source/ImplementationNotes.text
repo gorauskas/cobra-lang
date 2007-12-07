@@ -251,6 +251,26 @@ When members for a box are first being accumulated either during parsing or scan
 You might also notice that .declForName is used to find members that have the same name as the currently parsed/scanned member even though (a) it doesn't follow inheritance relationships and (b) overloads cross the inheritance boundary. But that's okay: Overloads are "finished up" at a later time in Box._finishOverloads. Also, you generally want to avoid the inheritance-savvy .memberForName in early stages because it triggers other things.
 
 
+.h2 @ Type identifiers, proxies and actual types
+
+ * Interface ITypeProxy is small. Go check it out first.
+ * The parser creates "type identifiers"
+   * That is, the parser creates objects that inherit from AbstractTypeIdentifier.
+   * These have a token and will resolve themselves to a type, or generate a compilation error.
+ * Sometimes the compiler needs to create type proxies outside of parsing.
+   * There are type proxy classes for this.
+   * They have no token (so no source code information).
+ * Then there are actual types. And these implement ITypeProxy and simply return `this` for .realType.
+ * Do not mix types with type proxies though.
+   * For example, a "wrapper type" like VariType or NilableType should not have a reference to a type proxy, only a type.
+   * So if you have a type proxy and you need to build it into something nilable
+     * Use NilableTypeIdentifier if you have a real token,
+     * or use NilableProxy if you don't.
+ * IType and ITypeProxy are used to refer to these things at a very high level.
+   * For example, Expr has `get type as IType?`
+   * And Param has, among other intializers, a `def init(token as IToken, typeProxy as ITypeProxy)`
+
+
 .h1 @ It's tricky (to rock a rhyme)
 
 Here I cover things than I found tricky or that others may have expressed uncertainty about. Of course, you might skip this material until you need it one day (when enhancing the compiler), or you might read it because you are interested in tricky stuff.
