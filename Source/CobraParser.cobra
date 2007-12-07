@@ -535,7 +535,7 @@ class Parser
 
 		baseNode as ITypeProxy?
 		if .optional('INHERITS')
-			baseNode = .type
+			baseNode = .typeId
 			.expect('EOL')
 		else
 			baseNode = nil
@@ -549,7 +549,7 @@ class Parser
 					break
 				if expectComma
 					.expect('COMMA')
-				interfaceName = .type  # using .type since interface could be qualified (Foo.Bar) or a generic like IEnumerable<of T>
+				interfaceName = .typeId  # using .typeId since interface could be qualified (Foo.Bar) or a generic like IEnumerable<of T>
 				interfaceNames.add(interfaceName)
 				expectComma = true
 
@@ -692,7 +692,7 @@ class Parser
 					break
 				if expectComma
 					.expect('COMMA')
-				baseName = .type  # using self.type since interface could be a generic like IEnumerable(of T)
+				baseName = .typeId  # using .typeId since interface could be a generic like IEnumerable(of T)
 				baseNames.add(baseName)
 				expectComma = true
 
@@ -749,8 +749,8 @@ class Parser
 #					break
 #				if expectComma
 #					.expect('COMMA')
-#				interfaceName = .type  # using .type since interface could be a generic like IEnumerable(of T)
-#				interfaceNames.append(interfaceName)
+#				interfaceName = .typeId  # using .type since interface could be a generic like IEnumerable(of T)
+#				interfaceNames.add(interfaceName)
 #				expectComma = true
 
 		docString = .docString
@@ -773,7 +773,7 @@ class Parser
 		.indent
 		isNames = .isDeclNames
 		if .peek.which=='OF'
-			storageType as ITypeProxy? = .type  # CC: to ?
+			storageType as ITypeProxy? = .typeId  # CC: to ?
 		docString = .docString
 		enumMembers = List<of EnumMember>()
 		while .peek.which <> 'DEDENT'
@@ -833,7 +833,7 @@ class Parser
 			on 'CLASS': return GenericClassConstraint(.grab)
 			on 'STRUCT': return GenericStructConstraint(.grab)
 			on 'CALLABLE': return GenericCallableConstraint(.grab)
-			else: return GenericTypeConstraint(.type)
+			else: return GenericTypeConstraint(.typeId)
 		pass # CC: take out
 
 	def nameSpaceDecl as NameSpace
@@ -962,7 +962,7 @@ class Parser
 				sugg = String(c'_', numUnderscores) + s[0].toString.toLower + s.substring(1)
 				sugg = ' Try "[sugg]".'
 			.throwError('Class variables must start with lowercase letters (after the underscore(s)) to distinguish them from other types of identifiers.[sugg]')
-		type as ITypeProxy? = if(.optional('AS'), .type, TypeIdentifier(varTok, .typeProvider.dynamicType))
+		type as ITypeProxy? = if(.optional('AS'), .typeId, TypeIdentifier(varTok, .typeProvider.dynamicType))
 		if .optional('ASSIGN')
 			initExpr as Expr? = .expression  # CC: initExpr = .expression to ?
 		else
@@ -1021,7 +1021,7 @@ class Parser
 			paramsList = List<of Param>()
 
 		if .optional('AS')
-			returnType as ITypeProxy? = .type  # CC: to ?
+			returnType as ITypeProxy? = .typeId  # CC: to ?
 		else
 			returnType = _typeProvider.voidType
 		assert returnType
@@ -1030,7 +1030,7 @@ class Parser
 
 		if curClass inherits Class or curClass inherits Struct
 			isNames = .indentIsDeclNames
-			implementsType = if(.optional('IMPLEMENTS'), .type, nil)
+			implementsType = if(.optional('IMPLEMENTS'), .typeId, nil)
 			if implementsType
 				.oneOrMore('EOL')
 			docString = .docString
@@ -1109,7 +1109,7 @@ class Parser
 				return .declarePropertyFrom(token, name, 'getset')
 			paramsList = List<of Param>()
 		if .optional('AS')
-			returnType as INode = .type
+			returnType as INode = .typeId
 		else
 			returnType = _typeProvider.dynamicType
 		assert returnType
@@ -1206,7 +1206,7 @@ class Parser
 				return .declarePropertyFrom(token, name, 'get')
 			paramsList = List<of Param>()
 		if .optional('AS')
-			returnType as INode = .type
+			returnType as INode = .typeId
 		else
 			returnType = _typeProvider.dynamicType
 		assert returnType
@@ -1251,7 +1251,7 @@ class Parser
 		if .optional('FROM')
 			return .declarePropertyFrom(token, name, 'set')
 		if .optional('AS')
-			returnType as INode = .type
+			returnType as INode = .typeId
 			assert returnType
 		else
 			returnType = _typeProvider.dynamicType
@@ -1332,9 +1332,9 @@ class Parser
 			.grab
 			variToken = .optional('VARI')
 			if variToken
-				type = VariTypeIdentifier(variToken, .type)
+				type = VariTypeIdentifier(variToken, .typeId)
 			else
-				type = .type
+				type = .typeId
 			isMissingType = false
 		else
 			type = TypeProxy(_typeProvider.dynamicType)  # the default type for a parameter is dynamic
@@ -1563,7 +1563,7 @@ class Parser
 		# expect FooException
 		#     block
 		token = .expect('EXPECT')
-		type = .type
+		type = .typeId
 		block = .block
 		return ExpectStmt(token, type, block)
 
@@ -1781,7 +1781,7 @@ class Parser
 					catchBlock = .block
 					catchBlocks.add(CatchBlock(catchBlock.token, catchVar, catchBlock))
 				else
-					catchType = .type
+					catchType = .typeId
 					catchBlock = .block
 					catchBlocks.add(CatchBlock(catchBlock.token, catchType, catchBlock))
 		if .peek.which=='EXCEPT'
@@ -1901,7 +1901,7 @@ class Parser
 		type as ITypeProxy?
 		if .peek.which=='AS'
 			.grab
-			type = .type
+			type = .typeId
 		else
 			# maybe the var already exists?
 			definition = _curCodePart.findLocal(name)
@@ -2159,7 +2159,7 @@ class Parser
 		else if peek=='OPEN_CALL'
 			return .callExpr
 		else if peek=='OPEN_GENERIC'
-			return TypeExpr(.type)
+			return TypeExpr(.typeId)
 		else if peek=='ID'
 			return .identifierExpr
 		else if peek=='SHARP_OPEN'
@@ -2269,7 +2269,7 @@ class Parser
 			if not Utils.startsWithLowerLetter(name)
 				.throwError('Local variable declarations must start with a lowercase letter. This avoids collisions with other identifiers such as classes and enums.')
 			asToken = .grab
-			type = .type
+			type = .typeId
 			assert type
 			return AsExpr(asToken, nameToken, type)
 		else
@@ -2394,7 +2394,7 @@ class Parser
 			if not Utils.startsWithLowerLetter(name)
 				.throwError('Local variable declarations must start with a lowercase letter. This avoids collisions with other identifiers such as classes and enums.')
 			asToken = .grab
-			type = .type
+			type = .typeId
 			assert type
 			return AsExpr(asToken, nameToken, type)
 		else
@@ -2432,22 +2432,22 @@ class Parser
 		return StringSubstLit(items)
 
 	def typeExpr as TypeExpr
-		return TypeExpr(.type)
+		return TypeExpr(.typeId)
 
 	##
 	## Types
 	##
 
-	def type as AbstractTypeIdentifier
-		return .qualifiedType
+	def typeId as AbstractTypeIdentifier
+		return .qualifiedTypeId
 
-	def qualifiedType as AbstractTypeIdentifier
+	def qualifiedTypeId as AbstractTypeIdentifier
 		"""
 		May actually return a non-qualified type.
 		"""
 		types = List<of AbstractTypeIdentifier>()
 		while true
-			t = .nonqualifiedType
+			t = .nonqualifiedTypeId
 			assert t
 			types.add(t)
 			if .peek.which=='DOT'
@@ -2471,35 +2471,27 @@ class Parser
 			else
 				return QualifiedTypeIdentifier(types)
 
-	def nonqualifiedType as AbstractTypeIdentifier
+	def nonqualifiedTypeId as AbstractTypeIdentifier
 		token = .grab
 		assert token
 
 		t as AbstractTypeIdentifier?
 
-		if token.which=='OPEN_GENERIC'
-			t = .genericType(token to IToken)  # CC: axe cast
-
-		# TODO: use a branch here
-		else if token.text=='int'
-			t = TypeIdentifier(token, .typeProvider.intType)
-		else if token.text=='bool'
-			t = TypeIdentifier(token, .typeProvider.boolType)
-		else if token.text=='char'
-			t = TypeIdentifier(token, .typeProvider.charType)
-		else if token.text=='decimal'
-			t = TypeIdentifier(token, .typeProvider.decimalType)
-		else if token.text=='float'
-			t = TypeIdentifier(token, .typeProvider.floatType)
-		else if token.text=='passthrough'
-			t = TypeIdentifier(token, .typeProvider.passThroughType)
-		else if token.text=='dynamic'
-			t = TypeIdentifier(token, .typeProvider.dynamicType)
-		else if token.which=='ID'
-			t = TypeIdentifier(token)
-		else
-			.throwError('Unrecognized type: [token]')
-			return nil to passthrough  # CC: remove
+		branch token.text
+			on 'int': t = TypeIdentifier(token, .typeProvider.intType)
+			on 'bool': t = TypeIdentifier(token, .typeProvider.boolType)
+			on 'char': t = TypeIdentifier(token, .typeProvider.charType)
+			on 'decimal': t = TypeIdentifier(token, .typeProvider.decimalType)
+			on 'float': t = TypeIdentifier(token, .typeProvider.floatType)
+			on 'passthrough': t = TypeIdentifier(token, .typeProvider.passThroughType)
+			on 'dynamic': t = TypeIdentifier(token, .typeProvider.dynamicType)
+			else 
+				branch token.which
+					on 'ID': t = TypeIdentifier(token)
+					on 'OPEN_GENERIC': t = .genericTypeId(token to !)
+					else
+						.throwError('Unrecognized type: [token]')
+						return nil to passthrough  # CC: remove
 
 		assert t
 
@@ -2520,7 +2512,7 @@ class Parser
 
 		return t to AbstractTypeIdentifier  # CC: axe cast
 
-	def genericType(openGenericToken as IToken) as AbstractTypeIdentifier
+	def genericTypeId(openGenericToken as IToken) as AbstractTypeIdentifier
 		require openGenericToken.text.trim.endsWith('<of')
 		fullName = openGenericToken.text.trim + ' '
 		rootName = fullName.substring(0, fullName.length-4)  # CC: [:-4]
@@ -2537,7 +2529,7 @@ class Parser
 			if expectComma
 				.expect('COMMA')
 				fullName += ', '
-			t = .type
+			t = .typeId
 			types.add(t)
 			fullName += t.name
 			expectComma = true
