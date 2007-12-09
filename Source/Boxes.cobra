@@ -15,7 +15,7 @@ class Box
 
 	var _params as List<of IType>  # as in generic parameters
 	var _genericTypeDef as Box?
-	var _constructedTypes as Dictionary<of String, IType>?  # TODO: should IType be Box?
+	var _constructedTypes as Dictionary<of String, Box>?
 
 	var _baseClass as Class?
 	var _baseInterfaceProxies as List<of ITypeProxy>
@@ -78,8 +78,7 @@ class Box
 	get baseInterfaces from var
 
 	get isSystemObjectClass as bool
-# TODO:		return _baseClass is nil and .name == 'Object' and .parentNameSpace and .parentNameSpace.fullName == 'System'
-		return .name == 'Object' and .parentNameSpace and .parentNameSpace.fullName == 'System'
+		return _baseClass is nil and .name == 'Object' and .parentNameSpace and .parentNameSpace.fullName == 'System'
 
 	pro parentNameSpace as NameSpace?
 		get
@@ -258,13 +257,10 @@ class Box
 			# this is for DLL types which get bindInh & bindInt only on demand. (otherwise reading system DLLs slows things down)
 			.bindInh
 			.bindInt
-		if this is .compiler.libraryType('System', 'String')  # TODO: hacky
+		if this is .compiler.libraryType('System.String')  # TODO: hacky
 			return .compiler.charType
 		getEnum = .symbolForName('getEnumerator', true)
 		if getEnum
-			# TODO: is this really needed? if so, why?
-			if not getEnum.didBindInt
-				getEnum.bindInt
 			assert getEnum.didBindInt
 			# can have two getEnumerators -- one generic and the other not. favor the generic one
 			if getEnum inherits MemberOverload
@@ -341,7 +337,6 @@ class Box
 		if not _didBindInh
 			.bindInh
 		return base.bindInt
-		# TODO: may be able to axe this method when .bindInt is no longer sent "sideways" in addition to top down (note that .memberForName already does this check)
 
 	def _bindInt
 		base._bindInt
@@ -484,7 +479,7 @@ class Box
 			assert .didBindInh
 			
 			if _constructedTypes is nil
-				_constructedTypes = Dictionary<of String, IType>()
+				_constructedTypes = Dictionary<of String, Box>()
 			key = Utils.join(',', for type in typeArgs get type.name)
 			if _constructedTypes.containsKey(key)
 				return _constructedTypes[key]
@@ -565,7 +560,7 @@ class Box
 					_declsByName[decl.name] = decl
 					_declsByNameCI[decl.name.toLower] = decl
 			.bindInt
-			# TODO: this next statement can be axed if a there is a separate "bind inheritance" phase
+			# TODO: can this next statement can be axed since there is a separate "bind inheritance" phase?
 			_finishOverloads
 			
 	def _completeConstructionOfBase(gpToType as Dictionary<of GenericParam, IType>)
