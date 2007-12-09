@@ -165,7 +165,7 @@ class CommandLine
 	var _startTime as DateTime
 	var _verbosity = 0
 
-	var _optionDict as Dictionary<of String, Object>?
+	var _options = Options()
 	var _pathList as List<of String>?
 	var _htmlWriter as HtmlWriter?
 
@@ -234,7 +234,7 @@ class CommandLine
 			.doAbout
 			return
 		.parseArgs(args)
-		if _optionDict.containsKey('output-html') and _optionDict['output-html'] to bool
+		if _options.boolValue('output-html')
 			_htmlWriter = HtmlWriter(Console.out)
 			dest = _htmlWriter to TextWriter
 		else
@@ -243,33 +243,32 @@ class CommandLine
 			stylePath = Path.combine(Path.getDirectoryName(CobraCore.exePath), 'styles-output-html.css')
 			_htmlWriter.writeHtml('<html><head><link href="file://[stylePath]" rel=stylesheet type="text/css"></head><body>[_htmlWriter.newLine]')
 		print to dest
-			d = _optionDict
 			paths = _pathList to !
+			options = _options
 			if .verbosity > 0
 				print 'Cobra Command Line [CobraCore.version]'
 				if CobraCore.isRunningOnMono
 					print 'running on Mono'
 				print 'current directory: [Environment.currentDirectory]'
 				print 'option dictionary:'
-				for key in d.keys
-					print '    [key]: [CobraCore.toTechString(d[key])]'
+				for key in options.keys
+					print '    [key]: [CobraCore.toTechString(options[key])]'
 				print 'paths:'
 				for path in paths
 					print '    [path]'
-			# TODO: use reflection here?
-			if _getOne(d, 'testify')
+			if options.boolValue('testify')
 				.doTestify(paths)
-			else if _getOne(d, 'run')
+			else if options.boolValue('run')
 				.doRun(paths)
-			else if _getOne(d, 'test')
+			else if options.boolValue('test')
 				.doTest(paths)
-			else if _getOne(d, 'compile')
+			else if options.boolValue('compile')
 				.doCompile(paths)
-			else if _getOne(d, 'help')
+			else if options.boolValue('help')
 				.doHelp
-			else if _getOne(d, 'version')
+			else if options.boolValue('version')
 				.doVersion
-			else if _getOne(d, 'about')
+			else if options.boolValue('about')
 				.doAbout
 			else if not paths.count
 				.doHelp
@@ -278,45 +277,36 @@ class CommandLine
 		if _htmlWriter
 			_htmlWriter.writeHtml('</body></html>[_htmlWriter.newLine]')
 
-	def _getOne(d as Dictionary<of String, Object>?, name as String) as bool
-		if d.containsKey(name)
-			value = d[name]
-			if value inherits bool
-				return value
-			else
-				throw FallThroughException(value)
-		else
-			return false
-
-	def testifyOptions as Dictionary<of String, Object>
+	def testifyOptions as Options
 		# TODO: this doesn't even work...
 		# CC: use out args when available
-		save1 = _optionDict
+		save1 = _options
 		save2 = _pathList
 		.parseArgs(List<of String>())
-		r = _optionDict to !
+		r = _options
 		_pathList = save2
-		_optionDict = save1
+		_options = save1
 		# trace r
 		# remember that you cannot use synonyms below. you must use the canonical name of the option
 		# also, default options are not included (which is lame), so you must specify them here
-		r = Dictionary<of String, Object>()
+		r = Options()
 		r['include-tests'] = true
 		r['embed-run-time'] = true
 		r['verbosity'] = 2
+		r['testify'] = true
 		return r
 
 	def parseArgs(args as List<of String>)
 		"""
 		Parse command line arguments.
 		The `args` should include only the arguments and not the executable/program name.
-		Sets _optionDict and _pathList.
+		Sets _options and _pathList.
 		"""
 		optionPrefix = '-'
 		valuePrefix = c'='
 		if not args.count
-			_optionDict = Dictionary<of String, Object>()
-			_optionDict.add('help', true)
+			_options = Options()
+			_options.add('help', true)
 			_pathList = List<of String>()
 			return
 
@@ -473,7 +463,7 @@ class CommandLine
 					.error('Cannot open file "[fileName]".')
 
 		# set the class vars
-		_optionDict = valueDict
+		_options = Options(valueDict)
 		_pathList = fileList
 		
 	def interpretValue(valueStr as String, spec as Dictionary<of String, Object>) as dynamic?
@@ -513,7 +503,7 @@ class CommandLine
 
 	def doCompile(paths as List<of String>, willPrintSuccessMsg as bool, writeTestInvocation as bool) as Compiler
 		c = Compiler(.verbosity)
-		c.options = _optionDict to !
+		c.options = _options
 		c.willPrintSuccessMsg = willPrintSuccessMsg
 		c.htmlWriter = _htmlWriter
 		try
@@ -533,8 +523,8 @@ class CommandLine
 			# Each phase of the compiler may throw an exception to stop compilation.
 			# Before doing so, it prints its errors.
 			assert c.errors.count>0
-			if _optionDict.containsKey('editor')
-				spec = _optionDict['editor'] to String?
+			if _options.containsKey('editor')
+				spec = _options['editor'] to String?
 			else
 				spec = Environment.getEnvironmentVariable('COBRA_EDITOR')
 			if spec and spec <> ''
@@ -1008,7 +998,7 @@ class CommandLine
 
 		c = Compiler(compilerVerbosity, _cachedTestifyModules)
 		c.options = .testifyOptions
-
+		
 		try
 			c.parseFilesNamed(fileNames)
 			assert c.modules
@@ -1138,3 +1128,27 @@ class HtmlWriter
 			.write(html)
 		finally
 			_isWritingHtml = false
+
+
+class Options
+	inherits Dictionary<of String, Object>
+	
+	def init
+		pass
+
+	def init(d as IDictionary<of String, Object>)
+		base.init(d)
+
+	def boolValue(key as String) as bool
+		if .containsKey(key)
+			return this[key] to bool
+		else
+			return false
+
+	def getDefault(key as String, default as Object?) as Object?
+		if .containsKey(key)
+			return this[key]
+		else
+			return default
+	
+	# CC: def getDefault<of T>(key as String, value as T) as T ...

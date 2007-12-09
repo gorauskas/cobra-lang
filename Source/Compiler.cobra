@@ -48,7 +48,7 @@ class Compiler
 	var _nextSerialNum as int is shared
 	var _serialNum as int
 	var _verbosity as int
-	var _options as Dictionary<of String, Object>
+	var _options as Options
 	var _willPrintSuccessMsg = true
 	var _htmlWriter as HtmlWriter?
 	
@@ -84,7 +84,7 @@ class Compiler
 		_serialNum = _nextSerialNum
 		_verbosity = verbosity
 		_modules = List<of Module>()
-		_options = Dictionary<of String, Object>()
+		_options = Options()
 		_globalNS = NameSpace(Token.empty, '(global)')
 		_nameSpaceStack = Stack<of NameSpace>()
 		_boxStack = Stack<of Box>()
@@ -109,7 +109,7 @@ class Compiler
 	get verbosity from var
 
 	get includeTests as bool
-		return .options.containsKey('include-tests') and .options['include-tests'] in (['1', 1, true] to dynamic)  # TODO: cleanup
+		return .options.boolValue('include-tests')
 
 	get isBindingUse from var
 
@@ -151,11 +151,7 @@ class Compiler
 		"""
 
 	get hasDetailedStackTraceOption as bool
-		# CC: return _options.get('detailed-stack-trace', false) to bool
-		if _options.containsKey('detailed-stack-trace')
-			return if(_options['detailed-stack-trace'], true, false)
-		else
-			return false
+		return _options.boolValue('detailed-stack-trace')
 
 	get willTrackLocals as bool
 		require .boxStack.count
@@ -163,11 +159,7 @@ class Compiler
 		return .hasDetailedStackTraceOption and (.codeMemberStack.count == 0 or .curCodeMember.box.name <> 'CobraFrame')
 
 	get hasExceptionReportOption as bool
-		# CC: return _options.get('exception-report', false) to bool
-		if _options.containsKey('exception-report')
-			return _options['exception-report'] to bool
-		else
-			return false
+		return .options.boolValue('exception-report')
 
 	def recordError(error as SourceException)
 		"""
@@ -732,11 +724,7 @@ class Compiler
 			dest.writeHtml('<span class=compilationSucceeded>Compilation succeeded - [_warnings.count] warning[if(_warnings.count==1,'','s')]</span><br>\n')
 
 	def printConsoleMessages
-		if _options.containsKey('color')
-			assert _options['color'] in [true, false]
-			willColor = _options['color'] to bool
-		else
-			willColor = false
+		willColor = .options.boolValue('color')
 		savedColor = Console.foregroundColor
 		if CobraCore.isRunningOnMono  # bug on mono: the initial Console.foregroundColor is not necessarily accurate (at least in bash on Terminal.app on Mac OS X 10.4.10 on Mono 1.2.4)
 			savedColor = ConsoleColor.Black  # this is really just a guess and possibly a bad one. should be controllable via a cmd line option or argument
@@ -1023,7 +1011,7 @@ class Compiler
 			optChar = if(platform=='ms', '/', '-')  # option prefix character
 
 			# exe names
-			outName = if(Utils.getSO(_options, 'test', nil), _modules[_modules.count-1].csFileName, _firstFileName to !)
+			outName = if(_options.getDefault('test', nil), _modules[_modules.count-1].csFileName, _firstFileName to !)
 			if outName.endsWith('.cs')
 				outName = outName.substring(0, outName.length-3)  # CC: cannot slice nilable, [:-3]
 			if outName.endsWith('.cobra')
@@ -1033,7 +1021,7 @@ class Compiler
 			# options
 			options = ''
 
-			target = Utils.getSO(_options, 'target', '') to String
+			target = _options.getDefault('target', '') to String
 			if target and target.length
 				if target=='lib'
 					target = 'library'
@@ -1048,11 +1036,11 @@ class Compiler
 				outName += '.exe'
 			_fullExeFileName = outName
 
-			thing = Utils.getSO(_options, 'reference', List<of String>()) to List<of String>  # CC: cleanup
+			thing = _options.getDefault('reference', List<of String>()) to List<of String>
 			for refer in thing
 				options += ' [optChar]r:[refer]'
 
-			debug = Utils.getSO(_options, 'debug', '') to String
+			debug = _options.getDefault('debug', '') to String
 			if debug.length
 				# TODO: mono does not support full and pdbonly afaik
 				assert debug in ['-', '+', 'full', 'pdbonly'], debug
@@ -1111,7 +1099,7 @@ class Compiler
 				if _verbosity >= 1
 					print 'No intermediate files to keep or delete.'
 			else
-				if Utils.getSO(_options, 'keep-intermediate-files', 0)
+				if _options.getDefault('keep-intermediate-files', 0)
 					if _verbosity >= 1
 						print 'Keeping intermediate files.'
 				else
