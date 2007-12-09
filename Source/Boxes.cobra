@@ -15,7 +15,7 @@ class Box
 
 	var _params as List<of IType>  # as in generic parameters
 	var _genericTypeDef as Box?
-	var _constructedTypes as Dictionary<of String, IType>?
+	var _constructedTypes as Dictionary<of String, IType>?  # TODO: should IType be Box?
 
 	var _baseClass as Class?
 	var _baseInterfaceProxies as List<of ITypeProxy>
@@ -78,6 +78,7 @@ class Box
 	get baseInterfaces from var
 
 	get isSystemObjectClass as bool
+# TODO:		return _baseClass is nil and .name == 'Object' and .parentNameSpace and .parentNameSpace.fullName == 'System'
 		return .name == 'Object' and .parentNameSpace and .parentNameSpace.fullName == 'System'
 
 	pro parentNameSpace as NameSpace?
@@ -199,7 +200,7 @@ class Box
 	def symbolForName(name as String, haveThis as bool, checkNameSpace as bool) as IMember?
 		"""
 		Unlike the inherited .declForName, this method follows the
-		inheritance change and provides options for haveThis.
+		inheritance chain and provides options for haveThis.
 		"""
 		if name == _name
 			return this
@@ -362,6 +363,12 @@ class Box
 			_finishOverloads
 			if _testMethod
 				_testMethod.bindInt
+			if _constructedTypes
+				for ct in _constructedTypes.values
+					assert ct is not this
+					if ct inherits Box
+						ct.completeMemberConstructionIfNeeded
+					ct.bindInt
 		finally
 			.compiler.boxStack.pop
 
@@ -465,24 +472,55 @@ class Box
 		body
 			if typeArgs == _params
 				return this
+
+			# TODO: can take this out. it's just a check that the above comparison is working. 2007-12-08
+			equal = true
+			for i = 0 .. typeArgs.count
+				if typeArgs[i] <> .params[i]
+					equal = false
+					break
+			assert not equal
+
+			assert .didBindInh
+			
 			if _constructedTypes is nil
 				_constructedTypes = Dictionary<of String, IType>()
 			key = Utils.join(',', for type in typeArgs get type.name)
 			if _constructedTypes.containsKey(key)
 				return _constructedTypes[key]
-			# TODO: this next if-statement and .bindInt call can be axed if a there is a separate "bind inheritance" phase
-			if not .didBindInt and not .isBindingInt
-				.bindInt  # but this creates a problem with overloads not getting bindInt... see fix in _completeConstruction
 			t = .memberwiseClone to Box
+			assert t is not this
 			_constructedTypes[key] = t
-			t._completeConstruction(this, typeArgs, key)
+			t._name = '[.rootName]<of [key]>'
+			t._genericTypeDef = this
+			t.cloneCollections
+			assert t._constructedTypes is nil or t._constructedTypes.count == 0
+			if .didBindInt
+				t._completeConstruction(typeArgs)
+			else
+				t._needsConstruction(typeArgs)
+			assert t._constructedTypes is nil or t._constructedTypes.count == 0
 			return t
 
-	def _completeConstruction(genericDef as Box, typeArgs as List<of IType>, key as String)
+	var _needs_typeArgs as List<of IType>?
+		"""
+		When non-nil, this box is constructed from a generic *and* requires completion of its construction of members.
+		"""
+
+	def completeMemberConstructionIfNeeded
+		if _needs_typeArgs
+			_completeConstruction(_needs_typeArgs)
+		_needs_typeArgs = nil  # CC: should be indented
+
+	def _needsConstruction(typeArgs as List<of IType>)
 		require
-			genericDef.isGeneric  # TODO: make this stronger: isGenericDef
 			.params.count == typeArgs.count
-			key.length
+		body
+			_needs_typeArgs = typeArgs
+
+	def _completeConstruction(typeArgs as List<of IType>)
+		require
+			.params.count == typeArgs.count
 		body
 			# create a dictionary from the generic params to their effective type
 			gpToType = Dictionary<of GenericParam, IType>()
@@ -491,12 +529,10 @@ class Box
 					gpToType[p] = typeArgs[i]
 				else
 					throw FallThroughException(p)
-			_name = '[.rootName]<of [key]>'
-			_genericTypeDef = genericDef
-			.cloneCollections
 			for i = 0 .. typeArgs.count
 				_params[i] = typeArgs[i]
 			_completeConstructionOfBase(gpToType)
+			assert _baseInterfaceProxies.count == 0 or _baseInterfaceProxies.count == _baseInterfaces.count
 			for i = 0 .. _baseInterfaces.count
 				_baseInterfaces[i] = _baseInterfaces[i].secondaryConstructedTypeFor(this, gpToType) to Interface
 
@@ -562,8 +598,7 @@ class Box
 	def cloneCollections
 		base.cloneCollections
 		_params = List<of IType>(_params)  # TODO: Can I just say _params.clone? Do I need the cast?
-		if _constructedTypes
-			_constructedTypes = Dictionary<of String, IType>(_constructedTypes)  # TODO: seems unlikely that a constructed type would want a copy of it's genericTypeDef's constructed type
+		_constructedTypes = nil
 		_baseInterfaceProxies = List<of ITypeProxy>(_baseInterfaceProxies)
 		_baseInterfaces = List<of Interface>(_baseInterfaces)
 		# _overloads = List<of MemberOverload>(_overloads)  # these will be recreated

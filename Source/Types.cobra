@@ -1285,8 +1285,6 @@ class AbstractTypeIdentifier
 	
 	get realType as IType
 		ensure .actualType
-		if not .didBindInt
-			.bindInt
 		if not .didResolveType
 			_actualType = _resolveType()  # CC: axe parens
 			assert .actualType
@@ -1320,20 +1318,6 @@ class AbstractTypeIdentifier
 		Generics have to do more work, though.
 		"""
 		return container.memberForName(.name)
-
-	def _bindInt is override
-		base._bindInt
-
-	def _bindImp is override
-		base._bindImp
-		# A TypeIdentifier can be given a type that is constructed
-		# during parsing (such as a QualifiedType). Consequently, it may
-		# not have gotten a .bindInt and without one, it will barf at
-		# some point. So:
-		# TODO: this may be axeable when QualifiedType is retired
-		# then again, generic types are constructed as well (but then maybe they can be bound upon construction)
-		# TODO: axe this
-		.realType.bindInt
 
 	def _resolveType as IType # CC: is abstract
 		"""
@@ -1514,8 +1498,7 @@ class GenericTypeIdentifier
 				.throwError('"[_rootName]" is not a generic type.')
 			types = List<of IType>()
 			for tn in _typeNodes
-				tn.bindInt
-				types.add(tn.realType to IType)  # CC: to !
+				types.add(tn.realType)
 			if genericType.genericParams.count <> types.count
 				.throwError('The generic type "[_rootName]" expects [genericType.genericParams.count] type arguments, not [types.count].')
 			t = genericType.constructedTypeFor(types)
