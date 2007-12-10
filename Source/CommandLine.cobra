@@ -292,7 +292,7 @@ class CommandLine
 		r = Options()
 		r['include-tests'] = true
 		r['embed-run-time'] = true
-		r['verbosity'] = 2
+		r['verbosity'] = 2  # TODO: doesn't work
 		r['testify'] = true
 		return r
 
@@ -507,18 +507,7 @@ class CommandLine
 		c.willPrintSuccessMsg = willPrintSuccessMsg
 		c.htmlWriter = _htmlWriter
 		try
-			c.parseFilesNamed(paths)
-			c.bindUse
-			c.bindInh
-			c.bindInt
-			c.bindImp
-			c.writeSharp
-			if writeTestInvocation
-				c.writeSharpTestInvocation
-				c.compileSharp('/main:RunTests')
-			else
-				c.compileSharp
-			c.printMessages
+			c.compileFilesNamed(paths, writeTestInvocation)
 		catch StopCompilation
 			# Each phase of the compiler may throw an exception to stop compilation.
 			# Before doing so, it prints its errors.
@@ -868,7 +857,7 @@ class CommandLine
 		print bar
 		print bar
 		if verbose
-			.printSource(source)
+			Utils.printSource(source)
 			print bar
 		firstLine = source.split(c'\n')[0]
 		firstLineInsensitive = firstLine.trim.replace(' ', '')
@@ -880,18 +869,7 @@ class CommandLine
 			error = firstLine.substring(index+7).trim.toLower
 			try
 				c = Compiler(compilerVerbosity, _cachedTestifyModules)
-				c.options = .testifyOptions
-				c.parseFilesNamed([baseName])
-				if verbose
-					c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
-					print bar
-				c.bindUse
-				c.bindInh
-				c.bindInt
-				c.bindImp
-				if verbose
-					c.dumpModulesForTestify(_resultsWriter, 'Modules after binding')
-					print bar
+				c.testifyFilesNamed([baseName], .testifyOptions, _resultsWriter to !, verbose)
 			catch StopCompilation
 				assert c.errors
 				expectedErrors = error.split(c'&')
@@ -934,17 +912,7 @@ class CommandLine
 			# TODO: the following code both checks for warnings to be thrown as well as going through a list of warnings. Seems like it should just need to do one or the other.
 			try
 				c = Compiler(compilerVerbosity, _cachedTestifyModules)
-				c.options = .testifyOptions
-				c.parseFilesNamed([baseName])
-				if verbose
-					c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
-					print bar
-				c.bindUse
-				c.bindInh
-				c.bindInt
-				c.bindImp
-				if verbose
-					c.dumpModulesForTestify(_resultsWriter, 'Modules after binding')
+				c.testifyFilesNamed([baseName], .testifyOptions, _resultsWriter to !, verbose)
 			catch StopCompilation
 				print 'Expecting warning substring: "[warning]"'
 				print 'But got errors.'
@@ -997,40 +965,9 @@ class CommandLine
 			print 'Filenames:', Utils.join(', ', fileNames)
 
 		c = Compiler(compilerVerbosity, _cachedTestifyModules)
-		c.options = .testifyOptions
 		
 		try
-			c.parseFilesNamed(fileNames)
-			assert c.modules
-			if verbose
-				c.dumpModulesForTestify(_resultsWriter, 'Modules after parsing')
-				print bar
-
-			print 'Bind use:'
-			c.bindUse
-			print 'Bind inheritance:'
-			c.bindInh
-			print 'Bind interface:'
-			c.bindInt
-			print 'Bind implementation:'
-			c.bindImp
-			if verbose
-				c.dumpModulesForTestify(_resultsWriter, 'Modules after binding')
-				print bar
-
-			print 'Generated C#:'
-			c.writeSharp
-			if verbose
-				for module in c.modules
-					if not module.isCobraLibrary
-						.printSource(module.csSource)
-				print bar
-
-			print 'Compile C#:'
-			c.compileSharp
-			if verbose
-				c.printMessages
-				print bar
+			c.testifyFilesNamed(fileNames, .testifyOptions, _resultsWriter to !, verbose)
 		catch StopCompilation
 			.failed
 			return 0
@@ -1093,13 +1030,6 @@ class CommandLine
 			return .testifyFile(baseName)
 		finally
 			Directory.setCurrentDirectory(saveDir)
-
-	def printSource(src as String)
-		lineNum = 1
-		for line in src.split(c'\n')
-			line = line.replace("\t", "    ")
-			print '[lineNum]|[line]'  # CC: right align and pad 0 the lineNum
-			lineNum += 1
 
 
 class HtmlWriter

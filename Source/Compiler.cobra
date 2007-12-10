@@ -181,7 +181,65 @@ class Compiler
 		"""
 		return Path.getDirectoryName(Assembly.getEntryAssembly.location) to !  # actually could be nil: if you stuck Cobra in the root dir, the .getDirectoryName docs say it will return nil
 
-	def parseFilesNamed(filenames as List<of String>) as List<of Module>
+	def compileFilesNamed(paths as IList<of String>)
+		.compileFilesNamed(paths)
+
+	def compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool)
+		.parseFilesNamed(paths)
+		.bindUse
+		.bindInh
+		.bindInt
+		.bindImp
+		.writeSharp
+		if writeTestInvocation
+			.writeSharpTestInvocation
+			.compileSharp('/main:RunTests')
+		else
+			.compileSharp
+		.printMessages
+
+	def testifyFilesNamed(fileNames as IList<of String>, options as Options, resultsWriter as IndentedWriter, verbose as bool)
+		"""
+		Compiles the given fileNames in support of "testify".
+		Sets .options to the options arg.
+		Will raise StopCompilation when an error occurs.
+		"""
+		.options = options
+		bar = '----------------------------------------------------------------------------------------------------'
+		.parseFilesNamed(fileNames)
+		assert .modules
+		if verbose
+			.dumpModulesForTestify(resultsWriter, 'Modules after parsing')
+			print bar
+
+		if verbose
+			print 'Bind use:'
+		.bindUse
+		if verbose
+			print 'Bind inheritance:'
+		.bindInh
+		if verbose
+			print 'Bind interface:'
+		.bindInt
+		if verbose
+			print 'Bind implementation:'
+		.bindImp
+		if verbose
+			.dumpModulesForTestify(resultsWriter, 'Modules after binding')
+			print bar
+			print 'Generated C#:'
+		.writeSharp
+		if verbose
+			for module in .modules
+				if not module.isCobraLibrary
+					Utils.printSource(module.csSource)
+			print bar
+			print 'Compile C#:'
+		.compileSharp
+		.printMessages
+		print bar
+
+	def parseFilesNamed(filenames as IList<of String>) as List<of Module>
 		"""
 		Returns the modules for the newly parsed files.
 		Also, extends _modules with those modules.
