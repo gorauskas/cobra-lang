@@ -28,6 +28,7 @@ class Box
 
 	var _clrType as Type?
 	var _needScanClrType as bool
+	var _membersToUnNil as String?
 
 	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseInterfaceNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, isNames, docString)
@@ -77,8 +78,12 @@ class Box
 
 	get baseInterfaces from var
 
+	get clrType from var
+
 	get isSystemObjectClass as bool
 		return _baseClass is nil and .name == 'Object' and .parentNameSpace and .parentNameSpace.fullName == 'System'
+
+	pro membersToUnNil from var
 
 	pro parentNameSpace as NameSpace?
 		get
@@ -162,13 +167,13 @@ class Box
 		return n
 
 	def memberForName(name as String) as IMember?
-		if .compiler and .compiler.isBindingImp
-			# this is for DLL types which get bindInh & bindInt only on demand. (otherwise reading system DLLs slows things down)
-			.bindInh
-			.bindInt
-		else if _needScanClrType
-			_scanClrType  # also needed for DLL types. execution gets here due to Compiler.fixNonNilableMemberSigs
-		return base.memberForName(name)
+		require
+			# TODO: not .compiler.isParsing
+			not .compiler.isBindingInh
+		body
+			if _clrType
+				_prepLibraryBox
+			return base.memberForName(name)
 
 	def registerOverload(ol as MemberOverload)
 		require
@@ -253,10 +258,8 @@ class Box
 		return name
 
 	get innerType as IType? is override
-		if .compiler and .compiler.isBindingImp
-			# this is for DLL types which get bindInh & bindInt only on demand. (otherwise reading system DLLs slows things down)
-			.bindInh
-			.bindInt
+		if _clrType
+			_prepLibraryBox
 		if this is .compiler.libraryType('System.String')  # TODO: hacky
 			return .compiler.charType
 		getEnum = .symbolForName('getEnumerator', true)
@@ -334,7 +337,9 @@ class Box
 
 	def bindInt as INode
 		# because DLL boxes get bindInh and bindInt on demand, check this:
-		if not _didBindInh
+		if _clrType
+			_prepLibraryBox
+		else if not _didBindInh
 			.bindInh
 		return base.bindInt
 
@@ -350,7 +355,7 @@ class Box
 			for param in _params
 				param.bindInt
 			for decl in _declsInOrder
-				assert not decl is this, this
+				assert not decl is this
 				try
 					decl.bindInt
 				catch ne as NodeException
@@ -415,6 +420,33 @@ class Box
 				_testMethod.bindImp
 		finally
 			.compiler.boxStack.pop
+
+	var _didPrep as bool
+	
+	def _prepLibraryBox
+		"""
+		DLL types get bindInh & bindInt only on demand. (Otherwise reading system DLLs slows things down.)
+		"""
+		require .clrType
+		if _didPrep
+			return
+		_didPrep = true
+		if not _didBindInh
+			.bindInh
+		if not .didBindInt
+			.unNilReturnTypes(this)
+			.bindInt
+
+	def unNilReturnTypes(box as Box)
+		if box.membersToUnNil
+			for name in box.membersToUnNil.split
+				m = .declForName(name)  # using .memberForName here is unnecessary and could/would cause an infinite loop
+				if m
+					m.unNilReturnType
+		# follow inheritance
+		if box.baseClass
+			.unNilReturnTypes(box.baseClass to !)
+
 
 	## Generics
 

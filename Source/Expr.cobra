@@ -1,3 +1,8 @@
+"""
+Rules:
+	* Do not invoke .bindFoo on any type that an expression discovers during its own .bindImp.
+"""
+
 interface IExpr
 	"""
 	This is just used for categorization for now.
@@ -17,7 +22,7 @@ class Expr
 		_type in a static situation such as `ChessPiece.Color` (where
 		Color is an enum). The type of that expression, if assigned to a
 		local var, is Type. But if accessed with a further dot
-		(`ChessPiece.Color.Black`), then the type is the Color
+		`ChessPiece.Color.Black`, then the type is the Color
 		enumeration itself--the receiverType.
 
 		For a runtime access (ex: `user.name`) the two types are
@@ -1354,7 +1359,7 @@ class MemberExpr
 				else
 					sugg = ''
 				left = .binarySuperNode.left
-				isBoxAccess = left inherits IdentifierExpr and (left to IdentifierExpr).definition inherits Box  # like "Console.writeLn" where the receiver is a literal class or struct reference
+				isBoxAccess = left inherits IdentifierExpr and (left to IdentifierExpr).definition inherits Box  # like "Console.writeLine" where the receiver is a literal class or struct reference
 				whoseTypeIs = if(isBoxAccess, '', ' whose type is "[left.receiverType.name]"')
 				.throwError('Cannot find a definition for "[_name]" in "[left.toCobraSource]"[whoseTypeIs]. [sugg]')
 			assert _definition
@@ -1366,14 +1371,12 @@ class MemberExpr
 				receiverType = nil
 			assert effectiveType
 			_type = effectiveType
-			_type.bindInt()
 			# TODO: there should be a subclass of BinaryOpExpr called DotExpr and it should do the following work and maybe even the work above.
 			# TODO: _receiverType = receiverType
 			.binarySuperNode.definition = _definition  # TODO: is this needed?
 			.binarySuperNode.type = .type  # the type of foo.bar is what bar returns. A MemberExpr is the "bar" part.
 			.binarySuperNode.setReceiverType(receiverType)
 		assert _type
-		_type.bindInt()
 
 	def toCobraSource as String is override
 		return _name
@@ -2369,7 +2372,6 @@ class SequenceLit
 				if type.getType.name=='CobraType'
 					type = .compiler.libraryType('System', 'Object')
 			_type = _makeTypeWith(type)
-			_type.bindInt
 
 	def _makeTypeWith(type as IType) as IType  # CC: make abstract
 		return nil to passthrough
