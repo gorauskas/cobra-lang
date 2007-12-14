@@ -29,6 +29,10 @@ class Box
 	var _clrType as Type?
 	var _needScanClrType as bool
 	var _membersToUnNil as String?
+	var _defaultMemberName as String?
+		"""
+		An Indexer in CLR is known by being a property with arguments whose name matches the .memberName of a box-level DefaultMemberAttribute.
+		"""
 
 	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseInterfaceNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, isNames, docString)
@@ -667,6 +671,10 @@ class Box
 		# TODO
 		assert _isNames
 		_isNames.add('fake')  # to make the box like the ones that were in SystemInterfaces.cobra
+		for attr in _clrType.getCustomAttributes(true)
+			if attr inherits DefaultMemberAttribute
+				_defaultMemberName = attr.memberName
+				break
 
 	def _scanGenericArgs
 		if _clrType.isGenericType
@@ -732,7 +740,7 @@ class Box
 		for propInfo in _clrType.getProperties(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
 			if propInfo.declaringType is not _clrType
 				continue
-			if propInfo.name == 'Item'
+			if propInfo.name == _defaultMemberName and propInfo.getIndexParameters and propInfo.getIndexParameters.length
 				_scanIndexer(propInfo)
 				continue
 			if _badRelatedType(propInfo.propertyType)
