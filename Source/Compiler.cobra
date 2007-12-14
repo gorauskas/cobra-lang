@@ -451,6 +451,7 @@ class Compiler
 			# TODO: file a Mono bug report (or ping an existing one)
 			# curDomain = AppDomain.currentDomain
 			# $sharp('curDomain.ReflectionOnlyAssemblyResolve += _resolveEvent')
+			
 			i = 0
 			references = .options['reference'] to List<of String>
 			for reference in references
@@ -462,11 +463,19 @@ class Compiler
 					# TODO: handle all the exceptions from Assembly.loadFrom
 				else
 					if File.exists(reference)
+						# try current directory
 						referredAss = Assembly.loadFrom(reference)
 					else
+						# try Cobra's directory
 						path = Path.combine(Path.getDirectoryName(CobraCore.exePath), reference)
-						referredAss = Assembly.loadFrom(path)
-						references[i] = path
+						if File.exists(reference)
+							referredAss = Assembly.loadFrom(path)
+							references[i] = path
+						else
+							# try system wide (GAC)
+							if reference.endsWith('.dll')
+								reference = reference[:-4]
+							referredAss = Assembly.loadWithPartialName(reference)  # TODO: Holy crap! loadWithPartialName is marked obsolete, but I know of no other way to support a library reference like "compiler /r:System.Data.dll myprog.ext" as C#, Cobra, etc. do. If they remove this method, we're screwed!
 					# TODO: handle all the exceptions from Assembly.loadFrom
 				if referredAss
 					.readAssembly(referredAss, reference <> 'Cobra.Lang.dll')
@@ -485,11 +494,13 @@ class Compiler
 		Reads the contents of an assembly (.DLL) so that they are accessible to the program.
 		In other words, this method reads libraries.
 		"""
-		if .verbosity
+		verbosity = .verbosity
+		if verbosity
 			print 'Reading assembly: ', ass  # extra space lines up with 'Loading reference:'
 		namespaceQualNameToNameSpaceObject = Dictionary<of String, NameSpace>()
 		module = AssemblyModule(ass, .globalNS)
 		_modules.add(module)
+		skipCobra = false
 		for type in ass.getExportedTypes
 			if skipCobra and type.namespace and (type.namespace == 'Cobra' or type.namespace.startsWith('Cobra.'))
 				# this is a huge hack to get around the repetition of the Cobra run-time support which gets embedded in both programs and libraries
@@ -529,6 +540,8 @@ class Compiler
 						curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(Token.empty, name)
 						assert not curNameSpace.isUnified
 					namespaceQualNameToNameSpaceObject[namespaceName] = curNameSpace
+			if verbosity >= 3
+				print '  Reading type [type.name] in namespace "[namespaceName]"'
 			if type.isClass
 				curNameSpace.addDecl(Class(type))
 			else if type.isInterface

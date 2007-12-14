@@ -251,8 +251,7 @@ class CommandLine
 					print 'running on Mono'
 				print 'current directory: [Environment.currentDirectory]'
 				print 'option dictionary:'
-				for key in options.keys
-					print '    [key]: [CobraCore.toTechString(options[key])]'
+				options.print
 				print 'paths:'
 				for path in paths
 					print '    [path]'
@@ -292,11 +291,14 @@ class CommandLine
 		r = Options()
 		r['include-tests'] = true
 		r['embed-run-time'] = true
-		r['verbosity'] = 2  # TODO: doesn't work
+		r['verbosity'] = 2
 		r['testify'] = true
 		return r
 
-	def parseArgs(args as List<of String>)
+	def parseArgs(args as String)
+		.parseArgs(args.split)
+
+	def parseArgs(args as IList<of String>)
 		"""
 		Parse command line arguments.
 		The `args` should include only the arguments and not the executable/program name.
@@ -861,6 +863,18 @@ class CommandLine
 			print bar
 		firstLine = source.split(c'\n')[0]
 		firstLineInsensitive = firstLine.trim.replace(' ', '')
+
+		if firstLineInsensitive.startsWith('#.args.')
+			.parseArgs(firstLineInsensitive['#.args.'.length:])
+			args = _options
+			options = .testifyOptions
+			options.combine(args)
+			# enable having another directive on the next line, such as .error.
+			firstLine = source.split(c'\n')[1]
+			firstLineInsensitive = firstLine.trim.replace(' ', '')
+		else
+			options = .testifyOptions
+
 		if firstLineInsensitive.startsWith('#.error.')
 			# note that errors that are only detected by the backend C# compiler are not detectable by testify
 			# CC: support split with a String extension method
@@ -869,7 +883,7 @@ class CommandLine
 			error = firstLine.substring(index+7).trim.toLower
 			try
 				c = Compiler(compilerVerbosity, _cachedTestifyModules)
-				c.testifyFilesNamed([baseName], .testifyOptions, _resultsWriter to !, verbose)
+				c.testifyFilesNamed([baseName], options, _resultsWriter to !, verbose)
 			catch StopCompilation
 				assert c.errors
 				expectedErrors = error.split(c'&')
@@ -912,7 +926,7 @@ class CommandLine
 			# TODO: the following code both checks for warnings to be thrown as well as going through a list of warnings. Seems like it should just need to do one or the other.
 			try
 				c = Compiler(compilerVerbosity, _cachedTestifyModules)
-				c.testifyFilesNamed([baseName], .testifyOptions, _resultsWriter to !, verbose)
+				c.testifyFilesNamed([baseName], options, _resultsWriter to !, verbose)
 			catch StopCompilation
 				print 'Expecting warning substring: "[warning]"'
 				print 'But got errors.'
@@ -967,7 +981,7 @@ class CommandLine
 		c = Compiler(compilerVerbosity, _cachedTestifyModules)
 		
 		try
-			c.testifyFilesNamed(fileNames, .testifyOptions, _resultsWriter to !, verbose)
+			c.testifyFilesNamed(fileNames, options, _resultsWriter to !, verbose)
 		catch StopCompilation
 			.failed
 			return 0
@@ -1082,3 +1096,12 @@ class Options
 			return default
 	
 	# CC: def getDefault<of T>(key as String, value as T) as T ...
+
+	def combine(options as Options)
+		if options is not this
+			for key in options.keys
+				this[key] = options[key]
+
+	def print
+		for key in .keys
+			print '    [key]: [CobraCore.toTechString(this[key])]'
