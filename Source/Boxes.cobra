@@ -55,13 +55,14 @@ class Box
 		Subclasses should invoke base and then invoke the various _scanFoo methods that are appropriate for them.
 		"""
 		_needScanClrType = false
-		# print '[.name] in [_parentNameSpace.fullName]'
+		# print '<> _scanClrType for [.name] in [_parentNameSpace.fullName], class is [.getType.name]'
 
 	def addMinFields
 		base.addMinFields
 		.addField('didBindInh', .didBindInh)
 		.addField('isGeneric', .isGeneric)
 		.addField('isGenericDef', .isGenericDef)
+		.addField('needsConstruction', .needsConstruction)
 
 	def addRefFields
 		base.addRefFields
@@ -72,10 +73,8 @@ class Box
 	def addSubFields
 		base.addSubFields
 		.addField('params', _params)
-		if _baseInterfaces.count
-			.addField('baseInterfaces', _baseInterfaces)
-		else
-			.addField('baseInterfaceNodes', _baseInterfaceProxies)
+		.addField('baseInterfaces', _baseInterfaces)
+		.addField('baseInterfaceProxies', _baseInterfaceProxies)
 		.addField('clrType', _clrType)
 
 	get baseClass from var
@@ -372,6 +371,7 @@ class Box
 					assert ct is not this
 					ct.completeMemberConstructionIfNeeded
 					ct.bindInt
+			.completeMemberConstructionIfNeeded
 		finally
 			.compiler.boxStack.pop
 
@@ -381,7 +381,10 @@ class Box
 
 	def _bindInterfaces
 		# structs, classes and interfaces can all have 0 or more interfaces they inherit/implement
-		assert _baseInterfaceProxies, this
+		assert _baseInterfaceProxies
+		if _baseInterfaceProxies.count == _baseInterfaces.count
+			return  # already done
+		assert _baseInterfaces.count == 0
 		for interfaceProxy in _baseInterfaceProxies
 			try
 				baseWhat = interfaceProxy.realType
@@ -437,11 +440,20 @@ class Box
 		_didPrep = true
 		if not _didBindInh
 			.bindInh
-		if not .didBindInt
+		if not _didUnNilReturnTypes
 			.unNilReturnTypes(this)
+		if not .didBindInt
 			.bindInt
 
+	var _didUnNilReturnTypes as bool
+
 	def unNilReturnTypes(box as Box)
+		if _didUnNilReturnTypes
+			return
+		_didUnNilReturnTypes = true
+		_unNilReturnTypes(box)
+		
+	def _unNilReturnTypes(box as Box)
 		if box.membersToUnNil
 			for name in box.membersToUnNil.split
 				m = .declForName(name)  # using .memberForName here is unnecessary and could/would cause an infinite loop
@@ -449,7 +461,7 @@ class Box
 					m.unNilReturnType
 		# follow inheritance
 		if box.baseClass
-			.unNilReturnTypes(box.baseClass to !)
+			_unNilReturnTypes(box.baseClass to !)
 
 
 	## Generics
@@ -477,7 +489,9 @@ class Box
 
 	get isGenericDef as bool is override
 		# TODO: make this more efficient, maybe by computing in the constructor
-		if _params.count
+		if _genericTypeDef
+			return false
+		else if _params.count
 			for param in _params
 				if not param inherits GenericParam
 					return false
@@ -486,7 +500,7 @@ class Box
 			return false
 
 	get isGeneric as bool is override
-		return _params.count>0
+		return _params.count > 0
 
 	get genericParams as List<of IType> is override
 		or require .isGeneric
@@ -513,7 +527,10 @@ class Box
 					break
 			assert not equal
 
-			assert .didBindInh
+			if not .didBindInh
+				.bindInh
+				if _clrType
+					_prepLibraryBox
 
 			# the cache of constructed types has to come from the root generic type def or you end up with duplicate
 			# constructed types which is not only wasteful, but causes problems with inheritance tests
@@ -547,8 +564,13 @@ class Box
 
 	def completeMemberConstructionIfNeeded
 		if _needs_typeArgs
-			_completeConstruction(_needs_typeArgs)
-		_needs_typeArgs = nil  # CC: should be indented
+			assert not .isGenericDef
+			args = _needs_typeArgs
+			$sharp('_needs_typeArgs = null')
+			_completeConstruction(args)
+
+	get needsConstruction as bool
+		return _needs_typeArgs is not nil
 
 	def _needsConstruction(typeArgs as List<of IType>)
 		require
@@ -559,6 +581,7 @@ class Box
 	def _completeConstruction(typeArgs as List<of IType>)
 		require
 			.params.count == typeArgs.count
+			not .isGenericDef
 		body
 			.bindInt  # this is required when inheriting from a constructed type such as "class Foo inherits List<of int>" since "bind inheritance" happens prior to "bind interface"
 			# create a dictionary from the generic params to their effective type
@@ -809,10 +832,11 @@ class Box
 				continue
 			# TODO: handle generic methods
 			if methInfo.isGenericMethod or methInfo.isGenericMethodDefinition
-				# print 'xxx generic, methInfo, [methInfo.isGenericMethod], [methInfo.isGenericMethodDefinition], [methInfo]'
+				# print 'xxx generic methInfo, [methInfo.isGenericMethod], [methInfo.isGenericMethodDefinition], [methInfo]'
 				continue
 			if '.' in methInfo.name
 				# TODO: these are mostly (maybe all) explicit implementations of interfaces
+				# print 'xxx dotted name: [methInfo]'
 				continue
 			name = Utils.uncapped(methInfo.name)
 			if name == 'init'
@@ -840,7 +864,7 @@ class Box
 				overload.addMember(method)
 			else
 				.addDecl(method)
-	
+
 	def _scanParams(paramInfos as ParameterInfo[]?) as List<of Param>
 		"""
 		Returns a list of Cobra parameters given a list of CLR Reflection ParameterInfos.
@@ -880,7 +904,7 @@ class Box
 		"""
 		if t is nil
 			return false
-		if t.isNested
+		if t.isNested and not t.isGenericParameter
 			return true
 		if t.isNotPublic
 			return true
@@ -917,7 +941,8 @@ class Box
 					notNull = true
 					break
 			# CC: could the above be a one-liner?
-			# notNull = for attr in member.getCustomAttributes(true) where attr.getType.name == 'NotNull' get one true;
+			# notNull = for attr in member.getCustomAttributes(true) where attr.getType.name == 'NotNull' get one true
+			# notNull = any true for attr in member.getCustomAttributes(true) where attr.getType.name == 'NotNull'
 			t = ClrTypeProxy(clrType) to ITypeProxy
 			return if(notNull, t, NilableTypeProxy(t))
 
@@ -1354,6 +1379,8 @@ class GenericParam
 	get name as String is override
 		return _name
 
+	get clrType from var
+
 	get constraints from var
 
 	pro index from var
@@ -1397,8 +1424,13 @@ class GenericParam
 		return false
 
 	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType is override
-		assert gpToType.containsKey(this)
-		return gpToType[this]
+		if gpToType.containsKey(this)
+			return gpToType[this]
+		else
+			for key in gpToType.keys
+				if key.name == .name
+					return gpToType[key]
+		throw FallThroughException(this)
 
 	def _bindInt
 		base._bindInt

@@ -222,10 +222,11 @@ class Compiler
 			print 'Bind interface:'
 		.bindInt
 		if verbose
+			.dumpModulesForTestify(resultsWriter, 'Modules after binding interface')
 			print 'Bind implementation:'
 		.bindImp
 		if verbose
-			.dumpModulesForTestify(resultsWriter, 'Modules after binding')
+			.dumpModulesForTestify(resultsWriter, 'Modules after binding implementation')
 			print bar
 			print 'Generated C#:'
 		.writeSharp
@@ -524,9 +525,6 @@ class Compiler
 				# TODO: nested types
 				# print '### skipping [type.name] in [type.namespace]. isNested=[type.isNested], declaringType=[type.declaringType]'
 				continue
-			if '`' in type.name
-				# not reading generics yet
-				continue
 			if type.namespace is nil or type.namespace == ''
 				# happens for classes etc. that are not declared in a namespace
 				curNameSpace = module.topNameSpace
@@ -557,6 +555,8 @@ class Compiler
 				throw FallThroughException(type)
 
 	def fixNonNilableMemberSigs
+		# TODO: this really needs to go in a separate file that the compiler reads each time
+
 		# TODO: look to see if what the Spec# team put together can be leveraged instead of recreating all this work!
 		# fix up member sigs regarding nilable
 		# hard coded below. TODO: read from a Cobra config file
@@ -568,6 +568,12 @@ class Compiler
 			# namespace can return nil if the Type is a generic parameter
 		_fix('System.Environment', 'commandLine currentDirectory newLine version')
 		_fix('System.Exception', 'message')
+		_fix('System.Collections.Generic.IEnumerable<of>', r'getEnumerator')
+		_fix('System.Collections.Generic.IList<of>', r'[] getRange')
+		_fix('System.Collections.Generic.List<of>', r'[] getRange')
+		_fix('System.Collections.Generic.IDictionary<of,>', r'[]')
+		_fix('System.Collections.Generic.Dictionary<of,>', r'[]')
+		_fix('System.Collections.Generic.KeyValuePair<of,>', r'key value')
 		_fix('System.IO.File', 'readAllText')
 		_fix('System.IO.TextWriter', 'newLine')
 		_fix('System.IO.Path', 'combine getFullPath')
@@ -588,11 +594,16 @@ class Compiler
 		_fix('System.IO.StringWriter', 'toString')
 
 	def _fix(className as String, memberNames as String)
-		type = .libraryType(className)
+		try
+			type = .libraryType(className) to ?
+		catch AssertException
+			type = nil
+		if type is nil
+			print 'WARNING: Cannot find [className].'  # TODO: make a real warning
 		if type inherits Box
 			type.membersToUnNil = memberNames
 		else
-			print 'WARNING: Cannot fix [className].'  # TODO: make a real warning
+			print 'WARNING: Cannot fix [className] which is not a class/struct/interface. (type=[type])'  # TODO: make a real warning
 
 	##
 	## Binding
@@ -621,11 +632,6 @@ class Compiler
 			if _errors.count
 				_exitFromErrors
 
-#	var _incompletes = List<of Box>()
-#	
-#	def addIncompleteGenerics(box as Box)
-#		_incompletes.add(box)
-
 	def bindInh
 		require
 			not .isBindingUse
@@ -642,12 +648,6 @@ class Compiler
 							_curModule.bindInh
 						catch ce as SourceException
 							.recordError(ce)
-#					if false # delme
-#						while _incompletes.count
-#							incompletes = _incompletes
-#							_incompletes = List<of Box>()
-#							for box in incompletes
-#								box.completeMemberConstructionIfNeeded
 				finally
 					Node.setCompiler(nil)
 			finally

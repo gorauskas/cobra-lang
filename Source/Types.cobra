@@ -331,10 +331,10 @@ class ClrTypeProxy
 		# return namespace member
 		member = curNS.declForName(typeName)
 		if member inherits IType
-			if false and clrType.isGenericType and not clrType.isGenericTypeDefinition # TODO: finish this
-				# so we have something like ICollection<of KeyValuePair<of TKey,TValue>> which is all CLR types
-				# we need the Cobra types of those args so we can construct the Cobra type from the generic cobra type
-				# otherwise, we would just end up returning the generic definition 
+			if clrType.isGenericType and not clrType.isGenericTypeDefinition
+				# So we have something like ICollection<of KeyValuePair<of TKey,TValue>> which is all CLR types.
+				# We need the Cobra types of those args so we can construct the Cobra type from the generic cobra type
+				# otherwise, we would just end up returning the generic definition.
 				args = List<of IType>()
 				for genArg in clrType.getGenericArguments
 					args.add(_realType(genArg))
@@ -394,7 +394,7 @@ interface IType
 		Returns true if this type can be compared to the given type via `is`, `is not`, `==` and `<>`.
 		"""
 
-	get genericTypeDef as IType?
+	get genericTypeDef as IType?  # TODO: should return Box since only a box can be a generic type def
 		"""
 		Returns the generic type definition for a constructed type (or nil if this type is not constructed).
 		"""
@@ -1113,7 +1113,7 @@ class WrappedType
 			_hashCode = _wrappedType.getHashCode   # TODO: should be combined with something else so no collision with the actual wrapped type.
 		return _hashCode to !
 
-	# CC: this should work, but C# don't dig it.
+	# CC: this should work, but C# don't dig it. maybe for that reason we can't do it even when generating IL since we want C# to feel comfortable with Cobra based libraries
 	#get wrappedType from _wrappedType
 
 	get theWrappedType as IType
@@ -1124,6 +1124,11 @@ class WrappedType
 
 	get csInit as String is override
 		return _wrappedType.csInit
+
+	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType is override
+		assert _wrappedType
+		thisType = .getType
+		return thisType(_wrappedType.secondaryConstructedTypeFor(box, gpToType))
 
 
 class ArrayType
@@ -1504,7 +1509,6 @@ class GenericTypeIdentifier
 			t = genericType.constructedTypeFor(types)
 			assert t
 			assert t.isGeneric
-			# TODO: is this a good idea or not? t.bindInt
 			# assert not t.isGenericDef  Wrong! If some of the parameters are generic, then the constructed type could have generic params...
 			# ... hmmm, but am I using the wrong terms? Maybe the returned type is an open or closed constructed type and never a generic def. TODO: resolve this.
 			return t
