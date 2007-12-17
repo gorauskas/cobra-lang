@@ -38,6 +38,12 @@ class CommandLine
 			'type': 'main',
 		},
 		{
+			'name': 'build-standard-library',
+			'description': 'Builds the standard library.',
+			'type': 'main',
+			'developer-only': true,
+		},
+		{
 			'name': 'compile',
 			'synonyms': ['c'],
 			'description': 'Compile the library (to DLL) or the program (to EXE) without running the code.',
@@ -138,7 +144,7 @@ class CommandLine
 			'name': 'testify',
 			'description': '...',
 			'type': 'main',
-			'hidden': true,
+			'developer-only': true,
 		},
 		{
 			'name': 'timeit',
@@ -269,6 +275,8 @@ class CommandLine
 				.doVersion
 			else if options.boolValue('about')
 				.doAbout
+			else if options.boolValue('build-standard-library')
+				.doBuildStandardLibrary
 			else if not paths.count
 				.doHelp
 			else
@@ -725,6 +733,26 @@ class CommandLine
 		Environment.exit(code)
 
 
+	## Build Standard Library
+	
+	def doBuildStandardLibrary
+		v = .verbosity
+		if v
+			print 'Building standard library'
+		dllInfo = FileInfo('Cobra.Lang.dll')
+		if dllInfo.exists
+			if v
+				print 'Renaming Cobra.Lang.dll to Cobra.Lang-previous.dll'
+			prevInfo = FileInfo('Cobra.Lang-previous.dll')
+			if prevInfo.exists
+				prevInfo.delete
+			FileInfo('Cobra.Lang.dll').moveTo('Cobra.Lang-previous.dll')
+		_options['target'] = 'lib'
+		_options['include-tests'] = false  # TODO: including tests in a DLL tends to cause problems. it might be because tests are triggered by type initializers. this needs investigation
+		_options['embed-run-time'] = true  # because the runtime is what we're building!
+		.doCompile(List<of String>(), true, false)
+
+
 	## Testify
 
 	var _testifyCount as int
@@ -1105,3 +1133,6 @@ class Options
 	def print
 		for key in .keys
 			print '    [key]: [CobraCore.toTechString(this[key])]'
+
+	get buildStandardLibrary as bool
+		return .boolValue('build-standard-library')

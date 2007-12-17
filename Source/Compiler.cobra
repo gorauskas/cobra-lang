@@ -246,13 +246,13 @@ class Compiler
 		Also, extends _modules with those modules.
 		"""
 		require
-			filenames.count
+			filenames.count or .options.buildStandardLibrary
 		ensure
 			true
 		body
-			_firstFileName = filenames[0]
+			_firstFileName = if(.options.buildStandardLibrary, 'Cobra.Lang.dll', filenames[0])
 
-			embedRunTime = .options.containsKey('embed-run-time') and .options['embed-run-time'] to bool
+			embedRunTime = .options.boolValue('embed-run-time')
 			
 			if not embedRunTime
 				# then reference it
@@ -273,12 +273,12 @@ class Compiler
 			if true # _modules.count == 0
 				path = Path.combine(.cobraExeDir, 'CobraInfo.cs')
 				assert File.exists(path), path
-				filenames.insert(1, path)
+				filenames.insert(0, path)
 
 				if embedRunTime
 					path = Path.combine(.cobraExeDir, 'SystemInterfaces.cobra')
 					assert File.exists(path), path
-					filenames.insert(0, path)
+					filenames.insert(1, path)
 
 					path = Path.combine(.cobraExeDir, 'CobraLang.cobra')
 					assert File.exists(path), path
@@ -1061,7 +1061,7 @@ class Compiler
 			optChar = if(platform=='ms', '/', '-')  # option prefix character
 
 			# exe names
-			outName = if(_options.getDefault('test', nil), _modules[_modules.count-1].csFileName, _firstFileName to !)
+			outName = if(_options.boolValue('test'), _modules[_modules.count-1].csFileName, _firstFileName to !)
 			if outName.endsWith('.cs')
 				outName = outName.substring(0, outName.length-3)  # CC: cannot slice nilable, [:-3]
 			if outName.endsWith('.cobra')
@@ -1078,9 +1078,9 @@ class Compiler
 				options += ' [optChar]target:[target]'
 				# TODO: what is the output for a module?
 				branch target
-					on 'exe', 'winexe': outName += '.exe'
-					on 'library': outName += '.dll'
-					on 'module': outName += '.netmodule'  # http://msdn2.microsoft.com/en-us/library/58scf68s(VS.80).aspx
+					on 'exe', 'winexe': outName = Utils.forceExtension(outName, '.exe')
+					on 'library': outName = Utils.forceExtension(outName, '.dll')
+					on 'module': outName = Utils.forceExtension(outName, '.netmodule')  # http://msdn2.microsoft.com/en-us/library/58scf68s(VS.80).aspx
 					else: throw FallThroughException(target)
 			else
 				outName += '.exe'
