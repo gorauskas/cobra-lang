@@ -758,7 +758,6 @@ class DotExpr
 				if _left.definition inherits Box # CC: combine with above if statement
 					if not _dotRightExpr.member.isShared
 						.throwError('Cannot invoke instance member "[_dotRightExpr.name]" on type "[_left.name]".')
-#					_left.receiverType = _left.definition to IType
 
 	get potentialType as IType?
 		# overridden to return the type this dotted expr represents in those cases when it does represent a type
@@ -905,19 +904,35 @@ class AbstractToExpr
 class ToExpr
 	inherits AbstractToExpr
 
+	var _rightTypeExpr as IPotentialTypeExpr
+
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
+		assert right inherits IPotentialTypeExpr
+		_rightTypeExpr = right to IPotentialTypeExpr
 
 	def _bindImp
 		base._bindImp
 		if _left inherits NilLiteral and not (_type inherits NilableType or _type inherits PassThroughType)
 			.throwError('Cannot cast nil to a non-nil type.')
+		rightType = _rightTypeExpr.potentialType
+		if rightType
+			if _left.type inherits NilableType and not rightType inherits NilableType
+				if (_left.type to NilableType).theWrappedType is rightType
+					.compiler.warning(this, 'The given expression is already a "[_rightTypeExpr.toCobraSource]", but nilable. You can just use "to !".')
+			else if not _left.type inherits NilableType and rightType inherits NilableType
+				if (rightType to NilableType).theWrappedType == _left.type
+					.compiler.warning(this, 'The given expression is already a "[_left.type.name]", but not nilable. You can just use "to ?".')
+			else if _left.type == rightType
+				.compiler.warning(this, 'The given expression is already a "[_rightTypeExpr.toCobraSource]" so the typecast is redundant. You can remove it.')
+		else
+			.throwError('Cannot locate a type for the type cast "to [_rightTypeExpr.toCobraSource]".')
 
 	def _writeSharpDef(sw as SharpWriter) is override
-		if _right inherits TypeExpr
-			if _right.containedType is .compiler.passThroughType
-				_left.writeSharpDef(sw)
-				return
+		rightType = _rightTypeExpr.potentialType to !   # not nil or _bindImp would have thrown an error
+		if rightType is .compiler.passThroughType
+			_left.writeSharpDef(sw)
+			return
 		sw.write('(')
 		_right.writeSharpDef(sw, false)  # double parens would be pointless and also causes a C# error
 		sw.write(')')
@@ -929,11 +944,13 @@ class ToQExpr
 
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
+		# TODO: use IPotentialTypeExpr like ToExpr does
 
 	def _bindImp
 		base._bindImp
 		if not _type inherits NilableType
 			_type = NilableType(_type).bindAll to NilableType  # CC: axe cast when 'as this' is supported
+		# TODO: warn about redundancy
 
 	def _writeSharpDef(sw as SharpWriter) is override
 		# x to? int     --> ((x is int || x is int?) ? (int?)x : (int?)null)
