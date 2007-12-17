@@ -45,14 +45,21 @@ class Expr
 
 	pro type from var
 
-	get receiverType as IType?  # TODO: consider renaming to typeForReceiver.
-		return _receiverType ? _type
+	pro receiverType as IType?  # TODO: consider renaming to typeForReceiver
+		"""
+		This property returns the .type if there was no receiver type explicitly set because the type of an expression is its receiver type by default.
+		"""
+		get
+			return _receiverType ? _type
+		set
+			_receiverType = value
 
 	pro contextType from var
 		"""
 		The type expected where this expression is being used.
 		Normally this is the same type as the expression, but it can be different, for example when
-		assigning a dynamic-typed expression to a static-typed variable.
+		assigning a dynamic-typed expression to a static-typed variable, the type of the variable
+		becomes the context type.
 		"""
 
 	def canBeAssignedTo(type as IType) as bool
@@ -127,7 +134,7 @@ class Expr
 	def _bindImp is override
 # TODO:
 #		ensure
-#			.type  # CC: should really be the ensure of Expr
+#			.type
 		body
 			base._bindImp()
 			if _type is nil and .getType.name=='Expr'  # CC: cannot say ... and .getType is Expr
@@ -475,7 +482,7 @@ class CallExpr
 							else
 								type = .compiler.passThroughType
 						else
-							.throwError('Cannot find "[_name]" in [_superNode.left.receiverType.name].')
+							.throwError('Cannot find a definition for "[_name]" in "[_superNode.left.receiverType.name]".')
 					else
 						if not possibleDefinition.isCallable
 							.throwError('Cannot call "[_name]" because it is a "[possibleDefinition.englishName]".')
@@ -894,6 +901,7 @@ class IdentifierExpr
 		if _type is nil
 			if _definition
 				_type = _definition.typeForIdentifier
+				_receiverType = _definition.typeForReceiver
 			else
 				if .binarySuperNode and .binarySuperNode inherits AssignExpr and this is .binarySuperNode.left
 					pass  # let the AssignExpr have its chance at type inference
@@ -1374,7 +1382,7 @@ class MemberExpr
 			# TODO: _receiverType = receiverType
 			.binarySuperNode.definition = _definition  # TODO: is this needed?
 			.binarySuperNode.type = .type  # the type of foo.bar is what bar returns. A MemberExpr is the "bar" part.
-			.binarySuperNode.setReceiverType(receiverType)
+			.binarySuperNode.receiverType = receiverType
 		assert _type
 
 	def toCobraSource as String is override
