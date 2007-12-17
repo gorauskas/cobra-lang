@@ -899,7 +899,8 @@ class CommandLine
 		if verbose
 			Utils.printSource(source)
 			print bar
-		firstLine = source.split(c'\n')[0]
+		lines = source.split(c'\n')
+		firstLine = lines[0]
 		firstLineInsensitive = firstLine.trim.replace(' ', '')
 
 		if firstLineInsensitive.startsWith('#.args.')
@@ -913,6 +914,89 @@ class CommandLine
 		else
 			options = .testifyOptions
 
+		if firstLineInsensitive.startsWith('#.skip.')
+			print 'Skipping per directive on first line of test source.'
+			return 0
+
+		if firstLineInsensitive.startsWith('#.multipart.')
+			# .multi. is the one that gets run along with its associated files
+			# the associated files then specify .multipart. and get skipped when encountered
+			print 'Skipping per directive on first line of test source.'
+			return 0
+
+		# Check for inline warning and error messages that are expected.
+		# (Starting in 2007-12 this is now the preferred way to specify these messages--
+		#  with the actual line of code that generates them.
+		#  The old method of specifying at the top will still be needed for errors
+		#  and warnings that have no associated line number.)
+		hasInlineMessages = false
+		inLineMessages = Dictionary<of int, String>()
+		lineNum = 1
+		for line in lines
+			if lineNum > 1 and ('.warning.' in line or '.error.' in line)
+				hasInlineMessages = true
+				if '.warning.' in line
+					message = line[line.indexOf('.warning.') + '.warning.'.length:]
+					messageType = 'w'
+				else if '.error.' in line
+					message = line[line.indexOf('.error.') + '.error.'.length:]
+					messageType = 'e'
+				else
+					throw FallThroughException(line)
+				inLineMessages[lineNum] = messageType + message
+			lineNum += 1
+		if hasInlineMessages
+			try
+				c = Compiler(compilerVerbosity, _cachedTestifyModules)
+				c.testifyFilesNamed([baseName], options, _resultsWriter to !, verbose)
+			catch StopCompilation
+				didStop = true
+			success
+				didStop = false
+			for msg in c.messages
+				if msg.lineNum == 0
+					print 'Not expecting messages without any line number information:'
+					print msg
+					bad = true
+					continue
+				if not inLineMessages.containsKey(msg.lineNum)
+					print 'Encountered unexpected message:'
+					print msg
+					bad = true
+					continue
+				expected = inLineMessages[msg.lineNum]
+				branch expected[0]
+					on c'w'
+						if msg.isError
+							print 'Expecting warning on line [msg.lineNum], but got error instead.'
+							bad = true
+					on c'e'
+						if not msg.isError
+							print 'Expecting error on line [msg.lineNum], but got warning instead.'
+							bad = true
+					else
+						throw FallThroughException(expected)
+				if bad
+					continue
+				expected = expected[1:].trim
+				if msg.message.trim.toLower.indexOf(expected.toLower) == -1
+					print 'Expecting message :', expected
+					print 'But got           :', msg.message.trim
+					bad = true
+					continue
+				# we made it! same type of message and text
+				print 'Message for line [msg.lineNum] was expected by test.'
+				inLineMessages.remove(msg.lineNum)
+			# check for expected messages that never occurred
+			for key in inLineMessages.keys
+				bad = true
+				print 'Expecting message on line [key]:', inLineMessages[key][1:].trim
+			if bad	
+				.failed
+				return 0
+			else
+				return 1
+			
 		if firstLineInsensitive.startsWith('#.error.')
 			# note that errors that are only detected by the backend C# compiler are not detectable by testify
 			# CC: support split with a String extension method
@@ -996,16 +1080,6 @@ class CommandLine
 				.failed
 				return 0
 			return 1
-
-		if firstLineInsensitive.startsWith('#.skip.')
-			print 'Skipping per directive on first line of test source.'
-			return 0
-
-		if firstLineInsensitive.startsWith('#.multipart.')
-			# .multi. is the one that gets run along with its associated files
-			# the associated files then specify .multipart. and get skipped when encountered
-			print 'Skipping per directive on first line of test source.'
-			return 0
 
 		fileNames = [baseName]
 
