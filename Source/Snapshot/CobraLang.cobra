@@ -5,22 +5,6 @@ namespace Cobra
 
 	namespace Lang
 
-		class CobraImp
-			is fake
-			shared
-				get hasDetailedStackTrace
-					pass
-				get detailedStackTrace as Stack<of CobraFrame>
-					pass
-				def runAndCaptureAllOutput(process as Object) as String
-					pass
-				def typeName(t as Type) as String
-					pass
-				def toTechString(x as Object?) as String
-					pass
-				var _maxStackFrames as int
-				var _numLastMaxStackFrames as int
-
 		class Tracer
 			inherits Object
 			"""
@@ -32,6 +16,7 @@ namespace Cobra
 			var _dest as TextWriter
 			var _separator = '; '
 			var _prefix = 'trace: '
+			var _willOutputDirectoryNames = false
 
 			def init
 				"""
@@ -54,6 +39,13 @@ namespace Cobra
 				Defaults to `true`.
 				"""
 
+			pro willOutputDirectoryNames from var
+				"""
+				When true, full path names with directories are output.
+				Otherwise, only the base filename of a source file is output.
+				Defaults to `false`.
+				"""
+
 			pro destination from _dest
 				"""
 				The TextWriter where all trace output is sent to.
@@ -73,7 +65,7 @@ namespace Cobra
 
 			def trace(source as SourceSite)
 				if .isActive
-					print to _dest, '[.prefix][source.oneLiner(.separator)]'
+					print to _dest, '[.prefix][source.oneLiner(.separator, .willOutputDirectoryNames)]'
 					if .willAutoFlush
 						_dest.flush
 
@@ -88,7 +80,7 @@ namespace Cobra
 						value = CobraCore.toTechString(nameValues[i+1])
 						_dest.write('[name]=[value][sep]')
 						i += 2
-					_dest.writeLine(source.oneLiner(.separator))
+					_dest.writeLine(source.oneLiner(.separator, .willOutputDirectoryNames))
 					if .willAutoFlush
 						_dest.flush
 
@@ -118,7 +110,7 @@ namespace Cobra
 					test
 						assert '.exe' in CobraCore.exePath
 					body
-						return Assembly.getExecutingAssembly.location to String  # CC: to ! or annotate .location
+						return Assembly.getExecutingAssembly.location
 
 
 				## Tracer
@@ -241,7 +233,7 @@ namespace Cobra
 					if name.endsWith('mono')
 						for part in Environment.commandLine.split(c' ')
 							if part.endsWith('.exe')
-								name = Path.getFileName(part) to String  # CC: method should have: ensure arg and arg.length implies result; um, that'll be awhile to both put in and interpret at compile time!
+								name = Path.getFileName(part) to !  # CC: method should have: ensure arg and arg.length implies result; um, that'll be awhile to both put in and interpret at compile time!
 								break
 					_headerPair(tw, 'Program', name)
 					_headerPair(tw, 'When', DateTime.now)
@@ -430,7 +422,7 @@ namespace Cobra
 							_writeObjectPair1(tw, row%2+1, propInfo.name, value)
 							row += 1
 					extendMethod = obj.getType.getMethod('ExtendObjectTable')
-					if extendMethod to MethodInfo?  # TODO/CC: axe cast
+					if extendMethod
 						view = PrivateObjectViewForExceptionReport(tw, row, objects)
 						extendMethod.invoke(obj, @[view])
 						i = view.rowNum
@@ -504,7 +496,7 @@ namespace Cobra
 							s = .htmlFormat(s to String) # CC: to !
 						catch Exception
 							pass  # forget it
-					return s to dynamic
+					return s to !
 				
 				def _writeObjectPair1(tw as TextWriter, i as int, key as String, valueHtml as Object?) is internal
 					require
@@ -662,7 +654,7 @@ namespace Cobra
 				get isRunningOnMono as bool
 					if _isRunningOnMono is nil
 						_isRunningOnMono = $sharp('Type.GetType("Mono.Runtime")') is not nil
-					return _isRunningOnMono to bool  # CC: axe cast
+					return _isRunningOnMono to !
 					
 				def runAndCaptureAllOutput(process as Object) as String
 					return CobraImp.runAndCaptureAllOutput(process)
@@ -838,14 +830,18 @@ namespace Cobra
 				return _object.getType.name
 
 			def oneLiner(sep as String) as String
+				return .oneLiner(sep, true)
+
+			def oneLiner(sep as String, willOutputDirectoryNames as bool) as String
 				test
 					si = SourceSite('Foo.cobra', 10, 'Object', 'bar', Object())
-					assert si.oneLiner('; ') == 'at Foo.cobra:10; in Object.bar'
+					assert si.oneLiner('; ', true) == 'at Foo.cobra:10; in Object.bar'
 					si = SourceSite('Foo.cobra', 10, 'Foo', 'bar', Object())
-					assert si.oneLiner('; ') == 'at Foo.cobra:10; in Foo.bar; subclass Object'
+					assert si.oneLiner('; ', true) == 'at Foo.cobra:10; in Foo.bar; subclass Object'
 				body
 					sb = StringBuilder()
-					sb.append('at [_fileName]:[_lineNum][sep]in [_className].[_memberName]')
+					fileName = if(_fileName.length and not willOutputDirectoryNames, Path.getFileName(_fileName), _fileName)
+					sb.append('at [fileName]:[_lineNum][sep]in [_className].[_memberName]')
 					if not _object inherits Type
 						# I guess that condition would preclude reporting the subclass name in a trace statement in subclasses of Type
 						# But then those come with the system anyway (RuntimeType)
@@ -866,7 +862,7 @@ namespace Cobra
 				baseName = Path.getFileName(fileName)
 				dirName = Path.getDirectoryName(fileName)
 				if dirName <> ''
-					dirName = ' in ' + (dirName to String)
+					dirName = ' in ' + (dirName to !)
 				s = 'line [lineNum] of [baseName][dirName]'
 				editLink = Environment.getEnvironmentVariable('COBRA_EDIT_LINK')
 				if editLink
