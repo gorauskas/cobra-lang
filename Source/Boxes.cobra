@@ -77,6 +77,20 @@ class Box
 		.addField('baseInterfaceProxies', _baseInterfaceProxies)
 		.addField('clrType', _clrType)
 
+	def toTraceString as String
+		sb = StringBuilder('[.getType.name]([.name], [.serialNum], ')
+		if _params.count
+			sb.append('params=[CobraCore.toTechString(_params)], ')
+		if not .didBindInh
+			sb.append('not ')
+		sb.append('didBindInh, ')
+		if not .didBindInt
+			sb.append('not ')
+		sb.append('didBindInt, ')
+		sb.append('clrType=[.clrType]')
+		sb.append(')')
+		return sb.toString
+
 	get baseClass from var
 
 	get baseInterfaces from var
@@ -176,6 +190,8 @@ class Box
 		body
 			if _clrType
 				_prepLibraryBox
+			# TODO: else
+			.completeMemberConstructionIfNeeded
 			return base.memberForName(name)
 
 	def registerOverload(ol as MemberOverload)
@@ -334,29 +350,55 @@ class Box
 			if _needScanClrType
 				_scanClrType
 			_bindBase
+			# structs, classes and interfaces can all have 0 or more interfaces they inherit/implement
+			assert _baseInterfaceProxies
+			if _baseInterfaceProxies.count <> _baseInterfaces.count  # otherwise, already done
+				assert _baseInterfaces.count == 0
+				for interfaceProxy in _baseInterfaceProxies
+					try
+						baseWhat = interfaceProxy.realType
+						if baseWhat inherits Interface
+							_baseInterfaces.add(baseWhat)
+						else
+							_badInterfaceError(baseWhat)
+					catch ne as NodeException
+						.compiler.recordError(ne)
 		finally
 			.compiler.boxStack.pop
 		_didBindInh = true
 
 	def bindInt as INode
 		# because DLL boxes get bindInh and bindInt on demand, check this:
+		if _genericTypeDef
+			assert _genericTypeDef is not this
+			if not _genericTypeDef.didBindInt and not _genericTypeDef.isBindingInt
+				_genericTypeDef.bindInt
+			assert _genericTypeDef.didBindInt or _genericTypeDef.isBindingInt
 		if _clrType
 			_prepLibraryBox
 		else if not _didBindInh
 			.bindInh
+		if _genericTypeDef
+			assert _genericTypeDef is not this
+			assert _genericTypeDef.didBindInt or _genericTypeDef.isBindingInt
 		return base.bindInt
 
 	def _bindInt
+		# Note that .bindInt (not this method, _bindInt) already ensures that if this box is constructed, its generic def binds int *first*.
+		# Therefore, everthing below has already happened for a constructed box's generic def.
 		base._bindInt
 		.compiler.boxStack.push(this)
 		try
 			if _needScanClrType
 				_scanClrType
-			_bindInterfaces
 			if _baseClass
 				_baseClass.bindInt
+			for interf in _baseInterfaces
+				interf.bindInt
 			for param in _params
 				param.bindInt
+			if not .isConstructed  # because constructed boxes are already taken care of by way of their generic type def
+				.unNilReturnTypes(this)
 			for decl in _declsInOrder
 				assert not decl is this
 				try
@@ -371,30 +413,12 @@ class Box
 					assert ct is not this
 					ct.completeMemberConstructionIfNeeded
 					ct.bindInt
-			.completeMemberConstructionIfNeeded
 		finally
 			.compiler.boxStack.pop
 
 	def _bindBase
 		# invoked by _bindInt
 		_baseClass = .compiler.classType('System', 'Object')
-
-	def _bindInterfaces
-		# structs, classes and interfaces can all have 0 or more interfaces they inherit/implement
-		assert _baseInterfaceProxies
-		if _baseInterfaceProxies.count == _baseInterfaces.count
-			return  # already done
-		assert _baseInterfaces.count == 0
-		for interfaceProxy in _baseInterfaceProxies
-			try
-				baseWhat = interfaceProxy.realType
-				if baseWhat inherits Interface
-					baseWhat.bindInt  # just as with the base class; .bindInt on parents
-					_baseInterfaces.add(baseWhat)
-				else
-					_badInterfaceError(baseWhat)
-			catch ne as NodeException
-				.compiler.recordError(ne)
 
 	def _badInterfaceError(type as IType)
 		.throwError('Cannot inherit "[type.name]" which is a [type.englishName].')
@@ -429,7 +453,7 @@ class Box
 			.compiler.boxStack.pop
 
 	var _didPrep as bool
-	
+
 	def _prepLibraryBox
 		"""
 		DLL types get bindInh & bindInt only on demand. (Otherwise reading system DLLs slows things down.)
@@ -440,28 +464,38 @@ class Box
 		_didPrep = true
 		if not _didBindInh
 			.bindInh
-		if not _didUnNilReturnTypes
-			.unNilReturnTypes(this)
 		if not .didBindInt and not .compiler.isBindingInh
 			.bindInt
 
 	var _didUnNilReturnTypes as bool
 
+	get didUnNilReturnTypes as bool
+		if .isConstructed
+			return .genericTypeDef.didUnNilReturnTypes
+		else
+			return _didUnNilReturnTypes
+
 	def unNilReturnTypes(box as Box)
+		if .compiler.isBindingInh
+			# because the .membersToUnNil properties won't even be set until the compiler starts .bindInt
+			return
 		if _didUnNilReturnTypes
 			return
 		_didUnNilReturnTypes = true
 		_unNilReturnTypes(box)
 		
 	def _unNilReturnTypes(box as Box)
+		assert not _needScanClrType
 		if box.membersToUnNil
 			for name in box.membersToUnNil.split
 				m = .declForName(name)  # using .memberForName here is unnecessary and could/would cause an infinite loop
 				if m
 					m.unNilReturnType
-		# follow inheritance
+		# follow inheritance to look at ancestors' .membersToUnNil
 		if box.baseClass
 			_unNilReturnTypes(box.baseClass to !)
+		for interf in box.baseInterfaces
+			_unNilReturnTypes(interf)
 
 
 	## Generics
@@ -483,7 +517,7 @@ class Box
 			else if type.isGenericDef and .isGeneric and type is .genericTypeDef
 				r = type.isAssignableTo(this)
 		return r
-					
+
 	get isConstructed as bool
 		return _genericTypeDef is not nil
 
@@ -509,13 +543,13 @@ class Box
 	get genericTypeDef as Box? is override
 		return _genericTypeDef
 
-	def constructedTypeFor(typeArgs as List<of IType>) as IType is override
+	def constructedTypeFor(typeArgs as List<of IType>) as Box is override
 		or require  # TODO: make this stronger by pushing up to base. # TODO: inherit this from the interface instead
 			.containsGenericParameters
 			typeArgs.count==.params.count
 		body
 			assert .isGenericDef
-
+			
 			if typeArgs == _params
 				return this
 
@@ -528,9 +562,12 @@ class Box
 			assert not equal
 
 			if not .didBindInh
+				assert not .didBindInt
 				.bindInh
+				assert not .didBindInt
 				if _clrType
 					_prepLibraryBox
+					assert not .didBindInt or not .compiler.isBindingInh
 
 			# the cache of constructed types has to come from the root generic type def or you end up with duplicate
 			# constructed types which is not only wasteful, but causes problems with inheritance tests
@@ -548,7 +585,11 @@ class Box
 			genericDef._constructedTypes[key] = t
 			t._name = '[.rootName]<of [key]>'
 			t._genericTypeDef = this
+			t._clrType = nil  # The constructed type is really sourced from the generic def. Don't foster confusion with a reference to the original generic def's clr type (if there is one).
 			t.cloneCollections
+			# set the contructed type args immediately or its ancestors will get the original generic args during _bindInt:
+			for i = 0 .. typeArgs.count
+				t._params[i] = typeArgs[i]
 			assert t._constructedTypes is nil or t._constructedTypes.count == 0
 			if .didBindInt
 				t._completeConstruction(typeArgs)
@@ -565,6 +606,8 @@ class Box
 	def completeMemberConstructionIfNeeded
 		if _needs_typeArgs
 			assert not .isGenericDef
+			if not .didBindInt and not .isBindingInt
+				.bindInt  # this is required when inheriting from a constructed type such as "class Foo inherits List<of int>". Since "bind inheritance" happens prior to "bind interface", the base type will have been partially constructed without ever binding int.
 			args = _needs_typeArgs
 			$sharp('_needs_typeArgs = null')
 			_completeConstruction(args)
@@ -579,21 +622,29 @@ class Box
 			_needs_typeArgs = typeArgs
 
 	def _completeConstruction(typeArgs as List<of IType>)
+		"""
+		When this method is called, this instance is a constructed type, but its members (such as methods and properties) are still those of its generic type def.
+		This method creates new members that are like the generic ones, but with the constructed type arguments substituted in.
+		`.foo(item as T)` becomes `.foo(item as int)`
+		"""
 		require
+			.isConstructed
 			.params.count == typeArgs.count
+			.didBindInt or .isBindingInt
 			not .isGenericDef
+			.genericTypeDef
+			.genericTypeDef.didBindInt or .genericTypeDef.isBindingInt
 		body
-			.bindInt  # this is required when inheriting from a constructed type such as "class Foo inherits List<of int>" since "bind inheritance" happens prior to "bind interface"
+			_genericTypeDef.unNilReturnTypes(_genericTypeDef to !)
 			# create a dictionary from the generic params to their effective type
 			gpToType = Dictionary<of GenericParam, IType>()
 			for i = 0 .. typeArgs.count
-				if (p = _params[i]) inherits GenericParam
+				if (p = _genericTypeDef.params[i]) inherits GenericParam
 					gpToType[p] = typeArgs[i]
 				else
 					throw FallThroughException(p)
-			for i = 0 .. typeArgs.count
-				_params[i] = typeArgs[i]
-			_completeConstructionOfBase(gpToType)
+				
+			_baseClass = _baseClass.secondaryConstructedTypeFor(this, gpToType) to Class
 			assert _baseInterfaceProxies.count == 0 or _baseInterfaceProxies.count == _baseInterfaces.count
 			for i = 0 .. _baseInterfaces.count
 				_baseInterfaces[i] = _baseInterfaces[i].secondaryConstructedTypeFor(this, gpToType) to Interface
@@ -626,13 +677,8 @@ class Box
 					_declsInOrder.add(decl)
 					_declsByName[decl.name] = decl
 					_declsByNameCI[decl.name.toLower] = decl
-			.bindInt
 			# TODO: can this next statement can be axed since there is a separate "bind inheritance" phase?
 			_finishOverloads
-			
-	def _completeConstructionOfBase(gpToType as Dictionary<of GenericParam, IType>)
-		# invoked by _completeConstruction for the benefit of Class
-		pass
 
 	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType is override
 		if _params.count == 0
@@ -696,7 +742,7 @@ class Box
 		_isNames.add('fake')  # to make the box like the ones that were in SystemInterfaces.cobra
 		for attr in _clrType.getCustomAttributes(true)
 			if attr inherits DefaultMemberAttribute
-				_defaultMemberName = attr.memberName
+				_defaultMemberName = attr.memberName  # this attribute names the indexer for the class
 				break
 
 	def _scanGenericArgs
@@ -1143,11 +1189,6 @@ class Class
 			# TODO: ? else, throw FallThroughException(...)
 		return m
 
-	def _completeConstructionOfBase(gpToType as Dictionary<of GenericParam, IType>)
-		base._completeConstructionOfBase(gpToType)
-		assert _baseClass
-		_baseClass = _baseClass.secondaryConstructedTypeFor(this, gpToType) to Class
-
 	def _bindBase is override
 		if _baseNode
 			possible = _baseNode.realType
@@ -1167,12 +1208,9 @@ class Class
 				assert baseName
 				.throwError('The base class "[baseName]" is not actually a class, it is a "[possible.englishName]".')
 		else
-			t = .compiler.libraryType('System', 'Object')
-			if t inherits Class
-				if this is not t  # don't want Object to inherit Object
-					_baseClass = t
-			else
-				throw FallThroughException(t)
+			t = .compiler.libraryType('System', 'Object') to Class
+			if this is not t  # don't want Object to inherit Object
+				_baseClass = t
 		if _baseClass
 			_baseClass._subclasses.add(this)
 
