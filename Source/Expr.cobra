@@ -764,7 +764,7 @@ class ForExpr
 	def _bindImp
 		base._bindImp
 		_what.bindImp()  # bind first because it may be needed for type inference
-		if not _isSequence(_what.type to IType)  # to !
+		if not _isSequence(_what.type to !)
 			.throwError('Cannot enumerate values of type "[_what.type.name]". You can enumerate IList<of>.') # TODO: strings, arrays, IList and IList<of>.')
 		_var = .bindVar(_nameExpr)
 		if _nameExpr.definition
@@ -964,7 +964,7 @@ class IdentifierExpr
 			.definition
 		body
 			if _definition inherits IVar
-				return (_definition to IVar).sharpAssignmentNames
+				return _definition.sharpAssignmentNames
 			else
 				return nil
 
@@ -1033,7 +1033,7 @@ class IfExpr
 			return
 		assert tpart.type
 		assert fpart.type
-		_type = tpart.type.greatestCommonDenominatorWith(fpart.type to IType)  # CC: to !
+		_type = tpart.type.greatestCommonDenominatorWith(fpart.type to !)
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		sw.write('(')
@@ -1143,7 +1143,7 @@ class IndexExpr
 			# CC: use a list comprehension to get the types
 			argTypes = List<of IType>()
 			for arg in args
-				argTypes.add(arg.type to IType)  # CC: to !
+				argTypes.add(arg.type to !)
 			_definition = target.memberForName(r'[]')  # TODO: will this need to be 'Index' to match DLLs/C#/VB?
 			if _definition is nil
 				if target.receiverType is .compiler.passThroughType
@@ -1158,7 +1158,7 @@ class IndexExpr
 				# TODO
 				pass
 			else if _definition inherits Indexer
-				indexer = _definition to Indexer  # CC: axe cast
+				indexer = _definition
 				params = indexer.params
 				if args.count <> params.count
 					.throwError('The method "[_definition.name]" is expecting [params.count] arguments, but [args.count] are being supplied in this call.')
@@ -1370,7 +1370,7 @@ class MemberExpr
 			assert _definition
 			if _definition inherits IType
 				effectiveType as IType = .compiler.typeType  # namespace, class, interface
-				receiverType as IType? = _definition to IType  # TODO: should not need "as IType". Type inference is not respecting the if-inherits stack
+				receiverType as IType? = _definition
 			else
 				effectiveType = _definition.resultType
 				receiverType = nil
@@ -1641,7 +1641,7 @@ class SliceExpr
 		catch ne as NodeException
 			.compiler.recordError(ne)
 		success
-			if not _isSequence(_target.type to IType)  # to !
+			if not _isSequence(_target.type to !)
 				.throwError('Cannot slice values of type "[_target.type.name]". You can slice strings, arrays, IList and IList<of>.')
 		if _start
 			try
@@ -2366,7 +2366,7 @@ class SequenceLit
 			if exprs.count==0
 				type = .compiler.dynamicType to IType
 			else
-				type = exprs[0].type to IType
+				type = exprs[0].type to !
 				i = 1
 				while i<exprs.count
 					exprs[i].bindImp()
@@ -2494,8 +2494,8 @@ class DictLit
 			if _entries.count==0
 				keyType = valueType = .compiler.dynamicType to IType
 			else
-				keyType   = entries[0][0].type to IType  # CC: to !
-				valueType = entries[0][1].type to IType  # CC: to !
+				keyType   = entries[0][0].type to !
+				valueType = entries[0][1].type to !
 				i = 1
 				while i<entries.count
 					keyType   = entries[i][0].type.greatestCommonDenominatorWith(keyType)
@@ -2589,7 +2589,7 @@ class ToNilableExpr
 		base._bindImp
 		if _expr.type inherits NilableType
 			_type = _expr.type
-			.compiler.warning(this, 'The given expression is already nilable so "to ?" is redundant.')  # TODO: needs test case
+			.compiler.warning(this, 'The given expression is already nilable so "to ?" is redundant. You can remove it.')  # TODO: needs test case
 		else
 			_type = NilableType(_expr.type)
 
@@ -2630,7 +2630,7 @@ class ToNonNilableExpr
 		if (et = _expr.type) inherits NilableType
 			_type = et.theWrappedType
 		else
-			.compiler.warning(this, 'The given expression is already non-nilable so "to !" is redundant.') # TODO: needs test case
+			.compiler.warning(this, 'The given expression is already non-nilable so "to !" is redundant. You can remove it.') # TODO: needs test case
 			_type = _expr.type
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
