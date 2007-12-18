@@ -16,6 +16,7 @@ namespace Cobra
 			var _dest as TextWriter
 			var _separator = '; '
 			var _prefix = 'trace: '
+			var _willOutputDirectoryNames = false
 
 			def init
 				"""
@@ -38,6 +39,13 @@ namespace Cobra
 				Defaults to `true`.
 				"""
 
+			pro willOutputDirectoryNames from var
+				"""
+				When true, full path names with directories are output.
+				Otherwise, only the base filename of a source file is output.
+				Defaults to `false`.
+				"""
+
 			pro destination from _dest
 				"""
 				The TextWriter where all trace output is sent to.
@@ -57,7 +65,7 @@ namespace Cobra
 
 			def trace(source as SourceSite)
 				if .isActive
-					print to _dest, '[.prefix][source.oneLiner(.separator)]'
+					print to _dest, '[.prefix][source.oneLiner(.separator, .willOutputDirectoryNames)]'
 					if .willAutoFlush
 						_dest.flush
 
@@ -72,7 +80,7 @@ namespace Cobra
 						value = CobraCore.toTechString(nameValues[i+1])
 						_dest.write('[name]=[value][sep]')
 						i += 2
-					_dest.writeLine(source.oneLiner(.separator))
+					_dest.writeLine(source.oneLiner(.separator, .willOutputDirectoryNames))
 					if .willAutoFlush
 						_dest.flush
 
@@ -822,14 +830,18 @@ namespace Cobra
 				return _object.getType.name
 
 			def oneLiner(sep as String) as String
+				return .oneLiner(sep, true)
+
+			def oneLiner(sep as String, willOutputDirectoryNames as bool) as String
 				test
 					si = SourceSite('Foo.cobra', 10, 'Object', 'bar', Object())
-					assert si.oneLiner('; ') == 'at Foo.cobra:10; in Object.bar'
+					assert si.oneLiner('; ', true) == 'at Foo.cobra:10; in Object.bar'
 					si = SourceSite('Foo.cobra', 10, 'Foo', 'bar', Object())
-					assert si.oneLiner('; ') == 'at Foo.cobra:10; in Foo.bar; subclass Object'
+					assert si.oneLiner('; ', true) == 'at Foo.cobra:10; in Foo.bar; subclass Object'
 				body
 					sb = StringBuilder()
-					sb.append('at [_fileName]:[_lineNum][sep]in [_className].[_memberName]')
+					fileName = if(_fileName.length and not willOutputDirectoryNames, Path.getFileName(_fileName), _fileName)
+					sb.append('at [fileName]:[_lineNum][sep]in [_className].[_memberName]')
 					if not _object inherits Type
 						# I guess that condition would preclude reporting the subclass name in a trace statement in subclasses of Type
 						# But then those come with the system anyway (RuntimeType)
