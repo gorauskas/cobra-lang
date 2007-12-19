@@ -883,23 +883,27 @@ class InheritsExpr
 
 class AbstractToExpr
 	inherits BinaryOpExpr
+	# CC: is abstract
+
+	var _potentialTypeExpr as IPotentialTypeExpr
 
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
-
+		assert right inherits IPotentialTypeExpr
+		_potentialTypeExpr = right to IPotentialTypeExpr
+		
 	def _bindImp
 		base._bindImp
 		if not _right.isKindOf(.compiler.typeType) and not _right.type inherits Box
 			assert _right.toCobraSource, _right
 			.throwError('The "to" operator does not apply to "[_right.toCobraSource]". Use a type.')
-		if _right inherits TypeExpr
-			_type = _right.receiverType
-		else if _right inherits IdentifierExpr
-			_type = _right.definition to IType
-		else if _right inherits DotExpr  # TODO: This happens for System.Collections.IEnumerable, for example. I don't know if I like that.
-			_type = _right.receiverType
-		assert _type
-
+		_type = _potentialTypeExpr.potentialType
+		if _type is nil
+			.throwError('The expression "[_potentialTypeExpr.toCobraSource]" does not identify a type.')
+		# TODO: not quite ready for the following
+		#       at the very least, need to enhance CobraType and descendants to have a superType of System.Object
+		#else if _left.type and not _type.isDescendantOf(_left.type to !)
+		#	.throwError('The given expression, of type "[_left.type.name]", can never be cast to a "[_potentialTypeExpr.toCobraSource]".')
 
 class ToExpr
 	inherits AbstractToExpr
