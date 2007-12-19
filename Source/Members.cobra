@@ -610,6 +610,10 @@ class AbstractMethod
 					.compiler.recordError(ne)
 			if _ensurePart
 				_ensurePart.bindImp
+			if _requirePart
+				_requirePart.checkConnectToken
+			if _ensurePart
+				_ensurePart.checkConnectToken
 			.computeMatchingBaseMember  # TODO: put this in _bindInt where it belongs. but note that last attempt broke a test case for indexers and requires...
 			.checkForUnmarkedOverrideOrNew  # have to do this after statements bindImp since using base can add `override`
 			.checkForUnusedVariables
@@ -1431,15 +1435,6 @@ class ContractPart
 
 	def _bindImp is override
 		base._bindImp
-		isNames = _codeMember.isNames
-		if not _isImplicit
-			if _connectToken
-				if 'override' not in isNames
-					.recordError('The contract was specified with "[_connectToken.text]", but the code member is neither an "override" nor "new".')
-			else
-				if 'override' in isNames
-					what = if('override' in isNames, 'override', 'new')
-					.recordError('The contract requires an "[.connectWord]" because the code member is "[what]".')
 		i = 0
 		for expr in _exprs
 			expr.bindImp  # TODO: error recovery
@@ -1450,6 +1445,21 @@ class ContractPart
 				_exprs[i] = expr
 			i += 1
 
+	def checkConnectToken
+		"""
+		This method checks that you said 'or require' vs. 'require', or 'and ensure' vs. 'ensure'.
+		The check cannot be made during _bindImp because it relies on the .codeMember.isNames which can be altered when binding the statements in the method body (per .usesBase).
+		"""
+		isNames = _codeMember.isNames
+		if not _isImplicit
+			if _connectToken
+				if 'override' not in isNames
+					.recordError('The contract was specified with "[_connectToken.text]", but the code member is neither an "override" nor "new".')
+			else
+				if 'override' in isNames
+					what = if('override' in isNames, 'override', 'new')
+					.recordError('The contract requires an "[.connectWord]" because the code member is "[what]".')
+		
 	def writeSharpMethod(sw as SharpWriter)  # TODO: is abstract
 		pass
 
@@ -1459,7 +1469,7 @@ class ContractPart
 			# 		would be nice if each member of an overload had an overload number.
 			name = '[prefix]_[_codeMember.sharpName]_[_codeMember.serialNum]_[_codeMember.box.name]'
 			name = name.replace(r'[]', 'Item') # indexer # TODO: maybe Indexer should return 'Item' in the first place
-			# properindexers like "name.get" have '.'
+			# properindexers like "name.get" have a '.'
 			# generics have < > and ,
 			for ch in [c'.', c'<', c'>', c',']
 				name = name.replace(ch, c'_')
