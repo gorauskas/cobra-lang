@@ -12,17 +12,22 @@ interface IContainer
 	"""
 	def declForName(name as String) as IMember?
 		"""
-		Returns the member of this container with the given name.
-		May return nil if no such container exists.
+		Returns the member declared in this container with the given name.
+		May return nil if no such member exists.
+		Does not follow inheritance chains.
 		Case-sensitive.
 		"""
 
 	def memberForName(name as String) as IMember?
 		"""
 		Returns the member of this container with the given name, including any inherited members.
-		May return nil if no such container exists.
+		May return nil if no such member exists.
 		Case-sensitive.
 		"""
+# TODO:
+#		require
+#			# TODO: not .compiler.isParsing
+#			not .compiler.isBindingInh
 
 
 class Container
@@ -301,17 +306,6 @@ class Container
 		else
 			throw Exception('.isGenericDef returns false, so there can be no genericParams')
 
-	def constructedTypeFor(typeArgs as List<of IType>) as Box
-		require  # TODO: make this stronger by pushing up to base. # TODO: inherit this from the interface instead
-			.isGeneric
-			.isGenericDef
-		body
-			if .isGenericDef
-				throw Exception('.isGenericDef returns true, but there is no override to constructedTypeFor')
-			else
-				throw Exception('.isGenericDef returns false, so there can be no constructedTypeFor')
-			return nil to passthrough  # TODO: axe whole line when code flow analysis proves it's not needed
-
 	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType
 		return this
 
@@ -326,7 +320,11 @@ class Container
 		return false
 
 	def memberForName(name as String) as IMember?
-		return .declForName(name)
+		require
+			# TODO: not .compiler.isParsing
+			not .compiler.isBindingInh
+		body
+			return .declForName(name)
 
 	get csInit as String
 		throw OverrideException(.getType)

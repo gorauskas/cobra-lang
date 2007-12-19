@@ -423,18 +423,6 @@ interface IType
 		"""
 		# TODO: require .isGenericDef
 
-	def constructedTypeFor(typeArgs as List<of IType>) as Box
-		"""
-		Makes a new generic type with the given typeArgs which must
-		match in number to the generic parameters. This method requires
-		that .isGenericDef is true. Note that the type args can be
-		GenericParams or other types or a mix. Also, this method must
-		return an existing type that matches the typeArgs if one already
-		exists.
-		"""
-		# TODO: require .isGenericDef; typesArgs.count==.genericParams.count
-		# TODO: should this be moved down to Box?
-
 	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType
 		"""
 		Makes a new generic type, if needed, using the given map from generic params to types.
@@ -600,13 +588,6 @@ class CobraType
 			throw Exception('.isGenericDef returns true, but there is no override to return the genericParams')
 		else
 			throw Exception('.isGenericDef returns false, so there can be no genericParams')
-
-	def constructedTypeFor(typeArgs as List<of IType>) as Box
-		if .isGenericDef
-			throw Exception('.isGenericDef returns true, but there is no override to constructedTypeFor')
-		else
-			throw Exception('.isGenericDef returns false, so there can be no constructedTypeFor')
-		return nil to passthrough  # TODO: axe whole line when code flow analysis proves it's not needed
 
 	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType
 		return this
@@ -1498,7 +1479,7 @@ class GenericTypeIdentifier
 		return _locateType(genericType to !)
 
 	def _locateType(genericType as IMember) as IType
-		if genericType inherits IType
+		if genericType inherits Box
 			if not genericType.isGeneric
 				.throwError('"[_rootName]" is not a generic type.')
 			types = List<of IType>()
@@ -1512,6 +1493,9 @@ class GenericTypeIdentifier
 			# assert not t.isGenericDef  Wrong! If some of the parameters are generic, then the constructed type could have generic params...
 			# ... hmmm, but am I using the wrong terms? Maybe the returned type is an open or closed constructed type and never a generic def. TODO: resolve this.
 			return t
+		else if genericType inherits IType
+			.throwError('"[_rootName]" is not a generic type.')
+			return nil to passthrough
 		else
 			assert false, 'When does this happen?'
 			.throwError('The definition for "[_fullName]" is not a type.')

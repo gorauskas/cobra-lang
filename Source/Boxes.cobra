@@ -184,15 +184,11 @@ class Box
 		return n
 
 	def memberForName(name as String) as IMember?
-		require
-			# TODO: not .compiler.isParsing
-			not .compiler.isBindingInh
-		body
-			if _clrType
-				_prepLibraryBox
-			# TODO: else
-			.completeMemberConstructionIfNeeded
-			return base.memberForName(name)
+		if _clrType
+			_prepLibraryBox
+		# TODO: else
+		.completeMemberConstructionIfNeeded
+		return base.memberForName(name)
 
 	def registerOverload(ol as MemberOverload)
 		require
@@ -543,23 +539,25 @@ class Box
 	get genericTypeDef as Box? is override
 		return _genericTypeDef
 
-	def constructedTypeFor(typeArgs as List<of IType>) as Box is override
-		or require  # TODO: make this stronger by pushing up to base. # TODO: inherit this from the interface instead
+	def constructedTypeFor(typeArgs as List<of IType>) as Box
+		require  # TODO: inherit this from the interface instead
 			.containsGenericParameters
 			typeArgs.count==.params.count
 		body
 			assert .isGenericDef
 			
-			if typeArgs == _params
-				return this
-
 			# TODO: can take this out. it's just a check that the above comparison is working. 2007-12-08
 			equal = true
 			for i = 0 .. typeArgs.count
 				if typeArgs[i] <> .params[i]
 					equal = false
 					break
-			assert not equal
+
+			if typeArgs == _params
+				assert equal
+				return this
+			else
+				assert not equal
 
 			if not .didBindInh
 				assert not .didBindInt
@@ -1218,6 +1216,7 @@ class Class
 		for decl in .declsInOrder
 			if decl inherits Constructor
 				foundConstructor = true
+				break
 		if not foundConstructor
 			# TODO: this should be changed to provide cover constructors for each of the public, inherited constructors
 			.addDecl(Constructor(.token, this, List<of Param>(), ['public'], ''))
