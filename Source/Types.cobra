@@ -643,9 +643,11 @@ class CobraType
 		"""
 		Returns true if this type is a subtype (direct or indirect) of type.
 		"""
+		if not _didBindInh
+			.bindInh
 		if this is type
 			return true
-		curType as IType? = this  # CC: change to: curType = this to ?
+		curType = this to IType?
 		counter = 0
 		while true
 			if curType is type
@@ -683,13 +685,29 @@ class CobraType
 	def getHashCode as int is override
 		return .serialNum.getHashCode
 
-	def bindInh
-		pass
-
 	def unNilReturnType
 		# ack! apparently CobraType inherits IMember
 		pass
 		
+
+	## Bind Inheritance
+
+	var _didBindInh as bool
+	
+	get didBindInh from var
+	
+	def bindInh
+		if not _didBindInh
+			_didBindInh = true
+			_bindInh
+
+	def _bindInh
+		"""
+		Subclasses can override to bind inheritance. Specifically, to set _superType.
+		"""
+		pass
+
+
 	## Code gen
 
 	get csInit as String
@@ -1154,6 +1172,11 @@ class ArrayType
 			if _wrappedType == type.theWrappedType
 				return true
 		return false
+
+	def _bindInh
+		base._bindInh
+		ienum = .compiler.libraryBox('System.Collections.Generic.IEnumerable<of>')
+		_superType = ienum.constructedTypeFor([.theWrappedType])
 
 	def memberForName(name as String) as IMember?
 		member = base.memberForName(name)
