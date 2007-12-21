@@ -298,12 +298,6 @@ class ClrTypeProxy
 		else if $sharp(r'char.IsLetterOrDigit(typeName[typeName.Length-1])')
 			pass
 		else
-			print
-			print clrType
-			print clrType.namespace
-			print clrType.name
-			print clrType.fullName
-			assert false, clrType
 			.throwError('Cannot locate CLR type "[_clrType]".')
 
 		# compute namespace
@@ -341,20 +335,6 @@ class ClrTypeProxy
 				member = (member to Box).constructedTypeFor(args)
 			return member 
 		else
-			# TODO: wipe out the following when Cobra is more mature. 2007-11-28
-			curNS.dumpDeclNames
-			t = Type
-			for pi in t.getProperties
-				if pi.canRead and pi.name.startsWith('Is')
-					print '[pi.name] = [pi.getValue(clrType, nil)]'
-			trace curNS
-			trace member
-			trace typeName
-			trace clrType
-			trace clrType.namespace
-			trace clrType.assembly.location
-			trace curNS.declForName('IComparable')
-			#assert false
 			.throwError('Cannot locate CLR type "[_clrType]".')
 		return .compiler.intType  # CC: to make C# code gen happy.
 
@@ -366,7 +346,7 @@ class ClrTypeProxy
 
 
 interface IType
-	inherits ITypeProxy, IMember  # TODO: does an IType need to also be an IContainer? TODO: Why does it have to be either?
+	inherits ITypeProxy, IMember
 
 	def isAssignableTo(type as IType) as bool
 
@@ -505,8 +485,6 @@ class CobraType
 			return true
 		if t inherits DynamicType
 			return true
-		if t inherits NilType  # TODO: is this needed? See comment in isEquatableTo
-			return true
 		return false
 
 	def isEquatableTo(t as IType) as bool
@@ -514,8 +492,6 @@ class CobraType
 			# CC: b = b.theWrappedType
 			$sharp('t = ((NilableType)t).TheWrappedType')
 		if .isAssignableTo(t) or t.isAssignableTo(this)
-			return true
-		if t inherits NilType # TODO: axe this. but temp reason for this is due to Tests\150-basics-two\100-using.cobra
 			return true
 		return false
 
@@ -875,13 +851,19 @@ class NilableType
 		return false
 
 	def isComparableTo(b as IType) as bool is override
-		return _wrappedType.isComparableTo(b)
+		if b inherits NilType
+			return true
+		else
+			return _wrappedType.isComparableTo(b)
 
 	def isDescendantOf(type as IType) as bool
 		return base.isDescendantOf(type) and _wrappedType.isDescendantOf(type)
 
 	def isEquatableTo(b as IType) as bool is override
-		return _wrappedType.isEquatableTo(b)
+		if b inherits NilType
+			return true
+		else
+			return _wrappedType.isEquatableTo(b)
 
 	def memberForName(name as String) as IMember? is override
 		assert _wrappedType  # TODO: can CobraType require a wrappedType
@@ -966,8 +948,6 @@ class PassThroughType
 
 	Originally it overrode .isDescendantOf to always return true, but this mislead the C#
 	body generation. The override was removed and now you have to check for it explicitly.
-
-	TODO: remove this class
 	"""
 
 	def init
@@ -1107,7 +1087,6 @@ class ArrayType
 	def isAssignableTo(type as IType) as bool is override
 		if base.isAssignableTo(type)
 			return true
-		# TODO: should also be assignable to IEnumerable, I think
 		if type inherits ArrayType
 			if _wrappedType == type.theWrappedType
 				return true
