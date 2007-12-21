@@ -1,15 +1,10 @@
 use System.Reflection
 
 
-interface IBoxMember
-	inherits IMember, IType
-	pass
-
-
 class Box
 	# CC: is abstract
 	inherits Container<of IBoxMember>
-	implements IParentSpace
+	implements IType, IParentSpace, INameSpaceMember, IBoxMember
 	"""
 	The abstract base class for:
 		* Class
@@ -183,7 +178,7 @@ class Box
 				return true
 		return false
 
-	def interfaceMemberForName(name as String) as IMember?
+	def interfaceMemberForName(name as String) as IBoxMember?
 		m = .declForName(name)
 		if m
 			return m
@@ -214,7 +209,7 @@ class Box
 			_declsByName[ol.name] = ol
 			_declsByName[ol.name.toLower] = ol
 
-	def addDeclFromOverload(decl as IMember, ol as MemberOverload)
+	def addDeclFromOverload(decl as IBoxMember, ol as MemberOverload)
 		require
 			ol in .overloads
 			decl.name == ol.name
@@ -244,7 +239,7 @@ class Box
 				.throwError('Cannot refer to a generic parameter ("[name]") through `this`.')
 			else
 				return p
-		x = .declForName(name)
+		x = .declForName(name) to IMember?
 		if x is nil and _baseClass
 			x = _baseClass.symbolForName(name, haveThis, false)
 		if x is nil
@@ -666,16 +661,16 @@ class Box
 
 			# construct the declarations
 			_overloads = List<of MemberOverload>()
-			newDecls = List<of IMember>()
+			newDecls = List<of IBoxMember>()
 			for decl in _declsInOrder
 				if decl inherits BoxMember
 					newDecls.add(nd=decl.constructedFor(this, gpToType))
 					assert nd <> decl
 				else
 					throw FallThroughException(decl)
-			_declsInOrder = List<of IMember>()
-			_declsByName = Dictionary<of String, IMember>()
-			_declsByNameCI = Dictionary<of String, IMember>()
+			_declsInOrder = List<of IBoxMember>()
+			_declsByName = Dictionary<of String, IBoxMember>()
+			_declsByNameCI = Dictionary<of String, IBoxMember>()
 			for decl in newDecls
 				if _declsByName.containsKey(decl.name)
 					overload = nil to MemberOverload?
@@ -1251,7 +1246,7 @@ class Class
 		assert _baseClass or .isSystemObjectClass
 		if _baseClass
 			#assert _baseClass.didBindInt
-			for decl in List<of IMember>(_declsInOrder)
+			for decl in List<of IBoxMember>(_declsInOrder)
 				if decl inherits Method and not decl inherits Constructor  # TODO: I don't think this captures Indexers. Make a test case if needed, write: if decl.canBeOverloaded or if decl inherits ICanBeOverloaded
 					other = _baseClass.memberForName(decl.name)
 					if other
@@ -1519,7 +1514,7 @@ class GenericConstraint
 	def isDescendantOf(type as IType) as bool
 		return false
 
-	def declForName(name as String) as IMember?
+	def declForName(name as String) as IBoxMember?
 		"""
 		Returns nil by default.
 		"""
@@ -1592,7 +1587,7 @@ class GenericTypeConstraint
 		return _representedType.isDescendantOf(type)
 
 # TODO?
-#	def declForName(name as String) as IMember? is override
+#	def declForName(name as String) as IBoxMember? is override
 #		assert _representedType
 #		return _representedType.declForName(name)
 

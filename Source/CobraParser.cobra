@@ -134,7 +134,7 @@ class Parser
 	get curNameSpace as NameSpace
 		return _nameSpaceStack.peek to !
 
-	def parseFileNamed(fileName as String) as Module
+	def parseFileNamed(fileName as String) as CobraModule
 		require .typeProvider
 		if .verbosity >= 1
 			print 'Parsing [fileName]'
@@ -142,11 +142,11 @@ class Parser
 		source = File.readAllText(_fileName to !)
 		return .parseSource(fileName, source)
 
-	def parseSource(source as String) as Module
+	def parseSource(source as String) as CobraModule
 		require .typeProvider
 		return .parseSource('(no file name)', source)
 
-	def parseSource(fileName as String, source as String) as Module
+	def parseSource(fileName as String, source as String) as CobraModule
 		"""
 		Parses module source code and returns resulting module.
 		"""
@@ -428,7 +428,7 @@ class Parser
 
 	var _module as CobraModule?
 
-	def parseTokens as Module
+	def parseTokens as CobraModule
 		"""
 		Parses and then returns an instance of Module.
 		"""
@@ -449,7 +449,7 @@ class Parser
 					topNS.addUseDirective(UseDirective(useToken, ['System', 'IO']))
 					topNS.addUseDirective(UseDirective(useToken, ['System', 'Text']))
 					topNS.addUseDirective(UseDirective(useToken, ['Cobra', 'Lang']))
-				what as IMember?
+				what as INameSpaceMember?
 				keepParsing = true
 				while keepParsing
 					what = nil
@@ -461,8 +461,8 @@ class Parser
 							keepParsing = false
 						on 'USE'
 							topNS.addUseDirective(.useDirective)
-						on 'IMPORT'
-							what = .importDirective
+#						on 'IMPORT'
+#							what = .importDirective
 						on 'CLASS'
 							what = .classDecl
 						on 'INTERFACE'
@@ -484,7 +484,7 @@ class Parser
 						assert what.parentNameSpace
 			finally
 				_nameSpaceStack.pop
-			return _module to Module # CC: to ! CC: axe cast
+			return _module to !
 
 	def useDirective as UseDirective
 		"""
@@ -502,10 +502,6 @@ class Parser
 				break
 		.oneOrMore('EOL')
 		return UseDirective(token, names)
-
-	def importDirective as IMember
-		assert false
-		return nil to passthrough
 
 	var _syntaxForClassInheritanceMsg = 'The syntax for inheritance is to put "inherits BaseClass" on the following line, indented.'
 
@@ -883,11 +879,11 @@ class Parser
 				_nameSpaceStack.pop
 		return firstNameSpace to !
 
-	def _nameSpaceAddDecl(ns as NameSpace, decl as IMember)
+	def _nameSpaceAddDecl(ns as NameSpace, decl as INameSpaceMember)
 		if ns.declForName(decl.name)
 			.throwError('The namespace "[ns.fullName]" already contains a declaration named "[decl.name]".')  # TODO: give an "error" for the location 
 		ns.addDecl(decl)
-			
+
 	def bodiedBoxMemberDecls(box as Box)
 # TODO: remove this when SystemInterfaces.cobra and "is fake" goes away
 #		require
