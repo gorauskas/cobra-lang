@@ -97,6 +97,13 @@ class Box
 
 	get clrType from var
 
+	get constructedTypes as IDictionary<of String, Box>
+		"""
+		The return value is a shallow copy to prevent outside modification of a generic's constructedTypes cache.
+		This property exists primarily for debugging/display.
+		"""
+		return Dictionary<of String, Box>(_constructedTypes)
+
 	get isSystemObjectClass as bool
 		return _baseClass is nil and .name == 'Object' and .parentNameSpace and .parentNameSpace.fullName == 'System'
 
@@ -385,6 +392,7 @@ class Box
 		base._bindInt
 		.compiler.boxStack.push(this)
 		try
+			errorCount = .compiler.errors.count
 			if _needScanClrType
 				_scanClrType
 			if _baseClass
@@ -405,10 +413,11 @@ class Box
 			if _testMethod
 				_testMethod.bindInt
 			if _constructedTypes
-				for ct in _constructedTypes.values
-					assert ct is not this
-					ct.completeMemberConstructionIfNeeded
-					ct.bindInt
+				if .compiler.errors.count <= errorCount  # completing construction on constructed types leads to chaos if this generic def had errors during bind interface
+					for ct in _constructedTypes.values
+						assert ct is not this
+						ct.completeMemberConstructionIfNeeded
+						ct.bindInt
 		finally
 			.compiler.boxStack.pop
 
@@ -545,7 +554,7 @@ class Box
 			typeArgs.count==.params.count
 		body
 			assert .isGenericDef
-			
+
 			# TODO: can take this out. it's just a check that the above comparison is working. 2007-12-08
 			equal = true
 			for i = 0 .. typeArgs.count

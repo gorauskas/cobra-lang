@@ -70,7 +70,8 @@ class Compiler
 	var _errors as List<of SourceException>
 	var _warnings as List<of SourceException>
 	var _messages as List<of SourceException>  # all errors and warnings
-
+	var _messagesPerSourceLine as IDictionary<of String, List<of SourceException>>  # key is 'filename:lineNum'
+	
 	var _intermediateFileNames as List<of String>
 	var _baseExeFileName as String = ''
 	var _fullExeFileName as String = ''
@@ -89,8 +90,9 @@ class Compiler
 		_nameSpaceStack = Stack<of NameSpace>()
 		_boxStack = Stack<of Box>()
 		_codeMemberStack = Stack<of AbstractMethod>()
-		_errors = List<of SourceException>()
 		_messages = List<of SourceException>()
+		_messagesPerSourceLine = Dictionary<of String, List<of SourceException>>()
+		_errors = List<of SourceException>()
 		_warnings = List<of SourceException>()
 		_intermediateFileNames = List<of String>()
 		if initialModules
@@ -900,8 +902,7 @@ class Compiler
 
 	def warning(cw as CobraWarning)
 		require not cw.isError
-		_warnings.add(cw)
-		_messages.add(cw)
+		_addMessage(cw)
 
 	var _unknownSuggestions = {
 		# literals
@@ -946,12 +947,23 @@ class Compiler
 	##
 
 	def _addMessage(message as SourceException)
+		# Cobra can sometimes generate duplicate messages. Specifically, a constructed type might generate a message that its generic def did.
+		# Yeah, ideally, this would be fixed, but sometimes that's harder than just removing the duplicates
+		key = if(message.hasSourceSite, '[message.fileName]:[message.lineNum]', '')
+		if _messagesPerSourceLine.containsKey(key)
+			for se in _messagesPerSourceLine[key]
+				if se.message.toLower == message.message.toLower
+					if Utils.isDevMachine or .verbosity >= 3
+						print 'Skipping duplicate message:', message.consoleString
+					return
+		else
+			_messagesPerSourceLine[key] = List<of SourceException>()
+		_messagesPerSourceLine[key].add(message)
 		_messages.add(message)
 		if message.isError
 			_errors.add(message)
 		else
 			_warnings.add(message)
-
 
 	##
 	## Generating and compiling C#
@@ -1244,7 +1256,7 @@ class SharpCompilationMessage
 				try  # CC: use tryParse
 					sharpLineNum as int = int.parse(lineStr)  # CC: axe cast
 				catch
-					if compiler.verbosity or .isDevMachine
+					if compiler.verbosity or Utils.isDevMachine
 						line += ' (C#)'
 				success
 					_fileName = fileName
@@ -1257,12 +1269,9 @@ class SharpCompilationMessage
 						if i <> -1 and i < line.length and line[i+1] == ' '
 							line = line[i+1:].trim
 					# add (sharp)
-					if compiler.verbosity or .isDevMachine
+					if compiler.verbosity or Utils.isDevMachine
 						line += ' (C# [sharpLineNum])'
 		_message = line
-
-	get isDevMachine as bool
-		return Environment.getEnvironmentVariable('COBRA_IS_DEV_MACHINE') == '1'
 
 	get isError as bool is override
 		return _isError
