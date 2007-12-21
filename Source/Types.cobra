@@ -394,35 +394,6 @@ interface IType
 		Returns true if this type can be compared to the given type via `is`, `is not`, `==` and `<>`.
 		"""
 
-	get genericTypeDef as Box?  # TODO: should return Box since only a box can be a generic type def
-		"""
-		Returns the generic type definition for a constructed type (or nil if this type is not constructed).
-		"""
-	
-	get isGenericDef as bool
-		"""
-		Returns true if this type is a definition of a generic type, and
-		therefore capable of making subsequent generic types via the
-		`constructedTypeFor` method. A generic type will have generic
-		parameters which are all GenericParam (as opposed to other types
-		such as `int` or a given class).
-		"""
-
-	get isGeneric as bool
-		"""
-		Returns true if this type is a generic type which includes
-		generic type defs and open-or-closed constructed types. Note
-		that arrays of generic types and pointers to generic types will
-		return false.
-		"""
-
-	get genericParams as List<of IType>
-		"""
-		Return the list of generic params for this generic type. This
-		property requires that .isGenericDef is true.
-		"""
-		# TODO: require .isGenericDef
-
 	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType
 		"""
 		Makes a new generic type, if needed, using the given map from generic params to types.
@@ -430,12 +401,6 @@ interface IType
 		This method is invoked during the type construction for return types, parameter types, etc.
 		"""
 
-	def isConstructionOf(type as IType) as bool
-		"""
-		Returns true if this type is a construction of the given generic type def, even going more than level deep through `genericTypeDef`.
-		"""
-		# TODO: require type.isGenericDef
-		
 	def greatestCommonDenominatorWith(type as IType) as IType
 		"""
 		Return the most specific type that is compatible with both this type and the arg.
@@ -574,34 +539,9 @@ class CobraType
 
 	get superType from var
 
-	get genericTypeDef as Box?  # TODO: rename to genericDef to match the following boolean properties
-		return nil
-		
-	get isGenericDef as bool
-		return false
-
-	get isGeneric as bool
-		return false
-
-	get genericParams as List<of IType>
-		if .isGenericDef
-			throw Exception('.isGenericDef returns true, but there is no override to return the genericParams')
-		else
-			throw Exception('.isGenericDef returns false, so there can be no genericParams')
-
 	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType
 		return this
 
-	def isConstructionOf(type as IType) as bool
-		assert type.isGenericDef  # TODO: make a requirement of the interface
-		if .genericTypeDef is nil
-			return false
-		if .genericTypeDef is type
-			return true
-		if .genericTypeDef.genericTypeDef
-			return .genericTypeDef.isConstructionOf(type) # TODO: would iteration be more efficient here?
-		return false
-		
 	def greatestCommonDenominatorWith(type as IType) as IType
 		if this is type
 			return this

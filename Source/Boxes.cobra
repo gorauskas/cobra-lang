@@ -11,13 +11,13 @@ class Box
 		* Interface
 		* Struct
 	These are collectively known as "boxes".
-	Note that of all the types, only Boxes can be generic.
+	Note that of all the types, only Boxes can be generic. Which makes them special.
 	"""
 
 	# TODO: need to override greatestCommonDenominatorWith() to handle base interfaces
 
-	var _params as List<of IType>  # as in generic parameters
-	var _genericTypeDef as Box?
+	var _genericParams as List<of IType>  # as in generic parameters
+	var _genericDef as Box?
 	var _constructedTypes as Dictionary<of String, Box>?
 
 	var _baseClass as Class?
@@ -39,9 +39,9 @@ class Box
 
 	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseInterfaceNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, isNames, docString)
-		_params = paramList
-		for i = 0 .. _params.count
-			p = _params[i]
+		_genericParams = paramList
+		for i = 0 .. _genericParams.count
+			p = _genericParams[i]
 			if p inherits GenericParam
 				p.index = i
 		_baseInterfaceProxies = baseInterfaceNodes
@@ -69,21 +69,21 @@ class Box
 
 	def addRefFields
 		base.addRefFields
-		.addField('genericTypeDef', _genericTypeDef)
+		.addField('genericDef', _genericDef)
 		.addField('baseClass', _baseClass)
 		.addField('clrType', _clrType)
 
 	def addSubFields
 		base.addSubFields
-		.addField('params', _params)
+		.addField('genericParams', _genericParams)
 		.addField('baseInterfaces', _baseInterfaces)
 		.addField('baseInterfaceProxies', _baseInterfaceProxies)
 		.addField('clrType', _clrType)
 
 	def toTraceString as String
 		sb = StringBuilder('[.getType.name]([.name], [.serialNum], ')
-		if _params.count
-			sb.append('params=[CobraCore.toTechString(_params)], ')
+		if _genericParams.count
+			sb.append('genericParams=[CobraCore.toTechString(_genericParams)], ')
 		if not .didBindInh
 			sb.append('not ')
 		sb.append('didBindInh, ')
@@ -162,8 +162,6 @@ class Box
 	get isFake as bool
 		return 'fake' in _isNames
 
-	get params from var
-
 	def isDescendantOfInterface(inter as Interface) as bool
 		if _baseInterfaces.count == 0 and _baseInterfaceProxies.count
 			.bindInh
@@ -218,7 +216,7 @@ class Box
 
 	def paramForName(name as String) as IType?
 		# TODO: make faster
-		for param in _params
+		for param in _genericParams
 			if name==param.name
 				return param
 		return nil
@@ -306,18 +304,15 @@ class Box
 			if rt inherits NilableType
 				# nilable is not a concern; unwrap it:
 				$sharp('rt = ((NilableType)rt).TheWrappedType')
-			if rt.isGeneric
+			if rt inherits Box and (rt to Box).isGeneric
 				# TODO: this is a hack. should check for IEnumerator and 'current' like we do for non-generics further below
 				# assert not rt.isGenericDef
-				if rt inherits Box
-					it = rt.params[0]
-					if it inherits GenericParam
-						#it = .typeForGenericParam(it) # CC: this fails because IType on the right is more general than GenericParam on the left. But I'm thinking Cobra should allow you to back up to the original type if you like
-						return .typeForGenericParam(it)
-					else
-						return it
+				it = (rt to Box).genericParams[0]
+				if it inherits GenericParam
+					#it = .typeForGenericParam(it) # CC: this fails because IType on the right is more general than GenericParam on the left. But I'm thinking Cobra should allow you to back up to the original type if you like
+					return .typeForGenericParam(it)
 				else
-					assert false, 'finish me'  # TODO
+					return it
 			else
 				if rt.isDescendantOf(.compiler.libraryType('System', 'Collections', 'IEnumerator'))
 					return rt.memberForName('current').resultType
@@ -375,18 +370,18 @@ class Box
 
 	def bindInt as INode
 		# because DLL boxes get bindInh and bindInt on demand, check this:
-		if _genericTypeDef
-			assert _genericTypeDef is not this
-			if not _genericTypeDef.didBindInt and not _genericTypeDef.isBindingInt
-				_genericTypeDef.bindInt
-			assert _genericTypeDef.didBindInt or _genericTypeDef.isBindingInt
+		if _genericDef
+			assert _genericDef is not this
+			if not _genericDef.didBindInt and not _genericDef.isBindingInt
+				_genericDef.bindInt
+			assert _genericDef.didBindInt or _genericDef.isBindingInt
 		if _clrType
 			_prepLibraryBox
 		else if not _didBindInh
 			.bindInh
-		if _genericTypeDef
-			assert _genericTypeDef is not this
-			assert _genericTypeDef.didBindInt or _genericTypeDef.isBindingInt
+		if _genericDef
+			assert _genericDef is not this
+			assert _genericDef.didBindInt or _genericDef.isBindingInt
 		return base.bindInt
 
 	def _bindInt
@@ -402,7 +397,7 @@ class Box
 				_baseClass.bindInt
 			for interf in _baseInterfaces
 				interf.bindInt
-			for param in _params
+			for param in _genericParams
 				param.bindInt
 			if not .isConstructed  # because constructed boxes are already taken care of by way of their generic type def
 				.unNilReturnTypes(this)
@@ -479,7 +474,7 @@ class Box
 
 	get didUnNilReturnTypes as bool
 		if .isConstructed
-			return .genericTypeDef.didUnNilReturnTypes
+			return .genericDef.didUnNilReturnTypes
 		else
 			return _didUnNilReturnTypes
 
@@ -513,59 +508,92 @@ class Box
 		if not r
 			if type inherits NilableType
 				$sharp('type = ((NilableType)type).TheWrappedType')
-			if (.isGeneric and type.isGeneric and .genericTypeDef is type.genericTypeDef) or (.isGenericDef and type.isGeneric and this is type.genericTypeDef)
-				# CC?: r = all true for i, gp in .genericParams.numbered get gp.isAssignableTo(type.genericParams[i])
-				i = 0
-				r = true
-				for gp in .genericParams  # CC: for i, gp in .genericParams.numbered
-					if not gp.isAssignableTo(type.genericParams[i])
-						r = false
-						break
-					i += 1
-			else if type.isGenericDef and .isGeneric and type is .genericTypeDef
-				r = type.isAssignableTo(this)
+			if type inherits Box
+				if (.isGeneric and type.isGeneric and .genericDef is type.genericDef) or (.isGenericDef and type.isGeneric and this is type.genericDef)
+					# CC?: r = all true for i, gp in .genericParams.numbered get gp.isAssignableTo(type.genericParams[i])
+					i = 0
+					r = true
+					for gp in .genericParams  # CC: for i, gp in .genericParams.numbered
+						if not gp.isAssignableTo(type.genericParams[i])
+							r = false
+							break
+						i += 1
+				else if type.isGenericDef and .isGeneric and type is .genericDef
+					r = type.isAssignableTo(this)
 		return r
 
 	get isConstructed as bool
-		return _genericTypeDef is not nil
+		return _genericDef is not nil
 
-	get isGenericDef as bool is override
-		# TODO: make this more efficient, maybe by computing in the constructor
-		if _genericTypeDef
+	def isConstructionOf(box as Box) as bool
+		"""
+		Returns true if this type is a construction of the given generic type def, even going more than level deep through `genericDef`.
+		"""
+		if .genericDef is nil
 			return false
-		else if _params.count
-			for param in _params
+		if .genericDef is box
+			return true
+		if .genericDef.genericDef
+			return .genericDef.isConstructionOf(box) # TODO: would iteration be more efficient here?
+		return false
+
+	get isGenericDef as bool
+		"""
+		Returns true if this type is a definition of a generic type, and
+		therefore capable of making subsequent generic types via the
+		`constructedTypeFor` method. A generic type will have generic
+		parameters which are all GenericParam (as opposed to other types
+		such as `int` or a given class).
+		"""
+		# TODO: make this more efficient, maybe by computing in the constructor
+		if _genericDef
+			return false
+		else if _genericParams.count
+			for param in _genericParams
 				if not param inherits GenericParam
 					return false
 			return true
 		else
 			return false
 
-	get isGeneric as bool is override
-		return _params.count > 0
+	get isGeneric as bool
+		"""
+		Returns true if this type is a generic type which includes
+		generic type defs and open-or-closed constructed types. Note
+		that arrays of generic types and pointers to generic types will
+		return false.
+		"""
+		return _genericParams.count > 0
 
-	get genericParams as List<of IType> is override
-		or require .isGeneric
-		return _params
+	get genericParams as List<of IType>
+		"""
+		Return the list of generic params for this generic type. This
+		property requires that .isGenericDef is true.
+		"""
+		require .isGeneric
+		return _genericParams
 
-	get genericTypeDef as Box? is override
-		return _genericTypeDef
+	get genericDef as Box?
+		"""
+		Returns the generic type definition for a constructed type (or nil if this type is not constructed).
+		"""
+		return _genericDef
 
 	def constructedTypeFor(typeArgs as List<of IType>) as Box
-		require  # TODO: inherit this from the interface instead
+		require
 			.containsGenericParameters
-			typeArgs.count==.params.count
+			typeArgs.count == .genericParams.count
 		body
 			assert .isGenericDef
 
 			# TODO: can take this out. it's just a check that the above comparison is working. 2007-12-08
 			equal = true
 			for i = 0 .. typeArgs.count
-				if typeArgs[i] <> .params[i]
+				if typeArgs[i] <> .genericParams[i]
 					equal = false
 					break
 
-			if typeArgs == _params
+			if typeArgs == _genericParams
 				assert equal
 				return this
 			else
@@ -582,8 +610,8 @@ class Box
 			# the cache of constructed types has to come from the root generic type def or you end up with duplicate
 			# constructed types which is not only wasteful, but causes problems with inheritance tests
 			genericDef = this
-			while genericDef.genericTypeDef
-				genericDef = genericDef.genericTypeDef to !
+			while genericDef.genericDef
+				genericDef = genericDef.genericDef to !
 
 			if genericDef._constructedTypes is nil
 				genericDef._constructedTypes = Dictionary<of String, Box>()
@@ -594,12 +622,12 @@ class Box
 			assert t is not this
 			genericDef._constructedTypes[key] = t
 			t._name = '[.rootName]<of [key]>'
-			t._genericTypeDef = this
+			t._genericDef = this
 			t._clrType = nil  # The constructed type is really sourced from the generic def. Don't foster confusion with a reference to the original generic def's clr type (if there is one).
 			t.cloneCollections
 			# set the contructed type args immediately or its ancestors will get the original generic args during _bindInt:
 			for i = 0 .. typeArgs.count
-				t._params[i] = typeArgs[i]
+				t._genericParams[i] = typeArgs[i]
 			assert t._constructedTypes is nil or t._constructedTypes.count == 0
 			if .didBindInt
 				t._completeConstruction(typeArgs)
@@ -627,7 +655,7 @@ class Box
 
 	def _needsConstruction(typeArgs as List<of IType>)
 		require
-			.params.count == typeArgs.count
+			.genericParams.count == typeArgs.count
 		body
 			_needs_typeArgs = typeArgs
 
@@ -639,17 +667,17 @@ class Box
 		"""
 		require
 			.isConstructed
-			.params.count == typeArgs.count
+			.genericParams.count == typeArgs.count
 			.didBindInt or .isBindingInt
 			not .isGenericDef
-			.genericTypeDef
-			.genericTypeDef.didBindInt or .genericTypeDef.isBindingInt
+			.genericDef
+			.genericDef.didBindInt or .genericDef.isBindingInt
 		body
-			_genericTypeDef.unNilReturnTypes(_genericTypeDef to !)
+			_genericDef.unNilReturnTypes(_genericDef to !)
 			# create a dictionary from the generic params to their effective type
 			gpToType = Dictionary<of GenericParam, IType>()
 			for i = 0 .. typeArgs.count
-				if (p = _genericTypeDef.params[i]) inherits GenericParam
+				if (p = _genericDef.genericParams[i]) inherits GenericParam
 					gpToType[p] = typeArgs[i]
 				else
 					throw FallThroughException(p)
@@ -691,10 +719,10 @@ class Box
 			_finishOverloads
 
 	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType is override
-		if _params.count == 0
+		if _genericParams.count == 0
 			return this
 		typeArgs = List<of IType>()
-		params = .params
+		params = .genericParams
 		for param in params
 			if param inherits GenericParam
 				# doesn't work:
@@ -710,12 +738,12 @@ class Box
 		if .isGenericDef
 			return .constructedTypeFor(typeArgs)
 		else
-			assert .genericTypeDef.isGenericDef  # if this ever fails, we may just need to follow .genericTypeDef back iteratively until we get to the real generic type def
-			return .genericTypeDef.constructedTypeFor(typeArgs)
+			assert .genericDef.isGenericDef  # if this ever fails, we may just need to follow .genericDef back iteratively until we get to the real generic type def
+			return .genericDef.constructedTypeFor(typeArgs)
 
 	def cloneCollections
 		base.cloneCollections
-		_params = List<of IType>(_params)  # TODO: Can I just say _params.clone? Do I need the cast?
+		_genericParams = List<of IType>(_genericParams)  # TODO: Can I just say _genericParams.clone? Do I need the cast?
 		_constructedTypes = nil
 		_baseInterfaceProxies = List<of ITypeProxy>(_baseInterfaceProxies)
 		_baseInterfaces = List<of Interface>(_baseInterfaces)
@@ -729,13 +757,13 @@ class Box
 		"""
 		require
 			.isGeneric
-			.params
+			.genericParams.count
 		body
 			# TODO: When does this get called? Investigate this.
-			return .params[gp.index]
+			return .genericParams[gp.index]
 
 	get containsGenericParameters as bool
-		for param in _params
+		for param in _genericParams
 			if param inherits GenericParam
 				return true
 			if param inherits Box  # CC: and <next if condition>
@@ -758,7 +786,7 @@ class Box
 	def _scanGenericArgs
 		if _clrType.isGenericType
 			for genArg in _clrType.getGenericArguments
-				_params.add(GenericParam(genArg))
+				_genericParams.add(GenericParam(genArg))
 
 	def _scanImplements
 		for interf in _clrType.getInterfaces
@@ -1012,14 +1040,14 @@ class Box
 		return _name.replace('of', '')
 
 	get _computeSharpRef as String is override
-		if _params.count
+		if _genericParams.count
 			sb = StringBuilder()
 			# generic
 			name = .rootName
 			sb.append(name)
 			sb.append('<')
 			sep = ''
-			for param in _params
+			for param in _genericParams
 				sb.append(sep)
 				sb.append(param.sharpRef)
 				sep = ', '
@@ -1038,10 +1066,10 @@ class Box
 		assert not .isConstructed
 		.writeSharpIsNames(sw)
 		sw.write('[.sharpKeyWord] [.rootName]')
-		if _params.count
+		if _genericParams.count
 			sw.write('<')
 			sep = ''
-			for param in _params
+			for param in _genericParams
 				sw.write(sep)
 				param.writeSharpDef(sw)
 				sep = ', '
@@ -1055,9 +1083,9 @@ class Box
 			sw.write(inter.sharpRef)
 			sep = ', '
 
-		if _params.count
+		if _genericParams.count
 			sw.indent
-			for param in _params
+			for param in _genericParams
 				if param inherits GenericParam
 					param.writeSharpConstraint(sw)
 			sw.dedent

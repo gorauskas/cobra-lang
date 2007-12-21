@@ -1286,12 +1286,18 @@ class YieldReturnStmt
 		if expr
 			_expr.bindImp
 			resultType = curCodeMember.resultType
-			if resultType is not .compiler.libraryType('System', 'Collections', 'IEnumerable') and resultType is not .compiler.libraryType('System', 'Collections', 'IEnumerator')
-				ienumerableOf = .compiler.libraryType('System', 'Collections', 'Generic', 'IEnumerable<of>')
-				ienumeratorOf = .compiler.libraryType('System', 'Collections', 'Generic', 'IEnumerator<of>')
-				if resultType is not ienumerableOf and resultType is not ienumeratorOf and not resultType.isConstructionOf(ienumerableOf) and not resultType.isConstructionOf(ienumeratorOf)
+			if resultType is not .compiler.libraryBox('System.Collections.IEnumerable') and resultType is not .compiler.libraryBox('System.Collections.IEnumerator')
+				okay = false
+				if resultType inherits Box
+					ienumerableOf = .compiler.libraryBox('System.Collections.Generic.IEnumerable<of>')
+					ienumeratorOf = .compiler.libraryBox('System.Collections.Generic.IEnumerator<of>')
+					okay = not (resultType is not ienumerableOf and resultType is not ienumeratorOf and not resultType.isConstructionOf(ienumerableOf) and not resultType.isConstructionOf(ienumeratorOf))
+				if not okay
 					.throwError('Cannot yield unless the return type is an iterator type (IEnumerable or IEnumerator, generic or not). Try "IEnumerable<of [expr.type.name]>".')
-			elementType = if(resultType.isGeneric, resultType.genericParams[0], .compiler.libraryType('System', 'Object'))
+			if resultType inherits Box and (resultType to Box).isGeneric
+				elementType = (resultType to Box).genericParams[0]
+			else
+				elementType = .compiler.libraryType('System.Object')
 			if not expr.canBeAssignedTo(elementType)
 				.throwError('Cannot return [expr.type.name] because "[curCodeMember.name]" is declared to return a [elementType.name].')
 			_expr.contextType = elementType
