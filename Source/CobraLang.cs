@@ -10,7 +10,7 @@ using System.Text;
 namespace Cobra.Lang {
 
 
-[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.ReturnValue, AllowMultiple = false)]
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.ReturnValue | AttributeTargets.Method, AllowMultiple = false)]
 public class NotNull : Attribute {
 
 	public NotNull() {
