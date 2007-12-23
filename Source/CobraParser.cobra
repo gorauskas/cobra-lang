@@ -2068,6 +2068,7 @@ class Parser
 			_leftStack.push(left to !)
 			.opStack.push(op to !)
 			try
+				# get the right hand side of a binary operator expression
 				prec = if(OperatorSpecs.rightAssoc.containsKey(op to !), binaryOpPrec, binaryOpPrec+1)
 				if op == 'TO' and .peek.which in ['QUESTION', 'BANG']
 					# ex: x to !
@@ -2080,8 +2081,12 @@ class Parser
 						else: throw FallThroughException(rightTok.which)
 				else
 					if getTypeExprForRightHandSide
+						# support to expression. Ex: x to int  Ex: x to? Shape
 						right = .typeExpr to Expr
 						getTypeExprForRightHandSide = false
+					else if op == 'DOT' and .peek and .peek.isKeyword
+						# support foo.bar where bar is a keyword. Ex: foo.this
+						right = MemberExpr(.grab) to Expr
 					else
 						right = .expression(prec)
 					left = BinaryOpExpr.make(opToken to !, op to !, left to !, right)
@@ -2114,7 +2119,7 @@ class Parser
 			peek = peekToken.which
 			if peek=='ID' or peekToken.isKeyword
 				memberToken = .idOrKeyword
-				expr = MemberExpr(memberToken, memberToken.text) to Expr
+				expr = MemberExpr(memberToken) to Expr
 			else if peek=='OPEN_CALL'
 				expr = .callExpr
 			else
@@ -2275,7 +2280,7 @@ class Parser
 		nameToken = .idOrKeyword
 		name = nameToken.text
 		if .opStack.count and .opStack.peek=='DOT'
-			return MemberExpr(nameToken, name)
+			return MemberExpr(nameToken)
 		if .peek.which=='AS'
 			if not Utils.startsWithLowerLetter(name)
 				.throwError('Local variable declarations must start with a lowercase letter. This avoids collisions with other identifiers such as classes and enums.')

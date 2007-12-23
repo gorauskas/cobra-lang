@@ -744,9 +744,11 @@ class DotExpr
 	def _bindImp
 		base._bindImp
 
-		# use of base implies override if the containing member is not already marked new
 		if _left inherits BaseLit
-			.compiler.curCodeMember.usesBase
+			.compiler.curCodeMember.usesBase  # use of base implies override if the containing member is not already marked new
+		else if _left inherits ThisLit
+				if _left.isExplicit  # CC: combine above
+					.compiler.warning(this, 'An explicit "this" literal is unnecessary for accessing members of the current object. You can remove "this".')
 
 		if not _type
 			assert _right.type
@@ -754,9 +756,6 @@ class DotExpr
 		if _left.type.isDynamic
 			_type = .compiler.dynamicType
 		else if not _left.hasError and not _right.hasError
-			if _left inherits ThisLit
-				if _left.isExplicit  # CC: combine above
-					.compiler.warning(this, 'An explicit "this" literal is unnecessary for accessing members of the current object. You can remove "this".')
 			if _left inherits IdentifierExpr
 				if _left.definition inherits Box # CC: combine with above if statement
 					if not _dotRightExpr.member.isShared
