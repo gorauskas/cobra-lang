@@ -457,8 +457,11 @@ class Parser
 					if tok is nil
 						break
 					branch tok.which
-						on 'STOPSTOP'
-							keepParsing = false
+						on 'PERCENTPERCENT'
+							if .peek(1) and .peek(1).text == 'stop'
+								keepParsing = false
+							else
+								.compilerDirective
 						on 'USE'
 							topNS.addUseDirective(.useDirective)
 #						on 'IMPORT'
@@ -485,6 +488,18 @@ class Parser
 			finally
 				_nameSpaceStack.pop
 			return _module to !
+
+	def compilerDirective
+		.expect('PERCENTPERCENT')
+		# 'stop' is already handled in main parse loop
+		token = .grab
+		if token.text == 'throw'
+			# throw an internal error. used for testing that the compiler will catch and report these as internal errors
+			.expect('EOL')
+			# TODO: throw AssertException(SourceSite sourceSite, object[] expressions, object thiss, object info)
+			assert false, IdentifierExpr(token, 'throw', nil)
+		else
+			.throwError('Unknown compiler directive.')
 
 	def useDirective as UseDirective
 		"""
