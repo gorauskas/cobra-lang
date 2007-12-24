@@ -227,9 +227,9 @@ class Parser
 		"""
 		i = _nextTokenIndex + offset
 		if i < _tokens.count
-			token = _tokens[i]
+			token = _tokens[i] to ?
 		else
-			token = nil to passthrough  # CC: get rid of cast somehow
+			token = nil
 		if _willShowTokens
 			print 'peek([offset]) --> [token]'
 		# TODO: resolve CUE
@@ -432,62 +432,59 @@ class Parser
 		"""
 		Parses and then returns an instance of Module.
 		"""
-		require
-			.globalNS
-		body
-			docString = .docString
-			_module = CobraModule(_fileName, _verbosity, docString, _globalNS)  # TODO: does module really need verbosity?
-			_nameSpaceStack.push(_module.topNameSpace)
-			try
-				topNS = _module.topNameSpace
-				if not _fileName.endsWith('SystemInterfaces.cobra')
-					# TODO: make an "implicit" token
-					useToken = Token(_fileName, 1, 1, 1, 'USE', 'use', nil)
-					# default use directives
-					topNS.addUseDirective(UseDirective(useToken, ['System']))
-					topNS.addUseDirective(UseDirective(useToken, ['System', 'Collections', 'Generic']))
-					topNS.addUseDirective(UseDirective(useToken, ['System', 'IO']))
-					topNS.addUseDirective(UseDirective(useToken, ['System', 'Text']))
-					topNS.addUseDirective(UseDirective(useToken, ['Cobra', 'Lang']))
-				what as INameSpaceMember?
-				keepParsing = true
-				while keepParsing
-					what = nil
-					tok = .peek
-					if tok is nil
-						break
-					branch tok.which
-						on 'PERCENTPERCENT'
-							if .peek(1) and .peek(1).text == 'stop'
-								keepParsing = false
-							else
-								.compilerDirective
-						on 'USE'
-							topNS.addUseDirective(.useDirective)
+		docString = .docString
+		_module = CobraModule(_fileName, _verbosity, docString, _globalNS)  # TODO: does module really need verbosity?
+		_nameSpaceStack.push(_module.topNameSpace)
+		try
+			topNS = _module.topNameSpace
+			if not _fileName.endsWith('SystemInterfaces.cobra')
+				# TODO: make an "implicit" token
+				useToken = Token(_fileName, 1, 1, 1, 'USE', 'use', nil)
+				# default use directives
+				topNS.addUseDirective(UseDirective(useToken, ['System']))
+				topNS.addUseDirective(UseDirective(useToken, ['System', 'Collections', 'Generic']))
+				topNS.addUseDirective(UseDirective(useToken, ['System', 'IO']))
+				topNS.addUseDirective(UseDirective(useToken, ['System', 'Text']))
+				topNS.addUseDirective(UseDirective(useToken, ['Cobra', 'Lang']))
+			what as INameSpaceMember?
+			keepParsing = true
+			while keepParsing
+				what = nil
+				tok = .peek
+				if tok is nil
+					break
+				branch tok.which
+					on 'PERCENTPERCENT'
+						if .peek(1) and .peek(1).text == 'stop'
+							keepParsing = false
+						else
+							.compilerDirective
+					on 'USE'
+						topNS.addUseDirective(.useDirective)
 #						on 'IMPORT'
 #							what = .importDirective
-						on 'CLASS'
-							what = .classDecl
-						on 'INTERFACE'
-							what = .interfaceDecl
-						on 'STRUCT'
-							what = .structDecl
-						on 'ENUM'
-							what = .enumDecl
-						on 'EOL'
-							.grab
-						on 'NAMESPACE'
-							.nameSpaceDecl
-						else
-							.throwError('Expecting use, import, namespace, class, interface or enum, but got [tok]')
-							break
-					if what
-						_module.topNameSpace.addDecl(what)
-					if what inherits Box
-						assert what.parentNameSpace
-			finally
-				_nameSpaceStack.pop
-			return _module to !
+					on 'CLASS'
+						what = .classDecl
+					on 'INTERFACE'
+						what = .interfaceDecl
+					on 'STRUCT'
+						what = .structDecl
+					on 'ENUM'
+						what = .enumDecl
+					on 'EOL'
+						.grab
+					on 'NAMESPACE'
+						.nameSpaceDecl
+					else
+						.throwError('Expecting use, import, namespace, class, interface or enum, but got [tok]')
+						break
+				if what
+					_module.topNameSpace.addDecl(what)
+				if what inherits Box
+					assert what.parentNameSpace
+		finally
+			_nameSpaceStack.pop
+		return _module to !
 
 	def compilerDirective
 		.expect('PERCENTPERCENT')
@@ -852,7 +849,6 @@ class Parser
 		pass # CC: take out
 
 	def nameSpaceDecl as NameSpace
-		require _nameSpaceStack
 		.expect('NAMESPACE')
 		curNameSpace = .curNameSpace
 		assert not curNameSpace.isUnified

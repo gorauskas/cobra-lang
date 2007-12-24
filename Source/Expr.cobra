@@ -467,7 +467,7 @@ class CallExpr
 					checkName = _name
 					while checkName.startsWith('_')
 						checkName = checkName.substring(1)
-					if _superNode.left.type inherits Box and checkName and Utils.startsNonLower(checkName)
+					if _superNode.left.type inherits Box and Utils.startsNonLower(checkName)
 						.throwError('Methods must start with lowercase letters (not counting underscores). The name is \"[_name]\".')
 					# handle foo.bar() where this is the `bar()` part
 					if not _superNode.left.didBindImp
@@ -499,7 +499,7 @@ class CallExpr
 				# handle instantiation such Car() or t() (where t is a System.Type)
 				canBeUndottedMember = .compiler.canNameBeUndottedMember(_name)
 				if canBeUndottedMember
-					assert .compiler.boxStack
+					assert .compiler.boxStack.count
 					definition = .compiler.symbolForName(_name, canBeUndottedMember, false) to passthrough
 				else
 					definition = .compiler.findLocal(_name)
@@ -881,7 +881,7 @@ class IdentifierExpr
 		if _definition is nil
 			canBeUndottedMember = .compiler.canNameBeUndottedMember(_name)
 			if canBeUndottedMember
-				assert .compiler.boxStack
+				assert .compiler.boxStack.count
 				_definition = .compiler.symbolForName(_name, canBeUndottedMember, false) to passthrough
 			else
 				_definition = .compiler.findLocal(_name)
@@ -907,7 +907,7 @@ class IdentifierExpr
 				_type = _definition.typeForIdentifier
 				_receiverType = _definition.typeForReceiver
 			else
-				if .binarySuperNode and .binarySuperNode inherits AssignExpr and this is .binarySuperNode.left
+				if .binarySuperNode inherits AssignExpr and this is .binarySuperNode.left
 					pass  # let the AssignExpr have its chance at type inference
 				else
 					.errorUnknownId(.name)
@@ -923,7 +923,7 @@ class IdentifierExpr
 		require name.length
 		msg = 'Unknown identifier: "[name]".'
 		if .compiler.unknownSuggestions.containsKey(name)
-			sug = .compiler.unknownSuggestions[name]
+			sug = .compiler.unknownSuggestions[name] to ?
 		if sug and sug.length
 			msg += ' Maybe you should try "[sug]".'
 		.throwError(msg)
@@ -2192,7 +2192,7 @@ class StringSubstLit
 	var _items as List<of Expr>
 
 	def init(items as List<of Expr>)
-		require items
+		require items.count
 		base.init(items[0].token)
 		if true
 			_items = items
@@ -2202,10 +2202,10 @@ class StringSubstLit
 			# _items = for item in items if not item inherits StringLit or item.string get item
 			_items = List<of Expr>()
 			for item in _items
-				if item inherits StringLit and not (item to StringLit).string
+				if item inherits StringLit and not (item to StringLit).string.length
 					continue
 				_items.add(item)
-			assert _items
+			assert _items.count
 
 	def addSubFields is override
 		base.addSubFields()
