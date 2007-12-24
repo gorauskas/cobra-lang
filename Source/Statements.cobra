@@ -55,7 +55,7 @@ class Stmt
 			canBeUndottedMember = .compiler.canNameBeUndottedMember(ve.name)
 			usingExistingLocal = false
 			if canBeUndottedMember
-				assert .compiler.boxStack
+				assert .compiler.boxStack.count
 				definition = .compiler.symbolForName(ve.name, canBeUndottedMember, false) to passthrough
 				if definition is nil
 					ve.errorUnknownId(ve.name)
@@ -213,7 +213,7 @@ class BranchStmt
 				sw.write(': ')
 				sep = '\n'
 			onPart.block.writeSharpDef(sw)
-			if not onPart.block.stmts or not onPart.block.stmts[onPart.block.stmts.count-1] inherits ReturnStmt  # CC: just use -1 for index
+			if not onPart.block.stmts.count or not onPart.block.stmts[onPart.block.stmts.count-1] inherits ReturnStmt  # CC: just use -1 for index
 				sw.write('break;\n')
 		if _elsePart
 			sw.write('default: ')
@@ -266,7 +266,7 @@ class BlockStmt
 		_stmts = stmts
 
 	get lastToken as IToken
-		return if(_stmts, _stmts[_stmts.count-1].lastToken, base.lastToken)
+		return if(_stmts.count, _stmts[_stmts.count-1].lastToken, base.lastToken)
 
 	def addSubFields
 		base.addSubFields
@@ -364,11 +364,10 @@ class ExpectStmt
 
 	def _bindImp
 		base._bindImp
-		if _exceptionType is nil and _exceptionTypeNode
+		if _exceptionType is nil
 			_exceptionType = (_exceptionTypeNode.bindAll to ITypeProxy).realType  # CC: axe cast
 		assert _exceptionType, this
-		excClass = .compiler.libraryType('System', 'Exception')
-		assert excClass
+		excClass = .compiler.libraryClass('System.Exception')
 		if not _exceptionType.isDescendantOf(excClass)
 			.throwError('Can only use Exception and its descendants for "expect". "[_exceptionType.name]" does not inherit the Exception class.')
 		.compiler.curBox.makeNextPrivateSerialNumber  # `writeSharpDef` uses two serial nums
@@ -1049,7 +1048,7 @@ class CatchBlock
 		"""
 		base.init(token)
 		_var = varr
-		_varName = if(varr, varr.name, nil)
+		_varName = varr.name
 		_block = block
 
 	def init(token as IToken, typeNode as ITypeProxy, block as BlockStmt)
