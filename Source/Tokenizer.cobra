@@ -55,7 +55,7 @@ interface IToken
 		Returns a copy of the token, but with the `which` changed.
 		"""
 
-	pro nextToken as IToken
+	pro nextToken as IToken?
 		"""
 		Use this to "insert" extra tokens into the token stream from an .onWHICH method.
 		"""
@@ -92,11 +92,10 @@ class Token
 
 	def init(fileName as String, lineNum as int, colNum as int, charNum as int, which as String, text as String, value as Object?)
 		require
-			fileName
 			lineNum > 0
 			colNum > 0
 			charNum > 0
-			which
+			which.length
 		body
 			_fileName = fileName
 			_lineNum = lineNum
@@ -177,21 +176,27 @@ class Token
 			t = Token('(noname)', 1, 1, 1, 'ID', 'foo', nil)
 			assert t.toString=='"foo" (ID)'
 		body
-			sb = StringBuilder()
-			for c in _text
-				branch c
-					on c'\t': sb.append('\\t')
-					on c'\r': sb.append('\\r')
-					on c'\n': sb.append('\\n')
-					else: sb.append(c)
-			s = sb.toString
-			if s.length
-				if s.toLower == _which.toLower  # if keyword...
-					return '"[s]"'
-				else
-					return '"[s]" ([_which])'
+			try
+				return _toString()
+			catch exc as Exception
+				return '(Token.toString Exception: exc.toString)'
+
+	def _toString as String
+		sb = StringBuilder()
+		for c in _text
+			branch c
+				on c'\t': sb.append('\\t')
+				on c'\r': sb.append('\\r')
+				on c'\n': sb.append('\\n')
+				else: sb.append(c)
+		s = sb.toString
+		if s.length
+			if s.toLower == _which.toLower  # if keyword...
+				return '"[s]"'
 			else
-				return '"[_which]"'  # INDENT, DEDENT, etc.
+				return '"[s]" ([_which])'
+		else
+			return '"[_which]"'  # INDENT, DEDENT, etc.
 
 	def toTechString as String
 		return '[.getType.name]([.which], [CobraCore.toTechString(.text)], [CobraCore.toTechString(.value)], ln [.lineNum], col [.colNum], [.fileName])'
@@ -490,9 +495,9 @@ class Tokenizer
 					others.add(.tokenDefForSpec(spec))
 			if .keywords.length
 				t = List<of String>()
-				for line as String in .keywords.split(c'\n')
+				for line in .keywords.split(c'\n')
 					line = line.trim
-					if not line or line.startsWith('#')
+					if not line.length or line.startsWith('#')
 						continue
 					t.addRange(line.split(nil) to passthrough)
 				for word in t
@@ -755,8 +760,8 @@ class TokenDef
 
 	def init(which as String, regExSource as String)
 		require
-			which
-			regExSource
+			which.length
+			regExSource.length
 		ensure
 			.re
 		body
