@@ -801,7 +801,7 @@ class Parser
 			# TODO: check for repeated names
 			# TODO: check for values that repeat or go backwards
 		.dedent
-		if not enumMembers
+		if not enumMembers.count
 			.throwError('Missing enum members.')
 		if _boxStack.count
 			parent = .curBox to IParentSpace
@@ -959,7 +959,7 @@ class Parser
 		while s.startsWith('_')
 			s = s.substring(1)
 			numUnderscores += 1
-		if not s
+		if not s.length
 			.throwError('A class variable must be made of more than underscores. Try "[identifier]x" or "[identifier]1".')
 		if s[0] not in _lowercaseLetters
 			if s[0] in _uppercaseLetters
@@ -987,7 +987,6 @@ class Parser
 				isNames = .isDeclNames
 				docString = .docString
 				.dedent
-		assert isNames
 		return BoxVar(tok, .curBox, identifier, type, isNames, initExpr, docString)
 
 	def declareMethod as AbstractMethod?
@@ -1113,10 +1112,9 @@ class Parser
 				return .declarePropertyFrom(token, name, 'getset')
 			paramsList = List<of Param>()
 		if .optional('AS')
-			returnType as INode = .typeId
+			returnType = .typeId to ITypeProxy
 		else
 			returnType = _typeProvider.dynamicType
-		assert returnType
 		if .curBox inherits Class or .curBox inherits Struct
 			isNames = .indentIsDeclNames
 			docString = .docString
@@ -1213,7 +1211,6 @@ class Parser
 			returnType as INode = .typeId
 		else
 			returnType = _typeProvider.dynamicType
-		assert returnType
 
 		if .curBox inherits Class or .curBox inherits Struct
 			isNames = .indentIsDeclNames
@@ -1255,11 +1252,9 @@ class Parser
 		if .optional('FROM')
 			return .declarePropertyFrom(token, name, 'set')
 		if .optional('AS')
-			returnType as INode = .typeId
-			assert returnType
+			returnType = .typeId to ITypeProxy
 		else
 			returnType = _typeProvider.dynamicType
-		assert returnType
 
 		if .curBox inherits Class or .curBox inherits Struct
 			isNames = .indentIsDeclNames
@@ -1534,7 +1529,7 @@ class Parser
 					.grab
 					if elsePart
 						.throwError('Cannot have more than one "else" in a branch.')
-					if not onParts
+					if not onParts.count
 						.throwError('Cannot have an "else" in a branch without at least one "on".')
 					elsePart = .branchPartStatements
 				on 'DEDENT'
@@ -1804,7 +1799,7 @@ class Parser
 			finallyBlock = .block
 		else
 			finallyBlock = nil
-		if not catchBlocks and not successBlock and not finallyBlock
+		if not catchBlocks.count and not successBlock and not finallyBlock
 			.throwError('A try needs at least one "except", "success" or "finally" block.')
 		return TryStmt(token, tryBlock, catchBlocks, successBlock, finallyBlock)
 
@@ -1825,8 +1820,6 @@ class Parser
 		# TODO: consider pushing the test method as the current code member
 		token = .expect('TEST')
 		.indent
-		assert token, token
-		assert box, box
 		testMethod = TestMethod(token, box, .typeProvider.voidType)
 		.statementsFor(testMethod)
 		box.testMethod = testMethod
@@ -1875,7 +1868,7 @@ class Parser
 				stmts.add(stmt)
 			if .peek.which=='DEDENT'
 				break
-		if not stmts
+		if not stmts.count
 			.throwError('Missing statements in block. Add a real statement or a "pass".')
 		.dedent
 		return BlockStmt(token, stmts)
@@ -1926,14 +1919,11 @@ class Parser
 				else
 					# this should probably be moved to the bindImp phase since types can have different names like "int" and "System.Int32"
 					.throwError('Cannot redeclare "[name]" from "[definition.typeNode]" to "[type]". Previous definition is on line [definition.token.lineNum].')
-			else if definition.type
-				if definition.type==type
-					return definition
-				else
-					# this should probably be moved to the bindImp phase since types can have different names like "int" and "System.Int32"
-					.throwError('Cannot redeclare "[name]" from "[definition.type]" to "[type]". Previous definition is on line [definition.token.lineNum].')
+			else if definition.type==type
+				return definition
 			else
-				throw FallThroughException(definition)
+				# this should probably be moved to the bindImp phase since types can have different names like "int" and "System.Int32"
+				.throwError('Cannot redeclare "[name]" from "[definition.type]" to "[type]". Previous definition is on line [definition.token.lineNum].')
 
 		# new def
 		varr = LocalVar(token, type)
@@ -2280,10 +2270,7 @@ class Parser
 		if .peek.which=='AS'
 			if not Utils.startsWithLowerLetter(name)
 				.throwError('Local variable declarations must start with a lowercase letter. This avoids collisions with other identifiers such as classes and enums.')
-			asToken = .grab
-			type = .typeId
-			assert type
-			return AsExpr(asToken, nameToken, type)
+			return AsExpr(.grab, nameToken, .typeId)
 		else
 			return IdentifierExpr(nameToken, name, nil)
 
@@ -2405,10 +2392,7 @@ class Parser
 		if .peek.which=='AS'
 			if not Utils.startsWithLowerLetter(name)
 				.throwError('Local variable declarations must start with a lowercase letter. This avoids collisions with other identifiers such as classes and enums.')
-			asToken = .grab
-			type = .typeId
-			assert type
-			return AsExpr(asToken, nameToken, type)
+			return AsExpr(.grab, nameToken, .typeId)
 		else
 			return IdentifierExpr(nameToken, name, nil)
 
