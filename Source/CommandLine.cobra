@@ -944,6 +944,7 @@ class CommandLine
 		hasInlineMessages = false
 		inLineMessages = Dictionary<of int, String>()
 		lineNum = 1
+		expectingError = false
 		for line in lines
 			if lineNum > 1 and ('.warning.' in line or '.error.' in line)
 				hasInlineMessages = true
@@ -953,6 +954,7 @@ class CommandLine
 				else if '.error.' in line
 					message = line[line.indexOf('.error.') + '.error.'.length:]
 					messageType = 'e'
+					expectingError = true
 				else
 					throw FallThroughException(line)
 				inLineMessages[lineNum] = messageType + message
@@ -1006,8 +1008,11 @@ class CommandLine
 			if bad	
 				.failed
 				return 0
-			else
+			else if expectingError
 				return 1
+			else
+				# a test case with nothing but warnings is still executed
+				return _testifyRun(c, bar)
 			
 		if firstLineInsensitive.startsWith('#.error.')
 			# note that errors that are only detected by the backend C# compiler are not detectable by testify
@@ -1114,6 +1119,15 @@ class CommandLine
 			.failed
 			return 0
 
+		if c.messages.count
+			# can't be errors or StopCompilation would have been caught above
+			print 'Unexpected warnings in test.'
+			.failed
+			return 0
+
+		return _testifyRun(c, bar)
+		
+	def _testifyRun(c as Compiler, bar as String) as int
 		if not c.fullExeFileName.endsWith('.exe')
 			if File.exists(c.fullExeFileName)
 				print 'Produced file "[c.fullExeFileName]" as expected.'

@@ -525,7 +525,7 @@ class Compiler
 		"""
 		verbosity = .verbosity
 		if verbosity
-			print 'Reading assembly: ', ass  # extra space lines up with 'Loading reference:'
+			print 'Reading assembly:  [ass] at [ass.location]'  # extra space lines up with 'Loading reference:'
 		namespaceQualNameToNameSpaceObject = Dictionary<of String, NameSpace>()
 		module = AssemblyModule(ass, .globalNS)
 		_modules.add(module)
@@ -972,7 +972,8 @@ class Compiler
 
 	def _addMessage(message as SourceException)
 		# Cobra can sometimes generate duplicate messages. Specifically, a constructed type might generate a message that its generic def did.
-		# Yeah, ideally, this would be fixed, but sometimes that's harder than just removing the duplicates
+		# Also, assert statements whose conditions cause C# warnings will get duplicate warnings because of the expression breakdown.
+		# Yeah, ideally, this would be fixed, but sometimes that's harder than just removing the duplicates:
 		key = if(message.hasSourceSite, '[message.fileName]:[message.lineNum]', '')
 		if _messagesPerSourceLine.containsKey(key)
 			for se in _messagesPerSourceLine[key]
@@ -1326,6 +1327,8 @@ class SharpCompilationMessage
 					# add (sharp)
 					if compiler.verbosity or Utils.isDevMachine
 						line += ' (C# [sharpLineNum])'
+		line = line.replace("`double'", "`float'")
+		line = line.replace("null", "nil")
 		_message = line
 
 	get isError as bool is override
