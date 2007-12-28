@@ -1044,11 +1044,22 @@ class InverseCoalesceExpr
 			_type = _left.type  # TODO: should be greatest common denominator between the two
 
 	def _writeSharpDef(sw as SharpWriter) is override
-		_left.writeSharpDef(sw)
-		sw.write('==null ? null : ')
-		if not _right.type inherits NilableType and not _right.type inherits NilType
-			sw.write('([_right.type.sharpRef]?)')
-		_right.writeSharpDef(sw)
+		if _right inherits NilLiteral
+			# `left ! nil` always returns nil -- it's like a no-op
+			if _left inherits IdentifierExpr
+				# no side effect possibl
+				sw.write('null')
+			else
+				# in case `left` has side effects, evaluate it
+				sw.write('CobraImp.Return<[_type.sharpRef]>(null, ')
+				_left.writeSharpDef(sw, false)
+				sw.write(')')
+		else
+			_left.writeSharpDef(sw)
+			sw.write('==null ? null : ')
+			if not _right.type inherits NilableType and not _right.type inherits NilType
+				sw.write('([_right.type.sharpRef]?)')
+			_right.writeSharpDef(sw)
 
 
 class CoalesceAssignExpr
@@ -1092,8 +1103,12 @@ class InverseCoalesceAssignExpr
 	def _writeSharpDef(sw as SharpWriter) is override
 		_left.writeSharpDef(sw)
 		sw.write(' = ')
-		_left.writeSharpDef(sw)
-		sw.write('==null ? null : ')
-		if not _right.type inherits NilableType and not _right.type inherits NilType
-			sw.write('([_right.type.sharpRef]?)')
-		_right.writeSharpDef(sw)
+		if _right inherits NilLiteral
+			# `left != nil` is the same as `left = nil`
+			sw.write('null')
+		else
+			_left.writeSharpDef(sw)
+			sw.write('==null ? null : ')
+			if not _right.type inherits NilableType and not _right.type inherits NilType
+				sw.write('([_right.type.sharpRef]?)')
+			_right.writeSharpDef(sw)

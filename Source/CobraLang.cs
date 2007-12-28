@@ -259,6 +259,11 @@ static public class CobraImp {
 		PushPrintTo(Console.Out);
 	}
 
+	static public T Return<T>(T value, params object[] stuff) {
+		// used in BinaryExpr.cobra
+		return value;
+	}
+
 	static public string TypeName(Type t) {
 		if (t==null)
 			return "nil";
