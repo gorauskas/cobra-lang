@@ -380,7 +380,7 @@ class Parser
 		Returns the INDENT.
 		"""
 		if .optional('COLON')
-			_warning('Colons are not used to start indented blocks.')
+			_warning('Colons are not used to start indented blocks. You can remove the colon.')
 		.expect('EOL')
 		while .optional('EOL')
 			pass
@@ -416,7 +416,7 @@ class Parser
 
 	def optionalIndent as IToken?
 		if .optional('COLON')
-			_warning('Colons are not used to start indented blocks.')
+			_warning('Colons are not used to start indented blocks. You can remove the colon.')
 		.oneOrMore('EOL')
 		return .optional('INDENT')
 
@@ -1052,6 +1052,7 @@ class Parser
 				assert false
 				# CC: method = Destructor(token, .curBox, isNames, docString)
 			else
+				# TODO: remove the following
 				if name=='constructor'
 					_warning('Did you mean to say `construct`?')
 				else if name=='destructor'
@@ -2005,12 +2006,13 @@ class Parser
 			pass
 
 		body
-			return .expression(0, nil)
-
+			expr = .expression(0, nil)
+			if expr.isParened
+				_warning(expr.token, 'Unnecessary parentheses around expression. You can remove them.')
+			return expr
 
 	def expression(precedence as int) as Expr
 		return .expression(precedence, nil)
-
 
 	def expression(precedence as int, left as Expr?) as Expr
 		if left is nil
@@ -2096,6 +2098,7 @@ class Parser
 			.grab
 			node = .expression(0, nil)
 			.expect('RPAREN')
+			node.isParened = true
 			return node
 		else if peek=='DOT'
 			# leading dot
@@ -2634,7 +2637,9 @@ class Parser
 			throw ParserException(token, msg)
 
 	def _warning(msg as String)
-		token = .last
+		_warning(.last, msg)
+
+	def _warning(token as IToken, msg as String)
 		_warningRecorder.warning(CobraWarning(_fileName, token, msg))
 
 	def _pushCodePart(codePart as AbstractMethod)
@@ -2644,7 +2649,7 @@ class Parser
 	def _popCodePart
 		require _codeParts.count
 		_codeParts.pop
-		# CC: _curCodePart = if(_codeParts, _codeParts.peek, nil)
+		# CC: _curCodePart = if(_codeParts.count, _codeParts.peek, nil)
 		if _codeParts.count
 			_curCodePart = _codeParts.peek to !
 		else
