@@ -917,9 +917,22 @@ class CommandLine
 		if verbose
 			Utils.printSource(source)
 			print bar
-		lines = source.split(c'\n')
+		lines = List<of String>(source.split(c'\n'))  # CC: axe list wrapper
 		firstLine = lines[0]
 		firstLineInsensitive = firstLine.trim.replace(' ', '')
+
+		fileNames = [baseName]
+
+		if firstLineInsensitive.startsWith('#.multi.')
+			print 'Running multiple files.'
+			for fileName in firstLine.substring(firstLine.indexOf('.multi.')+8).split
+				if fileName.length
+					fileNames.add(Utils.combinePaths(Path.getDirectoryName(baseName) to !, fileName))
+			print 'Multiple filenames:', Utils.join(', ', fileNames)
+			# enable having another directive on the next line, such as .error.
+			lines = lines[1:]
+			firstLine = lines[0]
+			firstLineInsensitive = firstLine.trim.replace(' ', '')
 
 		if firstLineInsensitive.startsWith('#.args.')
 			i = firstLine.indexOf('.args.')
@@ -928,7 +941,8 @@ class CommandLine
 			options = .testifyOptions
 			options.combine(args)
 			# enable having another directive on the next line, such as .error.
-			firstLine = source.split(c'\n')[1]
+			lines = lines[1:]
+			firstLine = lines[0]
 			firstLineInsensitive = firstLine.trim.replace(' ', '')
 		else
 			options = .testifyOptions
@@ -1030,7 +1044,7 @@ class CommandLine
 			error = firstLine.substring(index+7).trim.toLower
 			try
 				c = Compiler(compilerVerbosity, _cachedTestifyModules)
-				c.testifyFilesNamed([baseName], options, _resultsWriter to !, verbose)
+				c.testifyFilesNamed(fileNames, options, _resultsWriter to !, verbose)
 			catch StopCompilation
 				assert c.errors.count
 				expectedErrors = error.split(c'&')
@@ -1073,7 +1087,7 @@ class CommandLine
 			# TODO: the following code both checks for warnings to be thrown as well as going through a list of warnings. Seems like it should just need to do one or the other.
 			try
 				c = Compiler(compilerVerbosity, _cachedTestifyModules)
-				c.testifyFilesNamed([baseName], options, _resultsWriter to !, verbose)
+				c.testifyFilesNamed(fileNames, options, _resultsWriter to !, verbose)
 			catch StopCompilation
 				print 'Expecting warning substring: "[warning]"'
 				print 'But got errors.'
@@ -1105,15 +1119,6 @@ class CommandLine
 				.failed
 				return 0
 			return 1
-
-		fileNames = [baseName]
-
-		if firstLineInsensitive.startsWith('#.multi.')
-			print 'Running multiple files.'
-			for fileName in firstLine.substring(firstLine.indexOf('.multi.')+8).split
-				if fileName.length
-					fileNames.add(Utils.combinePaths(Path.getDirectoryName(baseName) to !, fileName))
-			print 'Filenames:', Utils.join(', ', fileNames)
 
 		c = Compiler(compilerVerbosity, _cachedTestifyModules)
 		
