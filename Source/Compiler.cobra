@@ -603,6 +603,7 @@ class Compiler
 		_fix('System.Collections.Generic.Dictionary<of,>', r'[]')
 		_fix('System.Collections.Generic.KeyValuePair<of,>', r'key value')
 		_fix('System.IO.File', 'readAllText')
+		_fix('System.IO.FileSystemInfo', 'name fullName')
 		_fix('System.IO.TextWriter', 'newLine')
 		_fix('System.IO.Path', 'combine getFullPath')
 			# getDirectoryName does return String?
@@ -610,13 +611,16 @@ class Compiler
 			# TODO: Add something like CobraUtils.getDirectoryName and .getFileName that return String instead
 		# args: System.IO.Path.combine(arg1 as String, arg2 as String) as String
 		_fix('System.Text.StringBuilder', 'toString')
-		_fix('System.Text.RegularExpressions.Regex', 'match')
+		_fix('System.Text.RegularExpressions.Regex', 'match replace')
 		_fix('System.Diagnostics.Process', 'processName')
 		_fix('System.Reflection.Assembly', 'getExecutingAssembly location')
 		_fix('System.Reflection.MemberInfo', 'name')
 		_fix('System.Reflection.FieldInfo', 'fieldType')
 		_fix('System.Reflection.ParameterInfo', 'parameterType')
 		_fix('System.Reflection.PropertyInfo', 'propertyType')
+
+		# TODO: I don't think sigs outside the "standard lib" can be specified
+		# HttpUtility.htmlEncode htmlDecode urlEncode urlDecode
 
 		# TODO: shouldn't need the following. see comment in _fixSubs
 		_fix('System.IO.StringWriter', 'toString')
@@ -680,6 +684,10 @@ class Compiler
 							_curModule.bindInh
 						catch ce as SourceException
 							.recordError(ce)
+					stringClass = .libraryClass('System.String')
+					objectClass = .libraryClass('System.Object')
+					assert stringClass.isDescendantOf(objectClass)
+					assert stringClass.isDescendantOf(stringClass)
 				finally
 					Node.setCompiler(nil)
 			finally
@@ -1283,12 +1291,15 @@ class SharpCompilationMessage
 				return true
 			if msg.endsWith(' (Location of the symbol related to previous warning)')
 				return true
+		if 'The given expression is always of the provided ' in msg or 'The given expression is never of the provided ' in msg
+			# Cobra handles these itself
+			return true
 		return false
 		
 	var _fileName as String?
 	var _lineNum as int?
 	var _isError as bool
-	
+
 	def init(line as String, compiler as Compiler)
 		require not .willSkipMessage(line)
 		base.init(line)
