@@ -1,8 +1,8 @@
 .h1 @ Introduction
 
-This document describes the implementation of the Cobra compiler in just enough detail to make you a dangerous contributor. It does not go into exhaustive detail because the source code already has embedded docs, comments and, hopefully, well crafted identifiers. Additionally, the source should be fairly readable.
+This document describes the implementation of the Cobra compiler in just enough detail to make you a dangerous contributor. It does not go into exhaustive detail because the source code already has embedded docs, comments and, hopefully, well crafted identifiers. Additionally, the source should be fairly readable in most, but not all, places.
 
-But this document will give you some important facts about the structure of the implementation and some of the reasons for its design.
+This document will give you some important facts about the structure of the implementation, some of the reasons for it, debugging tips and more.
 
 This is primarily a plain text document. I don't feel like messing with HTML, LaTex or even CobraText for this one. There are some CobraTextisms used here and there. Paragraphs are not wrapped so your editor should do so.
 
@@ -17,7 +17,7 @@ Terms:
 
 The Cobra docs are located at http://cobralang.com/docs/. You should be familiar with the language to have any hope of understanding the compiler, so be sure you've browsed around there.
 
-Also, reading the implementation is not the best way to learn the language. Reading the test cases isn't even the best way to learn the language. Read the How To's, the Samples and the documentation online.
+Also, reading the implementation is not the best way to learn the language. Reading the test cases isn't even the best way to learn the language. Read the How To's, the Samples and the documentation online. And write some code.
 
 
 .h1 @ Set Up
@@ -244,7 +244,7 @@ Box.declForName does not follow inheritance. It does not trigger any "late initi
 
 Box.memberForName does follow inheritance. It *does* trigger additional initialization (when its required).
 
-"decl" stands for "declaration" and it means that only what's actually in the Box should be examined.
+"decl" stands for "declaration" and it means that only what's actually declared in the Box should be examined.
 
 "member" means any kind of member from any source.
 
@@ -260,7 +260,7 @@ You might also notice that .declForName is used to find members that have the sa
 
 .h2 @ Type identifiers, proxies and actual types
 
- * Interface ITypeProxy is small. Go check it out first.
+ * Interface ITypeProxy is small. Go check it out now.
  * The parser creates "type identifiers"
    * That is, the parser creates objects that inherit from AbstractTypeIdentifier.
    * These have a token and will resolve themselves to a type, or generate a compilation error.
@@ -311,7 +311,7 @@ How does Cobra keep this all straight?
 	* A corresponding "unified" NameSpace with the same name is created or located in the global namespace of the compiler.
 	* The UseDirectives are located in the non-unified NameSpace.
 	* All other declarations are added to both NameSpaces.
-	* Finally, symbol lookup uses the unified namespace and then falls back to the use directives of the non-unified namespace.
+	* Finally, symbol lookup uses the unified namespace first and then falls back to the use directives of the non-unified namespace if further searching is required.
 
 Declarations can reside in a file with no declared namespace. This is implicitly the global namespace. Here's how it works: Each module has a .topNameSpace which may have `use` directives and declarations. Its .unifiedNameSpace is .compiler.globalNS. The machinery described above then simply works. And that is why modules don't directly track their declarations--they are all contained in the module.topNameSpace which is the only "AST node" the module directly owns.
 
@@ -327,6 +327,8 @@ Implementing them is a pain in the ass.
 Of course, implementing anything is generally harder than using it, but generics really stand out as a form of torture for compiler writers.
 
 In particular, when implementing generics...
+
+What I mean is that...
 
 I've upset myself now and cannot continue.
 
@@ -352,13 +354,13 @@ Eventually, the Cobra-based compiler could pass all the unit tests just like the
 
 But it couldn't compile itself! And despite being a compiler of Cobra source code and written in Cobra! Hiss! The attempt to self-compile met with false error messages, interal exceptions and/or improper code generation that C# choked on. What this revealed was that the unit tests were incomplete. Consequently, more unit tests were added and bugs fixed until all those problems went away and the compiler could compile itself. The first time this happened was very emotional for me (not joking here).
 
-But it was short-lived as a special moment. While everything appeared fine due to having produced another cobra.exe, _that_ cobra.exe would fail on the Cobra compiler source code. I never expected that and fixing it _was_ tricky. Some investigation and really deep thought eventually cracked the problem. Essentially, the code generation of the new compiler was incorrect in certain cases that were not covered by the unit tests, but did come up in the compiler itself. And it was really bad: The incorrect code _did_ compile and execute but did not behave correctly at run-time. Nor did it throw an exception at run-time so I could diagnose the problem right where it occurred. This bug just caused bad code generation and required a serious stare down to crack.
+But it was short-lived as a special moment. While everything appeared fine due to having produced another cobra.exe, _that_ cobra.exe would fail on the Cobra compiler source code. I never expected that and fixing it _was_ tricky. Some investigation and really deep thought eventually cracked the problem. Essentially, the code generation of the new compiler was incorrect in certain cases that were not covered by the unit tests, but did come up in the compiler itself. And it was really bad: The incorrect code _did_ compile and execute but did not behave correctly at run-time. Nor did it throw an exception at run-time so I could diagnose the problem right where it occurred. This bug just caused bad behavior in select cases and required a serious stare down to crack.
 
-These days it's hard to get into that situation because the unit tests are over 440 and rising. When all the unit tests pass, you are usually in good shape. To get into bad shape, add a new feature to Cobra and then start using it in the compiler before its been thoroughly tested.
+These days it's hard to get into that situation because the unit tests are over 480 and rising. When all the unit tests pass, you are usually in good shape. To get into bad shape, add a new feature to Cobra and then start using it in the compiler before its been thoroughly tested.
 
 So at any point in time now, there is a cobra.exe living in CobraWorkspace/Source/Snapshot which is used to compile CobraWorkspace/Source/*.cobra to produce a cobra.exe in CobraWorkspace/Source that is then tested and debugged. At various points in time when there is a nifty new feature or an important bug is fixed, a new Snapshot is made by copying cobra.exe (and related files such as CobraLang.cobra) into the Snapshot directory. A little script called "make-snapshot" is used for this.
 
-The Snapshot directory is under Subversion control and the new snapshot is checked in! Consequently, when you check out a fresh Cobra workspace, there is a stable Snapshot/cobra.exe ready for your use provided you have installed Microsoft .NET or Novell Mono so that you can run it. In fact, you will often need to use it because it doesn't take long after a release until a new feature or bugfix is taken advantage of in the source code thereby rendering it uncompilable by the last public release.
+The Snapshot directory is under Subversion control and the new snapshot is checked in. Consequently, when you check out a fresh Cobra workspace, there is a stable Snapshot/cobra.exe ready for your use! (Well, provided you have installed Microsoft .NET or Novell Mono so that you can run it.) In fact, you will often need to use it because it doesn't take long after a release until a new feature or bugfix is taken advantage of in the source code thereby rendering it uncompilable by the _last public release_.
 
 Now to avoid the occasional and subtle problem of a bad compiler produced by the compiler creeping into the Snapshot/ directory, some precautions are taken. First, the new cobra.exe (having passed all unit tests) is copied to cobra-trial.exe in the same directory. Then cobra-trial.exe is applied to the Cobra compiler source code. This is a "mega test" after the hundreds of unit tests. When there is a problem, it is recreated in a small unit test and then fixed. After there are no problems, the new cobra.exe produced by cobra-trial.exe is applied to all unit tests. Then I sometimes repeat the process just one more time (copy cobra.exe to cobra-trial.exe, compile the compiler source, run all unit tests). Finally, I run 'make-snapshot', work with that for awhile and then check it in.
 
@@ -372,6 +374,22 @@ To make Cobra.Lang.dll:
 .cmd
 	cobra -build-standard-library
 
+.h2 @ The Ultimate Test Case
+
+(Ug, I already described this above. Well I'll merge later.)
+
+After the compiler passes the test suite which consists of hundreds of test cases, it is now ready for the ultimate test case: the compiler itself.
+
+At the command line, I enter "make-trial" which is just this little script:
+.cmd
+	cp cobra.exe cobra-trial.exe
+	echo 'You can now run comp-trial to compile the compiler source code with a trial snapshot of the new compiler.'
+
+Then I enter "comp-trial" (as opposed to the usual "comp") which invokes the fresh cobra-trial.exe instead of Snapshot/cobra.exe.
+
+If this fails then not only has a new bug been introduced to the compiler, but a weakness has been discovered in the test suite. Isolate the problem down to a test case, fix the problem, put the test case in with the other test cases and try again (testify; make-trial; comp-trial).
+
+Upon success, run "testify" again to see that a compiler created with the new compiler still passes the test suite. On some occasions this will fail! Such a failure is probably due to changes in code generation which then affect run-time behavior in subtle ways. Take two aspirin and review your diffs--you're about to have loads of fun.
 
 .h1 @ Debugging the compiler
 
