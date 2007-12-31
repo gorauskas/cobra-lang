@@ -929,18 +929,13 @@ class Constructor  # CC: rename to initializer
 		first = if(_stmts.count, _stmts[0], nil)
 		callConstructor as String? = nil
 		if first inherits DotExpr
-			if first.left inherits ThisLit or first.left inherits BaseLit
-				doIt = false
-				if first.right inherits CallExpr and (first.right to CallExpr).name=='init'
-					doIt = true
-					args = (first.right to CallExpr).args
-				else if first.right inherits MemberExpr and (first.right to MemberExpr).name=='init'
-					doIt = true
-					args = List<of Expr>()
-				if doIt
-					callConstructor = (first.left to AtomicLiteral).asSharp
-					Stmt.inInitCall = true
-					didSetInInitCall = true
+			if first.left inherits ThisOrBaseLit
+				if (firstRight = first.right) inherits IDotRightExpr
+					if firstRight.name == 'init'
+						callConstructor = (first.left to ThisOrBaseLit).asSharp
+						args = firstRight.args
+						Stmt.inInitCall = true
+						didSetInInitCall = true
 		.writeSharpIsNames(sw)
 		sw.write(' [.box.rootName]')
 		.writeSharpParams(sw)
