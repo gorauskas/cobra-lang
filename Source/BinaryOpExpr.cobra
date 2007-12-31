@@ -823,10 +823,16 @@ class DotExpr
 						throw FallThroughException(defi)
 				else if _right inherits MemberExpr
 					writeThis = not _right.definition.isShared
+			else if .curCodeMember inherits Constructor and _right inherits IDotRightExpr and (_right to IDotRightExpr).name == 'init' and (_left inherits ThisLit or _left inherits BaseLit)
+				# Well, in practice this doesn't really happen because Constructer.innerWriteSharpDef usurps the code gen for base calls
+				Stmt.inInitCall = true
+				didSetInInitCall = true
 			if writeThis
 				_left.writeSharpDef(sw, not _left inherits DotExpr)
 				sw.write('.')
 			_right.writeSharpDef(sw, false)
+			if didSetInInitCall
+				Stmt.inInitCall = false
 
 	def _writeSharpBreakdownItemsLeft(sw as SharpWriter) is override
 		if not _left.type inherits TypeType  # feels like a cheap escape...
@@ -932,6 +938,7 @@ class AbstractToExpr
 		#       at the very least, need to enhance CobraType and descendants to have a superType of System.Object
 		#else if _left.type and not _type.isDescendantOf(_left.type to !)
 		#	.throwError('The given expression, of type "[_left.type.name]", can never be cast to a "[_potentialTypeExpr.toCobraSource]".')
+
 
 class ToExpr
 	inherits AbstractToExpr
