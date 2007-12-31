@@ -961,14 +961,19 @@ class ToExpr
 			.throwError('Cannot locate a type for the type cast "to [_rightTypeExpr.toCobraSource]".')
 
 	def _writeSharpDef(sw as SharpWriter) is override
-		rightType = _rightTypeExpr.potentialType to !   # not nil or _bindImp would have thrown an error
+		rightType = _rightTypeExpr.potentialType to !   # its not nil or _bindImp would have thrown an error
 		if rightType is .compiler.passThroughType
 			_left.writeSharpDef(sw)
 			return
 		sw.write('(')
 		_right.writeSharpDef(sw, false)  # double parens would be pointless and also causes a C# error
 		sw.write(')')
-		_left.writeSharpDef(sw)
+		if not rightType inherits NilableType and rightType.isReference
+			sw.write('CobraImp.CheckNonNil<[_left.type.sharpRef]>([.sharpThis], [Utils.csStringLitFor(_left.toCobraSource)], ')
+			_left.writeSharpDef(sw, false)
+			sw.write(', [.sharpSourceSite])')
+		else
+			_left.writeSharpDef(sw)
 
 
 class ToQExpr
