@@ -195,6 +195,26 @@ public class EnsureException : AssertException {
 }
 
 
+public class NonNilCastException : AssertException {
+	// it's unfortunate that we have to choose between inheriting AssertException or NullReferenceException
+
+	public NonNilCastException(SourceSite sourceSite, object[] expressions, object thiss, object info)
+		: this(sourceSite, expressions, thiss, info, null) {
+	}
+
+	public NonNilCastException(SourceSite sourceSite, object[] expressions, object thiss, object info, Exception innerExc)
+		: base(sourceSite, expressions, thiss, info, innerExc) {
+	}
+
+	public override string Message {
+		get {
+			return "Cast to non-nil failed." + Environment.NewLine + base.Message;
+		}
+	}
+
+}
+
+
 public class ExpectException : Exception {
 
 	protected Type _expectedExceptionType;
@@ -257,6 +277,13 @@ static public class CobraImp {
 	static CobraImp() {
 		_printToStack = new Stack<TextWriter>();
 		PushPrintTo(Console.Out);
+	}
+
+	static public T CheckNonNil<T>(Object obj, string sourceCode, T value, SourceSite site) {
+		// used for "x to !" and "someNilable to SomethingNotNilable"
+		if (value == null)
+			throw new NonNilCastException(site, new object[] {0, sourceCode, value}, obj, null);
+		return value;
 	}
 
 	static public T Return<T>(T value, params object[] stuff) {
