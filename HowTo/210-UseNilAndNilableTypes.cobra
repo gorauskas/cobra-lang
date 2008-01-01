@@ -1,0 +1,91 @@
+"""
+Languages have a special value to indicate "no object":
+
+	Name	Languages
+	----	---------
+	nil		Cobra, Smalltalk, Objective-C
+	null	C#, Java
+	NULL	C, C++
+	None	Python
+	Nothing	Visual Basic
+
+But Cobra's nil can only be applied when a type is "nilable" as indicated by a
+question mark suffix such as "String?". Cobra then enforces how nilable types
+are used with the upshot that run-time "null reference exceptions" almost
+never happen in Cobra programs.
+"""
+
+class Thing
+
+	var _name as String  # must be initialized
+	var _alternateName as String?  # can be left nil
+	
+	def init(name as String)
+		_name = name
+	
+	pro name from var
+	
+	pro alternateName from var
+
+
+class Limits
+	"""
+	Tracks min/max limits which default to 0 and 10 respectively.
+	"""
+
+	shared
+		var _defaultMin = 0
+		var _defaultMax = 10
+	
+	var _min as int?  # start life as nil
+	var _max as int?
+	
+	def init
+		pass
+	
+	get min as int
+		if _min  # checks for non-nil
+			return _min
+		else
+			return _defaultMin
+
+	get max as int
+		# can use if-expression instead of if-statement
+		return if(_max, _max to !, _defaultMax)
+
+
+class ExampleCalls
+
+	def printValue(v as Object) is shared
+		# note that this method won't take nil because the arg is "Object" not "Object?"
+		print v
+
+	def main is shared
+		th = Thing('two')
+		th.alternateName = '2'
+		th.alternateName = nil  # no problem since .alternateName is a String?
+		# th.name = nil  # compiler error: cannot assign nil to non-nilable type
+
+		.printValue(th.name)
+
+		altName = th.alternateName  # type inference determines that `altName` type is String?
+		# .printValue(altName)  # compiler error: cannot pass nilable type where non-nilable expected
+		# two solutions:
+		if altName  # checks for non-nil
+			.printValue(altName)  # compiler understands this is okay
+		else
+			print 'alternate name is nil'
+
+		# or typecast to non-nil ("x to !") for those times when you know the value will not be nil
+		altName = 'Two'
+		.printValue(altName to !)
+
+
+class MoreInfo
+
+	def foo
+		# you can also affect type inference by casting to nilable with "x to ?"
+		value = 0 to ?   # type is "int?"
+
+		# you can return nil in an if-expression which makes the type nilable
+		name = if(value and value <> 0, 'value', nil)  # type is "String?"
