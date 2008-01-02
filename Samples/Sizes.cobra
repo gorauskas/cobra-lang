@@ -128,17 +128,26 @@ class Dir
 	def scan
 		assert _pathName.length
 
-		for fi in DirectoryInfo(_pathName).getFiles
-			_files.add(fi)
-			_count += 1
-			_numBytes += fi.length to decimal
+		try
+			dirInfo = DirectoryInfo(_pathName)
+		catch IOException
+			print 'warning: Unreadable Directory:', _pathName
+			return
 
-		for di in DirectoryInfo(_pathName).getDirectories
+		for fi in dirInfo.getFiles
+			try
+				_files.add(fi)
+				_count += 1
+				_numBytes += fi.length to decimal
+			catch IOException
+				print 'warning: Cannot scan file:', fi.fullName
+
+		for di in dirInfo.getDirectories
 			d = Dir(di, this)
 			_subdirs.add(d)
 			_count += d.count
 			_numBytes += d.numBytes
-
+		
 	get toList as List<of FileNode>
 		"""
 		Returns a flat list containing self, all files and all subdirs (recursively).
@@ -153,7 +162,10 @@ class Dir
 		body
 			t.add(FileNode(_pathName, _numBytes))
 			for fi in _files
-				t.add(FileNode(fi.fullName, fi.length))
+				try
+					t.add(FileNode(fi.fullName, fi.length))
+				catch IOException
+					print 'warning: Cannot scan file:', fi.fullName
 			for subdir in _subdirs
 				subdir.populateList(t)
 
@@ -177,7 +189,6 @@ class Sizes
 			start = DateTime.now
 			args = CobraCore.commandLineArgs
 			dirName = if(args.count > 1, args[1], Directory.getCurrentDirectory)
-			trace dirName
 			topDir = Dir(dirName)
 			duration = DateTime.now.subtract(start)
 			print
