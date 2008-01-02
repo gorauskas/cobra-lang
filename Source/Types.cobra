@@ -33,7 +33,7 @@ interface ITypeProvider
 	get voidType as VoidType
 
 	# TODO: def nilableType ... just like .variType. cache and get "is" testing
-	
+
 	def variType(type as IType) as VariType
 
 
@@ -141,7 +141,7 @@ interface ITypeProxy
 	Its .realType property returns that type, often by locating it among symbols.
 	Implemented by CobraType, AbstractTypeIdentifier, NilableTypeProxy and ClrTypeProxy.
 	"""
-	
+
 	# TODO: See above NOTE and consider adding name below. Also see _bindBase in Boxes.cobra which would benefit from .name
 #	get name as String
 #		"""
@@ -169,12 +169,12 @@ class TypeProxy
 	Once in awhile you might need to pass or use an ITypeProxy even though you already know the type (probably because it is a builtin type such as `int` or `dynamic`.
 	In that case, you can use TypeProxy(someType)
 	"""
-	
+
 	var _type as IType
-	
+
 	def init(type as IType)
 		_type = type
-	
+
 	get realType as IType is override
 		return _type
 
@@ -185,9 +185,9 @@ class NilableTypeProxy
 	Returns the type proxy it is given wrapped in a NilableType.
 	Used when scanning, for example, method arguments in DLLs. See _scan* in Box.
 	"""
-	
+
 	var _innerType as ITypeProxy
-	
+
 	def init(innerType as ITypeProxy)
 		_innerType = innerType
 
@@ -208,9 +208,9 @@ class VariTypeProxy
 	Returns the type proxy it is given wrapped in a VariType.
 	Used when scanning, for example, method arguments in DLLs. See _scan* in Box.
 	"""
-	
+
 	var _innerType as ITypeProxy
-	
+
 	def init(innerType as ITypeProxy)
 		_innerType = innerType
 
@@ -233,9 +233,9 @@ class ClrTypeProxy
 	"""
 
 	shared
-	
+
 		var _cobraNameForSharpGenericNameCache = Dictionary<of String, String>()
-		
+
 		def cobraNameForSharpBoxName(name as String) as String
 			"""
 			Returns 'Foo' for 'Foo' and 'Foo<of,>' for 'Foo`2'
@@ -254,7 +254,7 @@ class ClrTypeProxy
 					cobraName += ','
 				cobraName += '>'
 				_cobraNameForSharpGenericNameCache[name] = cobraName
-				return cobraName				
+				return cobraName
 
 	var _clrType as Type
 
@@ -268,7 +268,7 @@ class ClrTypeProxy
 
 	get realType as IType is override
 		return _realType(_clrType)
-		
+
 	def _realType(clrType as Type) as IType
 		# TODO: having problems with System.Configuration
 		if clrType.namespace  # a generic param has no namespace
@@ -314,7 +314,7 @@ class ClrTypeProxy
 			# generic like IComparable`1
 			assert r'[' not in typeName
 			typeName = .cobraNameForSharpBoxName(typeName)
-		else if clrType.isNested		
+		else if clrType.isNested
 			typeName = 'Object'
 			# TODO: handle nested types
 		else if typeName == 'IBuiltInEvidence' or typeName == 'IConstantMembershipCondition'
@@ -323,7 +323,13 @@ class ClrTypeProxy
 		else if $sharp(r'char.IsLetterOrDigit(typeName[typeName.Length-1])')
 			pass
 		else
-			.throwError('Cannot locate CLR type "[_clrType]".')
+			msg = 'Cannot locate CLR type "[_clrType]".'
+			if _clrType.namespace and _clrType.namespace.startsWith('System.')
+				# Since most (and usually all) System.Foo types can be read, don't choke up on a bad one
+				# TODO: .compiler.warning(msg)
+				typeName = 'Object'
+			else
+				.throwError(msg)
 
 		# compute namespace
 		nameParts = clrType.namespace.split(c'.')
@@ -358,9 +364,19 @@ class ClrTypeProxy
 				for genArg in clrType.getGenericArguments
 					args.add(_realType(genArg))
 				member = (member to Box).constructedTypeFor(args)
-			return member 
+			return member
 		else
-			.throwError('Cannot locate CLR type "[_clrType]".')
+			msg = 'Cannot locate CLR type "[_clrType]".'
+			if _clrType.namespace and _clrType.namespace.startsWith('System.')
+				# TODO: On .NET 2.0 only \Tests\110-basics-two\550-collection-equality.cobra
+				# fails with: Cannot locate CLR type "System.Collections.KeyValuePairs[]".
+				# Figure out why.
+				if .compiler and .compiler.verbosity > 1
+					print msg
+				# TODO: .compiler.warning(msg)
+				return .compiler.libraryType('System.Object')
+			else
+				.throwError(msg)
 		return .compiler.intType  # CC: to make C# code gen happy.
 
 	def _hack(clrType as Type) as IType
@@ -643,14 +659,14 @@ class CobraType
 	def unNilReturnType
 		# ack! apparently CobraType inherits IMember
 		pass
-		
+
 
 	## Bind Inheritance
 
 	var _didBindInh as bool
-	
+
 	get didBindInh from var
-	
+
 	def bindInh
 		if not _didBindInh
 			_didBindInh = true
@@ -1110,7 +1126,7 @@ class ArrayType
 		assert a1 == a2
 
 	var _box as Box?
-	
+
 	def init(wrappedType as IType)
 		base.init(wrappedType)
 
@@ -1152,7 +1168,7 @@ class ArrayType
 				_box.bindAll
 			member = _box.symbolForName(name, true)
 		return member
-		
+
 	get sharpRef as String is override
 		return '[_wrappedType.sharpRef]' + r'[]'
 
@@ -1174,7 +1190,7 @@ class VariType
 	get englishName as String is override
 		return 'variable args type'
 
-	get innerType as IType? is override 
+	get innerType as IType? is override
 		return _wrappedType
 
 	get name as String is override
@@ -1255,7 +1271,7 @@ class AbstractTypeIdentifier
 	get actualType from var
 
 	get didResolveType from var
-	
+
 	get realType as IType
 		ensure .actualType
 		if not .didResolveType
@@ -1319,7 +1335,7 @@ class WrappedTypeIdentifier
 	def addMinFields
 		base.addMinFields
 		.addField('typeId', _typeId)
-		
+
 	get theWrappedTypeIdentifier from _typeId
 
 	def _bindInt is override
@@ -1342,7 +1358,7 @@ class ArrayTypeIdentifier
 
 	def _resolveType as IType is override
 		return ArrayType(_typeId.realType)
-		
+
 
 class NilableTypeIdentifier
 	inherits WrappedTypeIdentifier
@@ -1356,7 +1372,7 @@ class NilableTypeIdentifier
 
 class VariTypeIdentifier
 	inherits WrappedTypeIdentifier
-	
+
 	def init(token as IToken, typeId as AbstractTypeIdentifier)
 		base.init(token, typeId)
 
@@ -1507,7 +1523,7 @@ class QualifiedTypeIdentifier
 		# TODO: would it be useful to set the _token.text to the name? Maybe it would help with syntax highlighting
 
 	get typeNodes from var
-	
+
 	def _resolveType as IType is override
 		member = .compiler.symbolForName(_typeNodes[0].name, true, false)
 		i = 1

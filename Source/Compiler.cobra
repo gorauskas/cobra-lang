@@ -483,7 +483,7 @@ class Compiler
 			
 			i = 0
 			references = .options['reference'] to List<of String>
-			for reference in references
+			for reference in List<of String>(references)
 				if .verbosity > 0
 					print 'Loading reference:', reference
 				if false
@@ -491,6 +491,10 @@ class Compiler
 					referredAss = Assembly.reflectionOnlyLoadFrom(reference)
 					# TODO: handle all the exceptions from Assembly.loadFrom
 				else
+					if not CobraCore.isRunningOnMono and not reference.endsWith('.dll') and not reference.endsWith('.exe')
+						# On Microsoft .NET 2.0, excluding the extension is problematic
+						reference += '.dll'
+						references[i] = reference
 					if File.exists(reference)
 						# try current directory
 						referredAss = Assembly.loadFrom(reference)
@@ -1293,6 +1297,9 @@ class SharpCompilationMessage
 				return true
 		if 'The given expression is always of the provided ' in msg or 'The given expression is never of the provided ' in msg
 			# Cobra handles these itself
+			return true
+		if 'Unreachable expression code detected' in msg
+			# MS C# 2.0 gives these especially for the 'bool' test case in 'basics'
 			return true
 		return false
 		
