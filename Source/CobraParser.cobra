@@ -1331,11 +1331,11 @@ class Parser
 		type as ITypeProxy?
 		if .peek.which=='AS'
 			.grab
-			variToken = .optional('VARI')
-			if variToken
-				type = VariTypeIdentifier(variToken, .typeId)
-			else
-				type = .typeId
+			branch .peek.which
+				on 'VARI':  type = VariTypeIdentifier(.grab, .typeId)
+				on 'OUT':   type = OutTypeIdentifier(.grab, .typeId)
+				on 'INOUT': type = InOutTypeIdentifier(.grab, .typeId)
+				else: type = .typeId
 			isMissingType = false
 		else
 			type = TypeProxy(_typeProvider.dynamicType)  # the default type for a parameter is dynamic
@@ -2191,16 +2191,35 @@ class Parser
 		token = .expect('OPEN_CALL')
 		callName = token.value to String
 		assert not callName.endsWith('(')
-		exprs = .commaSepExprs('RPAREN')
+		exprs = .commaSepExprs(['RPAREN'], false, true)
 		return CallExpr(token, callName, exprs)
 
+	def argument as Expr
+		"""
+		In support of .callExpr and others, for when it's legal to write `out x` and such.
+		"""
+		if .peek
+			branch .peek.which
+				on 'OUT': label = ArgumentLabel.Out
+				on 'INOUT': label = ArgumentLabel.InOut
+				else: label = ArgumentLabel.None
+				# TODO? on 'VARI': ...
+			if label <> ArgumentLabel.None
+				.grab
+		expr = .expression
+		expr.argumentLabel = label
+		return expr
+
 	def commaSepExprs(terminator as String) as List<of Expr>
-		return .commaSepExprs([terminator], false)
+		return .commaSepExprs([terminator], false, false)
 
-	def commaSepExprs(terminators as List<of String>) as List<of Expr>
-		return .commaSepExprs(terminators, false)
+	def commaSepExprs(terminators as IList<of String>) as List<of Expr>
+		return .commaSepExprs(terminators, false, false)
 
-	def commaSepExprs(terminators as List<of String>, isSpaceAgnostic as bool) as List<of Expr>
+	def commaSepExprs(terminators as IList<of String>, isSpaceAgnostic as bool) as List<of Expr>
+		return .commaSepExprs(terminators, isSpaceAgnostic, false)
+
+	def commaSepExprs(terminators as IList<of String>, isSpaceAgnostic as bool, expectingArguments as bool) as List<of Expr>
 		"""
 		Example source
 			... expr TERMINATOR
@@ -2233,7 +2252,10 @@ class Parser
 				break
 			.newOpStack
 			try
-				exprs.add(.expression)
+				if expectingArguments
+					exprs.add(.argument)
+				else
+					exprs.add(.expression)
 			finally
 				.delOpStack
 			expectSep = true

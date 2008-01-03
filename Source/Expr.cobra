@@ -11,6 +11,12 @@ interface IExpr
 	def toCobraSource as String
 
 
+enum ArgumentLabel
+	None
+	Out
+	InOut
+
+
 class Expr
 	inherits Stmt
 	implements IExpr
@@ -36,6 +42,7 @@ class Expr
 		"""
 	var _contextType as IType?
 	var _isParened as bool
+	var _argumentLabel = ArgumentLabel.None
 
 	def init(token as IToken)
 		base.init(token)
@@ -43,6 +50,11 @@ class Expr
 	def addRefFields is override
 		base.addRefFields()
 		.addField('type', _type)
+
+	pro argumentLabel from var
+		"""
+		Indicates the label for an argument such as 'out' or 'inout'.
+		"""
 
 	pro type from var
 
@@ -213,6 +225,10 @@ class Expr
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
+		branch .argumentLabel
+			on ArgumentLabel.None:  pass
+			on ArgumentLabel.Out:   sw.write('out ')
+			on ArgumentLabel.InOut: sw.write('ref ')
 		.writeSharpDef(sw, true)
 
 	def writeSharpDef(sw as SharpWriter, parens as bool)

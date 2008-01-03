@@ -705,8 +705,21 @@ class AbstractMethod
 			.writeSharpLocals(sw, nil, false)
 			if _ensurePart
 				sw.write('bool _lh_canEnsure = false;\n')
+				# have to set `out` parameters or C# will error on them being passed in the `finally` for the ensure,
+				# even though the _lh_canEnsure guard logically prevents problems at run-time
+				for param in _params
+					if param.type inherits OutType
+						csInit = param.type.csInit
+						if not csInit.length
+							# TODO/HACK: yes we need something like this (or a way to convice C# that the out param reference in `finally` really is okay),
+							# but it should be something less hackish, like an attribute
+							csInit = 'DateTime.Today'
+						sw.write('[param.sharpName] = [csInit];')
 				if _sharpResultVarName.length  # set in _bindImp
-					sw.write('[_returnType.sharpRef] [_sharpResultVarName] = [_returnType.csInit];\n')
+					sw.write('[_returnType.sharpRef] [_sharpResultVarName]')
+					if _returnType.csInit.length
+						sw.write('= [_returnType.csInit]')
+					sw.write(';\n')
 				sw.writeAndIndent('try {\n')
 			for stmt in _stmts
 				if skipFirst
@@ -738,14 +751,16 @@ class AbstractMethod
 		pass
 		
 	def writeSharpPassArgs(sw as SharpWriter)
-		.writeSharpPassArgs(sw, '()')
+		.writeSharpPassArgs(sw, '()', false)
 
-	def writeSharpPassArgs(sw as SharpWriter, parens as String)
+	def writeSharpPassArgs(sw as SharpWriter, parens as String, excludeOutArgs as bool)
 		require parens.length==2 or parens==''
 		if parens.length
 			sw.write(parens[0])
 		sep = ''
 		for param in _params
+			if excludeOutArgs and param.type inherits OutType
+				continue
 			sw.write(sep)
 			sw.write(param.sharpName)
 			sep = ', '
@@ -769,6 +784,16 @@ class AbstractMethod
 						sw.write(' = [init]')
 					sw.write(';\n')
 
+	def writeSharpRequireParamDecls(sw as SharpWriter)
+		sep = ''
+		for param in .params
+			if param.type inherits OutType
+				# a requirement cannot say anything useful about a parameter that is output only
+				continue
+			sw.write(sep)
+			param.writeSharpDefSansReferenceLabels(sw)  # no `inout/ref` label since a contract cannot modify reference arguments
+			sep = ', '
+		
 	def writeSharpOldAssignments(sw as SharpWriter)
 		if .isOverride and .matchingBaseMember
 			(.matchingBaseMember to AbstractMethod).writeSharpOldAssignments(sw)
@@ -784,7 +809,7 @@ class AbstractMethod
 		_writeSharpOldArgs(sw, sep)
 		if .params.count
 			sw.write(sep[0])
-		.writeSharpPassArgs(sw, '')  # these have to come last, because they might include a C# "params" which has to be last
+		.writeSharpPassArgs(sw, '', false)  # these have to come last, because they might include a C# "params" which has to be last
 
 	def _writeSharpOldArgs(sw as SharpWriter, sep as List<of String>)
 		if .isOverride and .matchingBaseMember
@@ -805,7 +830,7 @@ class AbstractMethod
 		# these have to come last, because they might include a C# "params" which has to be last
 		for param in .params
 			sw.write(sep[0])
-			param.writeSharpDef(sw)
+			param.writeSharpDefSansReferenceLabels(sw)  # no `out` or `inout/ref` labels since a contract cannot modify reference arguments
 			sep[0] = ', '
 
 	def _writeSharpOldParamDecls(sw as SharpWriter, sep as List<of String>)
@@ -1523,7 +1548,7 @@ class RequirePart
 					sw.write('try {\n')
 					sw.indent
 					sw.write('[codeMember.requirePart.sharpMethodName]')
-					_codeMember.writeSharpPassArgs(sw)  # always use *our* code member since the arg names can be different than base classes
+					_codeMember.writeSharpPassArgs(sw, '()', true)  # always use *our* code member since the arg names can be different than base classes
 					sw.write(';\n')
 					sw.dedent
 					sw.write('} catch (RequireException re[n]) {\n')
@@ -1541,7 +1566,7 @@ class RequirePart
 				count -= 1
 		else
 			sw.write('[.sharpMethodName]')
-			_codeMember.writeSharpPassArgs(sw)
+			_codeMember.writeSharpPassArgs(sw, '()', true)
 			sw.write(';\n')
 		sw.dedent
 		sw.write('}\n')
@@ -1555,9 +1580,9 @@ class RequirePart
 			return
 		static = if(_codeMember.isShared, 'static ', '') # CC: rename to 'static'
 		access = if(_codeMember.box inherits Struct, 'private', 'protected')
-		sw.write('[static][access] void [.sharpMethodName]')
-		_codeMember.writeSharpParams(sw)
-		sw.write(' {\n')
+		sw.write('[static][access] void [.sharpMethodName](')
+		_codeMember.writeSharpRequireParamDecls(sw)
+		sw.write(') {\n')
 		sw.indent
 		for expr in _exprs
 			sw.write('if (!')
