@@ -25,16 +25,18 @@ class BoxMember
 	var _box as Box
 	var _docString as String?
 	var _isNames as List<of String>?  # CC: make a Set
+	var _attribs as AttributeList
 	var _overloadGroup as MemberOverload?
 	var _testMethod as TestMethod?
 	var _matchingBaseMember as BoxMember?
 
-	def init(token as IToken, box as Box, name as String, isNames as List<of String>)
-		.init(token, box, name, isNames, nil)
+	def init(token as IToken, box as Box, name as String, isNames as List<of String>, attribs as AttributeList)
+		.init(token, box, name, isNames, attribs, nil)
 
-	def init(token as IToken, box as Box, name as String, isNames as List<of String>, docString as String?)
+	def init(token as IToken, box as Box, name as String, isNames as List<of String>, attribs as AttributeList, docString as String?)
 		base.init(token, name)
 		_isNames = isNames
+		_attribs = attribs
 		_box = box
 		_docString = docString
 		.defaultToVirtual
@@ -149,6 +151,8 @@ class BoxMember
 
 	def _bindInt is override
 		base._bindInt
+		for attrib in _attribs
+			attrib.bindInt
 		if _testMethod
 			_testMethod.bindInt
 
@@ -163,6 +167,8 @@ class BoxMember
 		base._bindImp
 		assert .didBindInt  # class members should have always received a bindInt first
 # TODO:		assert not _box.isConstructed  # not expecting to bindImp on a constructed type
+		for attrib in _attribs
+			attrib.bindImp
 		if _testMethod
 			_testMethod.bindImp
 
@@ -297,6 +303,10 @@ class BoxMember
 		if sep.length
 			sw.write(' ')
 
+	def writeSharpAttribs(sw as SharpWriter)
+		for attrib in _attribs
+			attrib.writeSharpDef(sw)
+
 
 class BoxVar
 	inherits BoxMember
@@ -307,7 +317,7 @@ class BoxVar
 
 	Classes and structs can have vars, but interfaces cannot.
 	
-	In CLR terminology, these are called "fields".
+	In CLI terminology, these are called "fields".
 	"""
 
 	var _typeNode as ITypeProxy
@@ -318,7 +328,7 @@ class BoxVar
 	var _isAssignedTo as bool
 
 	def init(token as IToken, box as Box, name as String, typeNode as ITypeProxy, isNames as List<of String>, initExpr as Expr?, docString as String)
-		base.init(token, box, name, isNames, docString)
+		base.init(token, box, name, isNames, AttributeList(), docString)
 		_typeNode = typeNode
 		_initExpr = initExpr
 		_ifInheritsStack = Stack<of IType>()
@@ -438,8 +448,8 @@ class AbstractMethod
 	var _hasYieldStmt as bool
 	var _sharpResultVarName = ''
 
-	def init(token as IToken, box as Box, name as String, paramsList as List<of Param>, isNames as List<of String>, docString as String)
-		base.init(token, box, name, isNames, docString)
+	def init(token as IToken, box as Box, name as String, paramsList as List<of Param>, isNames as List<of String>, attribs as AttributeList, docString as String)
+		base.init(token, box, name, isNames, attribs, docString)
 		_params = paramsList
 		_oldExprs = List<of OldExpr>()
 		_locals = List<of LocalVar>()
@@ -690,7 +700,7 @@ class AbstractMethod
 
 	def innerWriteSharpDef(sw as SharpWriter)
 		pass
-		
+	
 	def writeSharpImp(sw as SharpWriter, skipFirst as bool)
 		.compiler.codeMemberStack.push(this)
 		try
@@ -875,8 +885,8 @@ class AbstractMethod
 class Constructor  # CC: rename to initializer
 	inherits AbstractMethod
 
-	def init(token as IToken, box as Box, paramsList as List<of Param>, isNames as List<of String>, docString as String)
-		base.init(token, box, 'init', paramsList, isNames, docString)
+	def init(token as IToken, box as Box, paramsList as List<of Param>, isNames as List<of String>, attribs as AttributeList, docString as String)
+		base.init(token, box, 'init', paramsList, isNames, attribs, docString)
 		_isNames = isNames
 		_stmts = List<of Stmt>()
 
@@ -951,6 +961,7 @@ class Constructor  # CC: rename to initializer
 
 	def innerWriteSharpDef(sw as SharpWriter)
 		base.innerWriteSharpDef(sw)
+		.writeSharpAttribs(sw)
 		first = if(_stmts.count, _stmts[0], nil)
 		callConstructor as String? = nil
 		if first inherits DotExpr
@@ -992,8 +1003,8 @@ class Method
 	var _implementsTypeNode as ITypeProxy?
 	var _implementsType as IType?
 
-	def init(token as IToken, box as Box, name as String, paramsList as List<of Param>, returnTypeNode as ITypeProxy, implementsTypeNode as ITypeProxy?, isNames as List<of String>, docString as String)
-		base.init(token, box, name, paramsList, isNames, docString)
+	def init(token as IToken, box as Box, name as String, paramsList as List<of Param>, returnTypeNode as ITypeProxy, implementsTypeNode as ITypeProxy?, isNames as List<of String>, attribs as AttributeList, docString as String)
+		base.init(token, box, name, paramsList, isNames, attribs, docString)
 		_returnTypeNode = returnTypeNode
 		_implementsTypeNode = implementsTypeNode
 		# TODO: feels kind of hacky:
@@ -1063,6 +1074,7 @@ class Method
 	def innerWriteSharpDef(sw as SharpWriter)
 		base.innerWriteSharpDef(sw)
 		.writeSharpNotNull(sw)
+		.writeSharpAttribs(sw)
 		name = .sharpName
 		returnType = _returnType ? .compiler.voidType
 		if _implementsType
@@ -1115,11 +1127,11 @@ class ProperDexer
 	var _returnType as IType?
 	var _returnTypeNode as ITypeProxy?
 
-	def init(token as IToken, box as Box, name as String, isNames as List<of String>, docString as String)
-		base.init(token, box, name, isNames, docString)
+	def init(token as IToken, box as Box, name as String, isNames as List<of String>, attribs as AttributeList, docString as String)
+		base.init(token, box, name, isNames, attribs, docString)
 
-	def init(token as IToken, box as Box, name as String, returnTypeOrNode as INode, isNames as List<of String>, docString as String)
-		.init(token, box, name, isNames, docString)
+	def init(token as IToken, box as Box, name as String, returnTypeOrNode as INode, isNames as List<of String>, attribs as AttributeList, docString as String)
+		.init(token, box, name, isNames, attribs, docString)
 		if returnTypeOrNode inherits IType
 			_returnType = returnTypeOrNode
 			_returnTypeNode = nil
@@ -1258,7 +1270,7 @@ class ProperDexerXetter
 	var _parent as ProperDexer
 
 	def init(token as IToken, parent as ProperDexer, isNames as List<of String>)
-		base.init(token, parent.box, parent.name, List<of Param>(), isNames, '')  # TODO: should be docString, right?
+		base.init(token, parent.box, parent.name, List<of Param>(), isNames, AttributeList(), '')  # TODO: should be docString, right?
 		_name = parent.name + '.' + .xetPartName  # CC: somewhat awkward. belongs in the base.init() call
 		_parent = parent
 
@@ -1305,7 +1317,7 @@ class MemberOverload
 			.members.count
 			.members[0] == member
 		body
-			base.init(member.token, member.box, member.name, member.isNames)
+			base.init(member.token, member.box, member.name, member.isNames, AttributeList())
 			member.overloadGroup = this
 			_members = [member]
 			_isNames = member.isNames  # pick up 'shared' for example
@@ -1395,7 +1407,7 @@ class TestMethod
 		body
 			# CC: shouldn't the .getCompiler() work? C# code gen puts a "this" in there even though it's shared and C# chokes on it
 			#base.init(token, member.box, 'test_'+Utils.capped(member.name), List<of Param>(), .getCompiler.voidType, List<of String>(), nil, '')
-			base.init(token, member.box, 'test_'+Utils.capped(member.name), List<of Param>(), voidType, nil, ['shared'], '')
+			base.init(token, member.box, 'test_'+Utils.capped(member.name), List<of Param>(), voidType, nil, ['shared'], AttributeList(), '')
 			_forMember = member
 
 	def init(token as IToken, box as Box, voidType as IType)
@@ -1404,7 +1416,7 @@ class TestMethod
 		body
 			# CC: shouldn't the .getCompiler work? C# code gen puts a "this" in there even though it's shared and C# chokes on it
 			# base.init(token, box, 'test_class_'+Utils.capped(box.name), List<of Param>(), .getCompiler.voidType, List<of String>(), List<of INode>(), '')
-			base.init(token, box, 'test_class_'+Utils.capped(box.sharpNameComponent), List<of Param>(), voidType, nil, ['shared'], '')
+			base.init(token, box, 'test_class_'+Utils.capped(box.sharpNameComponent), List<of Param>(), voidType, nil, ['shared'], AttributeList(), '')
 			_forBox = box
 
 	pro name as String is new

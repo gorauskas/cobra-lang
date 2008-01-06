@@ -27,6 +27,8 @@ class Box
 	var _overloads as List<of MemberOverload>
 	var _nextPrivateSerialNumber = 1001
 
+	var _attribs as AttributeList
+
 	var _testMethod as TestMethod?
 
 	var _clrType as Type?
@@ -37,8 +39,9 @@ class Box
 		An Indexer in CLR is known by being a property with arguments whose name matches the .memberName of a box-level DefaultMemberAttribute.
 		"""
 
-	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseInterfaceNodes as List<of ITypeProxy>, docString as String?)
+	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseInterfaceNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, isNames, docString)
+		_attribs = attribs
 		_genericParams = paramList
 		for i = 0 .. _genericParams.count
 			p = _genericParams[i]
@@ -406,6 +409,8 @@ class Box
 				param.bindInt
 			if not .isConstructed  # because constructed boxes are already taken care of by way of their generic type def
 				.unNilReturnTypes(this)
+			for attrib in _attribs
+				attrib.bindInt
 			for decl in _declsInOrder
 				assert not decl is this
 				try
@@ -815,10 +820,10 @@ class Box
 					isNames.add('private')
 				if fieldInfo.isStatic
 					isNames.add('shared')
-				prop = Property(TokenFix.empty, this, Utils.uncapped(fieldInfo.name), _memberTypeResultProxy(fieldInfo, fieldInfo.fieldType), isNames, '')
+				prop = Property(TokenFix.empty, this, Utils.uncapped(fieldInfo.name), _memberTypeResultProxy(fieldInfo, fieldInfo.fieldType), isNames, AttributeList(), '')
 				prop.makeGetPart(TokenFix.empty)
 				.addDecl(prop)
-		
+
 	def _scanInitializers
 		for conInfo in _clrType.getConstructors  # TODO: get protected constructors
 			if conInfo.declaringType is not _clrType
@@ -832,8 +837,9 @@ class Box
 				continue
 			params = _scanParams(conInfo.getParameters)
 			isNames = _isNamesForMethodInfo(conInfo)
+			attribs = _attribsForMethodInfo(conInfo)
 			docString = ''  # TODO: get doc string for class?
-			initer = Constructor(TokenFix.empty, this, params, isNames, docString)
+			initer = Constructor(TokenFix.empty, this, params, isNames, attribs, docString)
 			overload as MemberOverload? = nil
 			other = .declForName('init')
 			if other
@@ -858,8 +864,8 @@ class Box
 				continue
 			if _badRelatedType(propInfo.propertyType)
 				continue
-			# TODO: get attributes
-			docString = ''  # TODO: get doc string for class?
+			attribs = AttributeList()  # TODO:
+			docString = ''  # TODO: get doc string
 			# TODO: eventually the isNames need to be an the property part level (get or set) rather than the property level, like in C# and the CLR runtime
 			if propInfo.canRead
 				isNames = _isNamesForMethodInfo(propInfo.getGetMethod(true) to !)
@@ -867,7 +873,7 @@ class Box
 				isNames = _isNamesForMethodInfo(propInfo.getSetMethod(true) to !)
 			else
 				throw FallThroughException(propInfo)
-			prop = Property(TokenFix.empty, this, Utils.uncapped(propInfo.name), _memberTypeResultProxy(propInfo, propInfo.propertyType), isNames, docString)
+			prop = Property(TokenFix.empty, this, Utils.uncapped(propInfo.name), _memberTypeResultProxy(propInfo, propInfo.propertyType), isNames, attribs, docString)
 			if propInfo.canRead
 				prop.makeGetPart(TokenFix.empty)
 			if propInfo.canWrite
@@ -879,6 +885,7 @@ class Box
 			if _badRelatedType(paramInfo.parameterType)
 				return
 		params = _scanParams(propInfo.getIndexParameters)
+		attribs = AttributeList()  # TODO:
 		docString = ''  # TODO: get doc string for class?
 		if propInfo.canRead
 			isNames = _isNamesForMethodInfo(propInfo.getGetMethod(true) to !)
@@ -886,7 +893,7 @@ class Box
 			isNames = _isNamesForMethodInfo(propInfo.getSetMethod(true) to !)
 		else
 			throw FallThroughException(propInfo)
-		indexer = Indexer(TokenFix.empty, this, r'[]', params, _memberTypeResultProxy(propInfo, propInfo.propertyType), isNames, docString)
+		indexer = Indexer(TokenFix.empty, this, r'[]', params, _memberTypeResultProxy(propInfo, propInfo.propertyType), isNames, attribs, docString)
 		overload as MemberOverload? = nil
 		other = .declForName(r'[]')
 		if other
@@ -936,10 +943,11 @@ class Box
 				continue
 			params = _scanParams(methInfo.getParameters)
 			isNames = _isNamesForMethodInfo(methInfo)
+			attribs = _attribsForMethodInfo(methInfo)
 			# TODO: get attributes
 			docString = ''  # TODO: get doc string for class?
 			implementsTypeNode as ITypeProxy?  # TODO: explicit interface implementation?
-			method = Method(TokenFix.empty, this, name, params, _memberTypeResultProxy(methInfo, methInfo.returnType), implementsTypeNode, isNames, docString)
+			method = Method(TokenFix.empty, this, name, params, _memberTypeResultProxy(methInfo, methInfo.returnType), implementsTypeNode, isNames, attribs, docString)
 			overload as MemberOverload? = nil
 			other = .declForName(name)
 			if other
@@ -993,6 +1001,9 @@ class Box
 		if not mi.isVirtual
 			isNames.add('nonvirtual')
 		return isNames
+
+	def _attribsForMethodInfo(mi as MethodBase) as AttributeList
+		return AttributeList()  # TODO:
 
 	def _badRelatedType(t as Type?) as bool
 		"""
@@ -1158,12 +1169,12 @@ class Class
 	var _baseNode as ITypeProxy?
 	var _subclasses = List<of Class>()
 
-	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseNode as ITypeProxy?, implementsNodes as List<of ITypeProxy>, docString as String?)
-		base.init(token, name, paramList, isNames, implementsNodes, docString)
+	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseNode as ITypeProxy?, implementsNodes as List<of ITypeProxy>, docString as String?)
+		base.init(token, name, paramList, isNames, attribs, implementsNodes, docString)
 		_baseNode = baseNode
 
 	def init(clrType as Type)
-		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(clrType.name), List<of IType>(), List<of String>(), List<of ITypeProxy>(), nil)
+		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(clrType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
 		if clrType.baseType
 			_baseNode = ClrTypeProxy(clrType.baseType)
 		_initClrType(clrType)
@@ -1269,7 +1280,7 @@ class Class
 				break
 		if not foundConstructor
 			# TODO: this should be changed to provide cover constructors for each of the public, inherited constructors
-			.addDecl(Constructor(.token, this, List<of Param>(), ['public'], ''))
+			.addDecl(Constructor(.token, this, List<of Param>(), ['public'], AttributeList(), ''))
 		# Note that the _baseClass is not told to bindInt. That would fail for classes in other namespaces and it's unnecessary
 		base._bindInt
 
@@ -1334,11 +1345,11 @@ class Class
 class Interface
 	inherits Box
 
-	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseNodes as List<of ITypeProxy>, docString as String?)
-		base.init(token, name, paramList, isNames, baseNodes, docString)
+	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseNodes as List<of ITypeProxy>, docString as String?)
+		base.init(token, name, paramList, isNames, attribs, baseNodes, docString)
 
 	def init(clrType as Type)
-		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(clrType.name), List<of IType>(), List<of String>(), List<of ITypeProxy>(), nil)
+		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(clrType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
 		_initClrType(clrType)
 
 	def _scanClrType
@@ -1398,11 +1409,11 @@ class Interface
 class Struct
 	inherits Box
 
-	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, baseName as String?, interfaceNodes as List<of ITypeProxy>, docString as String?)
-		base.init(token, name, paramList, isNames, interfaceNodes, docString)
+	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseName as String?, interfaceNodes as List<of ITypeProxy>, docString as String?)
+		base.init(token, name, paramList, isNames, attribs, interfaceNodes, docString)
 
 	def init(clrType as Type)
-		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(clrType.name), List<of IType>(), List<of String>(), List<of ITypeProxy>(), nil)
+		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(clrType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
 		_initClrType(clrType)
 
 	def _scanClrType

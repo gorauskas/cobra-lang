@@ -1,0 +1,48 @@
+class AttributeList
+	inherits List<of AttributeDecl>
+	
+	def init
+		pass
+
+
+class AttributeDecl
+	inherits NamedNode
+	
+	var _expr as CallExpr
+
+	def init(expr as Expr)
+		require expr inherits IdentifierExpr or expr inherits CallExpr
+		base.init(expr.token)
+		# normalizing to CallExpr makes the rest of the implementation easier
+		if $sharp('expr is IdentifierExpr')
+			expr = CallExpr(expr.token, (expr to IdentifierExpr).name, List<of Expr>())
+		_expr = expr to CallExpr
+
+	get expr from var
+
+	def _bindInt
+		base._bindInt
+		_expr.bindInt
+	
+	def _bindImp
+		base._bindImp
+		# support using 'Foo' when the real attribute class name is 'FooAttribute'
+		name = _expr.name
+		if not name.endsWith('Attribute') and .compiler.canNameBeUndottedMember(name) and not .compiler.symbolForName(name, true, false)
+			if .compiler.symbolForName(name+'Attribute', true, false)
+				_expr = CallExpr(_expr.token, name+'Attribute', List<of Expr>())
+		_expr.bindImp
+
+	def writeSharpDef(sw as SharpWriter) is override
+		sw.write(r'[')
+		expr = _expr
+		sw.write('[expr.name]')
+		if expr.args.count
+			sw.write('(')
+			sep = ''
+			for arg in expr.args
+				sw.write(sep)
+				arg.writeSharpDefInContext(sw)
+				sep = ', '
+			sw.write(')')
+		sw.writeLine(r']')

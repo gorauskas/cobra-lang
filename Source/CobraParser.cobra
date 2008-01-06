@@ -541,6 +541,7 @@ class Parser
 		.indent
 
 		isNames = .isDeclNames
+		attribs = .hasAttribs
 
 		.genericConstraints(token, paramsList)
 
@@ -566,7 +567,7 @@ class Parser
 
 		docString = .docString
 
-		theClass = Class(token, name, .makeList(List<of IType>(), paramsList) to List<of IType>, isNames, baseNode, interfaceNames, docString)
+		theClass = Class(token, name, .makeList(List<of IType>(), paramsList) to List<of IType>, isNames, attribs, baseNode, interfaceNames, docString)
 
 		# TODO when supporting nested classes, look at the _boxStack and set a back pointer here
 		_boxStack.push(theClass)
@@ -586,6 +587,20 @@ class Parser
 			t.add(item)
 		return t
 
+	def hasAttribs as AttributeList
+		attribs = AttributeList()
+		hasWord = .optional('HAS')
+		if not hasWord
+			return attribs
+		while true
+			expr = .expression
+			if not expr inherits IdentifierExpr and not expr inherits PostCallExpr and not expr inherits CallExpr
+				.throwError('Invalid attribute.')  # TODO: record the error instead of throwing one
+			attribs.add(AttributeDecl(expr))
+			if not .optional('COMMA')
+				break
+		.oneOrMore('EOL')
+		return attribs
 
 	var _validIsNames as List<of String>?
 
@@ -692,6 +707,7 @@ class Parser
 		.indent
 
 		isNames = .isDeclNames
+		attribs = .hasAttribs
 
 		.genericConstraints(token, paramsList)
 
@@ -713,7 +729,7 @@ class Parser
 		# TODO: can an interface be nested in another interface?
 		docString = .docString
 
-		theInterface = Interface(token, name, .makeList(List<of IType>(), paramsList) to List<of IType>, isNames, baseNames, docString)
+		theInterface = Interface(token, name, .makeList(List<of IType>(), paramsList) to List<of IType>, isNames, attribs, baseNames, docString)
 
 		_boxStack.push(theInterface)
 #		.isNamesStack = Stack(str)
@@ -743,6 +759,7 @@ class Parser
 		.indent
 
 		isNames = .isDeclNames
+		attribs = .hasAttribs
 
 		.genericConstraints(token, paramsList)
 
@@ -766,7 +783,7 @@ class Parser
 
 		docString = .docString
 
-		theStruct = Struct(token, name, .makeList(List<of IType>(), paramsList) to List<of IType>, isNames, baseName, interfaceNodes, docString)
+		theStruct = Struct(token, name, .makeList(List<of IType>(), paramsList) to List<of IType>, isNames, attribs, baseName, interfaceNodes, docString)
 
 		# TODO when supporting nested classes, look at the clintDeclStack and set a back pointer here
 		_boxStack.push(theStruct)
@@ -783,6 +800,7 @@ class Parser
 			.throwError('Enum types must start with uppercase letters to avoid collisions with other identifiers such as properties and methods.')
 		.indent
 		isNames = .isDeclNames
+		# TODO? attribs = .hasAttribs
 		if .peek.which=='OF'
 			storageType as ITypeProxy? = .typeId  # CC: to ?
 		docString = .docString
@@ -969,15 +987,16 @@ class Parser
 			.throwError('Class variables must start with lowercase letters (after the underscore(s)) to distinguish them from other types of identifiers.[sugg]')
 		type as ITypeProxy? = if(.optional('AS'), .typeId, TypeIdentifier(varTok, .typeProvider.dynamicType))
 		if .optional('ASSIGN')
-			initExpr as Expr? = .expression  # CC: initExpr = .expression to ?
+			initExpr = .expression to ?
 		else
 			initExpr = nil
 			if type is nil
 				type = .typeProvider.dynamicType
-		docString as String? = ''  # CC: change to: docString = '' to ?
+		docString = '' to ?
 		isNames = List<of String>(_isNamesStack)
 		if .peek.which=='IS'
 			isNames = .isDeclNames
+			attribs = .hasAttribs
 			assert .last.which=='EOL'
 			.undo  # need the EOL
 			if .optionalIndent
@@ -986,6 +1005,7 @@ class Parser
 		else
 			if .optionalIndent
 				isNames = .isDeclNames
+				attribs = .hasAttribs
 				docString = .docString
 				.dedent
 		return BoxVar(tok, .curBox, identifier, type, isNames, initExpr, docString)
@@ -1034,6 +1054,7 @@ class Parser
 
 		if curClass inherits Class or curClass inherits Struct
 			isNames = .indentIsDeclNames
+			attribs = .hasAttribs
 			implementsType = if(.optional('IMPLEMENTS'), .typeId, nil)
 			if implementsType
 				.oneOrMore('EOL')
@@ -1042,7 +1063,7 @@ class Parser
 			if name=='init'
 				if returnType is not .typeProvider.voidType
 					.throwError('Cannot declare a return type for init.')
-				method = Constructor(token, .curBox, paramsList, isNames, docString)
+				method = Constructor(token, .curBox, paramsList, isNames, attribs, docString)
 			else if name=='destruct'
 				if returnType is not .typeProvider.voidType
 					.throwError('Cannot declare a return type for destruct.')
@@ -1059,22 +1080,24 @@ class Parser
 					_warning('Did you mean to say `construct`?')
 				else if name=='destructor'
 					_warning('Did you mean to say `destruct`?')
-				method = Method(token, .curBox, name, paramsList, returnType, implementsType, isNames, docString)
+				method = Method(token, .curBox, name, paramsList, returnType, implementsType, isNames, attribs, docString)
 			.statementsFor(method)
 		else if curClass inherits Interface
 			if .optionalIndent
 				isNames = .isDeclNames
+				attribs = .hasAttribs
 				docString = .docString
 				.dedent
 			else
 				isNames = List<of String>()
+				attribs = AttributeList()
 				docString = ''
 			if name=='init'
 				.throwError('Cannot declare "init" in an interface.')
 			else if name=='destruct'
 				.throwError('Cannot declare "destruct" in an interface.')
 			else
-				method = Method(token, .curBox, name, paramsList, returnType, nil, isNames, docString)
+				method = Method(token, .curBox, name, paramsList, returnType, nil, isNames, attribs, docString)
 		else
 			throw Exception('Unhandled containing type [curClass]')
 		assert method
@@ -1119,11 +1142,12 @@ class Parser
 			returnType = _typeProvider.dynamicType
 		if .curBox inherits Class or .curBox inherits Struct
 			isNames = .indentIsDeclNames
+			attribs = .hasAttribs
 			docString = .docString
 			if paramsList.count
-				prop = Indexer(token, .curBox, name, paramsList, returnType, isNames, docString)
+				prop = Indexer(token, .curBox, name, paramsList, returnType, isNames, attribs, docString)
 			else
-				prop = Property(token, .curBox, name, returnType, isNames, docString)
+				prop = Property(token, .curBox, name, returnType, isNames, attribs, docString)
 
 			if .peek.which=='TEST'
 				.testSection(prop to !)
@@ -1142,15 +1166,17 @@ class Parser
 		else if .curBox inherits Interface
 			if .optionalIndent
 				isNames = .isDeclNames
+				attribs = .hasAttribs
 				docString = .docString
 				.dedent
 			else
 				isNames = List<of String>()
+				attribs = AttributeList()
 				docString = ''
 			if paramsList.count
-				prop = Indexer(token, .curBox, name, paramsList, returnType, isNames, docString)
+				prop = Indexer(token, .curBox, name, paramsList, returnType, isNames, attribs, docString)
 			else
-				prop = Property(token, .curBox, name, returnType, isNames, docString)
+				prop = Property(token, .curBox, name, returnType, isNames, attribs, docString)
 			prop.makeGetPart(token)
 			prop.makeSetPart(token)
 		else
@@ -1182,7 +1208,8 @@ class Parser
 		else
 			docString = ''
 		isNames = List<of String>(_isNamesStack)  # TODO: note that .isDeclNames just takes the top of the stack
-		return Property(token, .curBox, name, isNames, varDef, coverWhat, docString)
+		attribs = AttributeList()
+		return Property(token, .curBox, name, isNames, attribs, varDef, coverWhat, docString)
 
 	def declarePropertyGet as ProperDexer?
 		"""
@@ -1216,22 +1243,25 @@ class Parser
 
 		if .curBox inherits Class or .curBox inherits Struct
 			isNames = .indentIsDeclNames
+			attribs = .hasAttribs
 			docString = .docString
 			if paramsList.count
-				prop = Indexer(token, .curBox, name, paramsList, returnType, isNames, docString)
+				prop = Indexer(token, .curBox, name, paramsList, returnType, isNames, attribs, docString)
 			else
-				prop = Property(token, .curBox, name, returnType, isNames, docString)
+				prop = Property(token, .curBox, name, returnType, isNames, attribs, docString)
 			.statementsFor(prop.makeGetPart(token), prop)
 		else if .curBox inherits Interface
 			if .optionalIndent
 				isNames = .isDeclNames
+				attribs = .hasAttribs
 				docString = .docString
 				.dedent
 			else
 				isNames = List<of String>()
+				attribs = AttributeList()
 				docString = ''
 			# TODO: do we need support Indexers for interfaces?
-			prop = Property(token, .curBox, name, returnType, isNames, docString)
+			prop = Property(token, .curBox, name, returnType, isNames, attribs, docString)
 			prop.makeGetPart(token)
 		else
 			throw FallThroughException(.curBox)
@@ -1260,18 +1290,21 @@ class Parser
 
 		if .curBox inherits Class or .curBox inherits Struct
 			isNames = .indentIsDeclNames
+			attribs = .hasAttribs
 			docString = .docString
-			prop = Property(token, .curBox, name, returnType, isNames, docString)
+			prop = Property(token, .curBox, name, returnType, isNames, attribs, docString)
 			.statementsFor(prop.makeSetPart(token), prop)
 		else if .curBox inherits Interface
 			if .optionalIndent
 				isNames = .isDeclNames
+				attribs = .hasAttribs
 				docString = .docString
 				.dedent
 			else
 				isNames = List<of String>()
+				attribs = AttributeList()
 				docString = ''
-			prop = Property(token, .curBox, name, returnType, isNames, docString)
+			prop = Property(token, .curBox, name, returnType, isNames, attribs, docString)
 			prop.makeSetPart(token)
 		else
 			throw FallThroughException(.curBox)
