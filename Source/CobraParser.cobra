@@ -364,6 +364,9 @@ class Parser
 		else
 			return ''
 
+	def endOfLine
+		.oneOrMore('EOL')
+
 	def idOrKeyword as IToken
 		token = .grab
 		if token is nil
@@ -381,9 +384,7 @@ class Parser
 		"""
 		if .optional('COLON')
 			_warning('Colons are not used to start indented blocks. You can remove the colon.')
-		.expect('EOL')
-		while .optional('EOL')
-			pass
+		.endOfLine
 		return .expect('INDENT')
 
 	def dedent
@@ -417,7 +418,7 @@ class Parser
 	def optionalIndent as IToken?
 		if .optional('COLON')
 			_warning('Colons are not used to start indented blocks. You can remove the colon.')
-		.oneOrMore('EOL')
+		.endOfLine
 		return .optional('INDENT')
 
 
@@ -511,7 +512,7 @@ class Parser
 			dot = .optional('DOT')
 			if not dot
 				break
-		.oneOrMore('EOL')
+		.endOfLine
 		return UseDirective(token, names)
 
 	var _syntaxForClassInheritanceMsg = 'The syntax for inheritance is to put "inherits BaseClass" on the following line, indented.'
@@ -548,7 +549,7 @@ class Parser
 		baseNode as ITypeProxy?
 		if .optional('INHERITS')
 			baseNode = .typeId
-			.expect('EOL')
+			.endOfLine
 		else
 			baseNode = nil
 
@@ -599,7 +600,7 @@ class Parser
 			attribs.add(AttributeDecl(expr))
 			if not .optional('COMMA')
 				break
-		.oneOrMore('EOL')
+		.endOfLine
 		return attribs
 
 	var _validIsNames as List<of String>?
@@ -633,10 +634,9 @@ class Parser
 				names.add(what)
 			else
 				.throwError('Not expecting "[what]".')
-			comma = .optional('COMMA')
-			if comma is nil
+			if not .optional('COMMA')
 				break
-		.oneOrMore('EOL')
+		.endOfLine
 		# TODO: error on virtual and override
 		# TODO: error on virtual and shared
 		# TODO: error if 2 or more of 'public', 'protected', 'private', 'internal'
@@ -813,7 +813,7 @@ class Parser
 				enumValue as int? = .expect('INTEGER_LIT').value to int  # CC: change cast to "to int?" and axe "as int?"
 			else
 				enumValue = nil
-			.oneOrMore('EOL')
+			.endOfLine
 			enumMembers.add(EnumMember(enumNameToken, enumValue))
 			# TODO: check for repeated names
 			# TODO: check for values that repeat or go backwards
@@ -928,11 +928,11 @@ class Parser
 						breakLoop = true
 					on 'DEDENT': breakLoop = true
 					on 'DEF': .addDecl(box, .declareMethod)
-					on 'GET': .addDecl(box, .declarePropertyGet)
-					on 'SET': .addDecl(box, .declarePropertySet)
+					on 'GET': .addDecl(box, .declareGetOnlyProperty)
+					on 'SET': .addDecl(box, .declareSetOnlyProperty)
 					on 'PRO': .addDecl(box, .declareProperty)
-					on 'VAR': .addDecl(box, .classVarDecl)
-					on 'EOL': .oneOrMore('EOL')
+					on 'VAR': .addDecl(box, .boxVarDecl)
+					on 'EOL': .endOfLine
 					on 'ENUM': box.addDecl(.enumDecl)  # CC: .addDecl(box, .enumDecl)  ...when IBoxMember is in effect
 					on 'SHARED': .bodiedBoxMemberDeclsShared(box)
 					on 'TEST': .testSection(box)
@@ -961,9 +961,9 @@ class Parser
 		if .curBox.declsInOrder.count
 			_warning('Encountered "pass" in a class that already has declared members.')  # TODO: change to an error
 		.grab
-		.oneOrMore('EOL')
+		.endOfLine
 
-	def classVarDecl as BoxVar
+	def boxVarDecl as BoxVar
 		varTok = .expect('VAR')
 		tok = .expect('ID')
 		identifier = tok.text
@@ -1023,8 +1023,6 @@ class Parser
 		overload as MemberOverload? = nil
 		other = curClass.declForName(name)
 		if other
-			if name=='destruct'
-				.throwError('Cannot define more than one destruct method.')  # TODO give reference to the other one
 			if other inherits MemberOverload
 				overload = other
 			else if other inherits AbstractMethod
@@ -1057,29 +1055,17 @@ class Parser
 			attribs = .hasAttribs
 			implementsType = if(.optional('IMPLEMENTS'), .typeId, nil)
 			if implementsType
-				.oneOrMore('EOL')
+				.endOfLine
 			docString = .docString
 			assert returnType
 			if name=='init'
 				if returnType is not .typeProvider.voidType
 					.throwError('Cannot declare a return type for init.')
 				method = Constructor(token, .curBox, paramsList, isNames, attribs, docString)
-			else if name=='destruct'
-				if returnType is not .typeProvider.voidType
-					.throwError('Cannot declare a return type for destruct.')
-				if paramsList.count
-					.throwError('Cannot declare parameters for destruct.')
-				if 'shared' in isNames
-					.throwError('Cannot declare a shared destructor.')
-				# TODO: remove
-				assert false
-				# CC: method = Destructor(token, .curBox, isNames, docString)
 			else
 				# TODO: remove the following
 				if name=='constructor'
 					_warning('Did you mean to say `construct`?')
-				else if name=='destructor'
-					_warning('Did you mean to say `destruct`?')
 				method = Method(token, .curBox, name, paramsList, returnType, implementsType, isNames, attribs, docString)
 			.statementsFor(method)
 		else if curClass inherits Interface
@@ -1094,8 +1080,6 @@ class Parser
 				docString = ''
 			if name=='init'
 				.throwError('Cannot declare "init" in an interface.')
-			else if name=='destruct'
-				.throwError('Cannot declare "destruct" in an interface.')
 			else
 				method = Method(token, .curBox, name, paramsList, returnType, nil, isNames, attribs, docString)
 		else
@@ -1211,7 +1195,7 @@ class Parser
 		attribs = AttributeList()
 		return Property(token, .curBox, name, isNames, attribs, varDef, coverWhat, docString)
 
-	def declarePropertyGet as ProperDexer?
+	def declareGetOnlyProperty as ProperDexer?
 		"""
 		Example source
 			get meaningOfLife as int
@@ -1272,7 +1256,7 @@ class Parser
 		else
 			return prop
 
-	def declarePropertySet as Property
+	def declareSetOnlyProperty as Property
 		"""
 		Example source
 			set foo as int
@@ -1345,7 +1329,7 @@ class Parser
 			x as vari object
 			x   # default type is dynamic    # TODO: should be unspecified
 		Arguments:
-			theClass is typically ClassVarDecl, LocalVar or Param
+			theClass is typically BoxVarDecl, LocalVar or Param
 			whatName could be set to 'Parameter' for example.
 		Returns:
 			A theClass(name, type)
@@ -1777,7 +1761,7 @@ class Parser
 		else
 			# one expression, on the same line
 			exprs = [.expression]
-			.expect('EOL')
+			.endOfLine
 			_isContractOnSameLine = true
 		return theClass(connectToken, mainToken, codeMember, exprs) to ContractPart
 
@@ -1914,13 +1898,13 @@ class Parser
 	def localVarDecl(defaultType as IType?) as AbstractLocalVar
 		"""
 		Variable declarations for `using`, `for` and `catch`.
-		Not class vars (see `classVarDecl`) or parameters (see `paramDecl`).
+		Not class vars (see `boxVarDecl`) or parameters (see `paramDecl`).
 		Example source:
 			x   # default type is dynamic   # TODO: should be unspecified
 			i as int
 			cust as Customer
 		Arguments:
-			theClass is typically ClassVarDecl, LocalVar or Param
+			theClass is typically BoxVarDecl, LocalVar or Param
 			whatName could be set to 'Parameter' for example.
 		Returns:
 			A theClass(name, type)
