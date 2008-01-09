@@ -408,6 +408,7 @@ class CallExpr
 	var _isCallOnSystemType as bool  # "t()" where t is of System.Type would be a CallExpr that isCallOnSystemType
 	var _altForm as Expr?  # TODO: having to check for _altForm all over the place sucks. Change _bindImp to return 'same' and change .bindImp to require its return value to be used
 	var _assignments as List<of AssignExpr> # for calls that are _isNew, this contains the assignments which are interpreted as property assignments
+	var _isForAttribute as bool
 
 	def init(token as IToken, name as String, args as List<of Expr>)
 		base.init(token)
@@ -445,6 +446,12 @@ class CallExpr
 	get isCalling as bool is override
 		return true
 
+	pro isForAttribute from var
+		"""
+		Returns true when the call expr is being used for the purpose of an attribute as opposed to
+		normal expression in normal code.
+		"""
+		
 	get isNew from var
 	
 	get name from var
@@ -533,7 +540,7 @@ class CallExpr
 				if canBeUndottedMember
 					assert .compiler.boxStack.count
 					definition = .compiler.symbolForName(_name, canBeUndottedMember, false) to passthrough
-				else
+				else if not .isForAttribute  # otherwise .compiler.codeMemberStack is empty (so no .findLocal), plus Cobra doesn't allow lowercase members anyway
 					definition = .compiler.findLocal(_name)
 				if definition is nil
 					.throwError('Cannot find "[_name]".')
@@ -2518,7 +2525,7 @@ class SequenceLit
 					i += 1
 				# TODO: get rid of this hack:
 				if type.getType.name=='CobraType'
-					type = .compiler.libraryType('System', 'Object')
+					type = .compiler.libraryType('System.Object')
 			_type = _makeTypeWith(type)
 
 	def _makeTypeWith(type as IType) as IType  # CC: make abstract

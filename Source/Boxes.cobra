@@ -410,7 +410,10 @@ class Box
 			if not .isConstructed  # because constructed boxes are already taken care of by way of their generic type def
 				.unNilReturnTypes(this)
 			for attrib in _attribs
-				attrib.bindInt
+				try
+					attrib.bindInt
+				catch ne as NodeException
+					.compiler.recordError(ne)
 			for decl in _declsInOrder
 				assert not decl is this
 				try
@@ -449,6 +452,11 @@ class Box
 		assert .didBindInt
 		.compiler.boxStack.push(this)
 		try
+			for attrib in _attribs
+				try
+					attrib.bindImp
+				catch ne as NodeException
+					.compiler.recordError(ne)
 			for decl in _declsInOrder
 				assert not decl is this, this
 				try
@@ -1088,6 +1096,7 @@ class Box
 		if .isFake
 			return
 		assert not .isConstructed
+		.writeSharpAttribs(sw)
 		.writeSharpIsNames(sw)
 		sw.write('[.sharpKeyWord] [.rootName]')
 		if _genericParams.count
@@ -1123,6 +1132,10 @@ class Box
 			.writeSharpTest(sw)
 		sw.dedentAndWrite('} // [.sharpKeyWord] [.name]\n')
 		sw.write('\n')
+
+	def writeSharpAttribs(sw as SharpWriter)
+		for attrib in _attribs
+			attrib.writeSharpDef(sw)
 
 	def writeSharpInheritance(sw as SharpWriter)
 		"""
