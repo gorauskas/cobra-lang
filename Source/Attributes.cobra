@@ -7,7 +7,7 @@ class AttributeList
 
 class AttributeDecl
 	inherits NamedNode
-	
+
 	var _expr as CallExpr
 
 	def init(expr as Expr)
@@ -23,15 +23,16 @@ class AttributeDecl
 	def _bindInt
 		base._bindInt
 		_expr.bindInt
-	
+
 	def _bindImp
 		base._bindImp
 		# support using 'Foo' when the real attribute class name is 'FooAttribute'
 		name = _expr.name
 		if not name.endsWith('Attribute') and .compiler.canNameBeUndottedMember(name) and not .compiler.symbolForName(name, true, false)
 			if .compiler.symbolForName(name+'Attribute', true, false)
-				_expr = CallExpr(_expr.token, name+'Attribute', List<of Expr>())
+				_expr = CallExpr(_expr.token, name+'Attribute', _expr.args)
 		_expr.bindImp
+		# TODO: check that the properties exist when using x=...
 
 	def writeSharpDef(sw as SharpWriter) is override
 		sw.write(r'[')
@@ -42,6 +43,11 @@ class AttributeDecl
 			sep = ''
 			for arg in expr.args
 				sw.write(sep)
+				if $sharp('arg is AssignExpr')
+					sw.write(Utils.capped((arg to dynamic).left.name))
+					sw.write('=')
+					arg = (arg to dynamic).right
+				assert not arg inherits AssignExpr
 				arg.writeSharpDefInContext(sw)
 				sep = ', '
 			sw.write(')')

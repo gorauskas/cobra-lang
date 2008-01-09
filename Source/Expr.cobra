@@ -407,12 +407,14 @@ class CallExpr
 	var _willWriteSharpNew = true
 	var _isCallOnSystemType as bool  # "t()" where t is of System.Type would be a CallExpr that isCallOnSystemType
 	var _altForm as Expr?  # TODO: having to check for _altForm all over the place sucks. Change _bindImp to return 'same' and change .bindImp to require its return value to be used
+	var _assignments as List<of AssignExpr> # for calls that are _isNew, this contains the assignments which are interpreted as property assignments
 
 	def init(token as IToken, name as String, args as List<of Expr>)
 		base.init(token)
 		_name = name
 		_args = args
 		_definition = nil
+		_assignments = List<of AssignExpr>()
 
 	def addMinFields is override
 		base.addMinFields()
@@ -429,6 +431,8 @@ class CallExpr
 		.addField('args', _args)
 
 	get altForm from var
+
+	get assignments from var
 
 	get hasError as bool is override
 		if base.hasError
@@ -476,7 +480,10 @@ class CallExpr
 		num = 1
 		for arg in _args
 			try
-				arg.bindImp()
+				if arg inherits AssignExpr
+					arg.right.bindImp  # 'x=y' has special treatment in arguments
+				else
+					arg.bindImp
 			catch ne as NodeException
 				ne.prefixMessage('For "[_name]" arg [num]: ')
 				.compiler.recordError(ne)
@@ -589,6 +596,8 @@ class CallExpr
 										param = params[i]
 										if arg.hasError
 											break
+										if arg inherits AssignExpr  # assignments in arguments have special treatment
+											break
 										assert arg.didBindImp, arg
 										assert param.didBindInt, param
 										if arg.canBeAssignedTo(param.type)
@@ -610,6 +619,14 @@ class CallExpr
 				definition.isUsed = true
 			_type = type
 		_isNew = _definition inherits Box or _definition inherits GenericParam
+		if not _altForm and not _isNew
+			for arg in _args
+				if arg inherits AssignExpr
+					.recordError('Cannot make assignments in arguments. This syntax is reserved in the future for keyword arguments.')
+		else if _isNew
+			for arg in _args
+				if arg inherits AssignExpr
+					_assignments.add(arg)
 		assert _type, 'this=[this], def=[_definition]'
 
 	def postBindImpAssertType
