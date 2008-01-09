@@ -621,12 +621,8 @@ class Parser
 		"""
 		if _validIsNames is nil
 			_validIsNames = ['fake', 'shared', 'virtual', 'nonvirtual', 'override', 'new', 'public', 'protected', 'private', 'internal']
-		names = List<of String>()
-		if _isNamesStack.count
-			names.add(_isNamesStack.peek)  # TODO: why just peek? why not all the names?
-#		CC: use this instead of above 3 lines: names = if(_isNamesStack, [_isNamesStack.peek], List<of String>())
-		isWord = .optional('IS')
-		if isWord is nil
+		names = List<of String>(_isNamesStack)
+		if .optional('IS') is nil
 			return names
 		while true
 			what = .grab.text
@@ -1075,7 +1071,7 @@ class Parser
 				docString = .docString
 				.dedent
 			else
-				isNames = List<of String>()
+				isNames = List<of String>(_isNamesStack)
 				attribs = AttributeList()
 				docString = ''
 			if name=='init'
@@ -1154,7 +1150,7 @@ class Parser
 				docString = .docString
 				.dedent
 			else
-				isNames = List<of String>()
+				isNames = List<of String>(_isNamesStack)
 				attribs = AttributeList()
 				docString = ''
 			if paramsList.count
@@ -1187,12 +1183,14 @@ class Parser
 		if .curBox inherits Interface
 			.throwError('Cannot use the "from" form of a property inside an interface declaration.')
 		if .optionalIndent
+			isNames = .isDeclNames
+			attribs = .hasAttribs
 			docString = .docString
 			.dedent
 		else
+			isNames = List<of String>(_isNamesStack)
+			attribs = AttributeList()
 			docString = ''
-		isNames = List<of String>(_isNamesStack)  # TODO: note that .isDeclNames just takes the top of the stack
-		attribs = AttributeList()
 		return Property(token, .curBox, name, isNames, attribs, varDef, coverWhat, docString)
 
 	def declareGetOnlyProperty as ProperDexer?
@@ -1241,7 +1239,7 @@ class Parser
 				docString = .docString
 				.dedent
 			else
-				isNames = List<of String>()
+				isNames = List<of String>(_isNamesStack)
 				attribs = AttributeList()
 				docString = ''
 			# TODO: do we need support Indexers for interfaces?
@@ -1285,7 +1283,7 @@ class Parser
 				docString = .docString
 				.dedent
 			else
-				isNames = List<of String>()
+				isNames = List<of String>(_isNamesStack)
 				attribs = AttributeList()
 				docString = ''
 			prop = Property(token, .curBox, name, returnType, isNames, attribs, docString)
