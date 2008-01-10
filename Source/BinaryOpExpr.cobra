@@ -630,7 +630,7 @@ class CompareExpr
 		base.init(opToken, op, left, right)
 		if op == 'ISNOT' and .token.text == 'is'
 			.token.text = 'is not'
-			
+
 	def _bindImp
 		base._bindImp
 		_type = .compiler.boolType
@@ -644,6 +644,18 @@ class CompareExpr
 		if .op in ['EQ', 'NE', 'IS', 'ISNOT']
 			if not leftType.isEquatableTo(rightType)
 				innerMsg = if(.op.startsWith('IS'), 'can never be identical', 'cannot be equated')
+			else if .op in ['IS', 'ISNOT']
+				# Essentially "is" and "is not" are for reference types. Give a warning when used for value types.
+				if not TypeUtil.isDynamicOrPassThrough(leftType) and not TypeUtil.isDynamicOrPassThrough(rightType)
+					opName = if(.op=='IS', 'is', 'is not')
+					altName = if(.op=='IS', '==', '<>')
+					if not leftType.isReference and not rightType.isReference
+						.compiler.warning(this, 'Both the left and right sides of "[opName]" are value types ("[leftType.name]" and "[rightType.name]"), but "[opName]" applies to reference types. Use "[altName]" instead.')
+					# interestingly, I don't think the following ever happen in practice...
+					else if not leftType.isReference and not TypeUtil.isNilableAndDescendantOf(rightType, leftType)
+						.compiler.warning(this, 'The left side of "[opName]" is a value type ("[leftType.name]") while the right side is an incompatible reference type ("[rightType.name]").')
+					else if not rightType.isReference and not TypeUtil.isNilableAndDescendantOf(leftType, rightType)
+						.compiler.warning(this, 'The right side of "[opName]" is a value type ("[rightType.name]") while the left side is an incompatible reference type ("[leftType.name]").')						
 		else
 			if not leftType.isComparableTo(rightType)
 				innerMsg = 'cannot be compared'
@@ -762,11 +774,10 @@ class DotExpr
 			if _left inherits IdentifierExpr
 				if _left.definition inherits Box # CC: combine with above if statement
 					if not _dotRightExpr.member.isShared
-						.throwError('Cannot access instance member "[_dotRightExpr.name]" on type "[_left.name]".')
+						.throwError('Cannot access instance member "[_dotRightExpr.name]" on type "[_left.name]". Make the member "shared" or create an instance of the type.')
 			if _left inherits ThisOrBaseLit
 				if (.curCodeMember is nil or .curCodeMember.isShared) and not _dotRightExpr.member.isShared  # .curCodeMember is nil when bind imp'ing on var init exprs like "var _x = someExpr"
-					.throwError('Cannot access instance member "[_dotRightExpr.name]" from the current shared member.')
-
+					.throwError('Cannot access instance member "[_dotRightExpr.name]" from the current shared member. Make the member "shared" or create an instance of the type.')
 	get potentialType as IType?
 		# overridden to return the type this dotted expr represents in those cases when it does represent a type
 		assert .didBindImp

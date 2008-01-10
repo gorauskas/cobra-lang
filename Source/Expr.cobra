@@ -2781,15 +2781,16 @@ class ToNonNilableExpr
 			_type = _expr.type
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		if _expr.type.isReference
-			# TODO: wrap in a run-time setting. something like, (CobraCore._willCheckNonNilCast?CobraImp.CheckNonNil<...>(...):expr)
-			# TODO: provide a compile time setting to remove check
-			sw.write('CobraImp.CheckNonNil<[_expr.type.sharpRef]>([.sharpThis], [Utils.csStringLitFor(_expr.toCobraSource)], ')
-			_expr.writeSharpDef(sw, false)
-			sw.write(', [.sharpSourceSite])')
-		else
+		type = _expr.type
+		if type inherits NilableType and not (type to NilableType).theWrappedType.isReference
 			# ex: (x).Value
 			# ex: (obj.foo).Value
 			sw.write('(')
 			_expr.writeSharpDef(sw, false)
 			sw.write(').Value')
+		else
+			# TODO: wrap in a run-time setting. something like, (CobraCore._willCheckNonNilCast?CobraImp.CheckNonNil<...>(...):expr)
+			# TODO: provide a compile time setting to remove check
+			sw.write('CobraImp.CheckNonNil<[type.sharpRef]>([.sharpThis], [Utils.csStringLitFor(_expr.toCobraSource)], ')
+			_expr.writeSharpDef(sw, false)
+			sw.write(', [.sharpSourceSite])')
