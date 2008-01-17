@@ -118,6 +118,14 @@ class CommandLine
 			'description': 'Keeps any intermediate files that Cobra generates, which are normally deleted. Example intermediate files are *.cobra.cs.',
 		},
 		{
+			'name': 'library-directory',
+			'synonyms': ['lib'],
+			'type': 'string',
+			'isAccumulator': true,
+			'description': 'Specify additional directories to search in for references.',
+			'args': 'PATH',
+		},
+		{
 			'name': 'output-html',
 			'type': 'bool',
 			'description': "The command line's output will be in HTML.",
@@ -181,7 +189,7 @@ class CommandLine
 		},
 		{
 			'name': 'reveal-internal-exceptions',
-			'description': 'When true, internal exceptions are not caught and wrapped in error messages. This is useful when developing on the Cobra compiler itself. Set to true if the environment variable COBRA_IS_DEV_MACHINE.',
+			'description': 'When true, uncaught exceptions from the Cobra compiler itself are not caught and wrapped in error messages. This is useful when developing on the Cobra compiler itself. Set to true if the environment variable COBRA_IS_DEV_MACHINE.',
 			'type': 'bool',
 			'developer-only': true,
 		},
@@ -942,6 +950,14 @@ class CommandLine
 			firstLine = lines[0]
 			firstLineInsensitive = firstLine.trim.replace(' ', '')
 
+		if firstLineInsensitive.startsWith('#.compile-only.')  # also meaning don't run the .exe
+			willRunExe = false
+			lines = lines[1:]
+			firstLine = lines[0]
+			firstLineInsensitive = firstLine.trim.replace(' ', '')
+		else
+			willRunExe = true
+			
 		if firstLineInsensitive.startsWith('#.args.')
 			i = firstLine.indexOf('.args.')
 			.parseArgs(firstLine[i+'.args.'.length:])
@@ -1040,9 +1056,11 @@ class CommandLine
 				return 0
 			else if expectingError
 				return 1
-			else
+			else if willRunExe
 				# a test case with nothing but warnings is still executed
 				return _testifyRun(c, bar)
+			else
+				return 1
 			
 		if firstLineInsensitive.startsWith('#.error.')
 			# note that errors that are only detected by the backend C# compiler are not detectable by testify
@@ -1146,7 +1164,10 @@ class CommandLine
 			.failed
 			return 0
 
-		return _testifyRun(c, bar)
+		if willRunExe
+			return _testifyRun(c, bar)
+		else
+			return 1
 		
 	def _testifyRun(c as Compiler, bar as String) as int
 		if not c.fullExeFileName.endsWith('.exe')

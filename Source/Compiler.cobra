@@ -499,12 +499,24 @@ class Compiler
 						# try current directory
 						referredAss = Assembly.loadFrom(reference)
 					else
-						# try Cobra's directory
-						path = Path.combine(Path.getDirectoryName(CobraCore.exePath), reference)
-						if File.exists(reference)
-							referredAss = Assembly.loadFrom(path)
-							references[i] = path
-						else
+						# TODO: the problem with -lib: in both Cobra and C# is that it has no effect on runtime,
+						# you must still register the DLLs in the GAC or copy them into the same dir as the .exe
+						# because the -lib: paths are not passed into executable.
+						# So should Cobra copy the .dll's into the target directory (if their paths are not in MONO_PATH)?
+						searchPaths = .options.getDefault('library-directory', List<of String>()) to List<of String>
+						# TODO: ?: searchPaths.add(Path.getDirectoryName(Assembly.getExecutingAssembly.location))  # try Cobra's directory - also should be added to .options.'library-directory' not to a local var
+						found = false
+						for searchPath in searchPaths
+							combinedPath = Path.combine(searchPath, reference)
+							for ext in ['', '.dll', '.exe']
+								path = combinedPath + ext
+								if File.exists(path)
+									referredAss = Assembly.loadFrom(path)
+									found = true
+									break
+							if found
+								break
+						if not found
 							# try system wide (GAC)
 							if reference.endsWith('.dll')
 								reference = reference[:-4]
@@ -513,7 +525,7 @@ class Compiler
 				if referredAss
 					.readAssembly(referredAss, reference <> 'Cobra.Lang.dll')
 				else
-					_addMessage(SourceException('Cannot load assembly reference "[reference]" for unknown reasons.'))
+					_addMessage(SourceException('Cannot locate assembly reference "[reference]".'))
 				i += 1
 
 	def _resolveEvent(sender as Object, args as ResolveEventArgs) as Assembly?
@@ -1171,6 +1183,9 @@ class Compiler
 
 			options += ' ' + .options.getDefault('sharp-args', '')
 			
+			for libPath in .options.getDefault('library-directory', '')
+				options += ' ' + '-lib:[libPath]'
+
 			# .cs files
 			csFileNameList = List<of String>()
 			for module in _modules[1:]
