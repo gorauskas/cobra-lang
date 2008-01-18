@@ -2,6 +2,7 @@
 Cobra Command Line Program (compiler and more)
 
 """
+use System.Diagnostics
 
 
 class CommandLine
@@ -610,16 +611,8 @@ class CommandLine
 		assert testInvoker.fileName.startsWith('test-')
 		File.delete(testInvoker.fileName)
 		try
-			p = System.Diagnostics.Process()
-			# TODO: support args to the program with a - or -- separator
-			branch c.platform
-				on PlatformEnum.Microsoft
-					p.startInfo.fileName = c.baseExeFileName
-				on PlatformEnum.Novell
-					p.startInfo.fileName = 'mono'
-					p.startInfo.arguments = "'[c.fullExeFileName]'"
-				else
-					throw FallThroughException(c.platform)
+			p = Process()
+			.setUpRunProcess(c, p)
 			if _verbosity >= 1
 				print 'Running: [p.startInfo.fileName] [p.startInfo.arguments]'
 				print .verboseLineSeparator
@@ -637,17 +630,8 @@ class CommandLine
 		if c.errors.count
 			print 'Not running due to errors above.'
 		else
-			p = System.Diagnostics.Process()
-			branch c.platform
-				on PlatformEnum.Microsoft
-					p.startInfo.fileName = c.baseExeFileName
-					# TODO: support args to the program with a - or -- separator (and for Novell below)
-					# p.startInfo.arguments = ...
-				on PlatformEnum.Novell
-					p.startInfo.fileName = 'mono'
-					p.startInfo.arguments = "'[c.fullExeFileName]'"
-				else
-					throw FallThroughException(c.platform)
+			p = Process()
+			.setUpRunProcess(c, p)
 			if _verbosity >= 1
 				print 'Running: [p.startInfo.fileName] [p.startInfo.arguments]'
 				print .verboseLineSeparator
@@ -779,6 +763,25 @@ class CommandLine
 		print 'Exiting with code [code]'
 		.testifyFinish('Failure.')
 		Environment.exit(code)
+
+	def setUpRunProcess(c as Compiler, p as Process)
+		"""
+		Sets p.startInfo.fileName and p.startInof.arguments appropriately.
+		"""
+		# TODO: support args to the program with a - or -- separator
+		branch c.platform
+			on PlatformEnum.Microsoft
+				p.startInfo.fileName = c.baseExeFileName
+			on PlatformEnum.Novell
+				p.startInfo.fileName = 'mono'
+				args = ''
+				# mono also needs --debug when running
+				if .options.getDefault('debug', '') not in ['', '-']
+					args += '--debug '
+				args += "'[c.fullExeFileName]'"
+				p.startInfo.arguments = args
+			else
+				throw FallThroughException(c.platform)
 
 
 	## Build Standard Library
@@ -1187,15 +1190,10 @@ class CommandLine
 				return 0
 		else
 			print 'Run:'
-			p = System.Diagnostics.Process()
+			p = Process()
 			if _verbosity >= 1
 				print 'c.fullExeFileName = "[c.fullExeFileName]"'
-			if c.platform == PlatformEnum.Novell
-				# Lameness. The Process class should be able to handle Mono executables directly.
-				p.startInfo.fileName = 'mono'
-				p.startInfo.arguments = "'[c.baseExeFileName].exe'"
-			else
-				p.startInfo.fileName = c.baseExeFileName
+			.setUpRunProcess(c, p)
 			if _verbosity >= 2
 				print '[p.startInfo.fileName] [p.startInfo.arguments]'
 			output = CobraCore.runAndCaptureAllOutput(p).trim

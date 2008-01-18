@@ -1,9 +1,18 @@
+# TODO: 2008-01-18: switched to #line today. can drop support for SharpLineNumberTreatment.Comment at some point. Maybe None as well.
+
+enum SharpLineNumberTreatment
+	None
+	PoundLine
+	Comment
+
+
 class SharpWriter
 	inherits IndentedWriter
 
 	var _cobraLineNum as int
 	var _sharpLineNum as int
 	var _sharpToCobraLineNum as Dictionary<of int, int>
+	var _sharpLineNumberTreatment as SharpLineNumberTreatment
 	var _needToOutputCobraLineNum as bool
 
 	def init(tw as TextWriter)
@@ -11,29 +20,51 @@ class SharpWriter
 		_cobraLineNum = 1
 		_sharpLineNum = 1
 		_sharpToCobraLineNum = {1 : 1}
+		_sharpLineNumberTreatment = SharpLineNumberTreatment.PoundLine
+
+	pro sharpLineNumberTreatment from var
 
 	get sharpToCobraLineNum from var
 
 	def node(node as SyntaxNode)
 		"""
 		As C# code is generated, each of the nodes should invoke this method so that the
-		SharpWriter can map C# line numbers back to Cobra source line numbers.
+		SharpWriter can manage line numbers.
 		"""
 		lineNum = node.token.lineNum
-		if lineNum>0
+		if lineNum > 0
 			# assert lineNum >= _cobraLineNum, '[lineNum], [_cobraLineNum]'
-			# ^ Can't assert that because of post while statements.
+			# ^ Can't assert that because of post while statements, helper methods, etc.
 			_cobraLineNum = lineNum
 			_needToOutputCobraLineNum = true
 
+	def start(fileName as String)
+		if _sharpLineNumberTreatment == SharpLineNumberTreatment.PoundLine
+			_innerWriter.writeLine('#line 1 "[fileName]"')
+
 	def write(value as char) is override
-		if _needToOutputCobraLineNum and (value==_innerWriter.newLine or value==.newLine2)
-			_innerWriter.write('  // [_cobraLineNum]')
-			_needToOutputCobraLineNum = false
-		base.write(value)
-		if _lastChar==_innerWriter.newLine or _lastChar==.newLine2
-			_sharpToCobraLineNum[_sharpLineNum] = _cobraLineNum
+		branch _sharpLineNumberTreatment
+			on SharpLineNumberTreatment.None
+				base.write(value)
+			on SharpLineNumberTreatment.PoundLine
+				if _isNewLine(_lastChar)
+					# maintain the correct line number even when one Cobra statement is creating multiple lines in the generated C#
+					_innerWriter.writeLine('#line [_cobraLineNum]')
+				base.write(value)
+			on SharpLineNumberTreatment.Comment
+				if _needToOutputCobraLineNum and _isNewLine(value)
+					_innerWriter.write('  // [_cobraLineNum]')
+					_needToOutputCobraLineNum = false
+				base.write(value)
+		if _isNewLine(_lastChar)
+			_sharpToCobraLineNum[_sharpLineNum] = _cobraLineNum + if(_sharpLineNumberTreatment == SharpLineNumberTreatment.PoundLine, 1, 0)
 			_sharpLineNum += 1
+
+	def _isNewLine(value as char) as bool
+		return value == _innerWriter.newLine or value == .newLine2
+
+	def _isNewLine(value as String) as bool
+		return value == _innerWriter.newLine or value == .newLine2
 
 	# CC: shouldn't need the following
 	def write(value as String) is override

@@ -1344,19 +1344,25 @@ class SharpCompilationMessage
 		else
 			i = line.indexOf('(')
 			if i <> -1
-				fileName = line[:i-3]
+				fileName = line[:i]
+				if fileName.endsWith('.cs') and fileName.endsWith('.cobra.cs') # doesn't really happen since #line is generated at the top to set the filename to "Foo.cobra"
+					fileName = fileName[:i-3]
+					willFixLineNum = true
+				else
+					willFixLineNum = false
 				j1 = line.indexOf(',', i)
 				j2 = line.indexOf(')', i)
 				j = if(j1 < j2, j1, j2)
 				lineStr = line[i+1:j]
-				try  # CC: use tryParse
-					sharpLineNum as int = int.parse(lineStr)  # CC: axe cast
+				try
+					_lineNum = int.parse(lineStr)
 				catch
 					if compiler.verbosity or Utils.isDevMachine
 						line += ' (C#)'
 				success
 					_fileName = fileName
-					_lineNum = compiler.cobraLineNumForSharp(fileName, sharpLineNum)
+					if willFixLineNum
+						_lineNum = compiler.cobraLineNumForSharp(fileName, _lineNum to !)
 					i = line.indexOf(':')
 					if i <> -1
 						line = line[i+1:].trim
@@ -1366,7 +1372,7 @@ class SharpCompilationMessage
 							line = line[i+1:].trim
 					# add (sharp)
 					if compiler.verbosity or Utils.isDevMachine
-						line += ' (C# [sharpLineNum])'
+						line += ' (C#)'  # ' (C# [sharpLineNum])' ... the sharpLineNum is not useful now that #line is being generated
 		line = line.replace("`double'", "`float'")
 		line = line.replace("null", "nil")
 		_message = line
