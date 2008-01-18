@@ -713,6 +713,12 @@ static public class CobraImp {
 
 	static private Stack<TextWriter> _printToStack;
 
+	static public TextWriter PrintDestination {
+		get {
+			return _printToStack.Peek();
+		}
+	}
+
 	static public void PushPrintTo(TextWriter tw) {
 		_printToStack.Push(tw);
 	}
