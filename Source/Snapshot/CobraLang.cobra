@@ -132,6 +132,52 @@ namespace Cobra
 						_tracer = Tracer()
 
 
+				## Run Tests
+
+				def runAllTests
+					"""
+					Run all Cobra `test` sections in all assemblies using reflection to locate them.
+					"""
+					# start = DateTime.now
+					_runAllTests(Assembly.getEntryAssembly to !, Dictionary<of String, String>())
+					# duration = DateTime.now.subtract(start)
+					# trace duration
+
+				def _runAllTests(ass as Assembly, found as Dictionary<of String, String>)  # CC: found should be Set<of String>
+					name = ass.getName.toString
+					if found.containsKey(name)
+						return
+					found.add(name, name)
+					if _skipAssemblyNameForTesting(name)  # saves some time
+						return
+
+					# print 'Testing assembly:', ass
+					for type in ass.getExportedTypes
+						members = type.getMember('RunTestsIfNeeded')
+						if members and members.length and members[0] inherits MethodInfo
+							method = members[0] to MethodInfo
+							# trace type, method
+							if type.containsGenericParameters
+								# TODO: this is quite awful. tests in generic types are being skipped!
+								# potential solution 1: move type test out of the type into a "sister" type: private __FooTest
+								# potential solution 2: require a constructed type in Cobra: `test Foo<of int> ...` and then put that in a method attribute in the gen C# and use that type
+								continue
+							method.invoke(type, nil)
+
+					# traverse further assemblies
+					for assName in ass.getReferencedAssemblies
+						subAss = Assembly.load(assName)
+						_runAllTests(subAss to !, found)
+
+				var _skipPrefixes = @['System.', 'Mono.', 'mscorlib,', 'System,']
+
+				def _skipAssemblyNameForTesting(name as String) as bool
+					for prefix in _skipPrefixes
+						if name.startsWith(prefix)
+							return true
+					return false
+
+
 				## Detailed stack trace
 
 				pro maxStackFrames as int
