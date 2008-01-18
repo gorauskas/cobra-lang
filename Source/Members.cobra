@@ -858,8 +858,10 @@ class AbstractMethod
 			sw.write('if ([param.sharpName]==null) throw new ArgumentNullException("[param.name]");\n')
 
 	def writeSSTHead(sw as SharpWriter)
-		if .box.name == 'CobraFrame'  # otherwise, stack overflow
+		if .box.name in @['CobraFrame', 'SourceSite']  # otherwise, stack overflow  # TODO: use a class level attribute instead such as DetailedStackTrace(false)
 			return
+		# could be a neat option, -trace-methods, but maybe done with events:
+		# sw.writeLine('Console.WriteLine(">> [.box.name].[.name]");')
 		sw.write('CobraImp.PushFrame("[.box.name]", "[.name]", "[.token.fullPathName]", [.token.lineNum]')
 		if not .isShared
 			sw.write(', "this", this')
@@ -869,8 +871,9 @@ class AbstractMethod
 		sw.writeAndIndent('try {\n')
 
 	def writeSSTTail(sw as SharpWriter)
-		if .box.name == 'CobraFrame'
+		if .box.name in @['CobraFrame', 'SourceSite']  # otherwise, stack overflow
 			return
+		# sw.writeLine('Console.WriteLine("<< [.box.name].[.name]");')
 		# TODO: this catch all is going to clash with yield statements! crap...
 		sw.dedentAndWrite('} catch {\n')
 		sw.indent
@@ -1098,7 +1101,9 @@ class Method
 		if .isMain and .compiler.hasExceptionReportOption
 			sw.writeLine('try { // Exception Report')
 			sw.indent
-		
+		if .isMain and .compiler.options.boolValue('include-tests')
+			sw.writeLine('CobraCore.RunAllTests();  // turn off with -include-tests:no (see cobra -h)')
+
 	def writeSharpImpFooter(sw as SharpWriter)
 		base.writeSharpImpFooter(sw)
 		if .isMain and .compiler.hasExceptionReportOption
