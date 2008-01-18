@@ -579,11 +579,12 @@ class AbstractMethod
 
 	get willRequire as bool
 		# in the future, this will also depend on a command line option to include/exclude preconditions
-		return .box.name <> 'CobraFrame'
+		# classes that are sensitive with respect to the DST skip on contracts
+		return .box.canHaveDetailedStackTrace
 
 	get willEnsure as bool
 		# in the future, this will also depend on a command line option to include/exclude preconditions
-		return .box.name <> 'CobraFrame'
+		return .box.canHaveDetailedStackTrace
 
 	def _bindInt is override
 		base._bindInt
@@ -858,7 +859,7 @@ class AbstractMethod
 			sw.write('if ([param.sharpName]==null) throw new ArgumentNullException("[param.name]");\n')
 
 	def writeDSTHead(sw as SharpWriter)
-		if .box.name in @['CobraFrame', 'SourceSite']  # otherwise, stack overflow  # TODO: use a class level attribute instead such as DetailedStackTrace(false)
+		if not .box.canHaveDetailedStackTrace
 			return
 		# could be a neat option, -trace-methods, but maybe done with events:
 		# sw.writeLine('Console.WriteLine(">> [.box.name].[.name]");')
@@ -871,7 +872,7 @@ class AbstractMethod
 		sw.writeAndIndent('try {\n')
 
 	def writeDSTTail(sw as SharpWriter)
-		if .box.name in @['CobraFrame', 'SourceSite']  # otherwise, stack overflow
+		if not .box.canHaveDetailedStackTrace
 			return
 		# sw.writeLine('Console.WriteLine("<< [.box.name].[.name]");')
 		# TODO: this catch all is going to clash with yield statements! crap...
@@ -924,7 +925,7 @@ class Constructor  # CC: rename to initializer
 			return .token
 
 	def _bindImp
-		if .box.name <> 'CobraFrame'
+		if .box.canHaveDetailedStackTrace  # no extra checks for classes that are sensitive with respect to the DST
 			# add asserts at the end for non-nilable class vars
 			token = .lastToken.copy
 			token.incLineNum
@@ -1475,7 +1476,8 @@ class ContractPart
 		return ''  # TODO: make abstract instead
 
 	get willWriteSharp as bool
-		return _codeMember.box.name <> 'CobraFrame'
+		# classes that are sensitive with respect to the DST skip on contracts
+		return _codeMember.box.canHaveDetailedStackTrace
 		
 	get isImplicit from var
 
