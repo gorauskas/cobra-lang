@@ -707,7 +707,7 @@ class AbstractMethod
 			sw.writeAndIndent('{\n')
 			.writeSharpImpHeader(sw)
 			if .compiler.hasDetailedStackTraceOption
-				.writeSSTHead(sw)
+				.writeDSTHead(sw)
 			for param in _params
 				.writeSharpParamCheck(param, sw)
 			if _requirePart
@@ -719,16 +719,16 @@ class AbstractMethod
 				# even though the _lh_canEnsure guard logically prevents problems at run-time
 				for param in _params
 					if param.type inherits OutType
-						csInit = param.type.csInit
-						if not csInit.length
+						sharpInit = param.type.sharpInit
+						if not sharpInit.length
 							# TODO/HACK: yes we need something like this (or a way to convice C# that the out param reference in `finally` really is okay),
 							# but it should be something less hackish, like an attribute
-							csInit = 'DateTime.Today'
-						sw.write('[param.sharpName] = [csInit];')
+							sharpInit = 'DateTime.Today'
+						sw.write('[param.sharpName] = [sharpInit];')
 				if _sharpResultVarName.length  # set in _bindImp
 					sw.write('[_returnType.sharpRef] [_sharpResultVarName]')
-					if _returnType.csInit.length
-						sw.write('= [_returnType.csInit]')
+					if _returnType.sharpInit.length
+						sw.write('= [_returnType.sharpInit]')
 					sw.write(';\n')
 				sw.writeAndIndent('try {\n')
 			for stmt in _stmts
@@ -746,7 +746,7 @@ class AbstractMethod
 				sw.dedentAndWrite('}\n')
 				sw.dedentAndWrite('}\n')
 			if .compiler.hasDetailedStackTraceOption
-				.writeSSTTail(sw)
+				.writeDSTTail(sw)
 			.writeSharpImpFooter(sw)
 			sw.dedent
 			sw.write('}\n')
@@ -789,7 +789,7 @@ class AbstractMethod
 			for local in locals
 				if not local.isImplicit
 					sw.write('[local.type.sharpRef] [local.sharpName]')
-					init = local.type.csInit
+					init = local.type.sharpInit
 					if init.length
 						sw.write(' = [init]')
 					sw.write(';\n')
@@ -857,7 +857,7 @@ class AbstractMethod
 			# TODO: guard with flag like _willCheckNonNilArgs
 			sw.write('if ([param.sharpName]==null) throw new ArgumentNullException("[param.name]");\n')
 
-	def writeSSTHead(sw as SharpWriter)
+	def writeDSTHead(sw as SharpWriter)
 		if .box.name in @['CobraFrame', 'SourceSite']  # otherwise, stack overflow  # TODO: use a class level attribute instead such as DetailedStackTrace(false)
 			return
 		# could be a neat option, -trace-methods, but maybe done with events:
@@ -870,7 +870,7 @@ class AbstractMethod
 		sw.write(');\n')
 		sw.writeAndIndent('try {\n')
 
-	def writeSSTTail(sw as SharpWriter)
+	def writeDSTTail(sw as SharpWriter)
 		if .box.name in @['CobraFrame', 'SourceSite']  # otherwise, stack overflow
 			return
 		# sw.writeLine('Console.WriteLine("<< [.box.name].[.name]");')
