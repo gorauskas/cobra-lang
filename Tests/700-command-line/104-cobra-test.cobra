@@ -1,0 +1,36 @@
+use System.Diagnostics
+
+class Test
+
+	def main is shared
+		Test().run
+
+	def run
+		output = .runCobraExe('-test 106-cobra-test-program.cobra')
+		assert '** Test' in output
+		assert '** main shared' in output
+		assert '** Bar' in output
+		assert '** baz' in output
+
+		output = .runCobraExe('-test 108-cobra-test-library.cobra')
+		assert '** Test' in output
+		assert '** run' in output
+		assert '** Bar' in output
+		assert '** baz' in output
+
+	def runCobraExe(args as String) as String
+		# TODO: move to CobraCore, but should return both the Process instance and the output
+		cobraPath = CobraCore.findCobraExe
+		assert cobraPath
+		if cobraPath  # CC: shouldn't need this because of the assert above
+			p = System.Diagnostics.Process()
+			if CobraCore.isRunningOnMono
+				p.startInfo.fileName = 'mono'
+				p.startInfo.arguments = cobraPath + ' ' + args
+			else
+				p.startInfo.fileName = cobraPath
+				p.startInfo.arguments = args
+			# print '[p.startInfo.fileName] [p.startInfo.arguments]'
+			return CobraCore.runAndCaptureAllOutput(p)
+		else
+			return ''

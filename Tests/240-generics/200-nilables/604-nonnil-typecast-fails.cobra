@@ -1,0 +1,45 @@
+# Test that typecasts to non-nil throw an exception at run-time when the value in question is nil.
+
+class Test
+
+	def main is shared
+		s = 'aoeu' to Object?
+		t = s to String?
+		assert t and t.length
+
+		s = nil
+		expect NonNilCastException
+			t = s to String
+		
+		u = 'aoeu'
+		t = nil
+		expect NonNilCastException
+			u = t to !
+
+	def join(sep as String, parts as vari String) as String
+		return .join(sep, parts to System.Collections.IEnumerable)  # Test C# code gen for CheckNonNil<T>.
+
+	def join(sep as String, parts as System.Collections.IEnumerable) as String
+		return ''
+
+
+
+# Test C# code gen in calls to base initializer. C# is picky about this:
+
+class A
+
+	def init(name as String)
+		pass
+
+	get name as String
+		return ''
+
+class B
+	inherits A
+
+	def init(name as Object?)
+		base.init(name to String)  # This line cannot put a 'this' in the generated C# or C# will error.
+		pass
+
+	def init(a as A?)
+		.init((a to B).name)  # This line cannot put a 'this' in the generated C# or C# will error.

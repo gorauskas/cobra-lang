@@ -1,0 +1,105 @@
+class Vehicle
+
+	var _value as int
+
+	pro value from var
+
+	def drive(i as int)
+		ensure .value>0
+		.value = i
+
+	def noEnsureInBase(i as int)
+		pass
+
+	def noEnsureInDerived(i as int)
+		ensure .value > 0
+		Console.out.flush
+		.value = i
+		Console.out.flush
+
+	def twoBaseMethods(i as int)
+		ensure .value > 0
+		.value = i
+
+	def twoBaseMethods(s as String)
+		ensure .value
+		.value = 1
+
+	shared
+		var _sharedValue as int
+
+		pro sharedValue from var
+
+		def sharedMethod(i as int)
+			ensure .sharedValue > 0
+			.sharedValue = i
+
+class Car
+	inherits Vehicle
+
+	def drive(ii as int) is override
+		and ensure .value>1
+		# the arg 'ii' is intentionally spelled different to test that doing so works
+		.value = ii
+
+	def noEnsureInBase(i as int) is override
+		and ensure
+			.value > 0
+		body
+			.value = i
+
+	def noEnsureInDerived(i as int)
+		base.noEnsureInDerived(i)
+
+	def twoBaseMethods(i as int) is override
+		and ensure .value >= 0
+		.value = i
+
+	shared
+		def sharedMethod(i as int) is new
+			ensure .sharedValue == 0
+			.sharedValue = i
+
+class Test
+
+	def main is shared
+		v = Vehicle()
+		v.drive(1)
+		expect EnsureException
+			v.drive(0)
+		c = Car()
+		c.drive(2)
+		c.drive(3)
+		expect EnsureException
+			c.drive(0)
+
+		c.noEnsureInBase(1)
+		c.noEnsureInBase(2)
+
+		c.noEnsureInDerived(1)
+		expect EnsureException
+			Console.out.flush
+			c.noEnsureInDerived(0)  # base fails
+			Console.out.flush
+
+		# multiple requirement failures:
+		expect EnsureException
+			c.drive(-1)
+			# currently, Cobra does not define which ensure gets run first: base or derived
+			# also, unlike require, the first failure stops any further checking.
+			# therefore there is no chaining of exceptions
+
+		c.twoBaseMethods(1)
+		c.twoBaseMethods(2)
+		expect EnsureException
+			c.twoBaseMethods(-1)
+
+		# shared:
+		# not that there really isn't any overriding with shared methods
+		# the following tests confirm that
+		Vehicle.sharedMethod(1)
+		expect EnsureException
+			Vehicle.sharedMethod(0)
+		Car.sharedMethod(0)
+		expect EnsureException
+			Car.sharedMethod(1)

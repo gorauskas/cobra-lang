@@ -1,0 +1,66 @@
+class Test
+
+	def main is shared
+		Test().testTrace(1, 2)
+		.testStaticTrace
+
+	def testTrace(x as int, y as int)
+		tracer = CobraCore.tracer
+		assert tracer.isActive
+		tracer.prefix = 'prefix: '
+		tracer.separator = ' | '
+		tracer.destination = StringWriter()
+
+
+		trace
+		trace x
+		x = 2
+		trace x
+		trace y
+		trace x, y
+		trace all
+		i = 3
+		trace i
+		trace all
+		trace off
+		trace
+		trace
+		trace on
+		trace
+
+		output = tracer.destination.toString.replace('\r', '')
+		lines = output.split(c'\n')
+		.check(lines[0], 'prefix: at FILE:15 | in Test.testTrace')
+		.check(lines[1], 'prefix: x=1 | at FILE:16 | in Test.testTrace')
+		.check(lines[2], 'prefix: x=2 | at FILE:18 | in Test.testTrace')
+		.check(lines[3], 'prefix: y=2 | at FILE:19 | in Test.testTrace')
+		.check(lines[4], 'prefix: x=2 | y=2 | at FILE:20 | in Test.testTrace')
+		.check(lines[5], 'prefix: this=Test | x=2 | y=2 | tracer=Cobra.Lang.Tracer | i=0 | output=nil | lines=nil | at FILE:21 | in Test.testTrace')
+		.check(lines[6], 'prefix: i=3 | at FILE:23 | in Test.testTrace')
+		.check(lines[7], 'prefix: this=Test | x=2 | y=2 | tracer=Cobra.Lang.Tracer | i=3 | output=nil | lines=nil | at FILE:24 | in Test.testTrace')
+		.check(lines[8], 'prefix: at FILE:29 | in Test.testTrace')
+
+	def check(actual as String, expected as String) is shared
+		if CobraCore.isRunningOnMono
+			expected = expected.replace('RuntimeType', 'MonoType')
+		# fix filename in actual
+		i = actual.indexOf(' at ')
+		i += 4
+		j = actual.indexOf(':', i)
+		actual = actual[:i] + 'FILE' + actual[j:]
+
+		assert actual == expected
+
+	def testStaticTrace is shared
+		# trace in a shared method
+		CobraCore.tracer.destination = StringWriter()
+		trace
+		output = CobraCore.tracer.destination.toString.trim
+		.check(output, 'prefix: at FILE:57 | in Test.testStaticTrace')
+
+		# trace all in a shared method
+		CobraCore.tracer.destination = StringWriter()
+		output = 'o'
+		trace all
+		output = CobraCore.tracer.destination.toString.trim
+		.check(output, "prefix: this=Test (RuntimeType) | output='o' | at FILE:64 | in Test.testStaticTrace")

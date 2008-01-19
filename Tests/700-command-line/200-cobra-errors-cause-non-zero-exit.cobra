@@ -1,0 +1,42 @@
+use System.Diagnostics
+
+class Test
+
+	shared
+
+		var _verbose = false
+
+		def main
+			Test().run
+
+	def run
+		args = '-editor:""'
+		process = .runCobraExe('[args] 100-find-cobra.cobra')
+		assert process.exitCode == 0
+
+		process = .runCobraExe('[args] 202-skip-has-errors.cobra')
+		assert process.exitCode == 1
+
+
+	def runCobraExe(args as String) as Process
+		cobraPath = CobraCore.findCobraExe
+		assert cobraPath
+		if cobraPath  # CC: shouldn't need this because of the assert above
+			p = System.Diagnostics.Process()
+			if CobraCore.isRunningOnMono
+				p.startInfo.fileName = 'mono'
+				p.startInfo.arguments = cobraPath + ' ' + args
+			else
+				p.startInfo.fileName = cobraPath
+				p.startInfo.arguments = args
+			# print '[p.startInfo.fileName] [p.startInfo.arguments]'
+			output = CobraCore.runAndCaptureAllOutput(p)
+			if _verbose
+				print
+				print 'cobra', args
+				print '-------'
+				print output
+				print '-------'
+			return p
+		else
+			throw FallThroughException(cobraPath)

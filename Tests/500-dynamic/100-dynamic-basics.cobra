@@ -1,0 +1,168 @@
+"""
+	tests:
+
+	pass dynamic to method parameter (receiver is statically typed, method is overloaded)
+
+	invoke an operator  (comparisons, arithmetic)
+	dynamic crossed with slicing (target is dynamic and/or args are dynamic)
+
+	dynamic points to a Type and you invoke shared properties, indexers and methods on it
+
+	IDynamic
+
+	return a dynamic expr in a getter, method or indexer whose return type is static
+	return - other cases
+
+	other:
+
+	get rid of C# warnings
+	write documentation
+"""
+
+class Test
+
+	def main is shared
+		# use dynamic type explicitly
+		x as dynamic = 'aoeu'
+		assert x=='aoeu'
+		x = 5
+		assert x==5
+		x = [1, 2, 3]
+		assert x==[1, 2, 3]
+
+		# assert with dynamic
+		x = 2
+		assert x
+		x = 'aoeu'
+		assert x
+		x = [1, 2, 3]
+		assert x
+		x = 0
+		assert not x
+		x = 0.0
+		assert not x
+		x = false
+		assert not x
+
+		# assign dynamic to correct static type
+		x = 5
+		i as int = x
+		assert i==5
+
+		# assign dynamic to incorrect static type
+		expect InvalidCastException
+			d as decimal = x
+
+		# switch-a-roo
+		x = 5.0
+		d = x
+		expect InvalidCastException
+			i = x
+
+		# statically typed property
+		t = Test()
+		assert t.integer == 0
+		x = 1
+		t.integer = x
+		assert t.integer == 1
+		t.integer = 5
+		x = t.integer
+		assert x == 5
+
+		# dynamically typed property
+		assert t.dyn is nil
+		t.dyn = 5
+		assert t.dyn == 5
+		t.dyn = 'aoeu'
+		assert t.dyn == 'aoeu'
+		x = t.dyn to !
+		assert x == 'aoeu'
+		x = 5
+		t.dyn = x
+		assert t.dyn == 5
+		a = Test()
+		b = Test()
+		t.dyn = a
+		t.dyn.dyn = b  # double up
+		assert t.dyn is a
+		assert t.dyn.dyn is b
+
+		# method parameters
+		x = 2
+		t.take2(x)
+		expect InvalidCastException
+			x = 'aoeu'
+			t.take2(x)
+		x = 1
+		t.takeDynamic(x)
+		x = 'aoeu'
+		t.takeDynamic(x)
+		# TODO: overloaded method
+
+		# method return values
+		x = t.return42
+		assert x == 42
+		x = t.returnDynamic
+		assert x == 'aoeu'
+		s = ''
+		s = t.returnDynamic
+		assert s == 'aoeu'
+
+		# invoke a property on a dynamic variable
+		x = t
+		x.integer = 5
+		assert x.integer == 5
+
+		# invoke a method on a dynamic variable
+		x = t
+		x.take2(2)
+		assert x.returnArg(5) == 5
+		assert x.returnArg('aoeu') == 'aoeu'
+		assert x.getType is not nil
+		someType = x.getType
+		assert someType.name == 'Test'
+		assert x.getType.name == 'Test'
+
+		# invoke overloaded methods on a dynamic variable
+		assert x.overloaded(5) == 1
+		assert x.overloaded('aoeu') == 2
+		dyn as dynamic = 5
+		assert x.overloaded(dyn) == 1  # dynamic receiver *and* dynamic arg
+		dyn = 'aoeu'
+		assert x.overloaded(dyn) == 2  # dynamic receiver *and* dynamic arg
+
+		# TODO: test for each of the exceptions that you can get
+
+
+	var _integer as int
+
+	pro integer from var
+
+
+	var _dyn as dynamic?
+
+	pro dyn from var
+
+
+	def return42 as int
+		return 42
+
+	def returnDynamic as dynamic
+		return 'aoeu'
+
+
+	def take2(x as int)
+		assert x==2
+
+	def takeDynamic(d as dynamic)
+		assert d
+
+	def returnArg(arg as Object) as Object
+		return arg
+
+
+	def overloaded(i as int) as int
+		return 1
+
+	def overloaded(s as String) as int
+		return 2

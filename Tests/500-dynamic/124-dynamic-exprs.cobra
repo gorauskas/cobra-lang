@@ -1,0 +1,136 @@
+"""
+The `dynamic` type crossed with expressions.
+For boolean and arithmetic operators, see dynamic-ops.cobra.
+"""
+
+class A
+
+	get foo as String
+		return 'foo'
+
+
+class E
+	inherits Exception
+
+	pass
+
+
+class Test
+
+	def main is shared
+		Test().run
+
+	def run
+		x as dynamic = 1
+		xq as dynamic?
+		y as dynamic = 2
+		yq as dynamic?
+
+		# in
+
+		assert 'b' in 'abc'
+		x = 'abc'
+		assert 'b' in x
+		x = 'b'
+		assert x in 'abc'
+		y = 'abc'
+		assert x in y
+
+		xq = 'abc'
+		assert 'b' in xq
+		xq = 'b'
+		assert xq in 'abc'
+		yq = 'abc'
+		assert xq in yq
+
+		# TODO: repeat above for list, array and dict
+
+
+		# if
+
+		x = 5
+		y = 6
+		assert if(x>y, x, y) == 6
+		assert if(x<y, x, y) == 5
+		z1 = if(x>y, x, 0)
+		assert z1 == 0
+		z1 = 'aoeu'  # z1 should be dynamic
+		z2 = if(x<y, x, 0)
+		assert z2 == 5
+		z2 = 'aoeu'  # z2 should be dynamic
+
+		xq = 5
+		yq = 6
+		assert if(xq>yq, xq, yq) == 6
+		assert if(xq<yq, xq, yq) == 5
+		z3 = if(xq>yq, xq, 0)
+		assert z3 == 0
+		z3 = 'aoeu'  # z3 should be dynamic
+		z4 = if(xq<yq, 0, yq)
+		assert z4 == 0
+		z4 = 'aoeu'  # z4 should be dynamic
+
+
+		# for
+
+		assert [1, 4, 9] == for i in [1, 2, 3] get i*i
+		assert [1, 4, 9] == for x in [1, 2, 3] get x*x
+
+
+		# post call
+
+		x = A
+		x = x()
+		assert x inherits A
+		assert x.foo == 'foo'
+
+
+		# to
+
+		x = A()
+		assert (x to A).foo == 'foo'
+		a as A = x to A
+		assert a.foo == 'foo'
+		xq = A()
+		assert (xq to A).foo == 'foo'
+		a = xq to A
+		assert a.foo == 'foo'
+
+
+		# toq
+
+		x = A()
+		aq as A? = x to? A
+		assert aq
+		x = 5
+		aq = x to? A
+		assert not aq
+		assert aq is nil
+
+
+		# coalesce: ?
+
+		xq = nil
+		assert xq ? 5 == 5
+		xq = 3
+		assert xq ? 5 == 3
+
+		xq = nil
+		xq ?= 5
+		assert xq==5
+		xq ?= 10
+		assert xq==5
+
+
+		# inverse coalesce: !
+
+		xq as dynamic? = nil
+		assert xq ! 5 == nil
+		xq = 3
+		assert xq ! 5 == 5
+
+		xq = 10
+		xq != nil
+		assert xq is nil
+		xq != 10
+		assert xq is nil

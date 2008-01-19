@@ -1,0 +1,85 @@
+class Vehicle
+
+	def drive(key as int)
+		require key>0
+		pass
+
+	def noRequireInBase(i as int)
+		pass
+
+	def noRequireInDerived(i as int)
+		require i > 0
+		pass
+
+	shared
+		def sharedMethod(key as int)
+			require key > 0
+			pass
+
+class Car
+	inherits Vehicle
+
+	def drive(key as int) is override
+		or require key==0
+		pass
+
+	def noRequireInBase(i as int) is override
+		or require
+			i > 0
+		body
+			pass
+
+	def noRequireInDerived(i as int) is override
+		pass
+
+	shared
+		def sharedMethod(key as int) is new
+			require key==0
+			pass
+
+class Test
+
+	def main is shared
+		v = Vehicle()
+		v.drive(1)
+		expect RequireException
+			v.drive(0)
+		CobraCore.willCheckRequire = false
+		v.drive(0)
+		CobraCore.willCheckRequire = true
+
+		c = Car()
+		c.drive(1)
+		c.drive(0)
+		expect RequireException
+			c.drive(-1)
+		CobraCore.willCheckRequire = false
+		c.drive(-1)
+		CobraCore.willCheckRequire = true
+
+		c.noRequireInBase(1)
+		c.noRequireInBase(0)  # because base is essentially "require true"
+
+		c.noRequireInDerived(1)
+		expect RequireException
+			c.noRequireInDerived(0)  # base fails
+		CobraCore.willCheckRequire = false
+		c.noRequireInDerived(0)
+		CobraCore.willCheckRequire = true
+
+		# shared:
+		# not that there really isn't any overriding with shared methods
+		# the following tests confirm that
+		Vehicle.sharedMethod(1)
+		expect RequireException
+			Vehicle.sharedMethod(0)
+		CobraCore.willCheckRequire = false
+		Vehicle.sharedMethod(0)
+		CobraCore.willCheckRequire = true
+
+		Car.sharedMethod(0)
+		expect RequireException
+			Car.sharedMethod(1)
+		CobraCore.willCheckRequire = false
+		Car.sharedMethod(1)
+		CobraCore.willCheckRequire = true

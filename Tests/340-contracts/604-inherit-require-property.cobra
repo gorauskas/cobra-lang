@@ -1,0 +1,101 @@
+class Vehicle
+
+	var _value as int
+
+	def init(value as int)
+		_value = value
+
+	pro value from var
+
+	get requireInBoth as int
+		require .value>0
+		return _value
+
+	get noRequireInBase as int
+		return _value
+
+	get noRequireInDerived as int
+		require .value>0
+		return _value
+
+	shared
+		var _sharedValue as int
+
+		pro sharedValue from var
+
+		get sharedProperty as int
+			require .sharedValue > 0
+			return .sharedValue
+
+class Car
+	inherits Vehicle
+
+	def init(value as int)
+		base.init(value)
+
+	get requireInBoth as int is override
+		or require .value==0
+		return _value
+
+	get noRequireInBase as int is override
+		or require
+			.value > 0
+		body
+			return .value
+
+	get noRequireInDerived as int is override
+		return .value
+
+	shared
+		get sharedProperty as int is new
+			require .sharedValue == 0
+			return .sharedValue
+
+class Test
+
+	def main is shared
+		v = Vehicle(1)
+		i = v.requireInBoth
+		expect RequireException
+			v.value = 0
+			i = v.requireInBoth
+		c = Car(1)
+		i = c.requireInBoth
+		c.value = 0
+		i = c.requireInBoth
+		expect RequireException
+			c.value = -1
+			i = c.requireInBoth
+
+		c.value = 1
+		i = c.noRequireInBase
+		c.value = 0
+		i = c.noRequireInBase  # because base is esesntially "require true"
+
+		c.value = 1
+		i = c.noRequireInDerived
+		expect RequireException
+			c.value = 0
+			i = c.noRequireInDerived  # base fails
+
+		# multiple requirement failures:
+		try
+			c.value = -1
+			i = c.requireInBoth
+		catch re as RequireException
+			assert re.next is not nil
+			assert re.next.next is nil
+
+		# shared:
+		# not that there really isn't any overriding with shared methods
+		# the following tests confirm that
+		Vehicle.sharedValue = 1
+		i = Vehicle.sharedProperty
+		expect RequireException
+			Vehicle.sharedValue = 0
+			i = Vehicle.sharedProperty
+		Car.sharedValue = 0
+		i = Car.sharedProperty
+		expect RequireException
+			Car.sharedValue = 1
+			i = Car.sharedProperty

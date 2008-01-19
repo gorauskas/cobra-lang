@@ -1,0 +1,85 @@
+class RequireInBothA
+
+	get [key as int] as int
+		require key>0
+		return key
+
+class RequireInBothB
+	inherits RequireInBothA
+
+	get [keyy as int] as int is override
+		or require keyy==0
+		# the arg 'keyy' is intentionally spelled different to test that doing so works
+		return keyy
+
+
+class NoRequireInBaseA
+
+	get [i as int] as int
+		return i
+
+class NoRequireInBaseB
+	inherits NoRequireInBaseA
+
+	get [i as int] as int is override
+		or require
+			i > 0
+		body
+			return i
+
+
+class NoRequireInDerivedA
+
+	get [i as int] as int
+		require i > 0
+		return i
+
+
+class NoRequireInDerivedB
+	inherits NoRequireInDerivedA
+
+	get [i as int] as int is override
+		return i
+
+
+class Test
+
+	def main is shared
+		a1 = RequireInBothA()
+		i = a1[1]
+		expect RequireException
+			i = a1[0]
+		b1 = RequireInBothB()
+		i = b1[1]
+		i = b1[0]
+		expect RequireException
+			i = b1[-1]
+
+		b2 = NoRequireInBaseB()
+		i = b2[1]
+		i = b2[0]  # because base is essentially "require true"
+
+		b3 = NoRequireInDerivedB()
+		expect RequireException
+			i = b3[0]  # base fails
+
+		# multiple requirement failures:
+		b4 = RequireInBothB()
+		try
+			i = b4[-1]
+		catch re as RequireException
+			assert re.next is not nil
+			assert re.next.next is nil
+
+		# C# and Cobra don't have shared indexers (yet)
+
+		# shared:
+		# not that there really isn't any overriding with shared methods
+		# the following tests confirm that
+
+		#i = SharedIndexerA[1]
+		#expect RequireException
+		#	i = SharedIndexerA[0]
+		#i = SharedIndexerB[0]
+		#expect RequireException
+		#	i = SharedIndexerB[1]

@@ -1,0 +1,218 @@
+"""
+TODO:
+	[x] initial has support for methods
+	[x] multiple attributes
+	[x] extended constructor support
+	[x] long vs. short name
+	[x] has on pro, get, set X ("from var", body)
+	[x] has on indexers
+	[x] class level
+	[ ] error: unknown attribute for capped or uncapped names
+"""
+
+use System.Reflection
+
+
+class FooAttribute
+	inherits Attribute
+	implements IComparable
+
+	var _x as int
+	var _y as int
+
+	def init
+		pass
+	
+	def init(x as int)
+		_x = x
+
+	pro x from var
+	
+	pro y from var
+
+	def toString as String is override
+		return '[.getType.name](x = [.x], y = [.y])'
+
+	def equals(other as Object?) as bool is override
+		test
+			assert FooAttribute(1) == FooAttribute(1)
+			assert FooAttribute(0) <> FooAttribute(1)
+			assert FooAttribute(1) to ? <> nil
+			assert FooAttribute(0) <> Object()
+		body
+			if other is nil
+				return false
+			if other inherits FooAttribute
+				return .x == other.x and .y == other.y
+			else
+				return false
+
+	def compareTo(other as Object?) as int
+		# reflecting on members at run-time does not guarantee that the attributes are returned in the same order they are declared
+		# that would be desireable since the expected .x and .y values are embedded in the member names in class Test
+		# so the trick is to sort the attributes by their .x value and then use that characteristic in the test code
+		# example: has Foo(0,0), Foo(1,0)
+		if other inherits FooAttribute
+			return .x - other.x
+		else
+			throw FallThroughException(other)
+
+	def getHashCode as int is override
+		return $sharp('_x << 8 | _y')
+
+
+class BarAttribute
+	inherits FooAttribute
+	
+	pass
+
+
+class Test
+	has FooAttribute, Bar(x=2, y=3)
+
+	def main is shared
+		v = false
+		t = Test
+
+		# test class level attributes
+		attribs = List<of FooAttribute>()
+		for attrib in t.getCustomAttributes(true)
+			if attrib inherits FooAttribute
+				attribs.add(attrib)
+		assert attribs.count == 2
+		attribs.sort
+		assert attribs[0].x == 0
+		assert attribs[0].y == 0
+		assert attribs[1].x == 2
+		assert attribs[1].y == 3
+
+		# test member level attributes
+		checkCount = 0
+		for member in t.getMembers
+			if v
+				print member
+			name = member.name
+			if name.startsWith('Attrib') or name.startsWith('Item')
+				attribs = List<of FooAttribute>()
+				for attrib in member.getCustomAttributes(true)
+					if v
+						print '   ', attrib
+					if attrib inherits FooAttribute
+						attribs.add(attrib)
+				assert attribs.count, member
+				attribs.sort
+				if name.startsWith('Attrib')
+					parts = List<of String>(name.split(c'_'))
+				else if name.startsWith('Item')
+					parts = ['Item', (member to PropertyInfo).getIndexParameters.length.toString, '0']
+				else
+					throw FallThroughException([name, member])
+				partIndex = 1
+				for fooAttrib in attribs
+					x = int.parse(parts[partIndex]) to int
+					y = int.parse(parts[partIndex+1]) to int
+					assert fooAttrib.x == x, 'partIndex=[partIndex], member=[member]'
+					assert fooAttrib.y == y, 'partIndex=[partIndex], member=[member]'
+					checkCount += 1
+					partIndex += 2
+		assert checkCount > 5
+
+	def attrib1a_0_0
+		has FooAttribute
+		pass
+
+	def attrib1b_0_0
+		has Foo
+		pass
+	
+	def attrib2a_1_0
+		has FooAttribute(1)
+		pass
+
+	def attrib2b_1_0
+		has Foo(1)
+		pass
+
+	def attrib3a_1_2
+		has FooAttribute(1, y=2)
+		pass
+
+	def attrib3b_1_2
+		has Foo(1, y=2) 
+		pass
+
+	def attrib4a_2_0
+		has FooAttribute(x = 2)
+		pass
+
+	def attrib4b_2_0
+		has Foo(x = 2)
+		pass
+
+	def attrib5a_2_3
+		has FooAttribute(x=2, y=3)
+		pass
+
+	def attrib5b_2_3
+		has Foo(x=2, y=3)
+		pass
+
+	def attrib6a_0_0_2_3
+		has Foo, Bar(x=2, y=3)
+		pass
+
+	pro attribProp1a_0_0 as int
+		has FooAttribute
+		get
+			return 0
+		set
+			pass
+
+	pro attribProp1b_0_0 as int
+		has Foo
+		get
+			return 0
+		set
+			pass
+
+	pro attribProp1c_0_0_1_2 as int
+		has Foo, Bar(x=1, y=2)
+		get
+			return 0
+		set
+			pass
+
+	get attribProp2b_0_0 as int
+		has Foo
+		return 0
+
+	set attribProp2c_0_0 as int
+		has Foo
+		pass
+
+	var _a as int
+	
+	pro attribProp3a_0_0 from _a
+		has Foo
+
+	get attribProp3b_1_0 from _a
+		has Foo(x=1)
+	
+	set attribProp3c_0_1 from _a
+		has Foo(y=1)
+
+	pro [i as int] as int
+		has Foo(x=1)
+		get
+			return i
+		set
+			pass
+
+	get [i as int, j as int] as int
+		has Foo(x=2)
+		return i
+
+# TODO: set only indexer not supported yet
+#	set [i as int, j as int, k as int] as int
+#		has Foo(x=3)
+#		pass
