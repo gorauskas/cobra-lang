@@ -1461,6 +1461,8 @@ class Parser
 				expectEOL = false
 			on 'GET'
 				.throwError('Cannot use "get" for a statement. If you mistakenly started a property above with "def", "get" or "set", then use "pro" instead.')
+			on 'LISTEN'
+				s = .listenStmt
 			on 'PASS'
 				s = .passStmt
 			on 'POST'
@@ -1641,6 +1643,15 @@ class Parser
 			else
 				.throwError('Syntax error. Expecting end-of-line or "if" after an "else".')
 		return IfStmt(token, cond, trueStmts, falseStmts)
+
+	def listenStmt as ListenStmt
+		token = .expect('LISTEN')
+		eventRef = .expression
+		# TODO: error checking
+		.expect('COMMA')
+		target = .expression
+		# TODO: error checking
+		return ListenStmt(token, eventRef, target)
 
 	def passStmt as Stmt
 		return Stmt(.grab)
@@ -2008,6 +2019,7 @@ class Parser
 			'MINUS': _binaryOpPrec['MINUS']+1,
 			'PLUS': _binaryOpPrec['PLUS']+1,
 			'NOT': _binaryOpPrec['AND']+1,
+			'REF': _binaryOpPrec['STARSTAR']+1,
 			'OLD': _binaryOpPrec['STARSTAR']+1,
 		}
 
@@ -2108,10 +2120,14 @@ class Parser
 		if _unaryOpPrec.containsKey(peek)
 			token = .grab
 			prec = _unaryOpPrec[peek]
-			if token.which=='OLD'
-				return OldExpr(token, .expression(prec))
-			else
-				return UnaryOpExpr(token, peek, .expression(prec))
+			branch token.which
+				on 'OLD'
+					return OldExpr(token, .expression(prec))
+				on 'REF'
+					refTo = .expression(prec)
+					return RefExpr(token, refTo)
+				else
+					return UnaryOpExpr(token, peek, .expression(prec))
 		# TODO: make a branch statement
 		else if peek=='LPAREN'
 			.grab

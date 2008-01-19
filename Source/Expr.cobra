@@ -946,13 +946,6 @@ class IdentifierExpr
 						definition = curBox.symbolForName(_name, true)
 						if definition
 							.throwError('You must refer to non-underscored members with a leading dot (.). Member name is "[_name]".')
-
-			# TODO: The effect of using symbolForName() just above and the next 3 lines is that class members mask globals of the same name. This will become a problem when module-level functions are supported.
-			#from Module import ClassMemberDecl
-			#if compiler.opStack and compiler.opStack.peek()!='ASSIGN':  # don't interfere with type inference. tests\200-class-decls\508-properties-access.cobra
-			#if isinstance(.definition, ClassMemberDecl) and .definition.requiresDotPrefix: # and not .text.startswith('_'):
-			#	.throwError('You must refer to non-underscored members with a leading dot (.).')
-
 			if _definition is nil and (not _superNode inherits BinaryOpExpr or .binarySuperNode.op<>'ASSIGN')
 				.errorUnknownId(.name)
 				throw FallThroughException()
@@ -1376,6 +1369,7 @@ class MemberExpr
 
 	var _name as String
 	var _definition as IMember?
+	var _isReference as bool
 
 	def init(token as IToken)
 		.init(token, token.text)
@@ -1387,6 +1381,7 @@ class MemberExpr
 	def addMinFields is override
 		base.addMinFields()
 		.addField('name', _name)
+		.addField('isReference', _isReference)
 
 	def addRefFields is override
 		base.addRefFields()
@@ -1396,6 +1391,12 @@ class MemberExpr
 		return List<of Expr>()
 
 	get definition from var
+
+	pro isReference from var
+		"""
+		Returns true if this member expression is a _reference_ to a member instead of an invocation to it.
+		This is set by RefExpr and otherwise is false.
+		"""
 
 	get member as IMember?
 		return _definition
@@ -1454,7 +1455,7 @@ class MemberExpr
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		assert .superNode inherits DotExpr
 		sw.write(Utils.capped(_name))
-		if _definition and _definition.isMethod or _name=='toString'
+		if _definition and (_definition.isMethod or _name=='toString') and not _isReference
 			sw.write('()')
 
 	def writeSharpBreakdownItems(sw as SharpWriter) is override
@@ -1635,6 +1636,71 @@ class PostCallExpr
 		for expr in _args
 			expr.writeSharpBreakdownItems(sw)
 		sw.write(', -1')
+
+
+class RefExpr
+	inherits Expr
+	"""
+	A `ref` expression is used to refer to a method without invoking it:
+		ref obj.foo
+		ref _foo
+	"""
+
+	var _expr as Expr
+	
+	def init(token as IToken, expr as Expr)
+		base.init(token)
+		_expr = expr
+
+	def addSubFields
+		base.addSubFields
+		.addField('expr', _expr)
+
+	get expr from var
+
+	get hasError as bool is override
+		if base.hasError
+			return true
+		if _expr.hasError
+			return true
+		return false
+
+	def _bindImp is override
+		base._bindImp
+		_expr.bindImp
+		if _expr inherits DotExpr
+			right = _expr.right
+			if right inherits MemberExpr
+				if right.definition inherits AbstractMethod
+					right.isReference = true
+				else
+					.throwError('Only methods can be referenced, not [right.definition.englishName].')
+			else if right inherits CallExpr
+				.throwError('Cannot call a method that is preceded by `ref`.')
+			else
+				throw FallThroughException([this, _expr, right])
+		else if _expr inherits IdentifierExpr
+			if _expr.definition inherits AbstractMethod
+				pass
+			else
+				.throwError('Only methods can be referenced, not [(_expr.definition to dynamic).englishName].')
+		else
+			.throwError('Unexpected reference. Refer to methods after `ref` or remove `ref`.')
+		_type = .compiler.libraryType('System.Delegate')  # TODO: won't be sufficient for long
+
+	def toCobraSource as String is override
+		return 'ref ' + _expr.toCobraSource
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if parens
+			sw.write('(')
+		_expr.writeSharpDef(sw, false)
+		if parens
+			sw.write(')')
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		# TODO
 
 
 class SharpExpr

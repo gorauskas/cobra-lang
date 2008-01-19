@@ -965,7 +965,6 @@ class Box
 			params = _scanParams(methInfo.getParameters)
 			isNames = _isNamesForMethodInfo(methInfo)
 			attribs = _attribsForMethodInfo(methInfo)
-			# TODO: get attributes
 			docString = ''  # TODO: get doc string for class?
 			implementsTypeNode as ITypeProxy?  # TODO: explicit interface implementation?
 			method = Method(TokenFix.empty, this, name, params, _memberTypeResultProxy(methInfo, methInfo.returnType), implementsTypeNode, isNames, attribs, docString)
@@ -1002,6 +1001,26 @@ class Box
 					type = VariTypeProxy(type)
 				params.add(Param(paramInfo.name, type))
 		return params
+
+	def _scanEvents
+		for eventInfo in _clrType.getEvents(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
+			if eventInfo.isSpecialName
+				continue
+			if eventInfo.declaringType is not _clrType
+				continue
+			if '.' in eventInfo.name
+				# TODO: these are mostly (maybe all) explicit implementations of interfaces
+				# print 'xxx dotted name: [methInfo]'
+				continue
+			name = Utils.uncapped(eventInfo.name)
+# TODO:
+#			isNames = _isNamesForMethodInfo(eventInfo)
+#			attribs = _attribsForMethodInfo(eventInfo)
+			isNames = List<of String>()
+			attribs = AttributeList()
+			docString = ''  # TODO: get doc string for class?
+			evt = BoxEvent(TokenFix.empty, this, name, isNames, attribs, docString, ClrTypeProxy(eventInfo.eventHandlerType))
+			.addDecl(evt)
 
 	def _isNamesForMethodInfo(mi as MethodBase) as List<of String>
 		"""
@@ -1215,8 +1234,8 @@ class Class
 		_scanInitializers
 		_scanProperties
 		_scanMethods
+		_scanEvents
 		# TODO: _scanEnums
-		# TODO: scan fields/vars
 		# TODO: scan all other nested types
 
 	def addSubFields
@@ -1389,6 +1408,7 @@ class Interface
 		_scanFields
 		_scanProperties
 		_scanMethods
+		_scanEvents
 
 	get englishName as String is override
 		return 'interface'
@@ -1454,6 +1474,7 @@ class Struct
 		_scanInitializers
 		_scanProperties
 		_scanMethods
+		_scanEvents
 		
 	get isCallable as bool is override
 		return true
