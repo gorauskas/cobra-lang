@@ -620,7 +620,7 @@ class Parser
 		Used by: classDecl, interfaceDecl, enumDecl, indentIsDeclNames
 		"""
 		if _validIsNames is nil
-			_validIsNames = ['fake', 'shared', 'virtual', 'nonvirtual', 'override', 'new', 'public', 'protected', 'private', 'internal']
+			_validIsNames = ['fake', 'shared', 'virtual', 'nonvirtual', 'override', 'new', 'public', 'protected', 'private', 'internal', 'abstract']
 		names = List<of String>(_isNamesStack)
 		if .optional('IS') is nil
 			return names
@@ -1013,21 +1013,21 @@ class Parser
 		if opener.which not in ['ID', 'OPEN_CALL'] and not opener.isKeyword
 			.throwError('Encountered [opener.which] when expecting an identifier.')
 		name = opener.value to String
-		curClass = .curBox
-		if name==curClass.name or Utils.capped(name)==curClass.name
-			.throwError('Method names cannot be the same as their enclosing [curClass.englishName]. Use `def init` for creating a constructor or choose another name.')  # TODO list the enclosing types location
+		curBox = .curBox
+		if name==curBox.name or Utils.capped(name)==curBox.name
+			.throwError('Method names cannot be the same as their enclosing [curBox.englishName]. Use `def init` for creating a constructor or choose another name.')  # TODO list the enclosing types location
 		overload as MemberOverload? = nil
-		other = curClass.declForName(name)
+		other = curBox.declForName(name)
 		if other
 			if other inherits MemberOverload
 				overload = other
 			else if other inherits AbstractMethod
 				overload = MemberOverload(other)
-				curClass.registerOverload(overload to !)
+				curBox.registerOverload(overload to !)
 			else
 				.throwError('There is already another class member with the name "[name]".')  # TODO list its location and possibly what it is
 		else
-			other = curClass.declForName(name)  # TODO: should be a CI there for case-insensitive
+			other = curBox.declForName(name)  # TODO: should be a CI there for case-insensitive
 			if other
 				.throwError('There is already another class member with the name "[other.name]". You must differentiate member names by more than just case.')
 			if name[0] in _uppercaseLetters
@@ -1039,50 +1039,66 @@ class Parser
 			paramsList = List<of Param>()
 
 		if .optional('AS')
-			returnType as ITypeProxy? = .typeId  # CC: to ?
+			returnType = .typeId to ITypeProxy?
 		else
 			returnType = _typeProvider.voidType
 		assert returnType
 
 		method as AbstractMethod?
 
-		if curClass inherits Class or curClass inherits Struct
-			isNames = .indentIsDeclNames
+		# interesting issues here:
+		#  * if curBox is an Interface then no body
+		#  * if 'abstract' is in the is-names then no body
+		#  * is-names can be on the same line or the next
+		#  * no `init` in interfaces
+		#  * no return type for `init`
+		#  * no `implements` in interfaces or for `init`
+
+		hasIsNames = false
+		if .peek.which == 'IS'
+			isNames = .isDeclNames
+			hasIsNames = true
+		else
+			.endOfLine
+		if not .optional('INDENT')
+			# with no indent there can be no additional specs like attributes, contracts or body
+			nothingMore = true
+			if not hasIsNames
+				isNames = List<of String>(_isNamesStack)
+			attribs = AttributeList()
+			implementsType = nil to ITypeProxy?
+			docString = '' to ?
+		else
+			# parse additional method declaration
+			nothingMore = false
+			if not hasIsNames
+				isNames = .isDeclNames
 			attribs = .hasAttribs
 			implementsType = if(.optional('IMPLEMENTS'), .typeId, nil)
 			if implementsType
 				.endOfLine
 			docString = .docString
-			assert returnType
-			if name=='init'
-				if returnType is not .typeProvider.voidType
-					.throwError('Cannot declare a return type for init.')
-				method = Constructor(token, .curBox, paramsList, isNames, attribs, docString)
-			else
-				# TODO: remove the following
-				if name=='constructor'
-					_warning('Did you mean to say `construct`?')
-				method = Method(token, .curBox, name, paramsList, returnType, implementsType, isNames, attribs, docString)
-			.statementsFor(method)
-		else if curClass inherits Interface
-			if .optionalIndent
-				isNames = .isDeclNames
-				attribs = .hasAttribs
-				docString = .docString
-				.dedent
-			else
-				isNames = List<of String>(_isNamesStack)
-				attribs = AttributeList()
-				docString = ''
-			if name=='init'
-				.throwError('Cannot declare "init" in an interface.')
-			else
-				method = Method(token, .curBox, name, paramsList, returnType, nil, isNames, attribs, docString)
+		if name == 'init'
+			if curBox inherits Interface
+				.throwError('Cannot declare a constructor for an interface.')
+			if returnType is not .typeProvider.voidType
+				.throwError('Cannot declare a return type for an initializer.')
+			if implementsType
+				.throwError('Cannot specify `implements` for an initializer.')
+			method = Constructor(token, .curBox, paramsList, isNames, attribs, docString)
 		else
-			throw Exception('Unhandled containing type [curClass]')
+			method = Method(token, .curBox, name, paramsList, returnType, implementsType, isNames, attribs, docString)
+		if nothingMore
+			if not 'abstract' in isNames and not curBox inherits Interface
+				.throwError('Missing method body for "[name]".')
+		else
+			if not 'abstract' in isNames and not curBox inherits Interface
+				.statementsFor(method)
+			else
+				.dedent
 		assert method
 		if overload
-			overload.addMember(method to BoxMember)  # CC: axe cast when above assert is recoginzed as making method non-null
+			overload.addMember(method to !)
 			return nil
 		else
 			return method
@@ -1375,6 +1391,12 @@ class Parser
 			<any statement 2>
 			<any statement N>
 		Example source
+			require
+				<cond 1>
+				<cond N>
+			ensure
+				<cond 1>
+				<cond N>
 			test
 				<any statement 1>
 				<any statement 2>
