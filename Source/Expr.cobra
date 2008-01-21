@@ -48,7 +48,7 @@ class Expr
 		base.init(token)
 
 	def addRefFields is override
-		base.addRefFields()
+		base.addRefFields
 		.addField('type', _type)
 
 	pro argumentLabel from var
@@ -140,9 +140,9 @@ class Expr
 			return .superNode to BinaryOpExpr
 
 	def bindImp as INode is override
-		base.bindImp()
+		base.bindImp
 		assert .didBindImp, this
-		.postBindImpAssertType()
+		.postBindImpAssertType
 		return this
 
 	def postBindImpAssertType
@@ -158,7 +158,7 @@ class Expr
 #		ensure
 #			.type
 		body
-			base._bindImp()
+			base._bindImp
 			if _type is nil and .getType.name=='Expr'  # CC: cannot say ... and .getType is Expr
 				# TODO: this happens with formatted strings, but why?
 				# I mean, why does an Expr get created in the first place? Could put an assert in the constructor to trap it.
@@ -167,7 +167,7 @@ class Expr
 	def _isSequence(type as IType) as bool
 		if type inherits NilableType
 			return _isSequence(type.theWrappedType to passthrough)
-		# TODO: check for ISliceable which would have a getSlice()
+		# TODO: check for ISliceable which would have a .getSlice
 		if type.isDescendantOf(.compiler.libraryType('System', 'String'))
 			return true
 		# if type.isDescendantOf(.compiler.libraryType('System', 'Array'))
@@ -297,11 +297,11 @@ class NameExpr
 		_name = token.text
 
 	def addMinFields
-		base.addMinFields()
+		base.addMinFields
 		.addField('name', _name)
 
 	def addRefFields
-		base.addRefFields()
+		base.addRefFields
 		.addField('definition', _definition)
 
 	get definition from var
@@ -337,23 +337,23 @@ class AsExpr
 		_typeNode = typeNode
 
 	def addMinFields is override
-		base.addMinFields()
+		base.addMinFields
 		.addField('name', _name)
 
 	def addSubFields is override
-		base.addSubFields()
+		base.addSubFields
 		.addField('typeNode', _typeNode)
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 		_type = _typeNode.realType
 		assert _type, _typeNode
 		# make the local var if necessary (usually is)
 		definition = .compiler.findLocal(_name)
 		if definition is nil
 			newVar = LocalVar(_token, _type)
-			newVar.bindAll()
-			.compiler.codeMemberStack.peek().addLocal(newVar)
+			newVar.bindAll
+			.compiler.codeMemberStack.peek.addLocal(newVar)
 			_definition = newVar
 		else
 			if definition.type<>_type
@@ -380,7 +380,7 @@ class AsExpr
 		return this
 
 	def afterStatementBindImp is override
-		base.afterStatementBindImp()
+		base.afterStatementBindImp
 		if not .type inherits NilableType
 			if .type.isReference
 				.throwError('Must initialize this non-nil object type, or change the type to nilable (suffix a ?).')
@@ -418,15 +418,15 @@ class CallExpr
 		_assignments = List<of AssignExpr>()
 
 	def addMinFields is override
-		base.addMinFields()
+		base.addMinFields
 		.addField('name', _name)
 
 	def addRefFields is override
-		base.addRefFields()
+		base.addRefFields
 		.addField('definition', _definition)
 
 	def addSubFields is override
-		base.addSubFields()
+		base.addSubFields
 		.addField('isNew', _isNew)
 		.addField('isCallOnSystemType', _isCallOnSystemType)
 		.addField('args', _args)
@@ -472,7 +472,7 @@ class CallExpr
 		"""
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 
 		# check for EnumName(MemberA, MemberB)
 		if not _superNode inherits DotExpr
@@ -825,7 +825,7 @@ class ForExpr
 
 	def _bindImp
 		base._bindImp
-		_what.bindImp()  # bind first because it may be needed for type inference
+		_what.bindImp  # bind first because it may be needed for type inference
 		if not _isSequence(_what.type to !)
 			.throwError('Cannot enumerate values of type "[_what.type.name]". You can enumerate IList<of>.') # TODO: strings, arrays, IList and IList<of>.')
 		_var = .bindVar(_nameExpr)
@@ -933,7 +933,7 @@ class IdentifierExpr
 			return nil
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 		if _definition is nil
 			canBeUndottedMember = .compiler.canNameBeUndottedMember(_name)
 			if canBeUndottedMember
@@ -944,7 +944,7 @@ class IdentifierExpr
 			if _definition is nil and not canBeUndottedMember
 				if _superNode inherits BinaryOpExpr
 					if _superNode.right is this
-						curBox = .compiler.boxStack.peek()
+						curBox = .compiler.boxStack.peek
 						definition = curBox.symbolForName(_name, true)
 						if definition
 							.throwError('You must refer to non-underscored members with a leading dot (.). Member name is "[_name]".')
@@ -1045,7 +1045,7 @@ class IfExpr
 		_fpart = fpart
 
 	def addSubFields is override
-		base.addSubFields()
+		base.addSubFields
 		.addField('cond', _cond)
 		.addField('tpart', _tpart)
 		.addField('fpart', _fpart)
@@ -1062,24 +1062,24 @@ class IfExpr
 		return false
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 		tpart = _tpart
 		fpart = _fpart
 		hadError = false
 		try
-			_cond.bindImp()
+			_cond.bindImp
 		catch ne as NodeException
 			.compiler.recordError(ne)
 			hadError = true
 		if not hadError and not _cond.type.isDescendantOf(.compiler.boolType)
-			_cond = TruthExpr(_cond).bindAll() to TruthExpr  # CC: axe cast when "as same"
+			_cond = TruthExpr(_cond).bindAll to TruthExpr  # CC: axe cast when "as same"
 		try
-			_tpart.bindImp()
+			_tpart.bindImp
 		catch ne as NodeException
 			.compiler.recordError(ne)
 			hadError = true
 		try
-			_fpart.bindImp()
+			_fpart.bindImp
 		catch ne as NodeException
 			.compiler.recordError(ne)
 			hadError = true
@@ -1144,7 +1144,7 @@ class IndexExpr
 		_args = args
 
 	def addSubFields is override
-		base.addSubFields()
+		base.addSubFields
 		.addField('target', _target)
 		.addField('args', _args)
 
@@ -1171,8 +1171,8 @@ class IndexExpr
 		return if(.isArrayType, .type, nil)
 	
 	def _bindImp is override
-		base._bindImp()
-		_target.bindImp()
+		base._bindImp
+		_target.bindImp
 		args = _args
 		if args.count == 0
 			if _target.isKindOf(.compiler.libraryType('System', 'Type')) or _target.type inherits TypeType  # TODO: lameness. Make TypeType() inherit System.Type, or lose TypeType and/or have an .isAType property and use everywhere
@@ -1187,7 +1187,7 @@ class IndexExpr
 		hasArgError = false
 		for arg in args
 			try
-				arg.bindImp()
+				arg.bindImp
 			catch ne as NodeException
 				hasArgError = true
 				.compiler.recordError(ne)
@@ -1229,9 +1229,9 @@ class IndexExpr
 					else
 						if false
 							print '<> arg = ' stop
-							arg.writeDeepString()
+							arg.writeDeepString
 							print '<> param = ' stop
-							param.writeDeepString()
+							param.writeDeepString
 						.throwError('Argument [i+1] of indexer expects type [param.type.name], but the call is supplying type [arg.type.name].')
 			else
 				throw FallThroughException(_definition)
@@ -1304,8 +1304,8 @@ class IsNilExpr
 		return false
 
 	def _bindImp is override
-		base._bindImp()
-		_expr.bindImp()
+		base._bindImp
+		_expr.bindImp
 		_type = .compiler.boolType
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
@@ -1340,8 +1340,8 @@ class IsNotNilExpr
 		return false
 
 	def _bindImp is override
-		base._bindImp()
-		_expr.bindImp()
+		base._bindImp
+		_expr.bindImp
 		_type = .compiler.boolType
 
 	def toCobraSource as String is override
@@ -1381,12 +1381,12 @@ class MemberExpr
 		_name = name
 
 	def addMinFields is override
-		base.addMinFields()
+		base.addMinFields
 		.addField('name', _name)
 		.addField('isReference', _isReference)
 
 	def addRefFields is override
-		base.addRefFields()
+		base.addRefFields
 		.addField('definition', _definition)
 
 	get args as List<of Expr>
@@ -1410,7 +1410,7 @@ class MemberExpr
 	get name from var
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 		assert .superNode inherits BinaryOpExpr
 		assert .binarySuperNode.op == 'DOT'
 		assert .binarySuperNode.right is this
@@ -1487,13 +1487,13 @@ class OldExpr
 		return false
 
 	def addSubFields is override
-		base.addSubFields()
+		base.addSubFields
 		.addField('expr', _expr)
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 		.curCodeMember.addOldExpr(this)  # will set the sharpVarName
-		_expr.bindImp()
+		_expr.bindImp
 		_type = _expr.type
 		assert _type
 
@@ -1544,7 +1544,7 @@ class PostCallExpr
 		_args = args
 
 	def addSubFields is override
-		base.addSubFields()
+		base.addSubFields
 		.addField('expr', _expr)
 		.addField('args', _args)
 
@@ -1559,13 +1559,13 @@ class PostCallExpr
 		return false
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 		for arg in _args
 			try
-				arg.bindImp()
+				arg.bindImp
 			catch ne as NodeException
 				.compiler.recordError(ne)
-		_expr.bindImp()
+		_expr.bindImp
 		if _expr inherits TypeExpr
 			# instantiation
 			assert _expr.containedType
@@ -1728,9 +1728,9 @@ class SharpExpr
 		return "$sharp('[_expr.toCobraSource]')"
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 		_type = .compiler.passThroughType
-		_expr.bindImp()
+		_expr.bindImp
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		if parens
@@ -1912,7 +1912,7 @@ class TruthExpr
 		_notExpr = notExpr
 
 	def addSubFields is override
-		base.addSubFields()
+		base.addSubFields
 		.addField('expr', _expr)
 		.addField('sharpTreatment', _sharpTreatment)
 
@@ -2049,11 +2049,11 @@ class TypeExpr
 	get typeNode from var
 
 	def addRefFields is override
-		base.addRefFields()
+		base.addRefFields
 		.addField('containedType', _containedType)
 
 	def addSubFields is override
-		base.addSubFields()
+		base.addSubFields
 		.addField('typeNode', _typeNode)
 
 	def toCobraSource as String is override
@@ -2061,7 +2061,7 @@ class TypeExpr
 		return _containedType.name
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 		if _typeNode
 			_containedType = _receiverType = _typeNode.realType
 		_type = .compiler.typeType
@@ -2107,8 +2107,8 @@ class UnaryOpExpr
 	get expr from var
 
 	def _bindImp is override
-		base._bindImp()
-		_expr.bindImp()
+		base._bindImp
+		_expr.bindImp
 		if _type is nil
 			_type = _expr.type
 		branch _op
@@ -2118,7 +2118,7 @@ class UnaryOpExpr
 				_type = _expr.type
 			on 'NOT'
 				if _expr.type is not .compiler.boolType
-					_expr = TruthExpr(_expr, this).bindAll() to TruthExpr
+					_expr = TruthExpr(_expr, this).bindAll to TruthExpr
 					_type = .compiler.boolType
 			else
 				throw FallThroughException(_op)
@@ -2195,15 +2195,15 @@ class AtomicLiteral
 		_text = token.text
 
 	def bindImp as INode is override
-		base.bindImp()
-		.checkType()
+		base.bindImp
+		.checkType
 		return this
 
 	def checkType
 		assert _type, this
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 
 	def toCobraSource as String is override
 		return _text
@@ -2227,7 +2227,7 @@ class BoolLit
 		_value = value
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 		_type = .compiler.boolType
 
 	get asSharp as String is override
@@ -2248,7 +2248,7 @@ class CharLit
 			_value = token.value to String
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 		_type = .compiler.charType
 
 	get asSharp as String is override
@@ -2266,7 +2266,7 @@ class DecimalLit
 		_value = token.value to decimal
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 		_type = .compiler.decimalType
 
 	get asSharp as String is override
@@ -2284,7 +2284,7 @@ class FloatLit
 		_value = token.value to float
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 		_type = .compiler.floatType
 
 	get asSharp as String is override
@@ -2309,7 +2309,7 @@ class IntegerLit
 		_value = value
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 		_type = .compiler.intType
 
 	get asSharp as String is override
@@ -2323,7 +2323,7 @@ class NilLiteral
 		base.init(token)
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 		_type = .compiler.nilType
 
 	get asSharp as String is override
@@ -2345,12 +2345,12 @@ class StringLit
 	def _bindInt is override
 		if not _type
 			_type = .compiler.libraryType('System', 'String')
-		base._bindInt()
+		base._bindInt
 
 	def _bindImp is override
 		if not _type
 			_type = .compiler.libraryType('System', 'String')
-		base._bindImp()
+		base._bindImp
 
 	def toCobraSource as String is override
 		return .token.text
@@ -2381,7 +2381,7 @@ class StringSubstLit
 			assert _items.count
 
 	def addSubFields is override
-		base.addSubFields()
+		base.addSubFields
 		.addField('items', _items)
 
 	get hasError as bool is override
@@ -2402,10 +2402,10 @@ class StringSubstLit
 		return sb.toString
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 		for item in _items
 			try
-				item.bindImp()
+				item.bindImp
 			catch ne as NodeException
 				.compiler.recordError(ne)
 		if not _type
@@ -2464,8 +2464,8 @@ class FormattedExpr
 		return '[_expr.toCobraSource]:[_format]'
 
 	def _bindImp is override
-		base._bindImp()
-		_expr.bindImp()
+		base._bindImp
+		_expr.bindImp
 		_type = .compiler.libraryType('System', 'String')
 
 
@@ -2545,7 +2545,7 @@ class VarLit
 			assert false, possible
 		_type = _var.type
 		_propertyMember = nil  # don't need this reference anymore
-		base._bindImp()
+		base._bindImp
 
 	get asSharp as String is override
 		return _name
@@ -2569,7 +2569,7 @@ class SequenceLit
 		_exprs = exprs
 
 	def addSubFields is override
-		base.addSubFields()
+		base.addSubFields
 		.addField('exprs', _exprs)
 
 	get hasError as bool is override
@@ -2581,11 +2581,11 @@ class SequenceLit
 		return false
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 		exceptions = List<of NodeException>()
 		for expr in _exprs
 			try
-				expr.bindImp()
+				expr.bindImp
 			catch ne as NodeException
 				exceptions.add(ne)
 		if exceptions.count
@@ -2598,7 +2598,7 @@ class SequenceLit
 				type = exprs[0].type to !
 				i = 1
 				while i<exprs.count
-					exprs[i].bindImp()
+					exprs[i].bindImp
 					type = exprs[i].type.greatestCommonDenominatorWith(type)
 					i += 1
 				# TODO: get rid of this hack:
@@ -2690,7 +2690,7 @@ class DictLit
 		_entries = entries
 
 	def addSubFields is override
-		base.addSubFields()
+		base.addSubFields
 		.addField('_entries', _entries)
 
 	get hasError as bool is override
@@ -2703,16 +2703,16 @@ class DictLit
 		return false
 
 	def _bindImp is override
-		base._bindImp()
+		base._bindImp
 		hadError = false
 		for entry in _entries
 			try
-				entry[0].bindImp()
+				entry[0].bindImp
 			catch ne as NodeException
 				.compiler.recordError(ne)
 				hadError = true
 			try
-				entry[1].bindImp()
+				entry[1].bindImp
 			catch ne as NodeException
 				.compiler.recordError(ne)
 				hadError = true
