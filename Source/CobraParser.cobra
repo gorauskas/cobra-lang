@@ -311,14 +311,7 @@ class Parser
 			print 'optional([whatTypes]) --> [t]'
 		if t is nil
 			return nil
-		# CC: support "in" on vari type
-		#if t.which in whatTypes
-		found = false
-		for wt in whatTypes
-			if t.which == wt
-				found = true
-				break
-		if found
+		else if t.which in whatTypes
 			return .grab
 		else
 			return nil
@@ -416,6 +409,11 @@ class Parser
 				return List<of String>()
 
 	def optionalIndent as IToken?
+		"""
+		Consumes and warns about COLON not being necessary.
+		Expects .endOfLine and then returns optional 'INDENT'.
+		Used at the end of a declaration that can optionally have more specification indented underneath.
+		"""
 		if .optional('COLON')
 			_warning('Colons are not used to start indented blocks. You can remove the colon.')
 		.endOfLine
@@ -1114,20 +1112,27 @@ class Parser
 				set
 					assert value>0
 					_age = value
+
+		If .curBox is an Interface, then no body.
+		If 'abstract' is in the "is names" then no body.
+		The "is names" can be on the same line or the next.
+		No explicit return type implies "as dynamic" (same as arguments).
+		No "implements" in interfaces.
 		"""
+		curBox = .curBox
 		prop as ProperDexer?
 		token = .expect('PRO')
-		overload as MemberOverload? = nil  # CC: axe "as MemberOverload" when Cobra gets smarter about type inference of "x = nil"
+		overload as MemberOverload?
 		if .optional('LBRACKET')
 			paramsList = .paramDecls(true, 'RBRACKET')
 			name = r'[]'
-			other = .curBox.declForName(name)
+			other = curBox.declForName(name)
 			if other
 				if other inherits MemberOverload
 					overload = other
 				else if other inherits ProperDexer
 					overload = MemberOverload(other)
-					.curBox.registerOverload(overload to !)
+					curBox.registerOverload(overload to !)
 		else
 			name = .idOrKeyword.text
 			.checkProperty(name)
@@ -1138,47 +1143,61 @@ class Parser
 			returnType = .typeId to ITypeProxy
 		else
 			returnType = _typeProvider.dynamicType
-		if .curBox inherits Class or .curBox inherits Struct
-			isNames = .indentIsDeclNames
+		# TODO: implements?
+		hasIsNames = false
+		isAbstract = false
+		if .peek.which == 'IS'
+			isNames = .isDeclNames
+			isAbstract = 'abstract' in isNames
+			hasIsNames = true
+			indent = .optional('INDENT')
+		else
+			indent = .optionalIndent
+		if indent
+			if not hasIsNames
+				isNames = .isDeclNames
+			isAbstract = 'abstract' in isNames
+			hasIsNames = true
 			attribs = .hasAttribs
 			docString = .docString
-			if paramsList.count
-				prop = Indexer(token, .curBox, name, paramsList, returnType, isNames, attribs, docString)
-			else
-				prop = Property(token, .curBox, name, returnType, isNames, attribs, docString)
-
+		else
+			# no additional specs
+			if not isAbstract and not curBox inherits Interface
+				.throwError('Missing body for property.')
+			if not hasIsNames
+				isNames = List<of String>(_isNamesStack)
+			attribs = AttributeList()
+			docString = ''
+		if paramsList.count
+			prop = Indexer(token, curBox, name, paramsList, returnType, isNames, attribs, docString)
+		else
+			prop = Property(token, curBox, name, returnType, isNames, attribs, docString)
+		if indent
 			if .peek.which=='TEST'
+				if curBox inherits Interface
+					_warning(.peek, 'Interface `test` sections are parsed, but ignored. In the future, classes will acquire the tests of the interfaces they implement.')
+				# TODO: what about abstract?
 				.testSection(prop to !)
-
 			getWord = .optional('GET')
 			if getWord
-				.indent
-				.statementsFor(prop.makeGetPart(getWord))
-
+				if isAbstract or curBox inherits Interface
+					prop.makeGetPart(getWord)
+				else
+					.indent
+					.statementsFor(prop.makeGetPart(getWord))
 			setWord = .optional('SET')
 			if setWord
-				.indent
-				.statementsFor(prop.makeSetPart(setWord))
-
+				if isAbstract or curBox inherits Interface
+					prop.makeSetPart(setWord)
+				else
+					.indent
+					.statementsFor(prop.makeSetPart(setWord))
 			.dedent
-		else if .curBox inherits Interface
-			if .optionalIndent
-				isNames = .isDeclNames
-				attribs = .hasAttribs
-				docString = .docString
-				.dedent
-			else
-				isNames = List<of String>(_isNamesStack)
-				attribs = AttributeList()
-				docString = ''
-			if paramsList.count
-				prop = Indexer(token, .curBox, name, paramsList, returnType, isNames, attribs, docString)
-			else
-				prop = Property(token, .curBox, name, returnType, isNames, attribs, docString)
-			prop.makeGetPart(token)
-			prop.makeSetPart(token)
 		else
-			throw FallThroughException(.curBox)
+			prop.makeGetPart(TokenFix.empty)
+			prop.makeSetPart(TokenFix.empty)
+		if isAbstract and not curBox inherits Class
+			.throwError('Only properties in classes can be marked abstract.')
 		if overload
 			assert prop
 			overload.addMember(prop to !)
@@ -1212,104 +1231,92 @@ class Parser
 		return Property(token, .curBox, name, isNames, attribs, varDef, coverWhat, docString)
 
 	def declareGetOnlyProperty as ProperDexer?
+		return _declareGetOrSetOnlyProperty(0)
+
+	def declareSetOnlyProperty as ProperDexer?
+		return _declareGetOrSetOnlyProperty(1)
+
+	def _declareGetOrSetOnlyProperty(getOrSet as int) as ProperDexer?
 		"""
 		Example source
 			get meaningOfLife as int
 				return 42
 		"""
+		require getOrSet in [0, 1]
+		curBox = .curBox
 		prop as ProperDexer?
-		token = .expect('GET')
+		token = .expect(if(getOrSet, 'SET', 'GET'))
 		overload as MemberOverload? = nil
 		if .optional('LBRACKET')
 			paramsList = .paramDecls(true, 'RBRACKET')
 			name = r'[]'
-			other = .curBox.declForName(name)
+			other = curBox.declForName(name)
 			if other
 				if other inherits MemberOverload
 					overload = other
 				else if other inherits ProperDexer
 					overload = MemberOverload(other)
-					.curBox.registerOverload(overload to !)
+					curBox.registerOverload(overload to !)
 		else
 			name = .idOrKeyword.text
 			.checkProperty(name)
 			if .optional('FROM')
-				return .declarePropertyFrom(token, name, 'get')
+				return .declarePropertyFrom(token, name, if(getOrSet, 'set', 'get'))
 			paramsList = List<of Param>()
 		if .optional('AS')
-			returnType as INode = .typeId
+			returnType = .typeId to ITypeProxy
 		else
 			returnType = _typeProvider.dynamicType
-
-		if .curBox inherits Class or .curBox inherits Struct
-			isNames = .indentIsDeclNames
+		# TODO: implements?
+		hasIsNames = false
+		isAbstract = false
+		if .peek.which == 'IS'
+			isNames = .isDeclNames
+			isAbstract = 'abstract' in isNames
+			hasIsNames = true
+			indent = .optional('INDENT')
+		else
+			indent = .optionalIndent
+		if indent
+			if not hasIsNames
+				isNames = .isDeclNames
+			isAbstract = 'abstract' in isNames
+			hasIsNames = true
 			attribs = .hasAttribs
 			docString = .docString
-			if paramsList.count
-				prop = Indexer(token, .curBox, name, paramsList, returnType, isNames, attribs, docString)
-			else
-				prop = Property(token, .curBox, name, returnType, isNames, attribs, docString)
-			.statementsFor(prop.makeGetPart(token), prop)
-		else if .curBox inherits Interface
-			if .optionalIndent
-				isNames = .isDeclNames
-				attribs = .hasAttribs
-				docString = .docString
-				.dedent
-			else
-				isNames = List<of String>(_isNamesStack)
-				attribs = AttributeList()
-				docString = ''
-			# TODO: do we need support Indexers for interfaces?
-			prop = Property(token, .curBox, name, returnType, isNames, attribs, docString)
-			prop.makeGetPart(token)
 		else
-			throw FallThroughException(.curBox)
+			# no additional specs
+			if not isAbstract and not curBox inherits Interface
+				.throwError('Missing body for property.')
+			if not hasIsNames
+				isNames = List<of String>(_isNamesStack)
+			attribs = AttributeList()
+			docString = ''
+		if paramsList.count
+			prop = Indexer(token, curBox, name, paramsList, returnType, isNames, attribs, docString)
+		else
+			prop = Property(token, curBox, name, returnType, isNames, attribs, docString)
+		if indent
+			if .peek.which=='TEST'
+				if curBox inherits Interface
+					_warning(.peek, 'Interface `test` sections are parsed, but ignored. In the future, classes will acquire the tests of the interfaces they implement.')
+				# TODO: what about abstract?
+				.testSection(prop to !)
+			part = if(getOrSet, prop.makeSetPart(token), prop.makeGetPart(token))
+			.statementsFor(part, prop)
+		else
+			if getOrSet
+				prop.makeSetPart(TokenFix.empty)
+			else
+				prop.makeGetPart(TokenFix.empty)
+		if isAbstract and not curBox inherits Class
+			.throwError('Only properties in classes can be marked abstract.')
 		if overload
 			assert prop
 			overload.addMember(prop to !)
 			return nil
 		else
 			return prop
-
-	def declareSetOnlyProperty as Property
-		"""
-		Example source
-			set foo as int
-				_foo = value
-		"""
-		token = .expect('SET')
-		name = .idOrKeyword.text
-		.checkProperty(name)
-		if .optional('FROM')
-			return .declarePropertyFrom(token, name, 'set')
-		if .optional('AS')
-			returnType = .typeId to ITypeProxy
-		else
-			returnType = _typeProvider.dynamicType
-
-		if .curBox inherits Class or .curBox inherits Struct
-			isNames = .indentIsDeclNames
-			attribs = .hasAttribs
-			docString = .docString
-			prop = Property(token, .curBox, name, returnType, isNames, attribs, docString)
-			.statementsFor(prop.makeSetPart(token), prop)
-		else if .curBox inherits Interface
-			if .optionalIndent
-				isNames = .isDeclNames
-				attribs = .hasAttribs
-				docString = .docString
-				.dedent
-			else
-				isNames = List<of String>(_isNamesStack)
-				attribs = AttributeList()
-				docString = ''
-			prop = Property(token, .curBox, name, returnType, isNames, attribs, docString)
-			prop.makeSetPart(token)
-		else
-			throw FallThroughException(.curBox)
-
-		return prop
 
 
 	##
@@ -2722,6 +2729,7 @@ class Parser
 				s = '    [pair.i]. [pair.token]'
 				s = s.padRight(25) + 'line [pair.token.lineNum]'
 				print s
+			# assert false
 		token ?= .last
 		if token is nil
 			throw ParserException(_fileName, msg)

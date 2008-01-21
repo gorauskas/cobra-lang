@@ -54,6 +54,9 @@ class BoxMember
 
 	pro testMethod from var
 
+	get isAbstract as bool
+		return 'abstract' in _isNames
+
 	get isCallable as bool
 		return false
 
@@ -514,9 +517,6 @@ class AbstractMethod
 
 	get isCallable as bool is override
 		return true
-
-	get isAbstract as bool
-		return 'abstract' in _isNames
 
 	pro hasReturnStmt from var
 
@@ -1095,7 +1095,7 @@ class Method
 		if _implementsTypeNode
 			_implementsType = _implementsTypeNode.realType
 			# TODO: make sure the type is among the interfaces of the box
-		if .compiler.errors.count==numErrors and _returnType is not .compiler.voidType and not .hasReturnStmt and not .hasYieldStmt and not .box.isFake and not .box inherits Interface
+		if .compiler.errors.count==numErrors and _returnType is not .compiler.voidType and not .hasReturnStmt and not .hasYieldStmt and not .isAbstract and not .box.isFake and not .box inherits Interface
 			.throwError('Missing return statement for method "[_name]" which returns [_returnType.name].')
 		# check for `return` and `yield` in the same method
 		if .resultType is not .compiler.voidType
@@ -1156,6 +1156,7 @@ class Method
 
 
 class ProperDexer
+	is abstract
 	inherits BoxMember
 	"""
 	The abstract base class for Property and Indexer.
@@ -1290,17 +1291,17 @@ class ProperDexer
 				sw.write('set { [_coverVar.sharpName] = value; }')
 		else
 			if _getPart
-				if .isClassMember
-					_getPart.writeSharpDef(sw)
-				else if .isInterfaceMember
+				if .isAbstract or .isInterfaceMember
 					sw.write('\tget;\n')
+				else if .isClassMember
+					_getPart.writeSharpDef(sw)
 				else
 					throw FallThroughException(this)
 			if _setPart
-				if .isClassMember
-					_setPart.writeSharpDef(sw)
-				else if .isInterfaceMember
+				if .isAbstract or .isInterfaceMember
 					sw.write('\tset;\n')
+				else if .isClassMember
+					_setPart.writeSharpDef(sw)
 				else
 					throw FallThroughException(this)
 		sw.dedent
