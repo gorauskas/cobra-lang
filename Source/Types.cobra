@@ -159,8 +159,7 @@ class AbstractTypeProxy
 	inherits Node
 	implements ITypeProxy
 
-	get realType as IType # CC: is abstract
-		throw Exception('abstract')
+	get realType as IType is abstract
 
 
 class TypeProxy
@@ -504,9 +503,7 @@ class CobraType
 	def init
 		base.init
 
-	get englishName as String  # CC: is abstract
-		assert false, '[.getType.name], [this]'
-		throw OverrideException(.getType)
+	get englishName as String is abstract
 
 	get name as String
 		return .getType.toString
@@ -522,9 +519,7 @@ class CobraType
 	get isMethod as bool
 		return false
 
-	get isReference as bool
-		throw OverrideException(.getType)
-		return false
+	get isReference as bool is abstract
 
 	get isShared as bool
 		return true
@@ -686,8 +681,7 @@ class CobraType
 
 	## Code gen
 
-	get sharpInit as String
-		throw OverrideException(.getType)
+	get sharpInit as String is abstract
 
 	get sharpName as String
 		return .name
@@ -712,6 +706,7 @@ class CobraType
 
 
 class ValueType
+	is abstract
 	inherits CobraType
 
 	get englishName as String is override
@@ -734,6 +729,7 @@ class ValueType
 
 
 class PrimitiveType
+	is abstract
 	inherits ValueType
 	"""
 	The base class of BoolType, CharType, etc.
@@ -896,6 +892,9 @@ class NilableType
 	def init(t as IType)
 		base.init(t)
 
+	get englishName as String is override
+		return 'nilable ' + _wrappedType.englishName
+
 	get name as String is override
 		return _wrappedType.name + '?'
 
@@ -955,6 +954,9 @@ class NilableType
 
 class NilType
 	inherits CobraType
+
+	get englishName as String is override
+		return 'nil type'
 
 	get name as String is override
 		return 'nil'
@@ -1064,6 +1066,7 @@ class VoidType
 ##
 
 class WrappedType
+	is abstract
 	inherits CobraType
 
 	var _wrappedType as IType
@@ -1232,6 +1235,9 @@ class OutType
 	def init(wrappedType as IType)
 		base.init(wrappedType)
 
+	get englishName as String is override
+		return 'out ' + _wrappedType.englishName
+
 	get name as String is override
 		return 'out ' + _wrappedType.name
 
@@ -1244,6 +1250,9 @@ class InOutType
 
 	def init(wrappedType as IType)
 		base.init(wrappedType)
+
+	get englishName as String is override
+		return 'inout ' + _wrappedType.englishName
 
 	get name as String is override
 		return 'inout ' + _wrappedType.name
@@ -1286,7 +1295,14 @@ class UnspecifiedType
 	See CobraParser.localVarDecl and the methods that use it.
 	"""
 
-	pass
+	get englishName as String is override
+		return 'unspecified'
+
+	get isReference as bool is override
+		return true
+	
+	get sharpInit as String is override
+		return '!UnspecifiedType!'
 
 
 class TypeType
@@ -1385,17 +1401,17 @@ class AbstractTypeIdentifier
 		"""
 		return container.memberForName(.name)
 
-	def _resolveType as IType # CC: is abstract
+	def _resolveType as IType is abstract
 		"""
 		Invoked by .realType only when needed.
 		Subclasses must override to compute and return the actual type that this identifier represents (or invoke `.throwError('...')`).
 		Subclasses should not bother with other operations such as checking or setting _actualType or _didResolveType to true.
 		Subclasses need not invoke `base`.
 		"""
-		return nil to passthrough
 
 
 class WrappedTypeIdentifier
+	is abstract
 	inherits AbstractTypeIdentifier
 
 	var _typeId as AbstractTypeIdentifier

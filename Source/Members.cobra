@@ -66,13 +66,9 @@ class BoxMember
 	get isShared as bool
 		return 'shared' in _isNames
 
-	get englishName as String
-		throw OverrideException(.getType)
-		return ''
+	get englishName as String is abstract
 
-	get defaultAccessLevel as String
-		throw OverrideException(.getType)
-		return ''
+	get defaultAccessLevel as String is abstract
 
 	get hasVariParams as bool
 		"""
@@ -113,12 +109,10 @@ class BoxMember
 	get requiresThis as bool
 		return not _name.startsWith('_')
 
-	get resultType as IType
+	get resultType as IType is abstract
 		"""
 		The result type of the var, method or property.
 		"""
-		throw OverrideException(.getType)
-		return nil to passthrough
 
 
 	## Other
@@ -322,6 +316,12 @@ class BoxEvent
 		base.init(token, box, name, isNames, attribs, docString)
 		_handlerTypeProxy = handlerType
 
+	get defaultAccessLevel as String is override
+		return 'public'
+
+	get englishName as String is override
+		return 'event'
+
 	get handlerType from var
 		"""
 		Returns the underlying handler type for the event.
@@ -384,6 +384,9 @@ class BoxVar
 
 	get defaultAccessLevel as String is override
 		return 'protected'
+
+	get englishName as String is override
+		return 'variable member'
 
 	pro isAssignedTo from var
 
@@ -460,6 +463,7 @@ class BoxVar
 
 
 class AbstractMethod
+	is abstract
 	inherits BoxMember
 	"""
 	The abstract ancestor class for
@@ -1188,19 +1192,13 @@ class ProperDexer
 		else
 			throw FallThroughException(returnTypeOrNode)
 
-	def makeGetPart(token as IToken) as AbstractMethod
-		require .getPart is nil
-		ensure .getPart
-		throw OverrideException(.getType)
-		# CC: shouldn't need a return:
-		return nil to passthrough
+	def makeGetPart(token as IToken) as AbstractMethod is abstract
+# CC:		require .getPart is nil
+# CC:		ensure .getPart
 
-	def makeSetPart(token as IToken) as AbstractMethod
-		require .setPart is nil
-		ensure .setPart
-		throw OverrideException(.getType)
-		# CC: shouldn't need a return:
-		return nil to passthrough
+	def makeSetPart(token as IToken) as AbstractMethod is abstract
+# CC:		require .setPart is nil
+# CC:		ensure .setPart
 
 	def addRefFields is override
 		base.addRefFields
@@ -1309,6 +1307,7 @@ class ProperDexer
 
 
 class ProperDexerXetter
+	is abstract
 	inherits AbstractMethod
 	"""
 	Base class for IndexerGetter, IndexerSetter, PropertyGetter and PropertySetter.
@@ -1323,9 +1322,7 @@ class ProperDexerXetter
 
 	get parent from var
 
-	get xetPartName as String  # CC: make abstract
-		throw OverrideException(.getType)
-		return '(override indexerPartName)'
+	get xetPartName as String is abstract
 
 	get isNames as List<of String>? is override
 		# may need to get more sophisticated here if, in the future, we support C#'s somewhat recent ability to put access modifiers on just the set or get part of a property
@@ -1376,6 +1373,9 @@ class MemberOverload
 	def addSubFields is override
 		base.addSubFields
 		.addField('members', _members)
+
+	get defaultAccessLevel as String is override
+		return 'public'
 
 	get members from var
 
