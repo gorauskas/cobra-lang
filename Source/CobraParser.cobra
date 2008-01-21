@@ -689,8 +689,9 @@ class Parser
 			.throwError('Expecting an interface name.')
 		if name[0] not in _uppercaseLetters
 			.throwError('Interface names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
-		if not name.startsWith('I')
-			.throwError('Interfaces must start with a capital "I".')
+		# too draconian
+		#if not name.startsWith('I')
+		#	.throwError('Interfaces must start with a capital "I".')
 		if .peek.which=='COLON' and .peek(1)<>nil and .peek(1).which=='ID'
 			.throwError(_syntaxForInterfaceInheritanceMsg)
 
@@ -1192,6 +1193,12 @@ class Parser
 				else
 					.indent
 					.statementsFor(prop.makeSetPart(setWord))
+			if not getWord and not setWord
+				if isAbstract or curBox inherits Interface
+					prop.makeGetPart(TokenFix.empty)
+					prop.makeSetPart(TokenFix.empty)
+				else
+					.throwError('Expecting "get" or "set" for the property.')
 			.dedent
 		else
 			prop.makeGetPart(TokenFix.empty)
@@ -1303,7 +1310,10 @@ class Parser
 				# TODO: what about abstract?
 				.testSection(prop to !)
 			part = if(getOrSet, prop.makeSetPart(token), prop.makeGetPart(token))
-			.statementsFor(part, prop)
+			if isAbstract or curBox inherits Interface
+				.dedent
+			else
+				.statementsFor(part, prop)
 		else
 			if getOrSet
 				prop.makeSetPart(TokenFix.empty)
