@@ -29,6 +29,7 @@ class Box
 
 	var _attribs as AttributeList
 
+	var _invariants as List<of Expr>
 	var _testMethod as TestMethod?
 
 	var _clrType as Type?
@@ -50,6 +51,7 @@ class Box
 		_baseInterfaceProxies = baseInterfaceNodes
 		_baseInterfaces = List<of Interface>()
 		_overloads = List<of MemberOverload>()
+		_invariants = List<of Expr>()
 
 	def _initClrType(t as Type)
 		_clrType = t
@@ -124,6 +126,20 @@ class Box
 
 	get defaultAccessLevel as String is override
 		return 'public'
+
+	get isFromAssembly as bool
+		"""
+		Returns true if this box was read from an assembly (usually a .dll, but could be an .exe) as opposed to be source based.
+		This is independent of language. If the DLL was written in Cobra, this still returns true.
+		"""
+		ensure
+			.isSystemObjectClass implies result
+			result implies .clrType or (.genericDef and .genericDef.clrType)
+			not result implies .clrType is nil
+		body
+			return _clrType or (_genericDef and _genericDef._clrType)
+		
+	get invariants from var
 
 	get isSystemObjectClass as bool
 		return _baseClass is nil and .name == 'Object' and .parentNameSpace and .parentNameSpace.fullName == 'System'
@@ -426,6 +442,8 @@ class Box
 					attrib.bindInt
 				catch ne as NodeException
 					.compiler.recordError(ne)
+			for invari in _invariants
+				invari.bindInt
 			for decl in _declsInOrder
 				assert not decl is this
 				try
@@ -469,6 +487,8 @@ class Box
 					attrib.bindImp
 				catch ne as NodeException
 					.compiler.recordError(ne)
+			for invari in _invariants
+				invari.bindImp
 			for decl in _declsInOrder
 				assert not decl is this, this
 				try
@@ -1155,6 +1175,7 @@ class Box
 			sw.dedent
 
 		sw.writeAndIndent('{\n')
+		.writeSharpInvariant(sw)
 		if _testMethod
 			_testMethod.writeSharpDef(sw)
 		for decl in _declsInOrder
@@ -1175,10 +1196,30 @@ class Box
 		"""
 		pass
 
+	get sharpInvariantVisibility as String is abstract
+
+	def writeSharpInvariant(sw as SharpWriter)
+		sw.write('\n[.sharpInvariantVisibility] void invariant_[.rootName]() {\n')
+		sw.indent
+		if _baseClass and (not _baseClass.isFromAssembly or _baseClass.declForName('invariant_[_baseClass.rootName]'))
+			sw.write('invariant_[_baseClass.rootName]();\n')
+		for expr in _invariants
+			sharpThis = 'typeof([.sharpName])'
+			sw.write('if (!')
+			expr.writeSharpDef(sw)
+			sw.write(') ')
+			sw.indent
+			sw.write('throw new InvariantException([expr.sharpSourceSite(.name, "invariant", sharpThis)], ')
+			expr.writeSharpBreakdown(sw)
+			sw.write('[sharpThis], null);\n')
+			sw.dedent
+		sw.dedent
+		sw.write('}\n\n')
+
 	def writeSharpTest(sw as SharpWriter)
 		# Running tests from the static initializer seems like a good idea, but has been problematic at various times on both .NET and Mono, so no more:
 		# sw.write('\nstatic [.rootName]() { RunTestsIfNeeded(); }\n')
-		# -- er, it turned out that the problem was likely -dist on SourceSite. Consequently we could try returning to static initializers to trigger tests.
+		# -- er, it turned out that the problem was likely -dst on SourceSite. Consequently we could try returning to static initializers to trigger tests.
 		sw.write('\nprivate static bool __didStartTests = false;\n')
 		newWord = .newForSharpTest
 		sw.write('\npublic static[newWord] void RunTestsIfNeeded() { if (!__didStartTests) RunTests(); }\n')
@@ -1372,6 +1413,9 @@ class Class
 	get sharpInit as String is override
 		return 'null'
 
+	get sharpInvariantVisibility as String is override
+		return 'protected'
+
 	get sharpKeyWord as String is override
 		return 'class'
 
@@ -1438,12 +1482,20 @@ class Interface
 	get sharpInit as String is override
 		return 'null'
 
+	get sharpInvariantVisibility as String is override
+		throw ShouldNotCallException(.getType)
+
 	get sharpKeyWord as String is override
 		return 'interface'
 
 	def writeSharpInheritance(sw as SharpWriter) is override
 		if _baseInterfaces.count
 			sw.write(' : ')
+
+	def writeSharpInvariant(sw as SharpWriter) is override
+		# Even when invariants are inherited by the classes and structs that implement them,
+		# the code gen for the interface invariant does not go "here", inside the C# interface definition.
+		pass
 
 	def writeSharpTest(sw as SharpWriter) is override
 		# Static methods can't be put in interfaces. However, at some point Cobra should support
@@ -1492,11 +1544,14 @@ class Struct
 
 	## Code gen
 
-	get sharpKeyWord as String is override
-		return 'struct'
-
 	get sharpInit as String is override
 		return ''  # blank to indicate there is no valid init
+
+	get sharpInvariantVisibility as String is override
+		return 'private'
+
+	get sharpKeyWord as String is override
+		return 'struct'
 
 
 class GenericParam

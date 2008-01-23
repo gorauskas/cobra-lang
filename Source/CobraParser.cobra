@@ -927,6 +927,7 @@ class Parser
 					on 'SET': .addDecl(box, .declareSetOnlyProperty)
 					on 'PRO': .addDecl(box, .declareProperty)
 					on 'VAR': .addDecl(box, .boxVarDecl)
+					on 'INVARIANT': .declareInvariant
 					on 'EOL': .endOfLine
 					on 'ENUM': box.addDecl(.enumDecl)  # CC: .addDecl(box, .enumDecl)  ...when IBoxMember is in effect
 					on 'SHARED': .bodiedBoxMemberDeclsShared(box)
@@ -1004,6 +1005,32 @@ class Parser
 				docString = .docString
 				.dedent
 		return BoxVar(tok, .curBox, identifier, type, isNames, initExpr, docString)
+
+	def declareInvariant
+		.expect('INVARIANT')
+		if .optional('COLON')
+			if .peek.which == 'EOL'
+				_warning('Colons are not used to start indented blocks. You can remove the colon.')
+			else
+				_warning('Colons are not required with invariants. You can remove the colon.')
+		if .peek.which == 'EOL'
+			.indent
+			count = 0
+			while true
+				if .peek.which == 'EOL'
+					.grab
+					continue
+				if .peek.which == 'DEDENT'
+					if count == 0
+						.throwError('Expecting one or more expressions for "invariant".')
+					break
+				.curBox.invariants.add(.expression)
+				.expect('EOL')
+				count += 1
+			.dedent
+		else
+			.curBox.invariants.add(.expression)
+			.endOfLine
 
 	def declareMethod as AbstractMethod?
 		require _typeProvider

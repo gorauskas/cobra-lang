@@ -108,16 +108,31 @@ class Stmt
 		_canSetLine = .compiler.willTrackLocals
 		# note that the code member stack can be empty because of class vars (ex: var _foo = true)
 
-	get sharpSourceSite as String
+	def sharpSourceSite as String
+		"""
+		Returns a C# "new SourceSite(...)" expression with the correct arguments for the current code generation.
+		"""
 		codeMember = .compiler.curCodeMember
-		tok = .token
-		fileName = tok.fileName
-		if not Path.isPathRooted(fileName)
-			fileName = Path.combine(Environment.currentDirectory, fileName)
-		fileName = Utils.sharpStringLiteralFor(fileName)
-		boxName = Utils.sharpStringLiteralFor(codeMember.box.name)
-		memberName = Utils.sharpStringLiteralFor(codeMember.name)
-		return 'new SourceSite([fileName], [tok.lineNum], [boxName], [memberName], [.sharpThis])'
+		return .sharpSourceSite(codeMember.box.name, codeMember.name, .sharpThis)
+
+	def sharpSourceSite(boxName as String, memberName as String, sharpThis as String) as String
+		"""
+		Returns a C# "new SourceSite(...)" expression with the correct arguments for the current code generation.
+		The arguments to this method allow for some explicit control in special circumstances, such as `invariant`.
+		"""
+		require
+			boxName.length
+			memberName.length
+			sharpThis.length
+		body
+			boxName = Utils.sharpStringLiteralFor(boxName)
+			memberName = Utils.sharpStringLiteralFor(memberName)
+			tok = .token
+			fileName = tok.fileName
+			if not Path.isPathRooted(fileName)
+				fileName = Path.combine(Environment.currentDirectory, fileName)
+			fileName = Utils.sharpStringLiteralFor(fileName)
+			return 'new SourceSite([fileName], [tok.lineNum], [boxName], [memberName], [sharpThis])'
 
 	shared
 		var _inInitCall as bool
