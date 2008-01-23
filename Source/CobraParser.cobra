@@ -1047,7 +1047,7 @@ class Parser
 
 		method as AbstractMethod?
 
-		# interesting issues here:
+		# Rules:
 		#  * if curBox is an Interface then no body
 		#  * if 'abstract' is in the is-names then no body
 		#  * is-names can be on the same line or the next
@@ -1093,10 +1093,17 @@ class Parser
 			if not 'abstract' in isNames and not curBox inherits Interface
 				.throwError('Missing method body for "[name]".')
 		else
+			.statementsFor(method)
+
+		if method.statements.count
+			if 'abstract' in isNames
+				.throwError('Cannot have statements for an abstract method.')
+			if curBox inherits Interface
+				.throwError('Cannot have statements for a method in an interface.')
+		else
 			if not 'abstract' in isNames and not curBox inherits Interface
-				.statementsFor(method)
-			else
-				.dedent
+				.throwError('Missing statements. Use "pass" or other statements.')
+
 		assert method
 		if overload
 			overload.addMember(method to !)
@@ -1420,15 +1427,19 @@ class Parser
 				<any statement 1>
 				<any statement 2>
 				<any statement N>
-			body
+			[body
 				<any statement 1>
 				<any statement 2>
-				<any statement N>
+				<any statement N>]
 		Returns
 			Nothing.
 		Errors
 			Already encountered "code" block.
 			Already encountered "test" block.
+		Notes
+			The caller must check whether or not statements were found and issue an error when appropriate.
+			For example, interface members and abstract members cannot have any statements.
+			Other members must have at least one.
 		"""
 		_pushCodePart(codePart)
 		if codePartContainingTest is nil
@@ -1452,7 +1463,9 @@ class Parser
 					if _isContractOnSameLine
 						_statementsFor(codePart)
 					else
-						.throwError('Expecting `body` section.')
+						pass
+						# There is no body for abstract or interface members. Error checking is done elsewhere.
+						# .throwError('Expecting `body` section.')
 				if not _isContractOnSameLine
 					.dedent
 			else
@@ -1472,8 +1485,6 @@ class Parser
 				codePart.addStmt(stmt)
 				gotStmt = true
 		.dedent
-		if not gotStmt
-			.throwError('Missing statements. Use "pass" or other statements.')
 
 	def stmt as Stmt?
 		token = .peek
