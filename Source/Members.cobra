@@ -1145,17 +1145,25 @@ class Method
 
 	def writeSharpImpHeader(sw as SharpWriter)
 		base.writeSharpImpHeader(sw)
-		if .isMain and .compiler.hasExceptionReportOption
-			sw.writeLine('try { // Exception Report')
-			sw.indent
+		if .isMain
+			if .compiler.hasExceptionReportOption
+				sw.writeLine('try { // Exception Report')
+				sw.indent
+			else if .compiler.options.boolValue('debugging-tips')
+				sw.writeLine('try { // -debugging-tips')
+				sw.indent
 		if .isMain and .compiler.options.boolValue('include-tests')
 			sw.writeLine('CobraCore.RunAllTests();  // turn off with -include-tests:no (see cobra -h)')
 
 	def writeSharpImpFooter(sw as SharpWriter)
 		base.writeSharpImpFooter(sw)
-		if .isMain and .compiler.hasExceptionReportOption
-			sw.dedent
-			sw.writeLine('} catch (Exception _lh_exceptionReportException) { CobraCore.HandleUnhandledException(_lh_exceptionReportException); }')
+		if .isMain
+			if .compiler.hasExceptionReportOption
+				sw.dedent
+				sw.writeLine('} catch (Exception _lh_exceptionReportException) { CobraCore.HandleUnhandledException(_lh_exceptionReportException); }')
+			else if .compiler.options.boolValue('debugging-tips')
+				sw.dedent
+				sw.writeLine('} catch { CobraCore.PrintDebuggingTips(); throw; }')
 				
 	get sharpName as String is override
 		return Utils.capped(.name)
