@@ -112,9 +112,13 @@ class Stmt
 		"""
 		Returns a C# "new SourceSite(...)" expression with the correct arguments for the current code generation.
 		"""
-		codeMember = .compiler.curCodeMember
-		return .sharpSourceSite(codeMember.box.name, codeMember.name, .sharpThis)
-
+		if .compiler.codeMemberStack.count
+			codeMember = .compiler.curCodeMember
+			return .sharpSourceSite(codeMember.box.name, codeMember.name, .sharpThis)
+		else
+			# example: var _x = someExpr ...
+			return .sharpSourceSite(.compiler.curBox.name, .compiler.curBoxMember.name, .sharpThis)
+		
 	def sharpSourceSite(boxName as String, memberName as String, sharpThis as String) as String
 		"""
 		Returns a C# "new SourceSite(...)" expression with the correct arguments for the current code generation.
@@ -141,8 +145,12 @@ class Stmt
 	get sharpThis as String
 		if _inInitCall  # C# won't allow 'this' in a base constructor call
 			return '"(uninitialized [.compiler.curBox.name] instance)"'
-		else
+		else if .compiler.codeMemberStack.count
 			return .compiler.curCodeMember.sharpThis
+		else
+			assert .compiler.boxMemberStack.count
+			# so not a code member
+			return '"(uninitialized [.compiler.curBox.name] instance)"'
 
 	def writeSharpSetLine(sw as SharpWriter)
 		if _canSetLine and .token.lineNum > 0

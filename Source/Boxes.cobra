@@ -446,10 +446,13 @@ class Box
 				invari.bindInt
 			for decl in _declsInOrder
 				assert not decl is this
+				.compiler.boxMemberStack.push(decl)
 				try
 					decl.bindInt
 				catch ne as NodeException
 					.compiler.recordError(ne)
+				finally
+					.compiler.boxMemberStack.pop
 			_finishOverloads
 			if _testMethod
 				_testMethod.bindInt
@@ -491,10 +494,13 @@ class Box
 				invari.bindImp
 			for decl in _declsInOrder
 				assert not decl is this, this
+				.compiler.boxMemberStack.push(decl)
 				try
 					decl.bindImp
 				catch ne as NodeException
 					.compiler.recordError(ne)
+				finally
+					.compiler.boxMemberStack.pop
 			for ol in _overloads
 				try
 					ol.bindImp
@@ -1179,7 +1185,11 @@ class Box
 		if _testMethod
 			_testMethod.writeSharpDef(sw)
 		for decl in _declsInOrder
-			decl.writeSharpDef(sw)
+			.compiler.boxMemberStack.push(decl)
+			try
+				decl.writeSharpDef(sw)
+			finally
+				.compiler.boxMemberStack.pop
 		if .compiler.includeTests
 			.writeSharpTest(sw)
 		sw.dedentAndWrite('} // [.sharpKeyWord] [.name]\n')
