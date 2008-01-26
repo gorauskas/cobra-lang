@@ -357,14 +357,14 @@ class BoxVar
 	In CLI terminology, these are called "fields".
 	"""
 
-	var _typeNode as ITypeProxy
+	var _typeNode as ITypeProxy?
 	var _type as IType?
 	var _initExpr as Expr?
 	var _ifInheritsStack as Stack<of IType>
 	var _useSharpNameStack as Stack<of String>
 	var _isAssignedTo as bool
 
-	def init(token as IToken, box as Box, name as String, typeNode as ITypeProxy, isNames as List<of String>, initExpr as Expr?, docString as String)
+	def init(token as IToken, box as Box, name as String, typeNode as ITypeProxy?, isNames as List<of String>, initExpr as Expr?, docString as String)
 		base.init(token, box, name, isNames, AttributeList(), docString)
 		_typeNode = typeNode
 		_initExpr = initExpr
@@ -400,15 +400,15 @@ class BoxVar
 
 	def _bindInt is override
 		base._bindInt
+		assert _typeNode or _initExpr
+		if _type is nil and _typeNode
+			_type = _typeNode.realType
 		if _initExpr
 			_initExpr.bindImp  # that's bindImp intentionally
 			if _type is nil
 				_type = _initExpr.type
-		if _type is nil
-			t = _typeNode.realType
-			if _initExpr and not _initExpr.isKindOf(t)
-				.throwError('The expression type of [_initExpr.type] does not match the variable type of [t].')
-			_type = t
+			else if not _initExpr.isKindOf(_type to !)
+				.throwError('The expression type of [_initExpr.type] does not match the variable type of [_typeNode].')
 
 	get resultType as IType is override
 		"""
