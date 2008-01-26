@@ -158,6 +158,19 @@ public class AssertException : Exception, IHasSourceSite {
 }
 
 
+public class InvariantException : AssertException {
+
+	public InvariantException(SourceSite sourceSite, object[] expressions, object thiss, object info)
+		: this(sourceSite, expressions, thiss, info, null) {
+	}
+
+	public InvariantException(SourceSite sourceSite, object[] expressions, object thiss, object info, Exception innerExc)
+		: base(sourceSite, expressions, thiss, info, innerExc) {
+	}
+
+}
+
+
 public class RequireException : AssertException {
 
 	RequireException _next;

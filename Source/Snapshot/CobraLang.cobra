@@ -1,1150 +1,1165 @@
 use System.Reflection
 
 
-namespace Cobra
+namespace Cobra.Lang
 
-	namespace Lang
+	class Tracer
+		inherits Object
+		"""
+		Used to implement the trace statement.
+		"""
 
-		class Tracer
-			inherits Object
+		var _isActive = true
+		var _willAutoFlush = true
+		var _dest as TextWriter
+		var _separator = '; '
+		var _prefix = 'trace: '
+		var _willOutputDirectoryNames = false
+
+		def init
 			"""
-			Used to implement the trace statement.
+			Initializes the tracer with Console.out as the destination.
+			"""
+			.init(Console.out)
+
+		def init(dest as TextWriter)
+			base.init
+			_dest = dest
+
+		pro isActive from var
+			"""
+			When false, the `trace` methods will produce no output.
 			"""
 
-			var _isActive = true
-			var _willAutoFlush = true
-			var _dest as TextWriter
-			var _separator = '; '
-			var _prefix = 'trace: '
-			var _willOutputDirectoryNames = false
+		pro willAutoFlush from var
+			"""
+			When true, `destination.flush` is invoked after every trace.
+			Defaults to `true`.
+			"""
 
-			def init
-				"""
-				Initializes the tracer with Console.out as the destination.
-				"""
-				.init(Console.out)
+		pro willOutputDirectoryNames from var
+			"""
+			When true, full path names with directories are output.
+			Otherwise, only the base filename of a source file is output.
+			Defaults to `false`.
+			"""
 
-			def init(dest as TextWriter)
-				base.init
-				_dest = dest
+		pro destination from _dest
+			"""
+			The TextWriter where all trace output is sent to.
+			"""
 
-			pro isActive from var
-				"""
-				When false, the `trace` methods will produce no output.
-				"""
+		pro separator from var
+			"""
+			The separator string used between items of both name/value pairs and source information.
+			Default is '; '.
+			"""
 
-			pro willAutoFlush from var
-				"""
-				When true, `destination.flush` is invoked after every trace.
-				Defaults to `true`.
-				"""
+		pro prefix from var
+			"""
+			The prefix string used at the beginning of every trace.
+			Default is 'trace: '.
+			"""
 
-			pro willOutputDirectoryNames from var
-				"""
-				When true, full path names with directories are output.
-				Otherwise, only the base filename of a source file is output.
-				Defaults to `false`.
-				"""
+		def trace(source as SourceSite)
+			if .isActive
+				print to _dest, '[.prefix][source.oneLiner(.separator, .willOutputDirectoryNames)]'
+				if .willAutoFlush
+					_dest.flush
 
-			pro destination from _dest
-				"""
-				The TextWriter where all trace output is sent to.
-				"""
+		def trace(source as SourceSite, nameValues as vari Object)
+			require nameValues.length % 2 == 0
+			if .isActive
+				_dest.write(.prefix)
+				sep = .separator
+				i = 0
+				while i < nameValues.length-1
+					name = nameValues[i] to String
+					value = CobraCore.toTechString(nameValues[i+1])
+					_dest.write('[name]=[value][sep]')
+					i += 2
+				_dest.writeLine(source.oneLiner(.separator, .willOutputDirectoryNames))
+				if .willAutoFlush
+					_dest.flush
 
-			pro separator from var
+	class CobraCore
+
+		shared
+		
+			## Release info
+
+			get version as Version
+				return Version(0, 6, 0)
+
+			get releaseNum as int
+				return 19
+
+
+			## Program stuff
+
+			get commandLineArgs as List<of String>
+				return List<of String>(Environment.getCommandLineArgs)
+
+			get exePath as String
 				"""
-				The separator string used between items of both name/value pairs and source information.
-				Default is '; '.
+				Returns the full path of the currently executing exe including directory, file name and extension.
+				Use `Path.getDirectoryName()` on this to get the directory containing the current exe.
 				"""
+				test
+					assert '.exe' in CobraCore.exePath
+				body
+					return Assembly.getExecutingAssembly.location
 
-			pro prefix from var
+			get printDestination as TextWriter
 				"""
-				The prefix string used at the beginning of every trace.
-				Default is 'trace: '.
+				Returns the TextWriter that print statements currently print to.
+				This can change via the block version of the `print to` statement.
 				"""
+				return CobraImp.printDestination
 
-			def trace(source as SourceSite)
-				if .isActive
-					print to _dest, '[.prefix][source.oneLiner(.separator, .willOutputDirectoryNames)]'
-					if .willAutoFlush
-						_dest.flush
-
-			def trace(source as SourceSite, nameValues as vari Object)
-				require nameValues.length % 2 == 0
-				if .isActive
-					_dest.write(.prefix)
-					sep = .separator
-					i = 0
-					while i < nameValues.length-1
-						name = nameValues[i] to String
-						value = CobraCore.toTechString(nameValues[i+1])
-						_dest.write('[name]=[value][sep]')
-						i += 2
-					_dest.writeLine(source.oneLiner(.separator, .willOutputDirectoryNames))
-					if .willAutoFlush
-						_dest.flush
-
-		class CobraCore
-
-			shared
+			def printDebuggingTips
+				print 'An unhandled exception has occurred.'
+				print
+				print 'Cobra debugging tips:'
+				print '    To get file name and line number information for the stack frames, use:'
+				print '        cobra -debug foo.cobra'
+				if CobraCore.isRunningOnMono
+					print '    If running the executable through "mono" then also use --debug (double dash):'
+					print '        mono --debug foo.exe ...'
+				print '    To get a post-mortem, HTML-formatted report with more details about your objects:'
+				print '        cobra -debug -exception-report foo.cobra'
+				print '    For even more information, try:'
+				print '        cobra -debug -exception-report -detailed-stack-trace foo.cobra'
+				print '    Or use the abbreviations:'
+				print '        cobra -d -er -dst foo.cobra'
+				# TODO: print '    See also: http://cobra-language.com/docs/debugging'
+				print
 			
-				## Release info
 
-				get version as Version
-					return Version(0, 6, 0)
+			## Tracer
 
-				get releaseNum as int
-					return 19
+			var _tracer as Tracer?
 
-
-				## Program stuff
-
-				get commandLineArgs as List<of String>
-					return List<of String>(Environment.getCommandLineArgs)
-
-				get exePath as String
-					"""
-					Returns the full path of the currently executing exe including directory, file name and extension.
-					Use `Path.getDirectoryName()` on this to get the directory containing the current exe.
-					"""
-					test
-						assert '.exe' in CobraCore.exePath
-					body
-						return Assembly.getExecutingAssembly.location
-
-				get printDestination as TextWriter
-					"""
-					Returns the TextWriter that print statements currently print to.
-					This can change via the block version of the `print to` statement.
-					"""
-					return CobraImp.printDestination
-
-
-				## Tracer
-
-				var _tracer as Tracer?
-
-				pro tracer as Tracer
-					"""
-					The global Tracer object used by `trace` statements.
-					Via this property, you can set this to your own instance,
-					or access the tracer to read or write its properties.
-					To turn off tracing, for example, you can write `CobraCore.tracer.isActive = false`.
-					"""
-					get
-						if _tracer is nil
-							_tracer = Tracer()
-						return _tracer to !
-					set
+			pro tracer as Tracer
+				"""
+				The global Tracer object used by `trace` statements.
+				Via this property, you can set this to your own instance,
+				or access the tracer to read or write its properties.
+				To turn off tracing, for example, you can write `CobraCore.tracer.isActive = false`.
+				"""
+				get
+					if _tracer is nil
 						_tracer = Tracer()
+					return _tracer to !
+				set
+					_tracer = Tracer()
 
 
-				## Run Tests
+			## Run Tests
 
-				def runAllTests
-					"""
-					Run all Cobra `test` sections in all assemblies using reflection to locate them.
-					"""
-					# start = DateTime.now
-					_runAllTests(Assembly.getEntryAssembly to !, Dictionary<of String, String>())
-					# duration = DateTime.now.subtract(start)
-					# trace duration
+			def runAllTests
+				"""
+				Run all Cobra `test` sections in all assemblies using reflection to locate them.
+				"""
+				# start = DateTime.now
+				_runAllTests(Assembly.getEntryAssembly, Dictionary<of String, String>())
+				# duration = DateTime.now.subtract(start)
+				# trace duration
 
-				def _runAllTests(ass as Assembly, found as Dictionary<of String, String>)  # CC: found should be Set<of String>
-					name = ass.getName.toString
-					if found.containsKey(name)
-						return
-					found.add(name, name)
-					if _skipAssemblyNameForTesting(name)  # saves some time
-						return
+			def _runAllTests(ass as Assembly, found as Dictionary<of String, String>)  # CC: found should be Set<of String>
+				name = ass.getName.toString
+				if found.containsKey(name)
+					return
+				found.add(name, name)
+				if _skipAssemblyNameForTesting(name)  # saves some time
+					return
 
-					# print 'Testing assembly:', ass
-					for type in ass.getExportedTypes
-						members = type.getMember('RunTestsIfNeeded')
-						if members and members.length and members[0] inherits MethodInfo
-							method = members[0] to MethodInfo
-							# trace type, method
-							if type.containsGenericParameters
-								# TODO: this is quite awful. tests in generic types are being skipped!
-								# potential solution 1: move type test out of the type into a "sister" type: private __FooTest
-								# potential solution 2: require a constructed type in Cobra: `test Foo<of int> ...` and then put that in a method attribute in the gen C# and use that type
-								continue
-							method.invoke(type, nil)
+				# print 'Testing assembly:', ass
+				for type in ass.getExportedTypes
+					members = type.getMember('RunTestsIfNeeded')
+					if members and members.length and members[0] inherits MethodInfo
+						method = members[0] to MethodInfo
+						# trace type, method
+						if type.containsGenericParameters
+							# TODO: this is quite awful. tests in generic types are being skipped!
+							# potential solution 1: move type test out of the type into a "sister" type: private __FooTest
+							# potential solution 2: require a constructed type in Cobra: `test Foo<of int> ...` and then put that in a method attribute in the gen C# and use that type
+							continue
+						method.invoke(type, nil)
 
-					# traverse further assemblies
-					for assName in ass.getReferencedAssemblies
-						subAss = Assembly.load(assName)
-						_runAllTests(subAss to !, found)
+				# traverse further assemblies
+				for assName in ass.getReferencedAssemblies
+					subAss = Assembly.load(assName)
+					_runAllTests(subAss to !, found)
 
-				var _skipPrefixes = @['System.', 'Mono.', 'mscorlib,', 'System,']
+			var _skipPrefixes = @['System.', 'Mono.', 'mscorlib,', 'System,']
 
-				def _skipAssemblyNameForTesting(name as String) as bool
-					for prefix in _skipPrefixes
-						if name.startsWith(prefix)
-							return true
-					return false
+			def _skipAssemblyNameForTesting(name as String) as bool
+				for prefix in _skipPrefixes
+					if name.startsWith(prefix)
+						return true
+				return false
 
 
-				## Detailed stack trace
+			## Detailed stack trace
 
-				pro maxStackFrames as int
-					"""
-					When detailed stack trace is on, this value limits the maximum stack depth before
-					Cobra will exit with a stack overflow error including a listing of the most
-					recent stack frames. The default value is 250. You can set to 0 to disable
-					stack overflow detection.
-					"""
-					get
-						return CobraImp._maxStackFrames
-					set
-						require value == 0 or value > 9
-						CobraImp._maxStackFrames = value
+			pro maxStackFrames as int
+				"""
+				When detailed stack trace is on, this value limits the maximum stack depth before
+				Cobra will exit with a stack overflow error including a listing of the most
+				recent stack frames. The default value is 250. You can set to 0 to disable
+				stack overflow detection.
+				"""
+				get
+					return CobraImp._maxStackFrames
+				set
+					require value == 0 or value > 9
+					CobraImp._maxStackFrames = value
 
-				pro numLastMaxStackFrames as int
-					"""
-					When stack overflow is detected, this value gives the number of most recent stack frames that will be printed.
-					"""
-					get
-						return CobraImp._numLastMaxStackFrames
-					set
-						require value >= 2
-						CobraImp._numLastMaxStackFrames = value
-						
-				get hasDetailedStackTrace
-					return CobraImp.hasDetailedStackTrace
+			pro numLastMaxStackFrames as int
+				"""
+				When stack overflow is detected, this value gives the number of most recent stack frames that will be printed.
+				"""
+				get
+					return CobraImp._numLastMaxStackFrames
+				set
+					require value >= 2
+					CobraImp._numLastMaxStackFrames = value
+					
+			get hasDetailedStackTrace
+				return CobraImp.hasDetailedStackTrace
 
-				def handleUnhandledException(ex as Exception)
-					print
-					try
-						print 'Unhandled Exception: [ex]'
-					catch exc as Exception
-						print 'Unhandled Exception: CAUGHT EXCEPTION FOR [ex.getType.name].toString: [exc]'
-					fileName = 'cobra-exception-report.html'
-					print 'Writing exception report to [fileName]...'
-					using tw = File.createText(fileName)
-						CobraCore.dumpStackAsHtml(tw, ex)
-					print 'Wrote [fileName]'
-					envVarName = 'COBRA_OPEN_HTML_SST_COMMAND'
-					cmd = Environment.getEnvironmentVariable(envVarName)
-					if cmd
-						if cmd.trim.length
-							p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
-							p.startInfo.fileName = cmd
-							p.startInfo.arguments = fileName
-							p.startInfo.useShellExecute = false
-							p.start
-							print '[cmd] [fileName]'
-					else
-						print 'You can set the environment variable [envVarName]'
-						print 'to automatically open the exception report.'
+			def handleUnhandledException(ex as Exception)
+				print
+				try
+					print 'Unhandled Exception: [ex]'
+				catch exc as Exception
+					print 'Unhandled Exception: CAUGHT EXCEPTION FOR [ex.getType.name].toString: [exc]'
+				fileName = 'cobra-exception-report.html'
+				print 'Writing exception report to [fileName]...'
+				using tw = File.createText(fileName)
+					CobraCore.dumpStackAsHtml(tw, ex)
+				print 'Wrote [fileName]'
+				envVarName = 'COBRA_OPEN_HTML_SST_COMMAND'
+				cmd = Environment.getEnvironmentVariable(envVarName)
+				if cmd
+					if cmd.trim.length
+						p as System.Diagnostics.Process = $sharp('new System.Diagnostics.Process()')
+						p.startInfo.fileName = cmd
+						p.startInfo.arguments = fileName
+						p.startInfo.useShellExecute = false
+						p.start
+						print '[cmd] [fileName]'
+				else
+					print 'You can set the environment variable [envVarName]'
+					print 'to automatically open the exception report.'
+			
+			def dumpStackAsText
+				.dumpStackAsText(Console.out)
+
+			def dumpStackAsText(tw as TextWriter)
+				.dumpStackAsText(tw, CobraImp.detailedStackTrace)
+					
+			def dumpStackAsText(tw as TextWriter, frames as Stack<of CobraFrame>)
+				# dump the most recent stack frames last since the text will output top-down and scroll in the shell
+				tw.writeLine('Stack trace:')
+				if not frames.count
+					tw.writeLine('No stack frames.')
+				else
+					i = 0
+					for frame in frames
+						frame.dumpText(tw, i)
+						i += 1
+
+			def dumpStackAsHtml(tw as TextWriter, exc as Exception?)
+				.dumpStackAsHtml(tw, exc, CobraImp.detailedStackTrace)
+				Console.out.writeLine
+			
+			var _dumpObjectCount as int
+			var _maxDumpObjectCount = 250
+			
+			pro maxDumpObjectCount from var
+				"""
+				Controls the maximum number of objects dumped  in the exception report.
+				Defaults to 250 which can easily result in a 5MB exception report.
+				"""
+
+			def dumpStackAsHtml(tw as TextWriter, exc as Exception?, frames as Stack<of CobraFrame>?)
+				# dump the most recent stack frames first since the HTML file will be displayed at the top in the browser
 				
-				def dumpStackAsText
-					.dumpStackAsText(Console.out)
+				_dumpObjectCount = 0
+				
+				tw.writeLine('<html>')
+				exePath = CobraCore.findCobraExe
+				if exePath
+					path = Path.combine(Path.getDirectoryName(exePath), 'styles-exception-report.css')
+					path = 'file://' + path.replace(Path.directorySeparatorChar, c'/')
+					tw.writeLine('<link href="[path]" rel=stylesheet type="text/css">')
+				tw.writeLine('<link href=styles-exception-report.css rel=stylesheet type="text/css">')
+				tw.writeLine('<body>')
+				tw.writeLine('<div class=sstHeading>Cobra Exception Report</div>')
+				
+				tw.writeLine('<div class=topLinks> <a href=http://Cobra-Language.com/>Cobra</a> &nbsp; <a href=http://Cobra-Language.com/downloads/>Downloads</a> &nbsp; <a href=http://Cobra-Language.com/docs/>Docs</a> &nbsp; <a href=http://Cobra-Language.com/how-to/>How To</a> &nbsp; <a href=http://Cobra-Language.com/samples/>Samples</a> &nbsp; <a href=http://CobraLang.BlogSpot.com/>Blog</a> &nbsp; <a href=http://Cobra-Language.com/docs/contact/>Contact</a> </div>')
 
-				def dumpStackAsText(tw as TextWriter)
-					.dumpStackAsText(tw, CobraImp.detailedStackTrace)
-						
-				def dumpStackAsText(tw as TextWriter, frames as Stack<of CobraFrame>)
-					# dump the most recent stack frames last since the text will output top-down and scroll in the shell
-					tw.writeLine('Stack trace:')
+				tw.writeLine('<div class=section>')
+				tw.writeLine('<div class=title>Header</div>')
+				tw.writeLine('<table class=keyValues border=0 cellpadding=1 cellspacing=1>')
+				name = System.Diagnostics.Process.getCurrentProcess.processName
+				if name.endsWith('mono')
+					for part in Environment.commandLine.split(c' ')
+						if part.endsWith('.exe')
+							name = Path.getFileName(part) to !  # CC: method should have: ensure arg and arg.length implies result; um, that'll be awhile to both put in and interpret at compile time!
+							break
+				_headerPair(tw, 'Program', name)
+				_headerPair(tw, 'When', DateTime.now)
+				_headerPair(tw, 'Command Line', Environment.commandLine)
+				_headerPair(tw, 'Current Directory', Environment.currentDirectory)
+				_headerPair(tw, 'Machine Name', Environment.machineName)
+				_headerPair(tw, 'Cobra', CobraCore.version)
+				_headerPair(tw, 'CLR', Environment.version)
+				if Environment.workingSet to decimal  # CC: axe cast. workingSet is really C# 'long' or Cobra 'int64'
+					_headerPair(tw, 'Working Set', Environment.workingSet)
+				tw.writeLine('</table>')
+				tw.writeLine('</div> <!-- section -->')
+				
+				objects = ObjectCatalog()
+				
+				if exc
+					tw.writeLine('<div class=section>')
+					tw.writeLine('<div class=title>Exception</div>')
+					objects.record(exc)
+					.dumpObjectAsHtml(tw, objects.serialNumFor(exc), exc, objects)
+				
+				startingSerialNum = objects.minSerialNum
+				tw.writeLine('<div class=section>')
+				tw.writeLine('<div class=title>Stack Frames</div>')
+				if frames is nil
+					tw.writeLine('<p>There is no detailed stack trace. You can turn this on with "cobra -dst ..." and see significantly more information about the state of the program including the details of every argument and local variable. There is a performance cost, but the slowdown is likely worth it if you are unable to diagnose this problem.</p>')
+				else
 					if not frames.count
-						tw.writeLine('No stack frames.')
+						tw.writeLine('<p>No stack frames.</p>')
 					else
+						frameList = List<of CobraFrame>(frames)
+						frameList.reverse
+						tw.writeLine('<table class=stack border=0 cellpadding=2 cellspacing=0>')
 						i = 0
-						for frame in frames
-							frame.dumpText(tw, i)
+						for frame in frameList
+							frame.dumpHtml(tw, i, objects)
 							i += 1
+						tw.writeLine('</table>')
+				tw.writeLine('</div> <!-- section -->')
 
-				def dumpStackAsHtml(tw as TextWriter, exc as Exception?)
-					.dumpStackAsHtml(tw, exc, CobraImp.detailedStackTrace)
-					Console.out.writeLine
-				
-				var _dumpObjectCount as int
-				var _maxDumpObjectCount = 250
-				
-				pro maxDumpObjectCount from var
-					"""
-					Controls the maximum number of objects dumped  in the exception report.
-					Defaults to 250 which can easily result in a 5MB exception report.
-					"""
+				tw.writeLine('<div class=section>')
+				tw.writeLine('<div class=title>Objects</div>')
+				serialNum = if(startingSerialNum > 0, startingSerialNum+1, objects.minSerialNum)
+				while objects.contains(serialNum) and _dumpObjectCount <= _maxDumpObjectCount
+					.dumpObjectAsHtml(tw, serialNum, objects.objectFor(serialNum), objects)
+					serialNum += 1
+				tw.writeLine('</div> <!-- section -->')
 
-				def dumpStackAsHtml(tw as TextWriter, exc as Exception?, frames as Stack<of CobraFrame>?)
-					# dump the most recent stack frames first since the HTML file will be displayed at the top in the browser
+				tw.writeLine('</body>')
+				tw.writeLine('</html>')
+
+			def _headerPair(tw as TextWriter, key as String, value as Object?)
+				key = .htmlEncode(key)
+				value ?= ''
+				value = .htmlEncode(value.toString)
+				tw.writeLine('<tr class=keyValue> <td class=key> [key] </td> <td> &nbsp;=&nbsp; </td> <td class=value> [value] </td> </tr>')
+
+			var _htmlEncodes = @[['&', '&amp;'], ['<', '&lt;'], ['>', '&gt;'], ['"', '&quot;']]
+
+			def htmlEncode(obj as Object) as String
+				"""
+				Return the HTML encoded version of the given object.
+				Returns the contents of the object if it is an instance of Html.
+				This is useful to display a plain ASCII text string on a web page.
+				"""
+				if obj inherits Html
+					return obj.contents
+				else
+					return .htmlEncode(obj.toString)
 					
-					_dumpObjectCount = 0
-					
-					tw.writeLine('<html>')
-					exePath = CobraCore.findCobraExe
-					if exePath
-						path = Path.combine(Path.getDirectoryName(exePath), 'styles-exception-report.css')
-						path = 'file://' + path.replace(Path.directorySeparatorChar, c'/')
-						tw.writeLine('<link href="[path]" rel=stylesheet type="text/css">')
-					tw.writeLine('<link href=styles-exception-report.css rel=stylesheet type="text/css">')
-					tw.writeLine('<body>')
-					tw.writeLine('<div class=sstHeading>Cobra Exception Report</div>')
-					
-					tw.writeLine('<div class=topLinks> <a href=http://Cobra-Language.com/>Cobra</a> &nbsp; <a href=http://Cobra-Language.com/downloads/>Downloads</a> &nbsp; <a href=http://Cobra-Language.com/docs/>Docs</a> &nbsp; <a href=http://Cobra-Language.com/how-to/>How To</a> &nbsp; <a href=http://Cobra-Language.com/samples/>Samples</a> &nbsp; <a href=http://CobraLang.BlogSpot.com/>Blog</a> &nbsp; <a href=http://Cobra-Language.com/docs/contact/>Contact</a> </div>')
+			def htmlEncode(s as String) as String
+				"""
+				Return the HTML encoded version of the given string.
+				This is useful to display a plain ASCII text string on a web page.
+				"""
+				test
+					assert CobraCore.htmlEncode('foo') == 'foo'
+					assert CobraCore.htmlEncode('3 < 5') == '3 &lt; 5'
+				body
+					for code in _htmlEncodes
+						s = s.replace(code[0], code[1])
+					return s
 
-					tw.writeLine('<div class=section>')
-					tw.writeLine('<div class=title>Header</div>')
-					tw.writeLine('<table class=keyValues border=0 cellpadding=1 cellspacing=1>')
-					name = System.Diagnostics.Process.getCurrentProcess.processName
-					if name.endsWith('mono')
-						for part in Environment.commandLine.split(c' ')
-							if part.endsWith('.exe')
-								name = Path.getFileName(part) to !  # CC: method should have: ensure arg and arg.length implies result; um, that'll be awhile to both put in and interpret at compile time!
-								break
-					_headerPair(tw, 'Program', name)
-					_headerPair(tw, 'When', DateTime.now)
-					_headerPair(tw, 'Command Line', Environment.commandLine)
-					_headerPair(tw, 'Current Directory', Environment.currentDirectory)
-					_headerPair(tw, 'Machine Name', Environment.machineName)
-					_headerPair(tw, 'Cobra', CobraCore.version)
-					_headerPair(tw, 'CLR', Environment.version)
-					if Environment.workingSet to decimal  # CC: axe cast. workingSet is really C# 'long' or Cobra 'int64'
-						_headerPair(tw, 'Working Set', Environment.workingSet)
-					tw.writeLine('</table>')
-					tw.writeLine('</div> <!-- section -->')
-					
-					objects = ObjectCatalog()
-					
-					if exc
-						tw.writeLine('<div class=section>')
-						tw.writeLine('<div class=title>Exception</div>')
-						objects.record(exc)
-						.dumpObjectAsHtml(tw, objects.serialNumFor(exc), exc, objects)
-					
-					startingSerialNum = objects.minSerialNum
-					tw.writeLine('<div class=section>')
-					tw.writeLine('<div class=title>Stack Frames</div>')
-					if frames is nil
-						tw.writeLine('<p>There is no detailed stack trace. You can turn this on with "cobra -dst ..." and see significantly more information about the state of the program including the details of every argument and local variable. There is a performance cost, but the slowdown is likely worth it if you are unable to diagnose this problem.</p>')
-					else
-						if not frames.count
-							tw.writeLine('<p>No stack frames.</p>')
-						else
-							frameList = List<of CobraFrame>(frames)
-							frameList.reverse
-							tw.writeLine('<table class=stack border=0 cellpadding=2 cellspacing=0>')
-							i = 0
-							for frame in frameList
-								frame.dumpHtml(tw, i, objects)
-								i += 1
-							tw.writeLine('</table>')
-					tw.writeLine('</div> <!-- section -->')
-
-					tw.writeLine('<div class=section>')
-					tw.writeLine('<div class=title>Objects</div>')
-					serialNum = if(startingSerialNum > 0, startingSerialNum+1, objects.minSerialNum)
-					while objects.contains(serialNum) and _dumpObjectCount <= _maxDumpObjectCount
-						.dumpObjectAsHtml(tw, serialNum, objects.objectFor(serialNum), objects)
-						serialNum += 1
-					tw.writeLine('</div> <!-- section -->')
-
-					tw.writeLine('</body>')
-					tw.writeLine('</html>')
-
-				def _headerPair(tw as TextWriter, key as String, value as Object?)
-					key = .htmlEncode(key)
-					value ?= ''
-					value = .htmlEncode(value.toString)
-					tw.writeLine('<tr class=keyValue> <td class=key> [key] </td> <td> &nbsp;=&nbsp; </td> <td class=value> [value] </td> </tr>')
-
-				var _htmlEncodes = @[['&', '&amp;'], ['<', '&lt;'], ['>', '&gt;'], ['"', '&quot;']]
-
-				def htmlEncode(obj as Object) as String
-					"""
-					Return the HTML encoded version of the given object.
-					Returns the contents of the object if it is an instance of Html.
-					This is useful to display a plain ASCII text string on a web page.
-					"""
-					if obj inherits Html
-						return obj.contents
-					else
-						return .htmlEncode(obj.toString)
-						
-				def htmlEncode(s as String) as String
-					"""
-					Return the HTML encoded version of the given string.
-					This is useful to display a plain ASCII text string on a web page.
-					"""
-					test
-						assert CobraCore.htmlEncode('foo') == 'foo'
-						assert CobraCore.htmlEncode('3 < 5') == '3 &lt; 5'
-					body
-						for code in _htmlEncodes
-							s = s.replace(code[0], code[1])
-						return s
-
-				def htmlFormat(s as String) as Html
-					s = .htmlEncode(s)
-					# re = Regex(r'\n[ ]+', ...  # CC: ack, no delegates so can't get length
-					sb = StringBuilder(s.length*2)
-					state = 0
-					for c in s
-						branch state
-							on 0
+			def htmlFormat(s as String) as Html
+				s = .htmlEncode(s)
+				# re = Regex(r'\n[ ]+', ...  # CC: ack, no delegates so can't get length
+				sb = StringBuilder(s.length*2)
+				state = 0
+				for c in s
+					branch state
+						on 0
+							sb.append(c)
+							if c == c'\n'
+								state = 1
+						on 1
+							if c == c' '
+								sb.append('&nbsp;')
+							else if c == c'\n'
 								sb.append(c)
-								if c == c'\n'
-									state = 1
-							on 1
-								if c == c' '
-									sb.append('&nbsp;')
-								else if c == c'\n'
-									sb.append(c)
-								else
-									sb.append(c)
-									state = 0
-					s = sb.toString
-					s = s.replace('\r', '').replace('\n', '<br>')
-					return Html(s)
-					
-				def willDumpHtmlFor(obj as Object?) as bool			
-					if obj is nil
-						return false
-					if obj inherits int
-						return false
-					# TODO: int64 and other int sizes
-					if obj inherits String
-						return false
-					if obj inherits decimal or obj inherits float
-						return false
-					if obj inherits bool or obj inherits char
-						return false
-					if obj inherits Html
-						return false
-					if obj inherits CobraDirectString
-						return false
-					if obj.getType.isEnum
-						return false
-					fullName = obj.getType.fullName
-					if fullName == 'System.Security.Policy.Evidence'  # 2007-07-11 CE: causes problems, at least on mono 1.2.4
-						return false
-					if fullName == 'System.IntPtr'  # not interesting. # TODO: skip any type that has zero properties and does not implement custom exception reporting
-						return false
-					return true
-
-				def willDumpHtmlForConservative(obj as Object?) as bool
-					if not .willDumpHtmlFor(obj)
-						return false
-					if obj.getType.isNested
-						return false
-					if 'IEquatableOf' in obj.getType.name
-						return false
-					return true
-					
-				def dumpObjectAsHtml(tw as TextWriter, serialNum as int, obj as Object, objects as ObjectCatalog?)
-					if _dumpObjectCount % 10 == 0  # TODO: change 10 to a public property. value < 1 means not to write progress
-						Console.out.write('.')
-						Console.out.flush
-					_dumpObjectCount += 1
-					if objects
-						objects.record(obj)
-					tw.writeLine('<a name=Object[serialNum]></a>')
-					tw.writeLine('<table class=object border=0 cellpadding=0 cellspacing=0>')
-					tw.writeLine('<tr class=objectTitle> <td class=objectTitle colspan=2> [.htmlEncode(.typeName(obj.getType))] &nbsp; <font size=-1>([serialNum])</font> </td> </tr>')
-					try
-						value = obj.toString to Object?
-					catch exc as Exception
-						value = 'Caught exception while reading value: [exc.toString]'
-					row = 1
-					if obj inherits IHasSourceSite
-						_writeObjectPair1(tw, row, 'at', obj.sourceSite.htmlForAt)
-						row += 1
-					_writeObjectPair1(tw, row, 'toString', .htmlFormat(value.toString))
-					propInfos = List<of PropertyInfo>(obj.getType.getProperties)
-					# CC: propInfos.sort(def(a as PropertyInfo, b as PropertyInfo)=a.name.compareTo(b.name))
-					# ... sort propInfos by name
-					# TODO: yeah, I know this awful
-					didSort = false
-					post while didSort
-						didSort = false
-						for j = 0 .. propInfos.count-1
-							a = propInfos[j]
-							b = propInfos[j+1]
-							if a.name > b.name
-								swap = propInfos[j]
-								propInfos[j] = propInfos[j+1]
-								propInfos[j+1] = swap
-								didSort = true
-					for propInfo in propInfos
-						if propInfo.canRead and not propInfo.getGetMethod.isStatic and propInfo.name not in ['Clone', 'Copy', 'Item']
-							if propInfo.name == 'MetadataToken'  # problems on mono. http://bugzilla.ximian.com/show_bug.cgi?id=82161
-								value = '(SKIPPED)'
 							else
-								try
-									value = propInfo.getValue(obj, nil)
-								catch exc as Exception
-									value = .htmlFormat('Caught exception while reading value: [exc.toString]')
-								success
-									value = _htmlForValue(value, objects)
-							_writeObjectPair1(tw, row%2+1, propInfo.name, value)
-							row += 1
-					extendMethod = obj.getType.getMethod('ExtendObjectTable')
-					if extendMethod
-						view = PrivateObjectViewForExceptionReport(tw, row, objects)
-						extendMethod.invoke(obj, @[view])
-						i = view.rowNum
-					# TODO: ack! cannot do this until qualified type problems are fixed up
-					#if obj inherits System.Collections.IList
-					if obj.getType.name.startsWith('List`')
-						dobj = obj to dynamic
-						count = dobj.count to int
-						for j = 0 .. count
+								sb.append(c)
+								state = 0
+				s = sb.toString
+				s = s.replace('\r', '').replace('\n', '<br>')
+				return Html(s)
+				
+			def willDumpHtmlFor(obj as Object?) as bool			
+				if obj is nil
+					return false
+				if obj inherits int
+					return false
+				# TODO: int64 and other int sizes
+				if obj inherits String
+					return false
+				if obj inherits decimal or obj inherits float
+					return false
+				if obj inherits bool or obj inherits char
+					return false
+				if obj inherits Html
+					return false
+				if obj inherits CobraDirectString
+					return false
+				if obj.getType.isEnum
+					return false
+				fullName = obj.getType.fullName
+				if fullName == 'System.Security.Policy.Evidence'  # 2007-07-11 CE: causes problems, at least on mono 1.2.4
+					return false
+				if fullName == 'System.IntPtr'  # not interesting. # TODO: skip any type that has zero properties and does not implement custom exception reporting
+					return false
+				return true
+
+			def willDumpHtmlForConservative(obj as Object?) as bool
+				if not .willDumpHtmlFor(obj)
+					return false
+				if obj.getType.isNested
+					return false
+				if 'IEquatableOf' in obj.getType.name
+					return false
+				return true
+				
+			def dumpObjectAsHtml(tw as TextWriter, serialNum as int, obj as Object, objects as ObjectCatalog?)
+				if _dumpObjectCount % 10 == 0  # TODO: change 10 to a public property. value < 1 means not to write progress
+					Console.out.write('.')
+					Console.out.flush
+				_dumpObjectCount += 1
+				if objects
+					objects.record(obj)
+				tw.writeLine('<a name=Object[serialNum]></a>')
+				tw.writeLine('<table class=object border=0 cellpadding=0 cellspacing=0>')
+				tw.writeLine('<tr class=objectTitle> <td class=objectTitle colspan=2> [.htmlEncode(.typeName(obj.getType))] &nbsp; <font size=-1>([serialNum])</font> </td> </tr>')
+				try
+					value = obj.toString to Object?
+				catch exc as Exception
+					value = 'Caught exception while reading value: [exc.toString]'
+				row = 1
+				if obj inherits IHasSourceSite
+					_writeObjectPair1(tw, row, 'at', obj.sourceSite.htmlForAt)
+					row += 1
+				_writeObjectPair1(tw, row, 'toString', .htmlFormat(value.toString))
+				propInfos = List<of PropertyInfo>(obj.getType.getProperties)
+				# CC: propInfos.sort(def(a as PropertyInfo, b as PropertyInfo)=a.name.compareTo(b.name))
+				# ... sort propInfos by name
+				# TODO: yeah, I know this awful
+				didSort = false
+				post while didSort
+					didSort = false
+					for j = 0 .. propInfos.count-1
+						a = propInfos[j]
+						b = propInfos[j+1]
+						if a.name > b.name
+							swap = propInfos[j]
+							propInfos[j] = propInfos[j+1]
+							propInfos[j+1] = swap
+							didSort = true
+				for propInfo in propInfos
+					if propInfo.canRead and not propInfo.getGetMethod.isStatic and propInfo.name not in ['Clone', 'Copy', 'Item']
+						if propInfo.name == 'MetadataToken'  # problems on mono. http://bugzilla.ximian.com/show_bug.cgi?id=82161
+							value = '(SKIPPED)'
+						else
 							try
-								value = dobj[j]
+								value = propInfo.getValue(obj, nil)
 							catch exc as Exception
-								value = .htmlFormat('Caught exception while reading indexed value [j]: [exc.toString]')
+								value = .htmlFormat('Caught exception while reading value: [exc.toString]')
 							success
 								value = _htmlForValue(value, objects)
-							_writeObjectPair1(tw, i%2+1, r'[' + '[j]]', value)
-							i += 1
-					else if obj.getType.name.startsWith('Dictionary')  # TODO: use if implements/inherits
-						dobj = obj to dynamic
-						for key in dobj.keys
-							htmlKey as dynamic?
-							try
-								htmlKey = .toTechString(key)
-							catch exc as Exception
-								htmlKey = .htmlFormat('Caught exception for toTechString(key): [exc.toString]')
-							success
-								htmlKey = .htmlEncode(htmlKey)
-							try
-								value = dobj[key]
-							catch exc as Exception
-								value = .htmlEncode('Caught exception while reading keyed value [htmlKey]: [exc.toString]')
-							success
-								value = _htmlForValue(value, objects)
-							_writeObjectPair1(tw, i%2+1, r'[' + htmlKey + ']', value)
-							i += 1
-
-					tw.writeLine('</table>')
-
-				def _htmlForValue(value as dynamic?, objects as ObjectCatalog?) as dynamic
-					"""
-					Returns the .toTechString of the value, encoded for HTML.
-					Gracefully handles exceptions and also creates links to objects.
-					"""
-					if value inherits Html  # this feature is used by AssertException, but it's interesting that this would then make Html() objects less recognizable when they show up in the report as a normal part of the program that failed
-						return value
-					s as dynamic?
-					try
+						_writeObjectPair1(tw, row%2+1, propInfo.name, value)
+						row += 1
+				extendMethod = obj.getType.getMethod('ExtendObjectTable')
+				if extendMethod
+					view = PrivateObjectViewForExceptionReport(tw, row, objects)
+					extendMethod.invoke(obj, @[view])
+					i = view.rowNum
+				# TODO: ack! cannot do this until qualified type problems are fixed up
+				#if obj inherits System.Collections.IList
+				if obj.getType.name.startsWith('List`')
+					dobj = obj to dynamic
+					count = dobj.count to int
+					for j = 0 .. count
 						try
-							s = .toTechString(value)
+							value = dobj[j]
 						catch exc as Exception
-							s = .htmlFormat('Caught exception while converting value toTechString: [exc.toString]')
+							value = .htmlFormat('Caught exception while reading indexed value [j]: [exc.toString]')
 						success
-							s = .htmlFormat(s to String) # CC: to !
-							if value and objects
-								willLink = false
-								if objects.contains(value to passthrough)
-									willLink = true
-								else if .willDumpHtmlForConservative(value) and objects
-									objects.record(value to passthrough)
-									willLink = true
-								if willLink
-									s = '<a class=objectDetails href=#Object[objects.serialNumFor(value to passthrough)]>[s]</a>'
-					catch topExc as SystemException  # for example, System.Security.Policy.Evidence as a dictionary key causes problems (at least on mono 1.2.4)
+							value = _htmlForValue(value, objects)
+						_writeObjectPair1(tw, i%2+1, r'[' + '[j]]', value)
+						i += 1
+				else if obj.getType.name.startsWith('Dictionary')  # TODO: use if implements/inherits
+					dobj = obj to dynamic
+					for key in dobj.keys
+						htmlKey as dynamic?
 						try
-							s = value.toString
-						catch toStringExc as Exception
-							s = '(_htmlForValue: Exception during toString: [toStringExc];[Environment.newLine]Exception during processing: [topExc])'
+							htmlKey = .toTechString(key)
+						catch exc as Exception
+							htmlKey = .htmlFormat('Caught exception for toTechString(key): [exc.toString]')
 						success
-							s = '(_htmlForValue: value=[s]; Exception during processing: [topExc])'
+							htmlKey = .htmlEncode(htmlKey)
 						try
-							s = .htmlFormat(s to String) # CC: to !
-						catch Exception
-							pass  # forget it
-					return s to !
-				
-				def _writeObjectPair1(tw as TextWriter, i as int, key as String, valueHtml as Object?) is internal
-					require
-						i == 1 or i == 2
-						key.length
-					body
-						key = key[0].toString.toLower + key[1:]
-						key = .htmlEncode(key)
-						_writeObjectPair2(tw, i, key, valueHtml)
+							value = dobj[key]
+						catch exc as Exception
+							value = .htmlEncode('Caught exception while reading keyed value [htmlKey]: [exc.toString]')
+						success
+							value = _htmlForValue(value, objects)
+						_writeObjectPair1(tw, i%2+1, r'[' + htmlKey + ']', value)
+						i += 1
 
-				def _writeObjectPair2(tw as TextWriter, i as int, preFormattedKey as String, valueHtml as Object?) is internal
-					require
-						i == 1 or i == 2
-						preFormattedKey.length
-					body
-						tw.writeLine('<tr class=keyValue[i]> <td class=key[i]> [preFormattedKey] </td> <td class=value[i]> [valueHtml ? ''] </td> </tr>')
+				tw.writeLine('</table>')
 
-				
-				## Type names and tech strings
+			def _htmlForValue(value as dynamic?, objects as ObjectCatalog?) as dynamic
+				"""
+				Returns the .toTechString of the value, encoded for HTML.
+				Gracefully handles exceptions and also creates links to objects.
+				"""
+				if value inherits Html  # this feature is used by AssertException, but it's interesting that this would then make Html() objects less recognizable when they show up in the report as a normal part of the program that failed
+					return value
+				s as dynamic?
+				try
+					try
+						s = .toTechString(value)
+					catch exc as Exception
+						s = .htmlFormat('Caught exception while converting value toTechString: [exc.toString]')
+					success
+						s = .htmlFormat(s to !)
+						if value and objects
+							willLink = false
+							if objects.contains(value to passthrough)
+								willLink = true
+							else if .willDumpHtmlForConservative(value) and objects
+								objects.record(value to passthrough)
+								willLink = true
+							if willLink
+								s = '<a class=objectDetails href=#Object[objects.serialNumFor(value to passthrough)]>[s]</a>'
+				catch topExc as SystemException  # for example, System.Security.Policy.Evidence as a dictionary key causes problems (at least on mono 1.2.4)
+					try
+						s = value.toString
+					catch toStringExc as Exception
+						s = '(_htmlForValue: Exception during toString: [toStringExc];[Environment.newLine]Exception during processing: [topExc])'
+					success
+						s = '(_htmlForValue: value=[s]; Exception during processing: [topExc])'
+					try
+						s = .htmlFormat(s to !)
+					catch Exception
+						pass  # forget it
+				return s to !
+			
+			def _writeObjectPair1(tw as TextWriter, i as int, key as String, valueHtml as Object?) is internal
+				require
+					i == 1 or i == 2
+					key.length
+				body
+					key = key[0].toString.toLower + key[1:]
+					key = .htmlEncode(key)
+					_writeObjectPair2(tw, i, key, valueHtml)
 
-				def typeName(t as Type) as String
-					return CobraImp.typeName(t)
+			def _writeObjectPair2(tw as TextWriter, i as int, preFormattedKey as String, valueHtml as Object?) is internal
+				require
+					i == 1 or i == 2
+					preFormattedKey.length
+				body
+					tw.writeLine('<tr class=keyValue[i]> <td class=key[i]> [preFormattedKey] </td> <td class=value[i]> [valueHtml ? ''] </td> </tr>')
 
-				def toTechString(x as Object?) as String
-					return CobraImp.toTechString(x)
+			
+			## Type names and tech strings
 
+			def typeName(t as Type) as String
+				return CobraImp.typeName(t)
 
-				## Will check control flags
-
-				# CC: make a public section/block here
-				var _willCheckInvariant = true
-					is public
-				var _willCheckRequire = true
-					is public
-				var _willCheckEnsure = true
-					is public
-				var _willCheckAssert = true
-					is public
-				var _willCheckNonNilClassVars = true
-					is public
-
-				pro willCheckInvariant from var
-				pro willCheckRequire from var
-				pro willCheckEnsure from var
-				pro willCheckAssert from var
-				pro willCheckNonNilClassVars from var
-
-				set willCheckAll as bool
-					.willCheckInvariant = value
-					.willCheckRequire = value
-					.willCheckEnsure = value
-					.willCheckAssert = value
-					.willCheckNonNilClassVars = value
+			def toTechString(x as Object?) as String
+				return CobraImp.toTechString(x)
 
 
-				## Finding cobra command line program
+			## Will check control flags
 
-				def findCobraExe as String?
-					return .findCobraExe(nil)
+			# CC: make a public section/block here
+			var _willCheckInvariant = true
+				is public
+			var _willCheckRequire = true
+				is public
+			var _willCheckEnsure = true
+				is public
+			var _willCheckAssert = true
+				is public
+			var _willCheckNonNilClassVars = true
+				is public
 
-				def findCobraExe(extraPaths as IList<of String>?) as String?
-					"""
-					Finds cobra.exe on the current system by looking in various places:
-						* the current directory
-						* the directory where the current executable resides
-						* the path of the cobra.exe that produced the current executable
-						* the path of the COBRA environment variable
-						* the system PATH
-						* educated guesses like \WINDOWS\Program Files\Cobra\bin and /usr/local/bin
-						* the extraPaths argument
-					"""
-					# check previous cached result first
-					if _findCobraCache
-						return _findCobraCache
-					# check the current directory
-					path = _findCobraExe(Environment.currentDirectory)
-					if path
-						return path
-					# check the directory where the current executable resides
-					path = _findCobraExe(CobraCore.exePath)
-					if path
-						return path
-					# check for the cobra that created the current executable
-					if File.exists(CobraInfo.cobraPath)
-						return CobraInfo.cobraPath
-					# check COBRA environment variable
-					path = Environment.getEnvironmentVariable('COBRA') ? ''
-					if path <> ''
-						path = _findCobraExe(path)
-						if path
-							return path
-					# check the PATH
-					paths = (Environment.getEnvironmentVariable('PATH') ? '').split(Path.pathSeparator)
-					for sysPath in paths
-						path = _findCobraExe(sysPath)
-						if path
-							return path
-					# check common locations and extraPaths
-					morePaths = [
-						r'\WINDOWS\Program Files\Cobra\bin',
-						r'\Cobra\bin',
-						r'/usr/local/bin',
-						r'/usr/bin',
-						r'/bin',
-					]
-					if extraPaths
-						morePaths.addRange(extraPaths)
-					for path in morePaths
-						path = _findCobraExe(path)
-						if path
-							return path
-					# cannot find cobra.exe
-					return nil
+			pro willCheckInvariant from var
+			pro willCheckRequire from var
+			pro willCheckEnsure from var
+			pro willCheckAssert from var
+			pro willCheckNonNilClassVars from var
 
-				def clearCobraExeCache
-					"""
-					The `findCobraExe` method caches its results for subsequent speed.
-					This method clears the cache in the event you need to do so.
-					"""
-					_findCobraCache = nil
+			set willCheckAll as bool
+				.willCheckInvariant = value
+				.willCheckRequire = value
+				.willCheckEnsure = value
+				.willCheckAssert = value
+				.willCheckNonNilClassVars = value
 
-				var _findCobraCache as String?
 
-				def _findCobraExe(path as String) as String?
-					_findCobraCache = _findCobraExe(path, true)
+			## Finding cobra command line program
+
+			def findCobraExe as String?
+				return .findCobraExe(nil)
+
+			def findCobraExe(extraPaths as IList<of String>?) as String?
+				"""
+				Finds cobra.exe on the current system by looking in various places:
+					* the current directory
+					* the directory where the current executable resides
+					* the path of the cobra.exe that produced the current executable
+					* the path of the COBRA environment variable
+					* the system PATH
+					* educated guesses like \WINDOWS\Program Files\Cobra\bin and /usr/local/bin
+					* the extraPaths argument
+				"""
+				# check previous cached result first
+				if _findCobraCache
 					return _findCobraCache
+				# check the current directory
+				path = _findCobraExe(Environment.currentDirectory)
+				if path
+					return path
+				# check the directory where the current executable resides
+				path = _findCobraExe(CobraCore.exePath)
+				if path
+					return path
+				# check for the cobra that created the current executable
+				if File.exists(CobraInfo.cobraPath)
+					return CobraInfo.cobraPath
+				# check COBRA environment variable
+				path = Environment.getEnvironmentVariable('COBRA') ? ''
+				if path <> ''
+					path = _findCobraExe(path)
+					if path
+						return path
+				# check the PATH
+				paths = (Environment.getEnvironmentVariable('PATH') ? '').split(Path.pathSeparator)
+				for sysPath in paths
+					path = _findCobraExe(sysPath)
+					if path
+						return path
+				# check common locations and extraPaths
+				morePaths = [
+					r'\WINDOWS\Program Files\Cobra\bin',
+					r'\Cobra\bin',
+					r'/usr/local/bin',
+					r'/usr/bin',
+					r'/bin',
+				]
+				if extraPaths
+					morePaths.addRange(extraPaths)
+				for path in morePaths
+					path = _findCobraExe(path)
+					if path
+						return path
+				# cannot find cobra.exe
+				return nil
 
-				def _findCobraExe(path as String, firstTime as bool) as String?
-					if path <> CobraCore.exePath and path.endsWith('cobra.exe')
-						# ^ first condition guards against test cases like "invoke-cobra.exe" from endlessly invoking themselves
-						if File.exists(path)
-							return path
-						else
-							return nil
-					else if Directory.exists(path)
-						exe = Path.combine(path, 'cobra.exe')
-						if File.exists(exe)
-							return exe
-						exe = Path.combine(Path.combine(path, 'bin'), 'cobra.exe')
-						if File.exists(exe)
-							return exe
-						if firstTime
-							# check for a 'Cobra' subdirectory
-							return _findCobraExe(Path.combine(path, 'Cobra'), false)
-						else
-							return nil
+			def clearCobraExeCache
+				"""
+				The `findCobraExe` method caches its results for subsequent speed.
+				This method clears the cache in the event you need to do so.
+				"""
+				_findCobraCache = nil
+
+			var _findCobraCache as String?
+
+			def _findCobraExe(path as String) as String?
+				_findCobraCache = _findCobraExe(path, true)
+				return _findCobraCache
+
+			def _findCobraExe(path as String, firstTime as bool) as String?
+				if path <> CobraCore.exePath and path.endsWith('cobra.exe')
+					# ^ first condition guards against test cases like "invoke-cobra.exe" from endlessly invoking themselves
+					if File.exists(path)
+						return path
 					else
 						return nil
+				else if Directory.exists(path)
+					exe = Path.combine(path, 'cobra.exe')
+					if File.exists(exe)
+						return exe
+					exe = Path.combine(Path.combine(path, 'bin'), 'cobra.exe')
+					if File.exists(exe)
+						return exe
+					if firstTime
+						# check for a 'Cobra' subdirectory
+						return _findCobraExe(Path.combine(path, 'Cobra'), false)
+					else
+						return nil
+				else
+					return nil
 
 
-				## Other util
+			## Other util
+			
+			var _isRunningOnMono as bool?
+			
+			get isRunningOnMono as bool
+				if _isRunningOnMono is nil
+					_isRunningOnMono = $sharp('Type.GetType("Mono.Runtime")') is not nil
+				return _isRunningOnMono to !
 				
-				var _isRunningOnMono as bool?
-				
-				get isRunningOnMono as bool
-					if _isRunningOnMono is nil
-						_isRunningOnMono = $sharp('Type.GetType("Mono.Runtime")') is not nil
-					return _isRunningOnMono to !
-					
-				def runAndCaptureAllOutput(process as Object) as String
-					return CobraImp.runAndCaptureAllOutput(process)
+			def runAndCaptureAllOutput(process as Object) as String
+				return CobraImp.runAndCaptureAllOutput(process)
 
-				def noOp(args as vari dynamic?) as dynamic?
-					"""
-					No operation. Primarily used in Cobra's own test suite to consume a local variable to avoid undesired warnings.
-					Takes any number of values and returns an undefined value of type `dynamic?` for maximum flexibility.
-					"""
-					return 0
-
-		class CobraDirectString
-			is fake
-			"""
-			Used internally for assert, require and ensure to encode strings that should not be passed to CobraCore.toTechString.
-			"""
-			def init(s as String)
-				pass
-			get string as String
-				return ''
-			
-		class Html
-			"""
-			Represents HTML that doesn't need to be encoded.
-			Html.toString returns the contents as-is.
-			"""
-			var _contents as String
-			def init(contents as String)
-				_contents = contents
-			get contents from var
-			def toString as String is override
-				return _contents
-
-		interface IObjectView
-			"""
-			TODO: document this
-			"""
-			
-			def addEntry(key as String, value as Object?)
-
-		class PrivateObjectViewForExceptionReport
-			is internal
-			implements IObjectView
-			
-			var _tw as TextWriter
-			var _rowNum as int
-			var _objects as ObjectCatalog?
-			
-			def init(tw as TextWriter, rowNum as int, objects as ObjectCatalog?)
-				_tw = tw
-				_rowNum = rowNum
-				_objects = objects
-			
-			get rowNum from var
-			
-			def addEntry(key as String, value as Object?)
-				key = CobraCore.htmlEncode(key).replace('  ', '&nbsp;&nbsp;')  # the double space replace here works well with the indentation scheme used in AssertException
-				html = CobraCore._htmlForValue(value, _objects)
-				CobraCore._writeObjectPair2(_tw, _rowNum%2+1, key, html)
-				_rowNum += 1
-				
-		class ObjectCatalog
-
-			test
-				cat = ObjectCatalog()
-				assert cat.maxSerialNum == 0
-
-				a = Object()
-				cat.record(a)
-				assert cat.maxSerialNum == 1000
-				assert cat.contains(a)
-				assert cat.serialNumFor(a) == 1000
-				assert cat.objectFor(1000) is a
-
-				b = Object()
-				cat.record(b)
-				assert cat.maxSerialNum == 1001
-				assert cat.serialNumFor(a) == 1000
-				assert cat.serialNumFor(b) == 1001
-				assert cat.objectFor(1000) is a
-				assert cat.objectFor(1001) is b
-
-			var _objectToSerialNum = Dictionary<of Object, int>()
-			var _serialNumToObject = Dictionary<of int, Object>()
-			var _minSerialNum = 0
-			var _maxSerialNum = 0
-
-			def init
-				pass
-
-			get minSerialNum from var
-			
-			get maxSerialNum from var
-
-			def contains(obj as Object) as bool
-				return _objectToSerialNum.containsKey(obj)
-
-			def contains(serialNum as int) as bool
-				return _serialNumToObject.containsKey(serialNum)
-
-			def record(obj as Object)
-				ensure .contains(obj)
-				if not _objectToSerialNum.containsKey(obj)
-					_maxSerialNum = _objectToSerialNum.count + 1000
-					_objectToSerialNum.add(obj, _maxSerialNum)
-					_serialNumToObject.add(_maxSerialNum, obj)
-					if _minSerialNum == 0
-						_minSerialNum = _maxSerialNum
-
-			def serialNumFor(obj as Object) as int
-				require
-					.contains(obj)
-				ensure
-					result >= 1000
-					.contains(result)
-				body
-					return _objectToSerialNum[obj]
-
-			def objectFor(serialNum as int) as Object
-				require
-					.contains(serialNum)
-				ensure 
-					.contains(result)
-				body
-					return _serialNumToObject[serialNum]
-
-		class CobraInfo
-			is fake
-
-			get cobraPath as String is shared
+			def noOp(args as vari dynamic?) as dynamic?
 				"""
-				The Path of the cobra compiler executable that created this program.
+				No operation. Primarily used in Cobra's own test suite to consume a local variable to avoid undesired warnings.
+				Takes any number of values and returns an undefined value of type `dynamic?` for maximum flexibility.
 				"""
-				pass
+				return 0
 
-		interface IHasSourceSite
-			get sourceSite as SourceSite
-
-		class SourceSite
-			"""
-			A SourceSite instance captures the source location of a statement or expression, as in the
-			filename, line number, declaring class name, method name and run-time object. The Cobra
-			compiler generates SourceSite instances in various circumstances; for example, the `trace`
-			statement.
-			"""
-
-			var _fileName as String
-			var _lineNum as int
-			var _className as String
-			var _memberName as String
-			var _object as Object
-
-			def init(fileName as String, lineNum as int, className as String, memberName as String, obj as Object)
-				_fileName = fileName
-				_lineNum = lineNum
-				_className = className
-				_memberName = memberName
-				_object = obj
-
-			def toString as String is override
-				#fileName = CobraCore.toTechString(_fileName)
-				#className = CobraCore.toTechString(_className)
-				#memberName = CobraCore.toTechString(_memberName)
-				#obj = CobraCore.toTechString(_object)
-				#return '[.getType.name]([fileName], [_lineNum], [className], [memberName], [obj])'
-				return '[_fileName]:[_lineNum] in [_className].[_memberName] for object [CobraCore.toTechString(_object)]'
-
-			get fileName from var
-
-			get lineNum from var
-
-			get className from var
-
-			get memberName from var
-
-			get object from var
-
-			get runTimeClassName as String
-				return _object.getType.name
-
-			def oneLiner(sep as String) as String
-				return .oneLiner(sep, true)
-
-			def oneLiner(sep as String, willOutputDirectoryNames as bool) as String
-				test
-					si = SourceSite('Foo.cobra', 10, 'Object', 'bar', Object())
-					assert si.oneLiner('; ', true) == 'at Foo.cobra:10; in Object.bar'
-					si = SourceSite('Foo.cobra', 10, 'Foo', 'bar', Object())
-					assert si.oneLiner('; ', true) == 'at Foo.cobra:10; in Foo.bar; subclass Object'
-				body
-					sb = StringBuilder()
-					fileName = if(_fileName.length and not willOutputDirectoryNames, Path.getFileName(_fileName), _fileName)
-					sb.append('at [fileName]:[_lineNum][sep]in [_className].[_memberName]')
-					if not _object inherits Type
-						# I guess that condition would preclude reporting the subclass name in a trace statement in subclasses of Type
-						# But then those come with the system anyway (RuntimeType)
-						name = .runTimeClassName
-						if name <> _className
-							sb.append('[sep]subclass [name]')
-					return sb.toString
-
-			def htmlForAt as String
-				return .htmlForAtArgs(_fileName, _lineNum)
-
-			def htmlForAtArgs(fileName as String, lineNum as int) as String is shared
-				"""
-				Returns the HTML for the row labeled "at" in the Cobra Exception Report.
-				This will be an actual link if the environment variable COBRA_EDIT_LINK is set.
-				That's what enables clicking on sources in the report to jump to their location in a text editor.
-				"""
-				baseName = Path.getFileName(fileName)
-				dirName = Path.getDirectoryName(fileName)
-				if dirName <> ''
-					dirName = ' in ' + (dirName to !)
-				s = 'line [lineNum] of [baseName][dirName]'
-				editLink = Environment.getEnvironmentVariable('COBRA_EDIT_LINK')
-				if editLink
-					editLink = editLink.replace('FILE', fileName)  # TODO: url encode the file name
-					editLink = editLink.replace('LINE', lineNum.toString)
-					s = '<a href="[editLink]">[s]</a>'
-				return s
-
-				
-		class CobraFrame
+	class CobraDirectString
+		is fake
+		"""
+		Used internally for assert, require and ensure to encode strings that should not be passed to CobraCore.toTechString.
+		"""
+		def init(s as String)
+			pass
+		get string as String
+			return ''
 		
-			var _declClassName as String
-			var _methodName as String
-			var _fileName as String
-			var _lineNum as int is public
-			var _args as Object[]
-			var _locals as Dictionary<of String, dynamic?>
-			var _localNamesInOrder as List<of String>
+	class Html
+		"""
+		Represents HTML that doesn't need to be encoded.
+		Html.toString returns the contents as-is.
+		"""
+		var _contents as String
+		def init(contents as String)
+			_contents = contents
+		get contents from var
+		def toString as String is override
+			return _contents
+
+	interface IObjectView
+		"""
+		TODO: document this
+		"""
+		
+		def addEntry(key as String, value as Object?)
+
+	class PrivateObjectViewForExceptionReport
+		is internal
+		implements IObjectView
+		
+		var _tw as TextWriter
+		var _rowNum as int
+		var _objects as ObjectCatalog?
+		
+		def init(tw as TextWriter, rowNum as int, objects as ObjectCatalog?)
+			_tw = tw
+			_rowNum = rowNum
+			_objects = objects
+		
+		get rowNum from var
+		
+		def addEntry(key as String, value as Object?)
+			key = CobraCore.htmlEncode(key).replace('  ', '&nbsp;&nbsp;')  # the double space replace here works well with the indentation scheme used in AssertException
+			html = CobraCore._htmlForValue(value, _objects)
+			CobraCore._writeObjectPair2(_tw, _rowNum%2+1, key, html)
+			_rowNum += 1
 			
-			def init(declClassName as String, methodName as String, fileName as String, lineNum as int, args as vari Object)
-				"""
-				args should have the arg names embedded: "x", x, "y", y
-				"""
-				_declClassName = declClassName
-				_methodName = methodName
-				_fileName = fileName
-				_lineNum = lineNum
-				_args = $sharp(r'(object[])args.Clone()')
-				_locals = Dictionary<of String, dynamic?>()
-				_localNamesInOrder = List<of String>()
-				for j = 0 .. _args.length ++ 2
-					.setLocal(_args[j] to String, _args[j+1])
+	class ObjectCatalog
 
-			def setLocal(name as String, value as dynamic?)
-				if not _locals.containsKey(name)
-					_localNamesInOrder.add(name)
-				_locals[name] = value
+		test
+			cat = ObjectCatalog()
+			assert cat.maxSerialNum == 0
 
-			def dumpText(tw as TextWriter, i as int)
-				nameWidth = 8
-				tw.writeLine('\n    [i]. [this]')
-				tw.writeLine('        args')
-				for j = 0 .. _args.length ++ 2
-					tw.write(String.format('               {0} = ', (_args[j] to String).padRight(nameWidth)))
-					try
-						s = CobraCore.toTechString(_args[j+1])
-					catch e as Exception
-						s = 'ToString() Exception: ' + e.message
-					tw.writeLine(s)
-				tw.writeLine('        locals')
-				for name in _localNamesInOrder
-					if name == 'this'
-						continue
-					tw.write(String.format('               {0} = ', name.padRight(nameWidth)))
-					try
-						s = CobraCore.toTechString(_locals[name])
-					catch e as Exception
-						s = 'ToString() Exception: ' + e.message
-					tw.writeLine(s)
+			a = Object()
+			cat.record(a)
+			assert cat.maxSerialNum == 1000
+			assert cat.contains(a)
+			assert cat.serialNumFor(a) == 1000
+			assert cat.objectFor(1000) is a
 
-			def dumpHtml(tw as TextWriter, i as int, objects as ObjectCatalog)
-				# record objects
-				for localValue in _locals.values
-					if localValue
-						if .willDumpHtmlFor(localValue) # CC: combine with above statement
-							objects.record(localValue)
-				# write frame html
-				tw.writeLine
-				tw.writeLine('<tr class=frameHead> <td class=number> [i]. </td> <td class=qualifiedMember colspan=4> [_declClassName].[_methodName] </td> </tr> ')
-				tw.writeLine('<tr class=frameDetails1> <td class=indent> &nbsp; </td> <td class=label width=1> at: </td> <td class=sourceLocation colspan=3> [SourceSite.htmlForAtArgs(_fileName, _lineNum)] </td> </tr>')
-				rowNum = 1
-				for j = 0 .. _args.length ++ 2
-					name = _args[j] to String
-					value = _args[j+1] to dynamic?
-					label = if(j==0, 'args:', '')
-					tw.write('<tr class=frameDetails[rowNum%2+1]> <td class=indent> &nbsp; </td> <td class=label width=1> [label] </td> <td width=1> [name] </td> <td width=1> &nbsp;=&nbsp; </td>')
-					try
-						s = CobraCore.htmlEncode(CobraCore.toTechString(value))
-					catch e as Exception
-						s = 'ToString() Exception: ' + e.message
-					if .willDumpHtmlFor(value)
-						s = '<a class=objectDetails href=#Object[objects.serialNumFor(value to passthrough)]>[s]</a>'
-					tw.writeLine('<td> [s] </td> </tr>')
-					rowNum += 1
-				first = true
-				for name in _localNamesInOrder
-					if name == 'this'
-						continue
-					label = if(first, 'locals:', '')
-					tw.write('<tr class=frameDetails[rowNum%2+1] valign=top> <td class=indent> &nbsp; </td> <td class=label width=1> [label] </td> <td width=1> [name] </td> <td width=1> &nbsp;=&nbsp; </td>')
-					value = _locals[name]
-					try
-						s = CobraCore.htmlEncode(CobraCore.toTechString(value))
-					catch e as Exception
-						s = 'ToString() Exception: ' + e.message
-					if .willDumpHtmlFor(value)
-						s = '<a class=objectDetails href=#Object[objects.serialNumFor(value to passthrough)]>[s]</a>'
-					tw.writeLine('<td> [s] </td> </tr>')
-					first = false
-					rowNum += 1
-				tw.writeLine('<tr class=blank> <td colspan=4> &nbsp; </td> </tr>')
+			b = Object()
+			cat.record(b)
+			assert cat.maxSerialNum == 1001
+			assert cat.serialNumFor(a) == 1000
+			assert cat.serialNumFor(b) == 1001
+			assert cat.objectFor(1000) is a
+			assert cat.objectFor(1001) is b
+
+		var _objectToSerialNum = Dictionary<of Object, int>()
+		var _serialNumToObject = Dictionary<of int, Object>()
+		var _minSerialNum = 0
+		var _maxSerialNum = 0
+
+		def init
+			pass
+
+		get minSerialNum from var
+		
+		get maxSerialNum from var
+
+		def contains(obj as Object) as bool
+			return _objectToSerialNum.containsKey(obj)
+
+		def contains(serialNum as int) as bool
+			return _serialNumToObject.containsKey(serialNum)
+
+		def record(obj as Object)
+			ensure .contains(obj)
+			if not _objectToSerialNum.containsKey(obj)
+				_maxSerialNum = _objectToSerialNum.count + 1000
+				_objectToSerialNum.add(obj, _maxSerialNum)
+				_serialNumToObject.add(_maxSerialNum, obj)
+				if _minSerialNum == 0
+					_minSerialNum = _maxSerialNum
+
+		def serialNumFor(obj as Object) as int
+			require
+				.contains(obj)
+			ensure
+				result >= 1000
+				.contains(result)
+			body
+				return _objectToSerialNum[obj]
+
+		def objectFor(serialNum as int) as Object
+			require
+				.contains(serialNum)
+			ensure 
+				.contains(result)
+			body
+				return _serialNumToObject[serialNum]
+
+	class CobraInfo
+		is fake
+
+		get cobraPath as String is shared
+			"""
+			The Path of the cobra compiler executable that created this program.
+			"""
+			pass
+
+	interface IHasSourceSite
+		get sourceSite as SourceSite
+
+	class SourceSite
+		"""
+		A SourceSite instance captures the source location of a statement or expression, as in the
+		filename, line number, declaring class name, method name and run-time object. The Cobra
+		compiler generates SourceSite instances in various circumstances; for example, the `trace`
+		statement.
+		"""
+
+		var _fileName as String
+		var _lineNum as int
+		var _className as String
+		var _memberName as String
+		var _object as Object
+
+		def init(fileName as String, lineNum as int, className as String, memberName as String, obj as Object)
+			_fileName = fileName
+			_lineNum = lineNum
+			_className = className
+			_memberName = memberName
+			_object = obj
+
+		def toString as String is override
+			#fileName = CobraCore.toTechString(_fileName)
+			#className = CobraCore.toTechString(_className)
+			#memberName = CobraCore.toTechString(_memberName)
+			#obj = CobraCore.toTechString(_object)
+			#return '[.getType.name]([fileName], [_lineNum], [className], [memberName], [obj])'
+			return '[_fileName]:[_lineNum] in [_className].[_memberName] for object [CobraCore.toTechString(_object)]'
+
+		get fileName from var
+
+		get lineNum from var
+
+		get className from var
+
+		get memberName from var
+
+		get object from var
+
+		get runTimeClassName as String
+			return _object.getType.name
+
+		def oneLiner(sep as String) as String
+			return .oneLiner(sep, true)
+
+		def oneLiner(sep as String, willOutputDirectoryNames as bool) as String
+			test
+				si = SourceSite('Foo.cobra', 10, 'Object', 'bar', Object())
+				assert si.oneLiner('; ', true) == 'at Foo.cobra:10; in Object.bar'
+				si = SourceSite('Foo.cobra', 10, 'Foo', 'bar', Object())
+				assert si.oneLiner('; ', true) == 'at Foo.cobra:10; in Foo.bar; subclass Object'
+			body
+				sb = StringBuilder()
+				fileName = if(_fileName.length and not willOutputDirectoryNames, Path.getFileName(_fileName), _fileName)
+				sb.append('at [fileName]:[_lineNum][sep]in [_className].[_memberName]')
+				if not _object inherits Type
+					# I guess that condition would preclude reporting the subclass name in a trace statement in subclasses of Type
+					# But then those come with the system anyway (RuntimeType)
+					name = .runTimeClassName
+					if name <> _className
+						sb.append('[sep]subclass [name]')
+				return sb.toString
+
+		def htmlForAt as String
+			return .htmlForAtArgs(_fileName, _lineNum)
+
+		def htmlForAtArgs(fileName as String, lineNum as int) as String is shared
+			"""
+			Returns the HTML for the row labeled "at" in the Cobra Exception Report.
+			This will be an actual link if the environment variable COBRA_EDIT_LINK is set.
+			That's what enables clicking on sources in the report to jump to their location in a text editor.
+			"""
+			baseName = Path.getFileName(fileName)
+			dirName = Path.getDirectoryName(fileName)
+			if dirName <> ''
+				dirName = ' in ' + (dirName to !)
+			s = 'line [lineNum] of [baseName][dirName]'
+			editLink = Environment.getEnvironmentVariable('COBRA_EDIT_LINK')
+			if editLink
+				editLink = editLink.replace('FILE', fileName)  # TODO: url encode the file name
+				editLink = editLink.replace('LINE', lineNum.toString)
+				s = '<a href="[editLink]">[s]</a>'
+			return s
+
 			
-			def willDumpHtmlFor(obj as Object?) as bool
-				return CobraCore.willDumpHtmlFor(obj)
-				
-			def toString as String is override
-				return 'def [_declClassName].[_methodName] at line [_lineNum]'
-
-			def copy as CobraFrame
-				return .memberwiseClone to CobraFrame
-
-		class FallThroughException
-			inherits Exception
-
-			var _info as Object?
-
-			def init
-				.init(nil)
-				pass
-
-			def init(info as Object?)
-				base.init
-				_info = info
-
-			def init(info as Object?, innerExc as Exception?)
-				base.init(nil, innerExc)
-				_info = info
-
-			get message as String is override
-				return 'info=[CobraCore.toTechString(_info)]'
-
-			get info as Object?
-				return _info
-
-		class DynamicOperationException
-			inherits Exception
+	class CobraFrame
+	
+		var _declClassName as String
+		var _methodName as String
+		var _fileName as String
+		var _lineNum as int is public
+		var _args as Object[]
+		var _locals as Dictionary<of String, dynamic?>
+		var _localNamesInOrder as List<of String>
+		
+		def init(declClassName as String, methodName as String, fileName as String, lineNum as int, args as vari Object)
 			"""
-			The base class for all dynamic operation exceptions.
+			args should have the arg names embedded: "x", x, "y", y
 			"""
+			_declClassName = declClassName
+			_methodName = methodName
+			_fileName = fileName
+			_lineNum = lineNum
+			_args = $sharp(r'(object[])args.Clone()')
+			_locals = Dictionary<of String, dynamic?>()
+			_localNamesInOrder = List<of String>()
+			for j = 0 .. _args.length ++ 2
+				.setLocal(_args[j] to String, _args[j+1])
 
-			def init(message as String)
-				.init(message, nil)
+		def setLocal(name as String, value as dynamic?)
+			if not _locals.containsKey(name)
+				_localNamesInOrder.add(name)
+			_locals[name] = value
 
-			def init(message as String, innerExc as Exception?)
-				base.init(message, innerExc)
+		def dumpText(tw as TextWriter, i as int)
+			nameWidth = 8
+			tw.writeLine('\n    [i]. [this]')
+			tw.writeLine('        args')
+			for j = 0 .. _args.length ++ 2
+				tw.write(String.format('               {0} = ', (_args[j] to String).padRight(nameWidth)))
+				try
+					s = CobraCore.toTechString(_args[j+1])
+				catch e as Exception
+					s = 'ToString() Exception: ' + e.message
+				tw.writeLine(s)
+			tw.writeLine('        locals')
+			for name in _localNamesInOrder
+				if name == 'this'
+					continue
+				tw.write(String.format('               {0} = ', name.padRight(nameWidth)))
+				try
+					s = CobraCore.toTechString(_locals[name])
+				catch e as Exception
+					s = 'ToString() Exception: ' + e.message
+				tw.writeLine(s)
 
-		class UnknownMemberException
-			inherits DynamicOperationException
+		def dumpHtml(tw as TextWriter, i as int, objects as ObjectCatalog)
+			# record objects
+			for localValue in _locals.values
+				if localValue and .willDumpHtmlFor(localValue)
+					objects.record(localValue to !)
+			# write frame html
+			tw.writeLine
+			tw.writeLine('<tr class=frameHead> <td class=number> [i]. </td> <td class=qualifiedMember colspan=4> [_declClassName].[_methodName] </td> </tr> ')
+			tw.writeLine('<tr class=frameDetails1> <td class=indent> &nbsp; </td> <td class=label width=1> at: </td> <td class=sourceLocation colspan=3> [SourceSite.htmlForAtArgs(_fileName, _lineNum)] </td> </tr>')
+			rowNum = 1
+			for j = 0 .. _args.length ++ 2
+				name = _args[j] to String
+				value = _args[j+1] to dynamic?
+				label = if(j==0, 'args:', '')
+				tw.write('<tr class=frameDetails[rowNum%2+1]> <td class=indent> &nbsp; </td> <td class=label width=1> [label] </td> <td width=1> [name] </td> <td width=1> &nbsp;=&nbsp; </td>')
+				try
+					s = CobraCore.htmlEncode(CobraCore.toTechString(value))
+				catch e as Exception
+					s = 'ToString() Exception: ' + e.message
+				if .willDumpHtmlFor(value)
+					s = '<a class=objectDetails href=#Object[objects.serialNumFor(value to passthrough)]>[s]</a>'
+				tw.writeLine('<td> [s] </td> </tr>')
+				rowNum += 1
+			first = true
+			for name in _localNamesInOrder
+				if name == 'this'
+					continue
+				label = if(first, 'locals:', '')
+				tw.write('<tr class=frameDetails[rowNum%2+1] valign=top> <td class=indent> &nbsp; </td> <td class=label width=1> [label] </td> <td width=1> [name] </td> <td width=1> &nbsp;=&nbsp; </td>')
+				value = _locals[name]
+				try
+					s = CobraCore.htmlEncode(CobraCore.toTechString(value))
+				catch e as Exception
+					s = 'ToString() Exception: ' + e.message
+				if .willDumpHtmlFor(value)
+					s = '<a class=objectDetails href=#Object[objects.serialNumFor(value to passthrough)]>[s]</a>'
+				tw.writeLine('<td> [s] </td> </tr>')
+				first = false
+				rowNum += 1
+			tw.writeLine('<tr class=blank> <td colspan=4> &nbsp; </td> </tr>')
+		
+		def willDumpHtmlFor(obj as Object?) as bool
+			return CobraCore.willDumpHtmlFor(obj)
+			
+		def toString as String is override
+			return 'def [_declClassName].[_methodName] at line [_lineNum]'
 
-			var _obj as Object
-			var _name as String
-			var _type as Type
+		def copy as CobraFrame
+			return .memberwiseClone to CobraFrame
 
-			def init(obj as Object, name as String, type as Type)
-				.init(obj, name, type, nil)
+	class FallThroughException
+		inherits Exception
 
-			def init(obj as Object, name as String, type as Type, innerExc as Exception?)
-				base.init('obj=[CobraCore.toTechString(obj)], name=[CobraCore.toTechString(name)], type=[type]', innerExc)
-				_obj = obj
-				_name = name
-				_type = type
+		var _info as Object?
 
-		class CannotReadPropertyException
-			inherits UnknownMemberException
+		def init
+			.init(nil)
+			pass
 
-			# CC: axe init()s
+		def init(info as Object?)
+			base.init
+			_info = info
 
-			def init(obj as Object, name as String, type as Type)
-				.init(obj, name, type, nil)
+		def init(info as Object?, innerExc as Exception?)
+			base.init(nil, innerExc)
+			_info = info
 
-			def init(obj as Object, name as String, type as Type, innerExc as Exception?)
-				base.init(obj, name, type, innerExc)
+		get message as String is override
+			return 'info=[CobraCore.toTechString(_info)]'
 
-		class CannotWritePropertyException
-			inherits UnknownMemberException
+		get info as Object?
+			return _info
 
-			# CC: axe init()s
+	class DynamicOperationException
+		inherits Exception
+		"""
+		The base class for all dynamic operation exceptions.
+		"""
 
-			def init(obj as Object, name as String, type as Type)
-				.init(obj, name, type, nil)
+		def init(message as String)
+			.init(message, nil)
 
-			def init(obj as Object, name as String, type as Type, innerExc as Exception?)
-				base.init(obj, name, type, innerExc)
+		def init(message as String, innerExc as Exception?)
+			base.init(message, innerExc)
 
-		class CannotSliceTypeException
-			inherits UnknownMemberException
+	class UnknownMemberException
+		inherits DynamicOperationException
 
-			# CC: axe init()s
+		var _obj as Object
+		var _name as String
+		var _type as Type
 
-			def init(obj as Object, name as String, type as Type)
-				.init(obj, name, type, nil)
+		def init(obj as Object, name as String, type as Type)
+			.init(obj, name, type, nil)
 
-			def init(obj as Object, name as String, type as Type, innerExc as Exception?)
-				base.init(obj, name, type, innerExc)
+		def init(obj as Object, name as String, type as Type, innerExc as Exception?)
+			base.init('obj=[CobraCore.toTechString(obj)], name=[CobraCore.toTechString(name)], type=[type]', innerExc)
+			_obj = obj
+			_name = name
+			_type = type
 
-		class CannotInTypeException
-			inherits UnknownMemberException
+	class CannotReadPropertyException
+		inherits UnknownMemberException
 
-			# CC: axe init()s
+		# CC: axe init()s
 
-			def init(obj as Object, name as String, type as Type)
-				.init(obj, name, type, nil)
+		def init(obj as Object, name as String, type as Type)
+			.init(obj, name, type, nil)
 
-			def init(obj as Object, name as String, type as Type, innerExc as Exception?)
-				base.init(obj, name, type, innerExc)
+		def init(obj as Object, name as String, type as Type, innerExc as Exception?)
+			base.init(obj, name, type, innerExc)
 
-		class CannotCompareException
-			inherits DynamicOperationException
+	class CannotWritePropertyException
+		inherits UnknownMemberException
 
-			var _a
-			var _b
+		# CC: axe init()s
 
-			def init(a, b)
-				.init(a, b, nil)
+		def init(obj as Object, name as String, type as Type)
+			.init(obj, name, type, nil)
 
-			def init(a, b, innerExc as Exception?)
-				base.init('a=[a], b=[b]', innerExc)
-				#base.init('a=[CobraCore.toTechString(a)], a.getType=[a.getType.name], b=[CobraCore.toTechString(b)], b.getType=[b.getType.name]', innerExc)
-				_a = a
-				_b = b
+		def init(obj as Object, name as String, type as Type, innerExc as Exception?)
+			base.init(obj, name, type, innerExc)
+
+	class CannotSliceTypeException
+		inherits UnknownMemberException
+
+		# CC: axe init()s
+
+		def init(obj as Object, name as String, type as Type)
+			.init(obj, name, type, nil)
+
+		def init(obj as Object, name as String, type as Type, innerExc as Exception?)
+			base.init(obj, name, type, innerExc)
+
+	class CannotInTypeException
+		inherits UnknownMemberException
+
+		# CC: axe init()s
+
+		def init(obj as Object, name as String, type as Type)
+			.init(obj, name, type, nil)
+
+		def init(obj as Object, name as String, type as Type, innerExc as Exception?)
+			base.init(obj, name, type, innerExc)
+
+	class CannotCompareException
+		inherits DynamicOperationException
+
+		var _a
+		var _b
+
+		def init(a, b)
+			.init(a, b, nil)
+
+		def init(a, b, innerExc as Exception?)
+			base.init('a=[a], b=[b]', innerExc)
+			#base.init('a=[CobraCore.toTechString(a)], a.getType=[a.getType.name], b=[CobraCore.toTechString(b)], b.getType=[b.getType.name]', innerExc)
+			_a = a
+			_b = b
