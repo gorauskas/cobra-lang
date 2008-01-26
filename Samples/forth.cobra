@@ -1,0 +1,453 @@
+"""
+forth.cobra
+
+This is a budding FORTH interpreter featuring:
+* basic stack item manipulation (dup, over, swap, drop, ...)
+* stack manipulation (0SP aka stack.clear)
+* math (+ - * / %)
+* definitions (; NAME CODE :  -OR-  def NAME CODE end)
+* You can multiply strings as in: foo 3 * -- foofoofoo
+
+...and not much else right now.
+
+Run with no arguments to see some example FORTH get executed.
+
+Run with -i for "interactive mode" to enter your own FORTH.
+Enter "quit" or "exit" to do so.
+
+Forth tutorial:
+http://www.softsynth.com/pforth/pf_tut.htm
+
+In addition to some extra synonym words which you'll see in the list of words, this particular
+interperter also accepts 'def' for ':' and 'end' for ';'. So these are equivalent:
+
+	: AVERAGE ( a b -- avg ) + 2 / ;
+	def AVERAGE ( a b -- avg ) + 2 / end
+
+TODO:
+	[ ] Text in parens is a comment.
+	[ ] variables
+	[ ] Could do the built-in definitions by tagging their methods with attributes
+	[ ] Support fractional numbers. In other words, decimals.
+	[ ] Automated tests.
+	[ ] Consider making Definition abstract with concrete subs: BuiltInDefinition, WordsDefinition with possible DelegateDefinition as well
+	[ ] Could preserve the comment in a definition that immediatel follows the definition's name and store it with the definition. Then could offer it back later with a help command.
+	[ ] Shouldn't there be some kind of quoting character so a name can be pushed on the stack without invoking it? Probably have not gotten that far in the tutorial.
+	[ ] More FORTH:
+- In general, cover everything at http://www.softsynth.com/pforth/pf_tut.htm
+ROT ( a b c -- b c a , ROTate third item to top ) 
+PICK ( ... v3 v2 v1 v0 N -- ... v3 v2 v1 v0 vN ) 
+      0 PICK is equivalent to DUP
+      1 PICK is equivalent to OVER
+DROP ( n -- , remove top of stack ) 
+?DUP ( n -- n n | 0 , duplicate only if non-zero, '|' means OR ) 
+-ROT ( a b c -- c a b , rotate top to third position ) 
+2SWAP ( a b c d -- c d a b , swap pairs ) 
+2OVER ( a b c d -- a b c d a b , leapfrog pair ) 
+2DUP ( a b -- a b a b , duplicate pair ) 
+2DROP ( a b -- , remove pair ) 
+NIP ( a b -- b , remove second item from stack ) 
+TUCK ( a b -- b a b , copy top item to third position )  
+
+Fast math operations:
+1+ 1- 2+ 2- 2* 2/
+
+Define new words:
+      : AVERAGE ( a b -- avg ) + 2/ ;
+"""
+
+
+class ForthMachine
+
+	var _stack as Stack<of Word>
+	var _definitions as Dictionary<of Word, Definition>
+	var _didQuit as bool
+	var _verbosity = 1
+	
+	def init
+		_stack = Stack<of Word>()
+		_definitions = Dictionary<of Word, Definition>()
+
+		.define('quit', 'built-in:quit')
+		.define('exit', 'built-in:quit')
+
+		.define('words', 'built-in:printDefinitionNames')
+
+		.define('.', 'built-in:printTop')
+		.define('.S', 'built-in:printStack')
+		.define('stack.print', 'built-in:printStack')
+
+		.define('0SP', 'built-in:clearStack')
+		.define('stack.clear', 'built-in:clearStack')
+
+		.define('drop', 'built-in:drop')
+		.define('dup', 'built-in:dup')
+		.define('over', 'built-in:over')
+		.define('swap', 'built-in:swap')
+
+		.define('+', 'built-in:add')
+		.define('-', 'built-in:sub')
+		.define('*', 'built-in:mul')
+		.define('/', 'built-in:div')
+		.define('%', 'built-in:mod')
+
+	get didQuit from var
+
+	pro verbosity from var
+
+	## Fundamental operations to implement a FORTH machine
+
+	def wordFor(text as String) as Word
+		require text.trim.length
+		return Word(text)
+
+	def wordFor(i as int) as Word
+		return Word(i)
+
+	def push(word as Word)
+		require word.isString implies word.string.trim.length
+		_stack.push(word)
+
+	def push(word as String)
+		.push(Word(word))
+
+	def peek as Word
+		if _stack.count
+			return _stack.peek to !
+		else
+			print 'ERROR: Stack is empty.'
+			return Word(0)
+
+	def pop as Word
+		if _stack.count
+			return _stack.pop to !
+		else
+			print 'ERROR: Stack is empty.'
+			return Word(0)
+
+	def define(word as String, definition as String)
+		words = for rawWord in definition.split where rawWord.trim.length>0 get .wordFor(rawWord.trim)  # CC: axe > 0
+		_definitions[.wordFor(word)] = Definition(words)
+
+	def define(word as Word, definition as IEnumerable<of Word>)
+		_definitions[word] = Definition(definition)
+
+	def definitionFor(word as Word) as Definition?
+		result as Definition?
+		if _definitions.tryGetValue(word, out result)
+			return result to !
+		else
+			return nil
+
+	def invoke(name as Word, definition as Definition)
+		if definition.count
+			word = definition[0]
+			if word.toString.startsWith('built-in:')
+				methodName = word.toString['built-in:'.length:]
+				methodName = methodName[0].toString.toUpper + methodName[1:] # because at run-time, method names are capped for compatibility with C# and VB
+				method = .getType.getMethod(methodName)
+				method.invoke(this, nil)
+			else
+				for word in definition
+					if word.isString
+						defin = .definitionFor(word)
+						if defin
+							.invoke(word, defin)
+							continue
+					.push(word)
+		else
+			# empty definition is a no-op
+			pass
+
+	def error(message as String)
+		print 'ERROR:', message
+
+
+	## Conveniences
+
+	def processInput(input as String)
+		mode = 0  # 0 - normal, 1 - define
+		if _verbosity
+			print 'input>', input
+		rawWords = input.trim.split
+		for rawWord in rawWords
+			rawWord = rawWord.trim
+			if not rawWord.length
+				continue
+			branch mode
+				on 0  # normal
+					if rawWord in [':', 'def']
+						defWords = List<of Word>()
+						mode = 1  # into define mode
+					else
+						word = .wordFor(rawWord)
+						if word.isString
+							defin = .definitionFor(word)
+							if defin
+								.invoke(word, defin)
+								continue
+						.push(word)
+				on 1  # definition mode
+					if rawWord in [';', 'end']
+						.define(defWords[0], defWords[1:])
+						defWords.clear
+						mode = 0  # back to normal
+					else
+						defWords.add(.wordFor(rawWord))
+		if _verbosity
+			print 'stack> ' stop
+			.printStack
+			print
+
+
+	## Built-in definitions
+
+	def quit
+		_didQuit = true
+
+	def printDefinitionNames
+		keys = List<of Word>(_definitions.keys)
+		keys.sort
+		for key in keys
+			print '[key] ' stop
+		print
+
+	def printTop
+		print .pop
+
+	def printStack
+		for word in Stack<of Word>(_stack)  # Stack wrapper reverses the order so right most printed element is the top of the stack
+			print '[word] | ' stop
+		print
+
+
+	## Built-ins: whole stack manipulation
+
+	def clearStack
+		_stack.clear
+
+
+	## Built-ins: stack element manipulations
+	
+	def drop
+		.pop
+
+	def dup
+		.push(.peek)
+
+	def over
+		"""
+		a b -- a b a
+		"""
+		b = .pop
+		a = .pop
+		.push(a)
+		.push(b)
+		.push(a)
+
+	def swap
+		"""
+		a b -- b a
+		"""
+		b = .pop
+		a = .pop
+		.push(b)
+		.push(a)
+
+
+	## Built-ins: arithmetic
+	
+	def add
+		b = .pop
+		a = .pop
+		if a.isInt and b.isInt
+			.push(.wordFor(a.int + b.int))
+		else if a.isString and b.isString
+			.push(.wordFor(a.string + b.string))
+		else
+			.error('Cannot add "[a]" and "[b]".')
+
+	def sub
+		b = .pop
+		a = .pop
+		if a.isInt and b.isInt
+			.push(.wordFor(a.int - b.int))
+		else
+			.error('Cannot subtract "[a]" and "[b]".')
+
+	def mul
+		b = .pop
+		a = .pop
+		if a.isInt and b.isInt
+			.push(.wordFor(a.int * b.int))
+			return
+		else if a.isString and b.isInt
+			s = a.string
+			i = b.int
+		else if a.isInt and b.isString
+			s = b.string
+			i = a.int
+		else
+			.error('Cannot add "[a]" and "[b]".')
+		sb = StringBuilder()
+		for j = 0 .. i
+			sb.append(s)
+		.push(.wordFor(sb.toString))
+
+	def div
+		b = .pop
+		a = .pop
+		if a.isInt and b.isInt
+			.push(.wordFor(a.int // b.int))
+		else
+			.error('Cannot divide "[a]" and "[b]".')
+
+	def mod
+		b = .pop
+		a = .pop
+		if a.isInt and b.isInt
+			.push(.wordFor(a.int % b.int))
+		else
+			.error('Cannot modulate "[a]" and "[b]".')
+
+
+class Word
+	implements IComparable<of Word>
+
+	enum WordType
+		String
+		Int
+
+	var _which as WordType
+	var _i as int
+	var _s as String?
+
+	def init(text as String)
+		if int.tryParse(text, out _i)
+			_which = WordType.Int
+		else
+			_s = text
+			_which = WordType.String
+
+	def init(i as int)
+		_i = i
+		_which = WordType.Int
+
+	get isInt as bool
+		return _which == WordType.Int
+
+	get int as int
+		require .isInt
+		return _i
+
+	get isString as bool
+		return _which == WordType.String
+
+	get string as String
+		require .isString
+		return _s to !
+
+	def equals(other as Object?) as bool is override
+		if other inherits Word
+			if _which == other._which
+				branch _which
+					on WordType.String: return _s == other._s
+					on WordType.Int: return _i == other._i
+			return false
+		else
+			return false
+	
+	def compareTo(other as Word) as int
+		if .isInt
+			if other.isInt
+				return .int.compareTo(other.int)
+			else
+				return -1
+		else if .isString
+			if other.isString
+				return .string.compareTo(other.string)
+			else
+				return 1
+		else
+			throw FallThroughException(other)
+
+	def getHashCode as int is override
+		branch _which
+			on WordType.String: return _s.getHashCode
+			on WordType.Int: return _i.getHashCode
+		throw FallThroughException(_which)
+
+	def toString as String is override
+		branch _which
+			on WordType.String
+				if _s == ''
+					return '(EMPTY-STRING)'
+				if _s.trim == ''
+					return '(BLANK-STRING)'
+				return _s to !
+			on WordType.Int: return _i.toString
+		return ''
+
+	def toTechString as String
+		branch _which
+			on WordType.String: return '[.getType.name](string, "[_s]")'
+			on WordType.Int: return '[.getType.name](int, "[_i]")'
+		throw FallThroughException(_which)
+
+
+class Definition
+	inherits List<of Word>
+
+	def init(words as IEnumerable<of Word>)
+		base.init(words)
+
+
+class Program
+
+	shared
+
+		def main
+			print 'FORTH interpeter written in Cobra [CobraCore.version]'
+			args = CobraCore.commandLineArgs
+			if args.count > 1 and args[1] == '-i'
+				.interactive
+			else
+				.runExamples
+				print 'Run with -i for interactive mode.'
+
+		def runExamples
+			print 'Examples/tests:'
+			print
+			fm = ForthMachine()
+			fm.printDefinitionNames
+			fm.processInput('1 .')
+			fm.processInput('1 2 +')
+			fm.processInput('stack.clear')
+			fm.processInput('2 dup + .')
+			fm.processInput('1 3 swap')
+			fm.processInput('drop drop')
+			fm.processInput('3 5 over')
+#			fm.processInput(': AVERAGE ( a b -- avg ) + 2 / ; words stack.clear 10 20 AVERAGE')
+			fm.processInput(': AVERAGE + 2 / ; words stack.clear 10 20 AVERAGE .')
+			fm.processInput('def double 2 * end  2  double dup .   double dup .  double dup .  drop')
+
+		def interactive
+			print 'Enter "quit" or "exit" to do so.'
+			print
+			fm = ForthMachine()
+			fm.verbosity = 0
+			print 'words:'
+			fm.printDefinitionNames
+			print
+			while true
+				print 'forth> ' stop
+				input = Console.readLine
+				if input
+					fm.processInput(input)
+					if fm.didQuit
+						break
+					print 'stack> ' stop
+					fm.printStack
+					print
+				else
+					break
