@@ -199,12 +199,15 @@ class Compiler
 	def compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool)
 		if .options.boolValue('reveal-internal-exceptions')
 			_compileFilesNamed(paths, writeTestInvocation)
+			return
 		else
 			try
 				_compileFilesNamed(paths, writeTestInvocation)
-			catch exc as Exception		
+			catch StopCompilation
+				throw
+			catch exc as Exception
+				# unexpected exception -- only StopCompilation should be thrown
 				if exc inherits SourceException
-					# these exceptions should never get through
 					if exc.hasSourceSite
 						.recordError(InternalError(exc.fileName, exc.lineNum, exc.message, exc))
 					else
@@ -221,7 +224,10 @@ class Compiler
 						.recordError(InternalError(exc.message, exc))
 				else
 					.recordError(InternalError(exc.message, exc))
-		.printMessages
+				.printMessages
+				throw StopCompilation(this)
+			success
+				.printMessages
 
 	def _compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool)
 		.parseFilesNamed(paths)
