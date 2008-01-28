@@ -465,7 +465,7 @@ class AbstractMethod
 	inherits BoxMember
 	"""
 	The abstract ancestor class for
-		Constructor
+		Initializer
 		Method
 		PropertyXetter
 
@@ -927,7 +927,7 @@ class AbstractMethod
 		sw.dedentAndWrite('}\n')
 
 
-class Constructor  # CC: rename to initializer
+class Initializer
 	inherits AbstractMethod
 
 	def init(token as IToken, box as Box, paramsList as List<of Param>, isNames as List<of String>, attribs as AttributeList, docString as String)
@@ -936,10 +936,10 @@ class Constructor  # CC: rename to initializer
 		_stmts = List<of Stmt>()
 
 	get englishName as String is override
-		return 'constructor'
+		return 'initializer'
 
 	get hasVariArgs as bool
-		assert false, 'TODO: complete Constructor.hasVariArgs'
+		assert false, 'TODO: complete Initializer.hasVariArgs'
 		return false
 
 	get isCallable as bool is override
@@ -952,11 +952,11 @@ class Constructor  # CC: rename to initializer
 		pass
 
 	def usesBase is override
-		# constructors cannot be virtual and don't require "is new"
+		# initializers cannot be virtual and don't require "is new"
 		pass
 
 	def checkForUnmarkedOverrideOrNew is override
-		# constructors don't say override or new
+		# initializers don't say override or new
 		pass
 
 	get lastToken as IToken
@@ -996,9 +996,9 @@ class Constructor  # CC: rename to initializer
 				if stmt inherits DotExpr
 					if stmt.left inherits BaseLit
 						# TODO: after switching to byte code gen, it would be nice to relax this a bit, by say allowing statements that use args and locals, but can't set class state by, for example, setting class vars or calling members
-						stmt.recordError('The base constructor can only be invoked in the first statement.')
+						stmt.recordError('The base initializer can only be invoked in the first statement.')
 					else if stmt.left inherits ThisLit and ((stmt.right inherits MemberExpr and (stmt.right to MemberExpr).name == 'init') or (stmt.right inherits CallExpr and (stmt.right to CallExpr).name == 'init'))  # CC: axe casts
-						stmt.recordError('Another constructor can only be invoked in the first statement.')
+						stmt.recordError('Another initializer can only be invoked in the first statement.')
 			first = false
 
 				
@@ -1008,21 +1008,21 @@ class Constructor  # CC: rename to initializer
 		base.innerWriteSharpDef(sw)
 		.writeSharpAttribs(sw)
 		first = if(_stmts.count, _stmts[0], nil)
-		callConstructor as String? = nil
+		callInitializer as String? = nil
 		if first inherits DotExpr
 			if first.left inherits ThisOrBaseLit
 				if (firstRight = first.right) inherits IDotRightExpr
 					if firstRight.name == 'init'
-						callConstructor = (first.left to ThisOrBaseLit).asSharp
+						callInitializer = (first.left to ThisOrBaseLit).asSharp
 						args = firstRight.args
 						Stmt.inInitCall = true
 						didSetInInitCall = true
 		.writeSharpIsNames(sw)
 		sw.write(' [.box.rootName]')
 		.writeSharpParams(sw)
-		if callConstructor
+		if callInitializer
 			sw.writeAndIndent('\n')
-			sw.write(': [callConstructor](')
+			sw.write(': [callInitializer](')
 			sep = ''
 			for arg in args
 				sw.write(sep)
@@ -1033,7 +1033,7 @@ class Constructor  # CC: rename to initializer
 			if didSetInInitCall
 				assert Stmt.inInitCall  # make sure it wasn't reset somewhere else
 				Stmt.inInitCall = false
-		.writeSharpImp(sw, if(callConstructor, true, false))
+		.writeSharpImp(sw, if(callInitializer, true, false))
 		if _requirePart
 			_requirePart.writeSharpMethod(sw)
 		if _ensurePart

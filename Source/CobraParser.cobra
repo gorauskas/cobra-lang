@@ -578,7 +578,7 @@ class Parser
 
 	def makeList(t as System.Collections.IList, u as System.Collections.IList) as System.Collections.IList
 		# This feels awkward as hell, but it's a .NET typing thing, not a Cobra thing.
-		# I need List<of GenericParam> in the my local code for declaring generics, but the various box constructors need to accept List<of IType>
+		# I need List<of GenericParam> in the my local code for declaring generics, but the various box inits need to accept List<of IType>
 		# TODO: remove this somehow. Maybe Cobra could have a promotion feature:
 		# List<of IType>(paramsList promote to IEnumerable<of IType>)
 		# "promote to" works for generics where the new promo type has parameter types that are the same or ancestors to the original parameter types *and* ... ???
@@ -1041,7 +1041,7 @@ class Parser
 		name = opener.value to String
 		curBox = .curBox
 		if name==curBox.name or Utils.capped(name)==curBox.name
-			.throwError('Method names cannot be the same as their enclosing [curBox.englishName]. Use `def init` for creating a constructor or choose another name.')  # TODO list the enclosing types location
+			.throwError('Method names cannot be the same as their enclosing [curBox.englishName]. Use `def init` for creating an initializer/constructor or choose another name.')  # TODO list the enclosing types location
 		overload as MemberOverload? = nil
 		other = curBox.declForName(name)
 		if other
@@ -1108,12 +1108,12 @@ class Parser
 			docString = .docString
 		if name == 'init'
 			if curBox inherits Interface
-				.throwError('Cannot declare a constructor for an interface.')
+				.throwError('Cannot declare an initializer for an interface.')
 			if returnType is not .typeProvider.voidType
 				.throwError('Cannot declare a return type for an initializer.')
 			if implementsType
 				.throwError('Cannot specify `implements` for an initializer.')
-			method = Constructor(token, .curBox, paramsList, isNames, attribs, docString)
+			method = Initializer(token, .curBox, paramsList, isNames, attribs, docString)
 		else
 			method = Method(token, .curBox, name, paramsList, returnType, implementsType, isNames, attribs, docString)
 		if nothingMore
@@ -1425,7 +1425,7 @@ class Parser
 			type = TypeProxy(_typeProvider.dynamicType)  # the default type for a parameter is dynamic
 			isMissingType = true
 		# note: isTypeless is currently used to generate a warning in .paramDecls above, but in the future it may also be needed for when parameter types are inferred for anon methods
-		p = Param(token, type) # CC: put property set in constructor
+		p = Param(token, type) # CC: put property set in initializer (absorb next line)
 		p.isMissingType = isMissingType
 		return p
 

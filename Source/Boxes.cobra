@@ -601,7 +601,7 @@ class Box
 		parameters which are all GenericParam (as opposed to other types
 		such as `int` or a given class).
 		"""
-		# TODO: make this more efficient, maybe by computing in the constructor
+		# TODO: make this more efficient, maybe by computing in the initializer
 		if _genericDef
 			return false
 		else if _genericParams.count
@@ -886,7 +886,7 @@ class Box
 			isNames = _isNamesForMethodInfo(conInfo)
 			attribs = _attribsForMethodInfo(conInfo)
 			docString = ''  # TODO: get doc string for class?
-			initer = Constructor(TokenFix.empty, this, params, isNames, attribs, docString)
+			initer = Initializer(TokenFix.empty, this, params, isNames, attribs, docString)
 			overload as MemberOverload? = nil
 			other = .declForName('init')
 			if other
@@ -986,7 +986,7 @@ class Box
 			if name == 'init'
 				# there is at least one of these: System.Runtime.Remoting.Messaging.MethodCall.init
 				# TODO: What to do? Change 'def init' to 'def .init' or 'def .ctor'? No quadruple underscores.
-				# or allow it in DLLs and use a different underlying name in the decl dict for constructors like the CLR name .ctor
+				# or allow it in DLLs and use a different underlying name in the decl dict for initializers like the CLR name .ctor
 				continue
 			params = _scanParams(methInfo.getParameters)
 			isNames = _isNamesForMethodInfo(methInfo)
@@ -1375,12 +1375,12 @@ class Class
 
 	def _bindInt
 		for decl in .declsInOrder
-			if decl inherits Constructor
-				foundConstructor = true
+			if decl inherits Initializer
+				foundInitializer = true
 				break
-		if not foundConstructor
-			# TODO: this should be changed to provide cover constructors for each of the public, inherited constructors
-			.addDecl(Constructor(.token, this, List<of Param>(), ['public'], AttributeList(), ''))
+		if not foundInitializer
+			# TODO: this should be changed to provide cover initializers for each of the public, inherited initializers
+			.addDecl(Initializer(.token, this, List<of Param>(), ['public'], AttributeList(), ''))
 		# Note that the _baseClass is not told to bindInt. That would fail for classes in other namespaces and it's unnecessary
 		base._bindInt
 		if .isDescendantOf(.compiler.libraryBox('System.Attribute')) and not .name.endsWith('Attribute')
@@ -1398,7 +1398,7 @@ class Class
 		if _baseClass
 			#assert _baseClass.didBindInt
 			for decl in List<of IBoxMember>(_declsInOrder)
-				if decl inherits Method and not decl inherits Constructor  # TODO: I don't think this captures Indexers. Make a test case if needed, write: if decl.canBeOverloaded or if decl inherits ICanBeOverloaded
+				if decl inherits Method and not decl inherits Initializer  # TODO: I don't think this captures Indexers. Make a test case if needed, write: if decl.canBeOverloaded or if decl inherits ICanBeOverloaded
 					other = _baseClass.memberForName(decl.name)
 					if other
 						if decl inherits MemberOverload
