@@ -165,23 +165,23 @@ class Expr
 		if type inherits NilableType
 			return _isSequence(type.theWrappedType to passthrough)
 		# TODO: check for ISliceable which would have a .getSlice
-		if type.isDescendantOf(.compiler.libraryType('System', 'String'))
+		if type.isDescendantOf(.compiler.libraryType('System.String'))
 			return true
-		# if type.isDescendantOf(.compiler.libraryType('System', 'Array'))
+		# if type.isDescendantOf(.compiler.libraryType('System.Array'))
 		if type inherits ArrayType
 			return true
-		if type.isDescendantOf(.compiler.libraryType('System', 'Collections', 'IList'))
+		if type.isDescendantOf(.compiler.libraryType('System.Collections.IList'))
 			return true
 		# TODO: is ArrayList redundant with IList above? I think so.
-		if type.isDescendantOf(.compiler.libraryType('System', 'Collections', 'ArrayList'))
+		if type.isDescendantOf(.compiler.libraryType('System.Collections.ArrayList'))
 			return true
-		genericList = .compiler.libraryType('System', 'Collections', 'Generic', 'List<of>')
+		genericList = .compiler.libraryType('System.Collections.Generic.List<of>')
 		if type.isDescendantOf(genericList)
 			return true
 		if type inherits Box
 			if type.genericDef is genericList
 				return true
-		genericIList = .compiler.libraryType('System', 'Collections', 'Generic', 'IList<of>')
+		genericIList = .compiler.libraryType('System.Collections.Generic.IList<of>')
 		if type.isDescendantOf(genericIList)
 			return true
 		if type inherits Box
@@ -518,7 +518,7 @@ class CallExpr
 							type = .compiler.dynamicType
 						else if lrt is .compiler.passThroughType or lrt inherits PrimitiveType  # TODO: lame: bailing out on PrimitiveType so float.parse() will work. See Tests\150-basics-two\510-number-parse.cobra
 							if _name=='toString'
-								type = .compiler.libraryType('System', 'String')
+								type = .compiler.libraryType('System.String')
 							else
 								type = .compiler.passThroughType
 						else
@@ -548,7 +548,7 @@ class CallExpr
 					#	t as Type
 					#	...
 					#	x = t()
-					if definition.type.isDynamic or definition.type.isDescendantOf(.compiler.libraryType('System', 'Type'))
+					if definition.type.isDynamic or definition.type.isDescendantOf(.compiler.libraryType('System.Type'))
 						type = .compiler.dynamicType
 					else
 						.throwError('Cannot call a variable of type [definition.type.name].')
@@ -910,7 +910,7 @@ class IdentifierExpr
 		Returns true if this identifier directly names a type.
 		"""
 		require .didBindImp
-		r = .definition inherits Box and _type.isDescendantOf(.compiler.libraryType('System', 'Type'))
+		r = .definition inherits Box and _type.isDescendantOf(.compiler.libraryType('System.Type'))
 		assert not r or not .definition.sharpName.startsWith('_lh')
 		return r
 		
@@ -1022,7 +1022,7 @@ class IdentifierExpr
 
 	def writeSharpDefForBreakdown(sw as SharpWriter)
 		sharpName = .sharpName
-		if (.type inherits TypeType or .isKindOf(.compiler.libraryType('System', 'Type'))) and .definition inherits IType and 'typeof(' not in sharpName
+		if (.type inherits TypeType or .isKindOf(.compiler.libraryType('System.Type'))) and .definition inherits IType and 'typeof(' not in sharpName
 			sw.write('typeof([.sharpName])')
 		else
 			base.writeSharpDefForBreakdown(sw)
@@ -1172,7 +1172,7 @@ class IndexExpr
 		_target.bindImp
 		args = _args
 		if args.count == 0
-			if _target.isKindOf(.compiler.libraryType('System', 'Type')) or _target.type inherits TypeType  # TODO: lameness. Make TypeType() inherit System.Type, or lose TypeType and/or have an .isAType property and use everywhere
+			if _target.isKindOf(.compiler.libraryType('System.Type')) or _target.type inherits TypeType  # TODO: lameness. Make TypeType() inherit System.Type, or lose TypeType and/or have an .isAType property and use everywhere
 				if _target inherits IPotentialTypeExpr and (pt = (_target to IPotentialTypeExpr).potentialType)
 					_type = ArrayType(pt)
 					_isArrayType = true
@@ -1259,7 +1259,7 @@ class IndexExpr
 		if parens
 			sw.write('(')
 		if _target inherits IdentifierExpr
-			if _target.isKindOf(.compiler.libraryType('System', 'Type'))
+			if _target.isKindOf(.compiler.libraryType('System.Type'))
 				# here we're favoring "Foo[]" being an array type rather than a shared indexer
 				sw.write(_target.name)
 				handled = true
@@ -1607,7 +1607,7 @@ class PostCallExpr
 		if not isArrayCreation  # CC: combine next if when if-inherits gets smarter
 			if _expr inherits IndexExpr
 				subExpr = _expr.target
-				if subExpr.isKindOf(.compiler.libraryType('System', 'Type')) or subExpr.type inherits TypeType  # TODO: more "check System.Type and TypeType" lameness
+				if subExpr.isKindOf(.compiler.libraryType('System.Type')) or subExpr.type inherits TypeType  # TODO: more "check System.Type and TypeType" lameness
 					# example: String[](10)
 					sw.write('new ')
 					if subExpr inherits IdentifierExpr
@@ -2345,12 +2345,12 @@ class StringLit
 
 	def _bindInt is override
 		if not _type
-			_type = .compiler.libraryType('System', 'String')
+			_type = .compiler.libraryType('System.String')
 		base._bindInt
 
 	def _bindImp is override
 		if not _type
-			_type = .compiler.libraryType('System', 'String')
+			_type = .compiler.libraryType('System.String')
 		base._bindImp
 
 	def toCobraSource as String is override
@@ -2410,7 +2410,7 @@ class StringSubstLit
 			catch ne as NodeException
 				.compiler.recordError(ne)
 		if not _type
-			_type = .compiler.libraryType('System', 'String')
+			_type = .compiler.libraryType('System.String')
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		if _items.count>1
@@ -2467,7 +2467,7 @@ class FormattedExpr
 	def _bindImp is override
 		base._bindImp
 		_expr.bindImp
-		_type = .compiler.libraryType('System', 'String')
+		_type = .compiler.libraryType('System.String')
 
 
 class ThisOrBaseLit

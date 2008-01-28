@@ -907,13 +907,38 @@ class Compiler
 		body
 			return .codeMemberStack.peek.findLocal(name)
 
-	def libraryType(names as vari String) as IType
+	def libraryType(qualifiedName as String) as IType
 		"""
 		Used to retrieve types such as System.String.
 		Example:
-			.compiler.libraryType('System', 'String')
-		TODO: In retrospect, the argument should just be 'System.String'
+			.compiler.libraryType('System.String')
 		"""
+		return _libraryType(qualifiedName)
+
+	def libraryBox(qualifiedName as String) as Box
+		"""
+		Returns a box from the standard library such as 'System.Object' or 'System.Collections.Generic.IEnumerable<of>'.
+		"""
+		return _libraryType(qualifiedName) to Box
+
+	def libraryClass(qualifiedName as String) as Class
+		"""
+		Returns a class from the standard library such as 'System.Object' or 'System.Collections.Generic.Dictionary<of,>'.
+		"""
+		return _libraryType(qualifiedName) to Class
+
+	var _libraryTypeCache = Dictionary<of String, IType>()
+
+	def _libraryType(qualifiedName as String) as IType
+		type as IType?
+		if _libraryTypeCache.tryGetValue(qualifiedName, out type)
+			return type to !
+		names = qualifiedName.split(c'.')
+		type = _libraryType(names to passthrough)
+		_libraryTypeCache[qualifiedName] = type to !
+		return type to !
+		
+	def _libraryType(names as vari String) as IType
 		ns as IContainer = _globalNS
 		thing as IContainer? = nil
 		for name in names
@@ -933,23 +958,6 @@ class Compiler
 		else
 			throw FallThroughException('found [name], but it is not an IType. it is [thing]')
 	
-	def libraryType(qualifiedName as String) as IType
-		# TODO: cache the result
-		names = qualifiedName.split(c'.')
-		return .libraryType(names to passthrough)
-
-	def libraryClass(qualifiedName as String) as Class
-		"""
-		Returns a class from the standard library such as 'System.Object' or 'System.Collections.Generic.Dictionary<of,>'.
-		"""
-		return .libraryType(qualifiedName) to Class
-
-	def libraryBox(qualifiedName as String) as Box
-		"""
-		Returns a box from the standard library such as 'System.Object' or 'System.Collections.Generic.IEnumerable<of>'.
-		"""
-		return .libraryType(qualifiedName) to Box
-
 	def suggestionFor(name as String) as String?
 		require name.length
 		# CC: return _unknownSuggestions.getDefault(name, nil)
