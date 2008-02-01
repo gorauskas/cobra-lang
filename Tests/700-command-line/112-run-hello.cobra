@@ -2,7 +2,7 @@ class RunNoOp
 
 	shared
 
-		var _output as String?
+		var _verbose = true
 
 		def main
 			.run('-ert:no')
@@ -15,35 +15,26 @@ class RunNoOp
 			.run('-ert:yes -include-tests:yes -dst:yes')
 		
 		def run(args as String)
-			p = .runCobraExe('[args] 110-hello.cobra', true)
-			assert p.exitCode == 0
-			assert _output.trim == 'Hello'
+			cobraPath = CobraCore.findCobraExe to !
 
-		def runCobraExe(args as String, verbose as bool) as System.Diagnostics.Process
-			.flush
-			cobraPath = CobraCore.findCobraExe
-			if cobraPath
-				p = System.Diagnostics.Process()
-				if CobraCore.isRunningOnMono
-					p.startInfo.fileName = 'mono'
-					p.startInfo.arguments = cobraPath + ' ' + args
-				else
-					p.startInfo.fileName = cobraPath
-					p.startInfo.arguments = args
-				_output = CobraCore.runAndCaptureAllOutput(p)
-				if verbose
-					print
-					print 'cobra', args
-					print '[p.startInfo.fileName] [p.startInfo.arguments]'
-					print '-------'
-					.flush
-					if _output.length
-						print _output stop
-					print '-------'
-					.flush
-				return p
-			else
-				throw FallThroughException(cobraPath)
+			if _verbose
+				print
+				print 'cobra', args
+				print '[cobraPath] [args]'
+				print '-------'
+				.flush
+			
+			p as System.Diagnostics.Process?
+			output = CobraCore.runCobraExe(cobraPath, '[args] 110-hello.cobra', out p)
+
+			if _verbose
+				if output.length
+					print output stop
+				print '-------'
+				.flush
+
+			assert p.exitCode == 0
+			assert output.trim == 'Hello'
 
 		def flush
 			CobraCore.printDestination.flush

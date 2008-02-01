@@ -629,6 +629,30 @@ namespace Cobra.Lang
 
 			## Finding cobra command line program
 
+			def runCobraExe(args as String, process as out System.Diagnostics.Process?) as String
+				"""
+				Runs cobra.exe with the given args, sets the process to the one created for cobra.exe and returns all output including stdio and stderr.
+				In addition to examining the output, you should be interested in process.exitCode which will be zero if there was no problems.
+				Uses CobraCore.findCobraExe and raises IOException if it cannot be found.
+				"""
+				cobraExePath = CobraCore.findCobraExe
+				if cobraExePath is nil or cobraExePath == ''
+					throw IOException('Cannot locate cobra.exe using CobraCore.findCobraExe. Consider invoking .findCobraExe with additional search paths and passing the result to .runCobraExe.')
+				return .runCobraExe(cobraExePath, args, out process)
+
+			def runCobraExe(cobraExePath as String, args as String, process as out System.Diagnostics.Process?) as String
+				require cobraExePath.length
+				p = System.Diagnostics.Process()
+				if CobraCore.isRunningOnMono
+					p.startInfo.fileName = 'mono'
+					p.startInfo.arguments = cobraExePath + ' ' + args
+				else
+					p.startInfo.fileName = cobraExePath
+					p.startInfo.arguments = args
+				# print '[p.startInfo.fileName] [p.startInfo.arguments]'
+				process = p
+				return CobraCore.runAndCaptureAllOutput(p)
+
 			def findCobraExe as String?
 				return .findCobraExe(nil)
 

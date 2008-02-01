@@ -292,6 +292,7 @@ class CommandLine
 				if CobraCore.isRunningOnMono
 					print 'running on Mono'
 				print 'current directory: [Environment.currentDirectory]'
+				print 'current exe: [CobraCore.exePath]'
 				print 'option dictionary:'
 				options.print
 				print 'paths:'
@@ -552,11 +553,22 @@ class CommandLine
 					value = valueStr
 		r = if(cannotProcess, nil, value)
 		return r
-			
+
 	def doCompile(paths as List<of String>) as Compiler
 		return .doCompile(paths, true, false)
 
 	def doCompile(paths as List<of String>, willPrintSuccessMsg as bool, writeTestInvocation as bool) as Compiler
+		oldPaths = List<of String>(paths)
+		paths.clear
+		for path in oldPaths
+			if File.exists(path)
+				paths.add(path)
+			else if Directory.exists(path)
+				.error('Cannot process directories in general ("[path]").')
+			else
+				.error('Cannot find file "[path]".')
+		if paths.count == 0 and not .options.buildStandardLibrary
+			.error('No files to process.')
 		c = Compiler(.verbosity)
 		c.options = _options
 		c.willPrintSuccessMsg = willPrintSuccessMsg
@@ -764,11 +776,6 @@ class CommandLine
 			print 'cobra: error: [msg]'
 			print 'Run Cobra without options to get full usage information.'
 		Environment.exit(1)
-
-	def exit(code as int)
-		print 'Exiting with code [code]'
-		.testifyFinish('Failure.')
-		Environment.exit(code)
 
 	def setUpRunProcess(c as Compiler, p as Process)
 		"""
