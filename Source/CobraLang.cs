@@ -724,6 +724,11 @@ static public class CobraImp {
 	}
 
 
+	static public void Reset(TextWriter printDestination) {
+		_printToStack.Clear();
+		PushPrintTo(printDestination);
+	}
+
 	static private Stack<TextWriter> _printToStack;
 
 	static public TextWriter PrintDestination {
