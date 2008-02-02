@@ -752,10 +752,11 @@ class AbstractMethod
 				.writeDSTHead(sw)
 			for param in _params
 				.writeSharpParamCheck(param, sw)
-			if _requirePart
+			if _requirePart and _requirePart.willWriteSharp
 				_requirePart.writeSharpDef(sw)
 			.writeSharpLocals(sw, nil, false)
-			if _ensurePart
+			willEnsure = _ensurePart and _ensurePart.willWriteSharp
+			if willEnsure
 				sw.write('bool _lh_canEnsure = false;\n')
 				# have to set `out` parameters or C# will error on them being passed in the `finally` for the ensure,
 				# even though the _lh_canEnsure guard logically prevents problems at run-time
@@ -778,7 +779,7 @@ class AbstractMethod
 					skipFirst = false
 					continue
 				stmt.writeSharpStmt(sw)
-			if _ensurePart
+			if willEnsure
 				if not stmt inherits ReturnStmt and not stmt inherits ThrowStmt
 					sw.write('_lh_canEnsure = true;\n')
 				sw.dedentAndWrite('} finally { // ensure\n')
@@ -1489,9 +1490,9 @@ class TestMethod
 
 
 class ContractPart
+	is abstract
 	inherits SyntaxNode
 	"""
-	TODO: make abstract
 	The abstract base class for RequirePart and EnsurePart.
 	"""
 
@@ -1524,14 +1525,18 @@ class ContractPart
 
 	get codeMember from var
 
-	get connectWord as String
-		return ''  # TODO: make abstract instead
+	get connectWord as String is abstract
 
 	get exprs from var
 
+	get haveConditions as bool is abstract
+		"""
+		Returns true if this contract part has any conditions, whether directly or through inheritance.
+		"""
+
 	get willWriteSharp as bool
 		# classes that are sensitive with respect to the DST skip on contracts
-		return _codeMember.box.canHaveDetailedStackTrace
+		return _codeMember.box.canHaveDetailedStackTrace and not (.willInlineSharp and not .haveConditions)
 		
 	get isImplicit from var
 
@@ -1565,8 +1570,7 @@ class ContractPart
 					what = if('override' in isNames, 'override', 'new')
 					.recordError('The contract requires an "[.connectWord]" because the code member is "[what]".')
 		
-	def writeSharpMethod(sw as SharpWriter)  # TODO: is abstract
-		pass
+	def writeSharpMethod(sw as SharpWriter) is abstract
 
 	def _sharpMethodName(prefix as String) as String
 		if _sharpMethodNameCache is nil
@@ -1601,16 +1605,28 @@ class RequirePart
 	get connectWord as String is override
 		return 'or'
 
+	get haveConditions as bool is override
+		if _codeMember.isOverride
+			have = false
+			curCodeMember = _codeMember to ?
+			post while curCodeMember
+				if curCodeMember.requirePart.exprs.count
+					have = true
+					break
+				curCodeMember = curCodeMember.matchingBaseMember to AbstractMethod?
+			return have
+		else
+			return _codeMember.requirePart.exprs.count > 0
+
 	get sharpMethodName as String
 		return _sharpMethodName('require')
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		if not .willWriteSharp
-			return
+		assert .willWriteSharp
+		willInline = .willInlineSharp
 		sw.write('if (CobraCore._willCheckRequire) {\n')
 		sw.indent
-		willInline = .willInlineSharp
 		if _codeMember.isOverride
 			# Note that in Cobra, when the top level class does not define `require` then that is the
 			# same as saying `require true`--there is no requirement for calling the method. But when
@@ -1650,7 +1666,7 @@ class RequirePart
 					if n>1
 						sw.write('re[n-1].Next = re[n];\n')
 					n += 1
-				curCodeMember = curCodeMember.matchingBaseMember to AbstractMethod? # TODO: should a cast really be needed here?
+				curCodeMember = curCodeMember.matchingBaseMember to AbstractMethod?
 			# at this point in C# code, all requirements have failed
 			if n > 1
 				sw.write('throw re1;\n')
@@ -1712,6 +1728,17 @@ class EnsurePart
 	get connectWord as String is override
 		return 'and'
 
+	get haveConditions as bool is override
+		if _codeMember.box.hasInvariants
+			return true
+		have = false
+		curCodeMember = _codeMember to ?
+		post while curCodeMember
+			if curCodeMember.ensurePart.exprs.count
+				have = true
+			curCodeMember = curCodeMember.matchingBaseMember to AbstractMethod?  # TODO: should a cast really be needed here?
+		return have
+
 	def _bindImp is override
 		if _codeMember.resultType is .compiler.voidType
 			base._bindImp
@@ -1735,11 +1762,10 @@ class EnsurePart
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		if not .willWriteSharp
-			return
+		assert .willWriteSharp
+		willInline = .willInlineSharp
 		sw.write('if (CobraCore._willCheckEnsure) {\n')
 		sw.indent
-		willInline = .willInlineSharp
 		if _codeMember.isOverride
 			curCodeMember = _codeMember to ?
 			post while curCodeMember
