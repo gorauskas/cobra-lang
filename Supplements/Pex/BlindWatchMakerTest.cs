@@ -5,7 +5,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Microsoft.Pex.Framework;
 using Microsoft.Pex.Framework.Domains;
 
-namespace BlindWatchMakerTest {
+namespace TestProject1 {
     [TestClass, PexClass]
     public partial class BlindWatchMakerTest {
         [PexMethod]
