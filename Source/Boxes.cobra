@@ -1184,7 +1184,7 @@ class Box
 			sw.dedent
 
 		sw.writeAndIndent('{\n')
-		.writeSharpInvariant(sw)
+		.writeSharpInvariantMethod(sw)
 		if _testMethod
 			_testMethod.writeSharpDef(sw)
 		for decl in _declsInOrder
@@ -1211,11 +1211,32 @@ class Box
 
 	get sharpInvariantVisibility as String is abstract
 
-	def writeSharpInvariant(sw as SharpWriter)
+	def writeSharpInvariantMethod(sw as SharpWriter)
+		if .compiler.options['contracts'] <> 'methods'
+			return
 		sw.write('\n[.sharpInvariantVisibility] void invariant_[.rootName]() {\n')
 		sw.indent
 		if _baseClass and (not _baseClass.isFromAssembly or _baseClass.declForName('invariant_[_baseClass.rootName]'))
 			sw.write('invariant_[_baseClass.rootName]();\n')
+		.writeSharpInvariantChecks(sw)
+		sw.dedent
+		sw.write('}\n\n')
+
+	def writeAllSharpInvariantChecks(sw as SharpWriter)
+		"""
+		Writes all C# invariant checks including inherited. In support of -contracts:inline
+		"""
+		_writeAllSharpInvariantChecks(sw, this)
+
+	def _writeAllSharpInvariantChecks(sw as SharpWriter, box as Box)
+		if box.baseClass and not box.baseClass.isFromAssembly
+			_writeAllSharpInvariantChecks(sw, box.baseClass to !)
+		box.writeSharpInvariantChecks(sw)
+		
+	def writeSharpInvariantChecks(sw as SharpWriter)
+		"""
+		Writes the C# invariant checks just for this class.
+		"""
 		for expr in _invariants
 			sharpThis = 'typeof([.sharpName])'
 			sw.write('if (!')
@@ -1226,8 +1247,6 @@ class Box
 			expr.writeSharpBreakdown(sw)
 			sw.write('[sharpThis], null);\n')
 			sw.dedent
-		sw.dedent
-		sw.write('}\n\n')
 
 	def writeSharpTest(sw as SharpWriter)
 		# Running tests from the static initializer seems like a good idea, but has been problematic at various times on both .NET and Mono, so no more:
@@ -1505,7 +1524,7 @@ class Interface
 		if _baseInterfaces.count
 			sw.write(' : ')
 
-	def writeSharpInvariant(sw as SharpWriter) is override
+	def writeSharpInvariantMethod(sw as SharpWriter) is override
 		# Even when invariants are inherited by the classes and structs that implement them,
 		# the code gen for the interface invariant does not go "here", inside the C# interface definition.
 		pass

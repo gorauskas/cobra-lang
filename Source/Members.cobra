@@ -662,7 +662,7 @@ class AbstractMethod
 			if _requirePart
 				_requirePart.bindImp
 			if _ensurePart and _returnType and _returnType is not .compiler.voidType
-				_sharpResultVarName = '_lh_result_[_box.makeNextPrivateSerialNumber]'
+				_sharpResultVarName = '_lh_result'
 			else
 				_sharpResultVarName = ''
 			for stmt in _stmts
@@ -1522,8 +1522,12 @@ class ContractPart
 		base.addSubFields
 		.addField('exprs', _exprs)
 
+	get codeMember from var
+
 	get connectWord as String
 		return ''  # TODO: make abstract instead
+
+	get exprs from var
 
 	get willWriteSharp as bool
 		# classes that are sensitive with respect to the DST skip on contracts
@@ -1579,7 +1583,10 @@ class ContractPart
 
 	get sharpThis as String
 		return _codeMember.sharpThis
-		
+
+	get willInlineSharp as bool
+		return .compiler.options['contracts'] == 'inline'
+
 
 class RequirePart
 	inherits ContractPart
@@ -1603,29 +1610,47 @@ class RequirePart
 			return
 		sw.write('if (CobraCore._willCheckRequire) {\n')
 		sw.indent
+		willInline = .willInlineSharp
 		if _codeMember.isOverride
 			# Note that in Cobra, when the top level class does not define `require` then that is the
 			# same as saying `require true`--there is no requirement for calling the method. But when
 			# an overriding method does not define `require` then it is inheriting the `require` of
 			# its matching base method.
-			codeMember = _codeMember to ?
+			curCodeMember = _codeMember to ?
 			count = 0
 			n = 1
-			while codeMember  # CC: make 'post'
-				if not codeMember.box.isFake and codeMember.requirePart and (not codeMember.requirePart.isImplicit or codeMember.matchingBaseMember is nil)
+			while curCodeMember  # CC: make 'post'
+				if not curCodeMember.box.isFake and curCodeMember.requirePart and (not curCodeMember.requirePart.isImplicit or curCodeMember.matchingBaseMember is nil)
 					count += 1
 					sw.write('try {\n')
 					sw.indent
-					sw.write('[codeMember.requirePart.sharpMethodName]')
-					_codeMember.writeSharpPassArgs(sw, '()', true)  # always use *our* code member since the arg names can be different than base classes
-					sw.write(';\n')
+					if willInline
+						if curCodeMember.requirePart.exprs.count
+							willEncapsulate = curCodeMember is not _codeMember
+							if willEncapsulate
+								# parameter names can be different
+								sw.write('{\n')
+								sw.indent
+								for i = 0 .. _codeMember.params.count
+									ourParam = _codeMember.params[i]
+									ancestorParam = curCodeMember.params[i]
+									if ourParam.name <> ancestorParam.name  # this is the problem`; name mismatch
+										sw.write('[ourParam.type.sharpRef] [ancestorParam.name] = [ourParam.name];\n')
+							curCodeMember.requirePart.writeSharpChecks(sw)
+							if willEncapsulate
+								sw.dedent
+								sw.write('}\n')
+					else
+						sw.write('[curCodeMember.requirePart.sharpMethodName]')
+						_codeMember.writeSharpPassArgs(sw, '()', true)  # always use *our* code member since the arg names can be different than base classes
+						sw.write(';\n')
 					sw.dedent
 					sw.write('} catch (RequireException re[n]) {\n')
 					sw.indent
 					if n>1
 						sw.write('re[n-1].Next = re[n];\n')
 					n += 1
-				codeMember = codeMember.matchingBaseMember to AbstractMethod? # TODO: should a cast really be needed here?
+				curCodeMember = curCodeMember.matchingBaseMember to AbstractMethod? # TODO: should a cast really be needed here?
 			# at this point in C# code, all requirements have failed
 			if n > 1
 				sw.write('throw re1;\n')
@@ -1634,13 +1659,18 @@ class RequirePart
 				sw.write('}\n')
 				count -= 1
 		else
-			sw.write('[.sharpMethodName]')
-			_codeMember.writeSharpPassArgs(sw, '()', true)
-			sw.write(';\n')
+			if willInline
+				.writeSharpChecks(sw)
+			else
+				sw.write('[.sharpMethodName]')
+				_codeMember.writeSharpPassArgs(sw, '()', true)
+				sw.write(';\n')
 		sw.dedent
 		sw.write('}\n')
 
 	def writeSharpMethod(sw as SharpWriter) is override
+		if .compiler.options['contracts'] <> 'methods'
+			return
 		if _codeMember.isInterfaceMember
 			# contracts on interface members are not supported yet
 			# and when they are, these methods will have to be written outside the interface
@@ -1653,6 +1683,11 @@ class RequirePart
 		_codeMember.writeSharpRequireParamDecls(sw)
 		sw.write(') {\n')
 		sw.indent
+		.writeSharpChecks(sw)
+		sw.dedent
+		sw.write('}\n\n')
+
+	def writeSharpChecks(sw as SharpWriter)
 		for expr in _exprs
 			sw.write('if (!')
 			expr.writeSharpDef(sw)
@@ -1662,9 +1697,8 @@ class RequirePart
 			expr.writeSharpBreakdown(sw)
 			sw.write('[.sharpThis], null);\n')
 			sw.dedent
-		sw.dedent
-		sw.write('}\n\n')
 
+	
 class EnsurePart
 	inherits ContractPart
 
@@ -1705,23 +1739,32 @@ class EnsurePart
 			return
 		sw.write('if (CobraCore._willCheckEnsure) {\n')
 		sw.indent
+		willInline = .willInlineSharp
 		if _codeMember.isOverride
-			codeMember = _codeMember to ?
-			post while codeMember
-				if not codeMember.box.isFake and codeMember.ensurePart # TODO: axe: and (not codeMember.ensurePart.isImplicit or codeMember.matchingBaseMember is nil)
-					sw.write('[codeMember.ensurePart.sharpMethodName](')
-					_codeMember.writeSharpEnsureArgs(sw)
-					sw.write(');\n')
-				codeMember = codeMember.matchingBaseMember to AbstractMethod?  # TODO: should a cast really be needed here?
+			curCodeMember = _codeMember to ?
+			post while curCodeMember
+				if not curCodeMember.box.isFake and curCodeMember.ensurePart # TODO: axe: and (not codeMember.ensurePart.isImplicit or codeMember.matchingBaseMember is nil)
+					if willInline
+						curCodeMember.ensurePart.writeSharpChecks(sw)
+					else
+						sw.write('[curCodeMember.ensurePart.sharpMethodName](')
+						_codeMember.writeSharpEnsureArgs(sw)
+						sw.write(');\n')
+				curCodeMember = curCodeMember.matchingBaseMember to AbstractMethod?  # TODO: should a cast really be needed here?
 			# at this point in C# code, all ensure have passed
 		else
-			sw.write('[_codeMember.ensurePart.sharpMethodName](')
-			_codeMember.writeSharpEnsureArgs(sw)
-			sw.write(');\n')
+			if willInline
+				.writeSharpChecks(sw)
+			else
+				sw.write('[_codeMember.ensurePart.sharpMethodName](')
+				_codeMember.writeSharpEnsureArgs(sw)
+				sw.write(');\n')
 		sw.dedent
 		sw.write('}\n')
 
 	def writeSharpMethod(sw as SharpWriter) is override
+		if .compiler.options['contracts'] <> 'methods'
+			return
 		if _codeMember.isInterfaceMember
 			# contracts on interface members are not supported yet
 			# and when they are, these methods will have to be written outside the interface
@@ -1734,6 +1777,11 @@ class EnsurePart
 		_codeMember.writeSharpEnsureParamDecls(sw)
 		sw.write(') {\n')
 		sw.indent
+		.writeSharpChecks(sw)
+		sw.dedent
+		sw.write('}\n\n')
+
+	def writeSharpChecks(sw as SharpWriter)
 		for expr in _exprs
 			sw.write('if (!')
 			expr.writeSharpDef(sw)
@@ -1744,6 +1792,11 @@ class EnsurePart
 			sw.write('[.sharpThis], null);\n')
 			sw.dedent
 		if not _codeMember.isShared
-			sw.write('if (CobraCore._willCheckInvariant) invariant_[_codeMember.box.rootName]();')
-		sw.dedent
-		sw.write('}\n\n')
+			sw.write('if (CobraCore._willCheckInvariant) {')
+			sw.indent
+			if .willInlineSharp
+				.codeMember.box.writeAllSharpInvariantChecks(sw)
+			else
+				sw.write('invariant_[_codeMember.box.rootName]();')
+			sw.dedent
+			sw.write('}\n')
