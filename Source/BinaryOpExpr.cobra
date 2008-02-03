@@ -893,6 +893,7 @@ class InheritsExpr
 			if rightType
 				leftType = _left.type
 				if leftType
+					okay = true
 					if leftType inherits DynamicType or (leftType inherits NilableType and (leftType to NilableType).theWrappedType inherits DynamicType)
 						pass
 					else if leftType.isDescendantOf(rightType)
@@ -906,10 +907,25 @@ class InheritsExpr
 					else if leftType inherits NilableType and not rightType inherits NilableType and (leftType to NilableType).theWrappedType.isDescendantOf(rightType)
 						# ex: someNilableCircle inherits Shape
 						.compiler.warning(this, 'The expression will always be of type "[.right.toCobraSource]" when not nil. You can just check for not nil by removing "inherits [.right.toCobraSource]".')
-					else if rightType inherits Interface # leftType inherits Interface or (leftType inherits NilableType and (leftType to NilableType).theWrappedType inherits DynamicType)
-						pass
+					else if rightType inherits Interface
+						if leftType inherits Class
+							pass
+						else if leftType inherits Struct
+							found = false
+							for leftInterface in leftType.baseInterfaces
+								if leftInterface.isDescendantOf(rightType)
+									.compiler.warning(this, 'The expression is always of type "[.right.toCobraSource]".')
+									found = true
+									break
+							if not found
+								.compiler.warning(this, 'The expression (of type "[leftType.name]") is never of type "[.right.toCobraSource]".')
+						else if leftType inherits Interface
+							# already checked earlier if one side descends from the other, so
+							okay = false
 					else
-						.compiler.warning(this, 'The expression is never of type "[.right.toCobraSource]".')
+						okay = false
+					if not okay
+						.compiler.warning(this, 'The expression (of type "[leftType.name]") is never of type "[.right.toCobraSource]".')
 		if (right = .right) inherits IdentifierExpr  # TODO: change to IPotentialTypeExpr and make a test case first
 			defi = right.definition
 			if defi

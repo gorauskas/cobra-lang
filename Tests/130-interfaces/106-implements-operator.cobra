@@ -1,24 +1,91 @@
+"""
+For `a implements IB`, if a's type is a(n)
+	- non-sealed class type, then it cannot be said that "a can never be of type IB" because a subclass could implement IB (or a descendant of it)
+	- sealed class or struct, then the expression is always or never true, in other words, determined at compile-time
+	- interface, then the expression may trigger a compile-time warning just like two class types might
+"""
+
+interface IAOnly
+	pass
+
 
 interface IA
 
 	get two as int
+
+
+interface IB
+	inherits IA
+
+	get three as int
+
+
+interface IC
+	inherits IB
 	
+	get four as int
+
+
 class A
+	implements IAOnly, IA
+
+	get two as int
+		return 2
+
+
+class B
+	implements IB
+
+	get two as int
+		return 2
+
+	get three as int
+		return 3
+
+
+struct S
 	implements IA
 
 	get two as int
 		return 2
 
-class B
+
+interface IOther
+	pass
+
+
+class Program
 
 	shared
-	
+
 		def main
-			.yes(A())
-			.no(B())
-		
-		def yes(obj as Object)
-			assert obj implements IA
-			
-		def no(obj as Object)
-			assert not obj implements IA
+			.implementsIAOnly(A())
+			.doesNotImplementIAOnly(B())
+
+		def implementsIAOnly(obj as Object)
+			assert obj implements IAOnly
+
+		def doesNotImplementIAOnly(obj as Object)
+			assert not obj implements IAOnly
+
+		# verify warnings or expected lack thereof #
+
+		def checkClass(a as A)
+			if a implements IOther  # no warning, because a subclass of A could implement IOther
+				pass
+			if a implements IB      # no warning for same reason
+				pass
+
+		def checkStruct(s as S)
+			q = s implements IA  # .warning. always
+			assert q
+			q = s implements IB  # .warning. never
+			assert not q
+
+		def checkInterface(b as IB)
+			q = b inherits IA      # .warning. always
+			assert q
+			q = b inherits IAOnly  # .warning. never
+			assert not q
+			if b inherits IC      # no warning since IC descends from IB
+				pass
