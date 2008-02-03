@@ -221,6 +221,7 @@ class CommandLine
 	var _htmlWriter as HtmlWriter?
 
 	var _cachedTestifyModules as IList<of Module>?
+	var _extraTestifyArgs as String?
 
 	def init
 		_startTime = DateTime.now
@@ -280,7 +281,7 @@ class CommandLine
 		if args.count == 0
 			.doAbout
 			return
-		.parseArgs(args)
+		.parseArgs(args, out _options, out _pathList)
 		if _options.boolValue('output-html')
 			_htmlWriter = HtmlWriter(Console.out)
 			dest = _htmlWriter to TextWriter
@@ -327,207 +328,212 @@ class CommandLine
 			_htmlWriter.writeHtml('</body></html>[_htmlWriter.newLine]')
 
 	def testifyOptions as Options
-		# TODO: this doesn't even work...
-		# CC: use out args when available
-		save1 = _options
-		save2 = _pathList
-		.parseArgs(List<of String>())
-		r = _options
-		_pathList = save2
-		_options = save1
-		# trace r
+		options as Options?
+		paths as List<of String>?
+		.parseArgs(_extraTestifyArgs ? '', out options, out paths) # to get the default options
 		# remember that you cannot use synonyms below. you must use the canonical name of the option
-		# also, default options are not included (which is lame), so you must specify them here
-		r = Options()
-		r['include-tests'] = true
-		r['embed-run-time'] = false
-		r['verbosity'] = 2
-		r['testify'] = true
-		r['debug'] = '+'
-		r['contracts'] = 'inline'
-		return r
+		options['debug'] = '+'
+		options['debugging-tips'] = false
+		options['embed-run-time'] = false
+		options['verbosity'] = 2
+		# trace options
+		return options to !
+# delme
+#	def parseArgs(args as String)
+#		.parseArgs(args.split, out _options, out _pathList)
 
-	def parseArgs(args as String)
-		.parseArgs(args.split)
+#	def parseArgs(args as IList<of String>)
+#		.parseArgs(args, out _options, out _pathList)
 
-	def parseArgs(args as IList<of String>)
+	def parseArgs(args as String, options as out Options?, paths as out List<of String>?)
+		ensure
+			options
+			paths
+		body
+			.parseArgs(args.split, out options, out paths)
+
+	def parseArgs(args as IList<of String>, options as out Options?, paths as out List<of String>?)
 		"""
 		Parse command line arguments.
 		The `args` should include only the arguments and not the executable/program name.
-		Sets _options and _pathList.
 		"""
-		optionPrefix = '-'
-		valuePrefix = c':'
-		if not args.count
-			_options = Options()
-			_options.add('help', true)
-			_pathList = List<of String>()
-			return
+		ensure
+			options
+			paths
+		body
+			optionPrefix = '-'
+			valuePrefix = c':'
+			if not args.count
+				options = Options()
+				options.add('help', true)
+				paths = List<of String>()
+				return
 
-		specDict = Dictionary<of String, Dictionary<of String, Object>>()
-			# ^ will contain keys for all spec names and their synonyms
-		synToName = Dictionary<of String, String>()
-			# ^ maps synonyms to their full names
-		synList = List<of String>()
-		for d in _optionSpecs
-			specDict[d['name'] to String] = d
-			if d.containsKey('synonyms')
-				syns = d['synonyms'] to System.Collections.IList
-				for syn as String in syns
-					assert not specDict.containsKey(syn)
-					specDict[syn] = d
-					synToName[syn] = d['name'] to String
-					synList.add(syn)
-			if not d.containsKey('type')
-				d.add('type', 'string')
+			specDict = Dictionary<of String, Dictionary<of String, Object>>()
+				# ^ will contain keys for all spec names and their synonyms
+			synToName = Dictionary<of String, String>()
+				# ^ maps synonyms to their full names
+			synList = List<of String>()
+			for d in _optionSpecs
+				specDict[d['name'] to String] = d
+				if d.containsKey('synonyms')
+					syns = d['synonyms'] to System.Collections.IList
+					for syn as String in syns
+						assert not specDict.containsKey(syn)
+						specDict[syn] = d
+						synToName[syn] = d['name'] to String
+						synList.add(syn)
+				if not d.containsKey('type')
+					d.add('type', 'string')
 
-		# set up initial valueDict
-		valueDict = Dictionary<of String, Object>()
-		if Utils.isDevMachine
-			valueDict['reveal-internal-exceptions'] = true  # this is a specially computed default, but can still be overridden on the command line
+			# set up initial valueDict
+			valueDict = Dictionary<of String, Object>()
+			if Utils.isDevMachine
+				valueDict['reveal-internal-exceptions'] = true  # this is a specially computed default, but can still be overridden on the command line
 
-		fileList = List<of String>()
-		value = 'no-value' to dynamic
-		mainOptions = List<of String>()
-		for arg in args
-			if arg.trim.length == 0
-				continue
-			if arg.startsWith(optionPrefix)
-				isOption = true
-				while arg.startsWith(optionPrefix)
-					arg = arg.substring(1)
-			else
-				isOption = false
-			if isOption
-				parts = arg.split(@[valuePrefix], 2)
-				if parts.length == 1
-					name = parts[0]
-					if name.endsWith('+')
-						name = name[:-1]
-						valueStr = 'on'
-					else if name.endsWith('-')
-						name = name[:-1]
-						valueStr = 'off'
-					else
-						valueStr = 'on'
+			fileList = List<of String>()
+			value = 'no-value' to dynamic
+			mainOptions = List<of String>()
+			for arg in args
+				if arg.trim.length == 0
+					continue
+				if arg.startsWith(optionPrefix)
+					isOption = true
+					while arg.startsWith(optionPrefix)
+						arg = arg.substring(1)
 				else
-					assert parts.length == 2
-					name = parts[0]
-					valueStr = parts[1]
-				assert name.length, parts
-				name = Utils.getSS(synToName to passthrough, name, name) to !
-				if not specDict.containsKey(name)
-					msg = 'No such option "[name]".'
-					if name.contains('=')
-						msg += ' If you meant to specify an option value, use colon (:) instead of equals (=).'
-					.error(msg)
-				spec = specDict[name]
-				if Utils.getSB(spec to passthrough, 'isAccumulator', false)
-					# accumulators are always treated as strings. TODO: assert that
-					if valueDict.containsKey(name)
-						(valueDict[name] to System.Collections.IList).add(valueStr to passthrough)
-					else
-						valueDict[name] = [valueStr]
-				else
-					cannotProcess = false
-					if name=='debug'
-						# special case
-						if valueStr=='pdbonly' or valueStr=='full'
-							value = valueStr
+					isOption = false
+				if isOption
+					parts = arg.split(@[valuePrefix], 2)
+					if parts.length == 1
+						name = parts[0]
+						if name.endsWith('+')
+							name = name[:-1]
+							valueStr = 'on'
+						else if name.endsWith('-')
+							name = name[:-1]
+							valueStr = 'off'
 						else
-							try
-								value = .boolForString(valueStr)
-							catch FormatException
-								cannotProcess = true
-							success
-								value = if(value, '+', '-')
+							valueStr = 'on'
 					else
-						if spec['type'] == 'main'
-							mainOptions.add(name)
-							value = true
+						assert parts.length == 2
+						name = parts[0]
+						valueStr = parts[1]
+					assert name.length, parts
+					name = Utils.getSS(synToName to passthrough, name, name) to !
+					if not specDict.containsKey(name)
+						msg = 'No such option "[name]".'
+						if name.contains('=')
+							msg += ' If you meant to specify an option value, use colon (:) instead of equals (=).'
+						.error(msg)
+					spec = specDict[name]
+					if Utils.getSB(spec to passthrough, 'isAccumulator', false)
+						# accumulators are always treated as strings. TODO: assert that
+						if valueDict.containsKey(name)
+							(valueDict[name] to System.Collections.IList).add(valueStr to passthrough)
 						else
-							possible = .interpretValue(valueStr, spec)
-							if possible is not nil
-								value = possible
+							valueDict[name] = [valueStr]
+					else
+						cannotProcess = false
+						if name=='debug'
+							# special case
+							if valueStr=='pdbonly' or valueStr=='full'
+								value = valueStr
 							else
-								cannotProcess = true							
-					if cannotProcess
-						.error('Cannot process value "[valueStr]" for option "[name]".')
-					valueDict[name] = value
-			else # not isOption
-				if File.exists(arg)
-					fileList.add(arg)
-				else if File.exists(arg+'.cobra')
-					fileList.add(arg+'.cobra')
-				else if Directory.exists(arg)
-					fileList.add(arg)
-				else
-					msg = 'Cannot find "[arg]" as a file.'
-					if arg.startsWith('/')
-						msg += ' If you meant to specify an option, use dash (-) instead of slash (/).'
-					.error(msg)
-
-		# handle synonyms
-		for syn in synList
-			if valueDict.containsKey(syn)
-				valueDict[synToName[syn]] = valueDict[syn]
-				valueDict.remove(syn)
-
-		# add in defaults
-		for d in _optionSpecs
-			defaultName = d['name'] to String
-			if not valueDict.containsKey(defaultName) and d.containsKey('default')
-				defaultValue = .interpretValue(d['default'] to String, d) to !
-				if .verbosity
-					print 'Setting option "[defaultName]" to default value [defaultValue].'
-				valueDict[defaultName] = defaultValue
-
-		# TODO: make the option names case-insensitive
-
-		# check for more than one main option
-		if mainOptions.count > 1
-			.error('Cannot have these main options at the same time: [Utils.join(", ", mainOptions)]')
-
-		# unpack certain options into specific class fields
-		if valueDict.containsKey('verbosity')
-			_verbosity = valueDict['verbosity'] to int
-		if not valueDict.containsKey('timeit') and valueDict.containsKey('testify')
-			valueDict['timeit'] = true
-		if valueDict.containsKey('timeit')
-			CobraMain.willTimeIt = valueDict['timeit'] to bool
-		if valueDict.containsKey('files')
-			for fileName as String in valueDict['files'] to System.Collections.IList
-				try
-					for line in File.readAllLines(fileName)
-						line = line.trim
-						if line.length==0 or line.startsWith('#')
-							continue
-						# TODO: dup'ed above
-						arg = line
-						if File.exists(arg)
-							fileList.add(arg)
-						else if File.exists(arg+'.cobra')
-							fileList.add(arg+'.cobra')
-						else if Directory.exists(arg)
-							fileList.add(arg)
+								try
+									value = .boolForString(valueStr)
+								catch FormatException
+									cannotProcess = true
+								success
+									value = if(value, '+', '-')
 						else
-							msg = 'Cannot find "[arg]" as a file.'
-							#if arg.startsWith('/')
-							#	msg += ' If you meant to specify an option, use dash (-) instead of slash (/).'
-							.error(msg)
-						# end dup
-				catch IOException
-					.error('Cannot open file "[fileName]".')
+							if spec['type'] == 'main'
+								mainOptions.add(name)
+								value = true
+							else
+								possible = .interpretValue(valueStr, spec)
+								if possible is not nil
+									value = possible
+								else
+									cannotProcess = true							
+						if cannotProcess
+							.error('Cannot process value "[valueStr]" for option "[name]".')
+						valueDict[name] = value
+				else # not isOption
+					if File.exists(arg)
+						fileList.add(arg)
+					else if File.exists(arg+'.cobra')
+						fileList.add(arg+'.cobra')
+					else if Directory.exists(arg)
+						fileList.add(arg)
+					else
+						msg = 'Cannot find "[arg]" as a file.'
+						if arg.startsWith('/')
+							msg += ' If you meant to specify an option, use dash (-) instead of slash (/).'
+						.error(msg)
 
-		# set the class vars
-		_options = Options(valueDict)
-		_pathList = fileList
-		
-		.computeArgImplications
+			# handle synonyms
+			for syn in synList
+				if valueDict.containsKey(syn)
+					valueDict[synToName[syn]] = valueDict[syn]
+					valueDict.remove(syn)
+
+			# add in defaults
+			for d in _optionSpecs
+				defaultName = d['name'] to String
+				if not valueDict.containsKey(defaultName) and d.containsKey('default')
+					defaultValue = .interpretValue(d['default'] to String, d) to !
+					if .verbosity
+						print 'Setting option "[defaultName]" to default value [defaultValue].'
+					valueDict[defaultName] = defaultValue
+
+			# TODO: make the option names case-insensitive
+
+			# check for more than one main option
+			if mainOptions.count > 1
+				.error('Cannot have these main options at the same time: [Utils.join(", ", mainOptions)]')
+
+			# unpack certain options into specific class fields
+			if valueDict.containsKey('verbosity')
+				_verbosity = valueDict['verbosity'] to int
+			if not valueDict.containsKey('timeit') and valueDict.containsKey('testify')
+				valueDict['timeit'] = true
+			if valueDict.containsKey('timeit')
+				CobraMain.willTimeIt = valueDict['timeit'] to bool
+			if valueDict.containsKey('files')
+				for fileName as String in valueDict['files'] to System.Collections.IList
+					try
+						for line in File.readAllLines(fileName)
+							line = line.trim
+							if line.length==0 or line.startsWith('#')
+								continue
+							# TODO: dup'ed above
+							arg = line
+							if File.exists(arg)
+								fileList.add(arg)
+							else if File.exists(arg+'.cobra')
+								fileList.add(arg+'.cobra')
+							else if Directory.exists(arg)
+								fileList.add(arg)
+							else
+								msg = 'Cannot find "[arg]" as a file.'
+								#if arg.startsWith('/')
+								#	msg += ' If you meant to specify an option, use dash (-) instead of slash (/).'
+								.error(msg)
+							# end dup
+					catch IOException
+						.error('Cannot open file "[fileName]".')
+
+			# set the out parameters
+			options = Options(valueDict)
+			paths = fileList
+
+			.computeArgImplications($sharp('options'))
+
 	
-	def computeArgImplications
-		if .options.getDefault('target', '') == 'lib' and not .options.boolValue('compile')
-			.options['compile'] = true
+	def computeArgImplications(options as Options)
+		if options.getDefault('target', '') == 'lib' and not options.boolValue('compile')
+			options['compile'] = true
 
 	def interpretValue(valueStr as String, spec as Dictionary<of String, Object>) as dynamic?
 		value as dynamic?
@@ -902,12 +908,24 @@ class CommandLine
 		if baseName.startsWith('.') or baseName.startsWith('_')
 			# examples: .svn, _svn. Also, _ is a nice way to temporarily exclude a directory if possible
 			return
-		_statusWriter.writeLine('[dirName]')
+		configPath = Path.combine(dirName, 'testify.kv')
+		if File.exists(configPath)
+			dirOptions = Utils.readKeyValues(configPath)
+			if dirOptions.containsKey('args')
+				argSets = dirOptions['args'].split(@[c'|'])
+				for argSet in argSets
+					_testifyDir(dirName, argSet.trim)
+				return
+		_testifyDir(dirName, nil)
+
+	def _testifyDir(dirName as String, args as String?)
+		_extraTestifyArgs = args
+		_statusWriter.writeLine(if(args, '[dirName] with args: [args]', '[dirName]'))
 		_statusWriter.indent
 		try
 			print 'Running tests in [dirName]'
 			saveDir = Environment.currentDirectory
-			if not CobraCore.isRunningOnMono
+			if not CobraCore.isRunningOnMono  # On Mono, we use MONO_PATH instead of coping the Cobra.Lang.dll around
 				targetPath = Path.combine(dirName, 'Cobra.Lang.dll')
 				if File.exists(targetPath)
 					File.delete(targetPath)
@@ -999,7 +1017,7 @@ class CommandLine
 			
 		if firstLineInsensitive.startsWith('#.args.')
 			i = firstLine.indexOf('.args.')
-			.parseArgs(firstLine[i+'.args.'.length:])
+			.parseArgs(firstLine[i+'.args.'.length:], out _options, out _pathList)
 			args = _options
 			options = .testifyOptions
 			options.combine(args)

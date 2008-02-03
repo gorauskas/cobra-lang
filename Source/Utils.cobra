@@ -228,6 +228,38 @@ class Utils
 		get isDevMachine as bool
 			return Environment.getEnvironmentVariable('COBRA_IS_DEV_MACHINE') == '1'
 
+		def readKeyValues(path as String) as Dictionary<of String, String>
+			require path.length
+			return .readKeyValues(path, File.openText(path), Console.out)
+		
+		def readKeyValues(sr as StreamReader, warnings as TextWriter) as Dictionary<of String, String>
+			return .readKeyValues(sr, Console.out)
+
+		def readKeyValues(path as String, tw as TextReader, warnings as TextWriter) as Dictionary<of String, String>
+			test
+				nl = Environment.newLine
+				warnings = Console.out
+				d = Utils.readKeyValues('test', StringReader('# blah[nl][nl]foo = bar[nl]'), warnings)
+				assert d.count == 1
+				assert d['foo'] == 'bar'
+			body
+				d = Dictionary<of String, String>()
+				while true
+					line = tw.readLine
+					if line is nil
+						break
+					line = line.trim
+					if line == '' or line.startsWith('#')
+						continue
+					parts = line.split(@[c'='])
+					if parts.length == 1
+						warnings.writeLine('.readKeyValue: [path]: ignoring line: [line]')  # TODO: report line number
+						continue
+					key = parts[0].trim
+					value = parts[1].trim
+					d[key] = value
+				return d
+
 
 class ShouldNotCallException
 	inherits Exception
