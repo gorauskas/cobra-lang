@@ -761,7 +761,7 @@ class AbstractMethod
 				# have to set `out` parameters or C# will error on them being passed in the `finally` for the ensure,
 				# even though the _lh_canEnsure guard logically prevents problems at run-time
 				for param in _params
-					if param.type inherits OutType
+					if param.isOut
 						sharpInit = param.type.sharpInit
 						if not sharpInit.length
 							# TODO/HACK: yes we need something like this (or a way to convice C# that the out param reference in `finally` really is okay),
@@ -812,7 +812,7 @@ class AbstractMethod
 			sw.write(parens[0])
 		sep = ''
 		for param in _params
-			if excludeOutArgs and param.type inherits OutType
+			if excludeOutArgs and param.isOut
 				continue
 			sw.write(sep)
 			sw.write(param.sharpName)
@@ -840,7 +840,7 @@ class AbstractMethod
 	def writeSharpRequireParamDecls(sw as SharpWriter)
 		sep = ''
 		for param in .params
-			if param.type inherits OutType
+			if param.isOut
 				# a requirement cannot say anything useful about a parameter that is output only
 				continue
 			sw.write(sep)
@@ -896,7 +896,7 @@ class AbstractMethod
 			sep[0] = ', '
 
 	def writeSharpParamCheck(param as Param, sw as SharpWriter)
-		if param.type.isReference and not param.type inherits NilableType and not param.type inherits OutType
+		if param.type.isReference and not param.type inherits NilableType and not param.isOut
 			# TODO: guard with flag like _willCheckNonNilArgs
 			sw.write('if ([param.sharpName]==null) throw new ArgumentNullException("[param.name]");\n')
 
@@ -909,7 +909,7 @@ class AbstractMethod
 		if not .isShared
 			sw.write(', "this", this')
 		for param in .params
-			if not param.type inherits OutType
+			if not param.isOut
 				sw.write(', "[param.name]", [param.sharpName]')
 		sw.write(');\n')
 		sw.writeAndIndent('try {\n')

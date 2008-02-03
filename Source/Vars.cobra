@@ -140,7 +140,13 @@ class AbstractLocalVar
 class Param
 	inherits AbstractLocalVar
 
+	enum KindEnum
+		Value
+		InOut
+		Out
+		
 	var _isMissingType as bool
+	var _kind as KindEnum
 
 	def init(token as IToken, type as IType)
 		.init(token, type, false)
@@ -163,6 +169,14 @@ class Param
 		Currently, such a parameter is given the `dynamic` type.
 		In the future, the type may be inferred for an anon method in the context it is used (a specific delegate or event).
 		"""
+
+	pro kind from var
+
+	get isInOut as bool
+		return .kind == KindEnum.InOut
+
+	get isOut as bool
+		return .kind == KindEnum.Out
 		
 	def constructedFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as Param
 		ensure
@@ -176,6 +190,10 @@ class Param
 		base.writeSharpDef(sw)
 		if .type.isReference and not .type inherits NilableType
 			sw.write(r'[NotNull] ')
+		branch .kind
+			on KindEnum.Value: pass
+			on KindEnum.InOut: sw.write('ref ')
+			on KindEnum.Out: sw.write('out ')
 		sw.write('[.type.sharpParamRef] [.sharpName]')
 
 	def writeSharpDefSansReferenceLabels(sw as SharpWriter)
@@ -184,8 +202,7 @@ class Param
 		contract methods (require_foo and ensure_foo) because contracts cannot modify arguments.
 		"""
 		# skip the [NotNull] as well since it's not really needed
-		sw.write('[.type.sharpRef] [.sharpName]')
-		
+		sw.write('[.type.sharpRef] [.sharpName]')		
 
 
 class LocalVar

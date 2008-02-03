@@ -1412,21 +1412,31 @@ class Parser
 		token = .expect('ID')
 		identifier = token.value to String
 		.checkStartsLowercase(identifier, 'Parameter')
+		kind = Param.KindEnum.Value
 		type as ITypeProxy?
-		if .peek.which=='AS'
+		if .peek.which == 'AS'
 			.grab
 			branch .peek.which
-				on 'VARI':  type = VariTypeIdentifier(.grab, .typeId)
-				on 'OUT':   type = OutTypeIdentifier(.grab, .typeId)
-				on 'INOUT': type = InOutTypeIdentifier(.grab, .typeId)
-				else: type = .typeId
+				on 'VARI'
+					type = VariTypeIdentifier(.grab, .typeId)
+				on 'OUT'
+					kind = Param.KindEnum.Out
+					.grab
+					type = .typeId
+				on 'INOUT'
+					kind = Param.KindEnum.InOut
+					.grab
+					type = .typeId
+				else
+					type = .typeId
 			isMissingType = false
 		else
 			type = TypeProxy(_typeProvider.dynamicType)  # the default type for a parameter is dynamic
 			isMissingType = true
 		# note: isTypeless is currently used to generate a warning in .paramDecls above, but in the future it may also be needed for when parameter types are inferred for anon methods
-		p = Param(token, type) # CC: put property set in initializer (absorb next line)
+		p = Param(token, type) # CC: put property sets in initializer (absorb next line)
 		p.isMissingType = isMissingType
+		p.kind = kind
 		return p
 
 
