@@ -336,14 +336,16 @@ class BlockStmt
 		if top
 			sw.write(top)
 		if _ifInheritsVar
-			typeName = _ifInheritsType.sharpRef
-			newName = '_lh_' + _ifInheritsVar.name + '_' + _ifInheritsType.sharpNameComponent
-			sw.write('[typeName] [newName] = ([typeName])[_ifInheritsVar.sharpName];\n')
-			_ifInheritsVar.useSharpNameStack.push(newName)
+			#typeName = _ifInheritsType.sharpRef
+			#newName = '_lh_' + _ifInheritsVar.name + '_' + _ifInheritsType.sharpNameComponent
+			#sw.write('[typeName] [newName] = ([typeName])[_ifInheritsVar.sharpName];\n')
+			#_ifInheritsVar.useSharpNameStack.push(newName)
+			_ifInheritsVar.ifInheritsStack.push(_ifInheritsType)
 		for stmt in _stmts
 			stmt.writeSharpStmt(sw)
 		if _ifInheritsVar
-			_ifInheritsVar.useSharpNameStack.pop
+			#_ifInheritsVar.useSharpNameStack.pop
+			_ifInheritsVar.ifInheritsStack.pop
 		if close
 			sw.dedent
 			sw.write('}\n')
@@ -636,6 +638,7 @@ class IfStmt
 	var _cond as Expr
 	var _trueStmts as BlockStmt
 	var _falseStmts as BlockStmt?
+	var _doNotPopIfInheritsStack as bool
 
 	def init(token as IToken, cond as Expr, trueStmts as BlockStmt, falseStmts as BlockStmt?)
 		base.init(token)
@@ -668,6 +671,7 @@ class IfStmt
 		catch ne as NodeException
 			.compiler.recordError(ne)
 		success
+			_doNotPopIfInheritsStack = false
 			.noAssignmentAllowed(_cond)
 			if _cond.type is not .compiler.boolType
 				_cond = TruthExpr(_cond).bindImp to TruthExpr  # CC: axe cast when supporting 'as this'
@@ -733,12 +737,15 @@ class IfStmt
 					throw FallThroughException(leftVar)
 		_trueStmts.parent = this
 		_trueStmts.bindImp
-		if ifInherits
+		if ifInherits and not _doNotPopIfInheritsStack
 			if leftVar inherits IVar  # CC: put with above "if" via "and" once "if inherits" is smart enough
 				leftVar.ifInheritsStack.pop
 		if _falseStmts
 			_falseStmts.parent = this
 			_falseStmts.bindImp
+
+	def doNotPopIfInheritsStack
+		_doNotPopIfInheritsStack = true
 
 	def writeSharpDef(sw as SharpWriter)
 		# if you're looking for if-inherits related code gen, see BlockStmt

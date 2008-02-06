@@ -398,6 +398,29 @@ class BoxVar
 
 	get useSharpNameStack from var
 
+	def attemptAssignmentOf(type as IType) as bool
+		# TODO: dup'ed with AbstractLocalVar
+		if _ifInheritsStack.count == 0
+			return false
+		stack = Stack<of IType>(Stack<of IType>(_ifInheritsStack))
+		assert stack.peek == _ifInheritsStack.peek
+		count = 0
+		post while stack.count and not type.isAssignableTo(stack.peek to !)
+			stack.pop
+			count += 1
+		if stack.count or type.isAssignableTo(_type to !)
+			_ifInheritsStack = stack
+			# tell each IfStmt not to pop the if-inherits stack since the assignment did so
+			for node in .compiler.nodeStack
+				if node inherits IfStmt
+					node.doNotPopIfInheritsStack
+					count -= 1
+					if count == 0
+						break						
+			return true
+		else
+			return false
+
 	def _bindInt is override
 		base._bindInt
 		assert _typeNode or _initExpr
@@ -444,10 +467,19 @@ class BoxVar
 	## Code Gen
 
 	get sharpAssignmentNames as List<of String>
-		return List<of String>(_useSharpNameStack)
+		return [.name]
+		# return List<of String>(_useSharpNameStack)
 
 	get sharpName as String is override
-		return _useSharpNameStack.peek to !
+		if _ifInheritsStack.count
+			if _type.isReference
+				return '(([_ifInheritsStack.peek.sharpRef])[.name])'
+			else
+				# could it be a subclass? no. value types are structs and cannot be subclassed so this must be `if i` where `i` is nullable struct
+				return '[.name].Value'  # Nullable<of T>.Value
+		else
+			return .name
+		# return _useSharpNameStack.peek to !
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)

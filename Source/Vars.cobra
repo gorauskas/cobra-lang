@@ -15,6 +15,14 @@ interface IVar
 
 	pro ifInheritsStack as Stack<of IType>
 
+	def attemptAssignmentOf(type as IType) as bool
+		"""
+		Attempts assignment of an expression with the given type which is incompatible with
+		.type, by working back through the if-inherits stack. If successful, the if-inherits
+		stack will be shorter and `true` is returned.
+		"""
+		require type <> .type
+
 	get useSharpNameStack as Stack<of String>
 
 	get sharpAssignmentNames as List<of String>?
@@ -25,6 +33,7 @@ interface IVar
 
 
 class AbstractLocalVar
+	is abstract
 	inherits NamedNode
 	implements IVar
 	"""
@@ -36,8 +45,9 @@ class AbstractLocalVar
 	var _isImplicit as bool
 	var _isTracked as bool
 	var _ifInheritsStack = Stack<of IType>()
-	var _useSharpNameStack = Stack<of String>()  # for if-inherits
 	var _isAssignedTo as bool
+	var _sharpName as String
+	var _useSharpNameStack = Stack<of String>()  # for if-inherits
 
 	def init(token as IToken, type as IType, isImplicit as bool)
 		base.init(token, token.text)
@@ -64,7 +74,8 @@ class AbstractLocalVar
 			sharpPrefix = '@'  # C# supports @ as a valid first character for identifiers to escape those that are keywords
 		else
 			sharpPrefix = ''
-		_useSharpNameStack.push(sharpPrefix+.name)
+		_sharpName = sharpPrefix + .name
+		_useSharpNameStack.push(_sharpName)
 
 	pro ifInheritsStack from var
 
@@ -86,6 +97,28 @@ class AbstractLocalVar
 		base.addRefFields
 		.addField('typeNode', _typeNode)
 		.addField('type', _type)
+
+	def attemptAssignmentOf(type as IType) as bool
+		if _ifInheritsStack.count == 0
+			return false
+		stack = Stack<of IType>(Stack<of IType>(_ifInheritsStack))
+		assert stack.peek == _ifInheritsStack.peek
+		count = 0
+		post while stack.count and not type.isAssignableTo(stack.peek to !)
+			stack.pop
+			count += 1
+		if stack.count or type.isAssignableTo(_type to !)
+			_ifInheritsStack = stack
+			# tell each IfStmt not to pop the if-inherits stack since the assignment did so
+			for node in .compiler.nodeStack
+				if node inherits IfStmt
+					node.doNotPopIfInheritsStack
+					count -= 1
+					if count == 0
+						break						
+			return true
+		else
+			return false
 
 	def toString as String is override
 		type = if(_type, .type.name, "(no type)")
@@ -131,10 +164,19 @@ class AbstractLocalVar
 		return if(_ifInheritsStack.count, _ifInheritsStack.peek to !, _type to !)
 
 	get sharpAssignmentNames as List<of String>
-		return List<of String>(_useSharpNameStack)
+		return [_sharpName]
+		# return List<of String>(_useSharpNameStack)
 
 	get sharpName as String is override
-		return _useSharpNameStack.peek to !
+		if _ifInheritsStack.count
+			if _type.isReference
+				return '(([_ifInheritsStack.peek.sharpRef])[_sharpName])'
+			else
+				# could it be a subclass? no. value types are structs and cannot be subclassed so this must be `if i` where `i` is nullable struct
+				return '[.name].Value'  # Nullable<of T>.Value
+		else
+			return _sharpName
+		# return _useSharpNameStack.peek to !
 
 
 class Param
@@ -230,8 +272,6 @@ class ResultVar
 	"""
 	The implicit variable `result` used in `ensure` blocks.
 	"""
-
-	var _sharpName as String
 
 	def init(token as IToken, codePart as AbstractMethod)
 		base.init(_makeToken(token, codePart), codePart.resultType, true)
