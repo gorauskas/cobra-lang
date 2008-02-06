@@ -198,6 +198,8 @@ class AbstractAssignExpr
 class AssignExpr
 	inherits AbstractAssignExpr
 
+	var _backUpIfInheritsStack as List<of IType>?
+
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
 
@@ -249,6 +251,7 @@ class AssignExpr
 			if left inherits IdentifierExpr
 				if (defi = left.definition) inherits IVar
 					if defi.attemptAssignmentOf(right.type to !)
+						_backUpIfInheritsStack = List<of IType>(defi.ifInheritsStack)  # will need this later for code gen
 						okay = true
 			if not okay
 				.throwError('Incompatible types. Cannot assign value of type [right.type.name] on the right to [left.type.name] on the left.')
@@ -325,6 +328,10 @@ class AssignExpr
 			_left.writeSharpDef(sw, false)
 		sw.write('=')
 		_right.writeSharpDefInContext(sw)
+		# handle the case where a type got backed up because of assignment inside of an if-inherits
+		if _backUpIfInheritsStack
+			assert (_left to dynamic).definition inherits IVar
+			(_left to dynamic).definition.ifInheritsStack = Stack<of IType>(_backUpIfInheritsStack)
 
 
 class NumericPromoExpr
