@@ -639,6 +639,7 @@ class IfStmt
 	var _trueStmts as BlockStmt
 	var _falseStmts as BlockStmt?
 	var _doNotPopIfInheritsStack as bool
+	var _ifInheritsVar as IVar?
 
 	def init(token as IToken, cond as Expr, trueStmts as BlockStmt, falseStmts as BlockStmt?)
 		base.init(token)
@@ -647,7 +648,9 @@ class IfStmt
 		_falseStmts = falseStmts
 
 	get cond from var
-	
+
+	get ifInheritsVar from var
+
 	get trueStmts from var
 	
 	get falseStmts from var
@@ -663,6 +666,7 @@ class IfStmt
 		.addField('cond', _cond)
 		.addField('trueStmts', _trueStmts)
 		.addField('falseStmts', _falseStmts)
+		.addField('ifInheritsVar', _ifInheritsVar)
 
 	def _bindImp
 		base._bindImp
@@ -735,10 +739,15 @@ class IfStmt
 					_trueStmts.setIfInherits(leftVar, leftVar.ifInheritsStack.peek to !)
 				else
 					throw FallThroughException(leftVar)
+		if ifInherits
+			if leftVar inherits IVar
+				_ifInheritsVar = leftVar
+			else
+				assert false, leftVar
 		_trueStmts.parent = this
 		_trueStmts.bindImp
 		if ifInherits and not _doNotPopIfInheritsStack
-			if leftVar inherits IVar  # CC: put with above "if" via "and" once "if inherits" is smart enough
+			if leftVar inherits IVar
 				leftVar.ifInheritsStack.pop
 		if _falseStmts
 			_falseStmts.parent = this
