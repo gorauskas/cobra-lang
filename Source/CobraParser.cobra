@@ -117,10 +117,8 @@ class Parser
 
 	pro globalNS as NameSpace
 		get
-			if _globalNS
-				return _globalNS
-			else
-				throw FallThroughException()  # CC: use assert
+			assert _globalNS
+			return _globalNS to !
 		set
 			require _globalNS is nil
 			_globalNS = value
@@ -241,9 +239,9 @@ class Parser
 		Returns the last token returned by `get` or nil if `get` was never invoked.
 		"""
 		if _nextTokenIndex > 0
-			token = _tokens[_nextTokenIndex-1]
+			token = _tokens[_nextTokenIndex-1] to ?
 		else
-			token = nil to passthrough  # CC: get rid of cast somehow
+			token = nil
 		if _willShowTokens
 			print 'last    --> [token]'
 		return token
@@ -285,20 +283,11 @@ class Parser
 			print 'expect([whatTypes]) --> [t]'
 		if t is nil
 			.throwError('Expecting [Utils.join(" or ",whatTypes)], but source ended suddenly.')
-		# CC: support "not in" on vari type
-		#if t.which not in whatTypes
-		#	.throwError('Expecting [whatTypes], but got [t] instead.')
-		found = false
-		for wt in whatTypes
-			if t.which == wt
-				found = true
-				break
-		if not found
-			# TODO: remove support for cue
+		if t.which not in whatTypes
 			if whatTypes[0]=='DEF' and t.which=='CUE'
 				t.which = 'DEF'
 			else
-				.throwError('Expecting [Utils.join(" or ",whatTypes)], but got [t] instead.')
+				.throwError('Expecting [whatTypes], but got [t] instead.')
 		return t to !
 
 	def optional(whatTypes as vari String) as IToken?
@@ -368,7 +357,7 @@ class Parser
 			return token to !
 		else
 			.throwError('Expecting an identifier or keyword, but got [token] instead.')
-		throw FallThroughException(token)  # CC: axe when throwError() can be marked as always throwing
+		throw FallThroughException(token)  # CC: axe when throwError() can be marked as always throwing (well if C# can figure that out! (solution: Cobra can generate a "dummy" throw statement))
 
 	def indent as IToken
 		"""
@@ -533,16 +522,15 @@ class Parser
 		if name[0] not in _uppercaseLetters
 			.throwError('Class names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 
-		# CC: rename paramsList to params (can't do it now because it's a C# reserved word and Cobra needs to generate IL or 'escape' these)
-		paramsList = .declGenericParams(token)
-		name = .nameForDeclGenericParams(token, paramsList)
+		params = .declGenericParams(token)
+		name = .nameForDeclGenericParams(token, params)
 
 		.indent
 
 		isNames = .isDeclNames
 		attribs = .hasAttribs
 
-		.genericConstraints(token, paramsList)
+		.genericConstraints(token, params)
 
 		baseNode as ITypeProxy?
 		if .optional('INHERITS')
@@ -566,7 +554,7 @@ class Parser
 
 		docString = .docString
 
-		theClass = Class(token, name, .makeList(List<of IType>(), paramsList) to List<of IType>, isNames, attribs, baseNode, interfaceNames, docString)
+		theClass = Class(token, name, .makeList(List<of IType>(), params) to List<of IType>, isNames, attribs, baseNode, interfaceNames, docString)
 
 		# TODO when supporting nested classes, look at the _boxStack and set a back pointer here
 		_boxStack.push(theClass)
@@ -580,7 +568,7 @@ class Parser
 		# This feels awkward as hell, but it's a .NET typing thing, not a Cobra thing.
 		# I need List<of GenericParam> in the my local code for declaring generics, but the various box inits need to accept List<of IType>
 		# TODO: remove this somehow. Maybe Cobra could have a promotion feature:
-		# List<of IType>(paramsList promote to IEnumerable<of IType>)
+		# List<of IType>(params promote to IEnumerable<of IType>)
 		# "promote to" works for generics where the new promo type has parameter types that are the same or ancestors to the original parameter types *and* ... ???
 		for item in u
 			t.add(item)
@@ -644,7 +632,7 @@ class Parser
 		other kinds parameters including other generic types and basic
 		types. Box declarations only have generic parameter names.
 		"""
-		paramsList = List<of GenericParam>()
+		params = List<of GenericParam>()
 		if token.which=='OPEN_GENERIC'
 			expectComma = false
 			while true
@@ -656,9 +644,9 @@ class Parser
 				ident = .expect('ID').text
 				if Utils.startsWithLowerLetter(ident)
 					.throwError('Generic parameter names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
-				paramsList.add(GenericParam(ident))
+				params.add(GenericParam(ident))
 				expectComma = true
-		return paramsList
+		return params
 
 	def nameForDeclGenericParams(token as IToken, paramList as List<of GenericParam>) as String
 		"""
@@ -695,16 +683,15 @@ class Parser
 		if .peek.which=='COLON' and .peek(1)<>nil and .peek(1).which=='ID'
 			.throwError(_syntaxForInterfaceInheritanceMsg)
 
-		# CC: rename paramsList to params (can't do it now because it's a C# reserved word and Cobra needs to generate IL or 'escape' these)
-		paramsList = .declGenericParams(token)
-		name = .nameForDeclGenericParams(token, paramsList)
+		params = .declGenericParams(token)
+		name = .nameForDeclGenericParams(token, params)
 
 		.indent
 
 		isNames = .isDeclNames
 		attribs = .hasAttribs
 
-		.genericConstraints(token, paramsList)
+		.genericConstraints(token, params)
 
 		baseNames = List<of ITypeProxy>()
 		if .optional('INHERITS')
@@ -714,7 +701,7 @@ class Parser
 					break
 				if expectComma
 					.expect('COMMA')
-				baseName = .typeId  # using .typeId since interface could be a generic like IEnumerable(of T)
+				baseName = .typeId  # using .typeId since interface could be a generic like IEnumerable<of T>
 				baseNames.add(baseName)
 				expectComma = true
 
@@ -724,7 +711,7 @@ class Parser
 		# TODO: can an interface be nested in another interface?
 		docString = .docString
 
-		theInterface = Interface(token, name, .makeList(List<of IType>(), paramsList) to List<of IType>, isNames, attribs, baseNames, docString)
+		theInterface = Interface(token, name, .makeList(List<of IType>(), params) to List<of IType>, isNames, attribs, baseNames, docString)
 
 		_boxStack.push(theInterface)
 #		.isNamesStack = Stack(str)
@@ -747,16 +734,15 @@ class Parser
 		if name[0] not in _uppercaseLetters
 			.throwError('Struct names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 
-		# CC: rename paramsList to params (can't do it now because it's a C# reserved word and Cobra needs to generate IL or 'escape' these)
-		paramsList = .declGenericParams(token)
-		name = .nameForDeclGenericParams(token, paramsList)
+		params = .declGenericParams(token)
+		name = .nameForDeclGenericParams(token, params)
 
 		.indent
 
 		isNames = .isDeclNames
 		attribs = .hasAttribs
 
-		.genericConstraints(token, paramsList)
+		.genericConstraints(token, params)
 
 		baseName as String?
 		if .optional('INHERITS')
@@ -776,7 +762,7 @@ class Parser
 
 		docString = .docString
 
-		theStruct = Struct(token, name, .makeList(List<of IType>(), paramsList) to List<of IType>, isNames, attribs, baseName, interfaceNames, docString)
+		theStruct = Struct(token, name, .makeList(List<of IType>(), params) to List<of IType>, isNames, attribs, baseName, interfaceNames, docString)
 
 		# TODO when supporting nested classes, look at the boxStack and set a back pointer here
 		_boxStack.push(theStruct)
@@ -795,7 +781,7 @@ class Parser
 		isNames = .isDeclNames
 		# TODO? attribs = .hasAttribs
 		if .peek.which=='OF'
-			storageType as ITypeProxy? = .typeId  # CC: to ?
+			storageType = .typeId to ?
 		docString = .docString
 		enumMembers = List<of EnumMember>()
 		while .peek.which <> 'DEDENT'
@@ -803,7 +789,7 @@ class Parser
 			enumNameToken = .expect('ID')
 			if .peek.which=='ASSIGN'
 				.grab
-				enumValue as int? = .expect('INTEGER_LIT').value to int  # CC: change cast to "to int?" and axe "as int?"
+				enumValue = .expect('INTEGER_LIT').value to int?
 			else
 				enumValue = nil
 			.endOfLine
@@ -819,13 +805,13 @@ class Parser
 			parent = .curNameSpace to IParentSpace
 		return EnumDecl(parent, token, name, isNames, storageType, docString, enumMembers)
 
-	def genericConstraints(token as IToken, paramsList as List<of GenericParam>)
+	def genericConstraints(token as IToken, params as List<of GenericParam>)
 		while .optional('WHERE')
 			if token.which<>'OPEN_GENERIC'
 				.throwError('Unexpected where clause for non-generic class.')
 			paramName = .expect('ID').value
 			found = false
-			for param in paramsList
+			for param in params
 				if param.name==paramName
 					found = true
 					break
@@ -856,7 +842,6 @@ class Parser
 			on 'STRUCT': return GenericStructConstraint(.grab)
 			on 'CALLABLE': return GenericCallableConstraint(.grab)
 			else: return GenericTypeConstraint(.typeId)
-		pass # CC: take out
 
 	def nameSpaceDecl as NameSpace
 		.expect('NAMESPACE')
@@ -871,7 +856,7 @@ class Parser
 				break
 		firstNameSpace as NameSpace?
 		for tok in idTokens
-			name = tok.value to String  # CC: .value should probably be dynamic
+			name = tok.value to String
 			curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(tok, name)
 			if firstNameSpace is nil
 				firstNameSpace = curNameSpace
@@ -927,14 +912,14 @@ class Parser
 					on 'VAR': .addDecl(box, .boxVarDecl)
 					on 'INVARIANT': .declareInvariant
 					on 'EOL': .endOfLine
-					on 'ENUM': box.addDecl(.enumDecl)  # CC: .addDecl(box, .enumDecl)  ...when IBoxMember is in effect
+					on 'ENUM': .addDecl(box, .enumDecl)
 					on 'SHARED': .bodiedBoxMemberDeclsShared(box)
 					on 'TEST': .testSection(box)
 					else
 						.throwError('Got [.peek] when expecting var, def, pro, get, set, enum or shared')
 			.dedent
 
-	def addDecl(box as Box, member as BoxMember?)  # TODO: change to IBoxMember (which Enum will implement)
+	def addDecl(box as Box, member as IBoxMember?)
 		if member
 			other = box.declForNameCI(member.name)
 			if other and other.name <> member.name
@@ -1058,11 +1043,11 @@ class Parser
 				.throwError('Method names must start with lowercase letters. ([name])')
 
 		if opener.which=='OPEN_CALL'
-			paramsList = .paramDecls(true)
-			if paramsList.count == 0
+			params = .paramDecls(true)
+			if params.count == 0
 				_warning(opener, 'Unnecessary parentheses. You can remove them.')
 		else
-			paramsList = List<of Param>()
+			params = List<of Param>()
 
 		if .optional('AS')
 			returnType = .typeId to ITypeProxy?
@@ -1111,9 +1096,9 @@ class Parser
 				.throwError('Cannot declare a return type for an initializer.')
 			if implementsType
 				.throwError('Cannot specify `implements` for an initializer.')
-			method = Initializer(token, .curBox, paramsList, isNames, attribs, docString)
+			method = Initializer(token, .curBox, params, isNames, attribs, docString)
 		else
-			method = Method(token, .curBox, name, paramsList, returnType, implementsType, isNames, attribs, docString)
+			method = Method(token, .curBox, name, params, returnType, implementsType, isNames, attribs, docString)
 		if nothingMore
 			if not 'abstract' in isNames and not curBox inherits Interface
 				.throwError('Missing method body for "[name]".')
@@ -1157,7 +1142,7 @@ class Parser
 		token = .expect('PRO')
 		overload as MemberOverload?
 		if .optional('LBRACKET')
-			paramsList = .paramDecls(true, 'RBRACKET')
+			params = .paramDecls(true, 'RBRACKET')
 			name = r'[]'
 			other = curBox.declForName(name)
 			if other
@@ -1171,7 +1156,7 @@ class Parser
 			.checkProperty(name)
 			if .optional('FROM')
 				return .declarePropertyFrom(token, name, 'getset')
-			paramsList = List<of Param>()
+			params = List<of Param>()
 		if .optional('AS')
 			returnType = .typeId to ITypeProxy
 		else
@@ -1201,8 +1186,8 @@ class Parser
 				isNames = List<of String>(_isNamesStack)
 			attribs = AttributeList()
 			docString = ''
-		if paramsList.count
-			prop = Indexer(token, curBox, name, paramsList, returnType, isNames, attribs, docString)
+		if params.count
+			prop = Indexer(token, curBox, name, params, returnType, isNames, attribs, docString)
 		else
 			prop = Property(token, curBox, name, returnType, isNames, attribs, docString)
 		if indent
@@ -1287,7 +1272,7 @@ class Parser
 		token = .expect(if(getOrSet, 'SET', 'GET'))
 		overload as MemberOverload? = nil
 		if .optional('LBRACKET')
-			paramsList = .paramDecls(true, 'RBRACKET')
+			params = .paramDecls(true, 'RBRACKET')
 			name = r'[]'
 			other = curBox.declForName(name)
 			if other
@@ -1301,7 +1286,7 @@ class Parser
 			.checkProperty(name)
 			if .optional('FROM')
 				return .declarePropertyFrom(token, name, if(getOrSet, 'set', 'get'))
-			paramsList = List<of Param>()
+			params = List<of Param>()
 		if .optional('AS')
 			returnType = .typeId to ITypeProxy
 		else
@@ -1331,8 +1316,8 @@ class Parser
 				isNames = List<of String>(_isNamesStack)
 			attribs = AttributeList()
 			docString = ''
-		if paramsList.count
-			prop = Indexer(token, curBox, name, paramsList, returnType, isNames, attribs, docString)
+		if params.count
+			prop = Indexer(token, curBox, name, params, returnType, isNames, attribs, docString)
 		else
 			prop = Property(token, curBox, name, returnType, isNames, attribs, docString)
 		if indent
@@ -1371,7 +1356,7 @@ class Parser
 	def paramDecls(skipParen as bool, rightParen as String) as List<of Param>
 		if not skipParen
 			.expect('LPAREN')
-		paramsList = List<of Param>()
+		params = List<of Param>()
 		expectComma = false
 		while true
 			if .peek.which==rightParen
@@ -1380,11 +1365,11 @@ class Parser
 			if expectComma
 				.expect('COMMA')
 			param = .paramDecl
-			paramsList.add(param)
-			if paramsList.count==1 and param.name=='self' and param.isMissingType
+			params.add(param)
+			if params.count==1 and param.name=='self' and param.isMissingType
 				_warning('The first parameter is "self" which may be a Python carry-over on your part. Cobra does not require that (and calls it "this" anyway).')
 			expectComma = true
-		return paramsList
+		return params
 
 	def paramDecl as Param
 		"""
@@ -1608,12 +1593,7 @@ class Parser
 	def assertStmt as Stmt
 		token = .expect('ASSERT')
 		expr = .expression
-		# CC: could the following 5 lines be: info = if(.optional('COMMA'), .expression, nil)
-		info as Expr?
-		if .optional('COMMA')
-			info = .expression
-		else
-			info = nil
+		info = if(.optional('COMMA'), .expression, nil)
 		return AssertStmt(token, expr, info)
 
 	def branchStmt as Stmt
@@ -1837,11 +1817,7 @@ class Parser
 
 	def returnStmt as Stmt
 		token = .expect('RETURN')
-		expr as Expr?  # axe this decl when Cobra looks at the second assignment in after "x = nil"
-		if .peek.which=='EOL'
-			expr = nil
-		else
-			expr = .expression
+		expr = if(.peek.which == 'EOL', nil, .expression)
 		return ReturnStmt(token, expr)
 
 	def requireSection(codeMember as AbstractMethod) as ContractPart
