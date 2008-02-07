@@ -602,7 +602,7 @@ static public class CobraImp {
 
 	public delegate bool ForWhereGet<TIn, TOut>(TIn inValue, out TOut outValue);
 
-	static public IList<TOut> For<TIn, TOut>(IList<TIn> list, ForGet<TIn, TOut> forGet) {
+	static public List<TOut> For<TIn, TOut>(IList<TIn> list, ForGet<TIn, TOut> forGet) {
 		// TODO: if possible, it might be nice to get the generic type of the list coming in and then make a constructed type from it with TOut.
 		List<TOut> results = new List<TOut>(list.Count);
 		foreach (TIn item in list)
@@ -610,8 +610,8 @@ static public class CobraImp {
 		return results;
 	}
 
-	static public IList<TOut> For<TIn, TOut>(IList<TIn> list, ForWhereGet<TIn, TOut> forWhereGet) {
-		IList<TOut> results = new List<TOut>();
+	static public List<TOut> For<TIn, TOut>(IList<TIn> list, ForWhereGet<TIn, TOut> forWhereGet) {
+		List<TOut> results = new List<TOut>();
 		foreach (TIn item in list) {
 			TOut value;
 			if (forWhereGet(item, out value))
