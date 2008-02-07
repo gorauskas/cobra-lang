@@ -759,7 +759,7 @@ class AbstractMethod
 		newMember = base.constructedFor(box, gpToType) to AbstractMethod  # CC: this = base. ...
 		assert newMember._returnType
 		newMember._returnType = newMember._returnType.secondaryConstructedTypeFor(box, gpToType)
-		newMember._params = List<of Param>(for p in _params get p.constructedFor(box, gpToType)) # CC: get rid of list instantiation
+		newMember._params = for p in _params get p.constructedFor(box, gpToType)
 		return newMember
 
 
@@ -998,7 +998,7 @@ class Initializer
 
 	get lastToken as IToken
 		if _stmts.count
-			return _stmts[_stmts.count-1].lastToken  # CC: say: _stmts.last.token
+			return _stmts[_stmts.count-1].lastToken  # CC: use .last
 		else
 			return .token
 
@@ -1238,12 +1238,12 @@ class ProperDexer
 			throw FallThroughException(returnTypeOrNode)
 
 	def makeGetPart(token as IToken) as AbstractMethod is abstract
-# CC:		require .getPart is nil
-# CC:		ensure .getPart
+		require .getPart is nil
+		ensure .getPart
 
 	def makeSetPart(token as IToken) as AbstractMethod is abstract
-# CC:		require .setPart is nil
-# CC:		ensure .setPart
+		require .setPart is nil
+		ensure .setPart
 
 	def addRefFields is override
 		base.addRefFields
@@ -1486,29 +1486,23 @@ class MemberOverload
 class TestMethod
 	inherits Method
 	"""
-	TODO: It's weird that you have to pass voidType. Maybe Node should have a shared typeProvider
-	like it has a shared compiler. The parser could set it.
 	"""
 
 	var _forMember as BoxMember?
 	var _forBox as Box?
 
-	def init(token as IToken, member as BoxMember, voidType as IType)
+	def init(token as IToken, member as BoxMember)
 		require
 			member.name.length
 		body
-			# CC: shouldn't the .getCompiler() work? C# code gen puts a "this" in there even though it's shared and C# chokes on it
-			#base.init(token, member.box, 'test_'+Utils.capped(member.name), List<of Param>(), .getCompiler.voidType, List<of String>(), nil, '')
-			base.init(token, member.box, 'test_'+Utils.capped(member.name), List<of Param>(), voidType, nil, ['shared'], AttributeList(), '')
+			base.init(token, member.box, 'test_'+Utils.capped(member.name), List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
 			_forMember = member
 
-	def init(token as IToken, box as Box, voidType as IType)
+	def init(token as IToken, box as Box)
 		require
 			box.name.length
 		body
-			# CC: shouldn't the .getCompiler work? C# code gen puts a "this" in there even though it's shared and C# chokes on it
-			# base.init(token, box, 'test_class_'+Utils.capped(box.name), List<of Param>(), .getCompiler.voidType, List<of String>(), List<of INode>(), '')
-			base.init(token, box, 'test_class_'+Utils.capped(box.sharpNameComponent), List<of Param>(), voidType, nil, ['shared'], AttributeList(), '')
+			base.init(token, box, 'test_class_'+Utils.capped(box.sharpNameComponent), List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
 			_forBox = box
 
 	pro name as String is new
@@ -1670,7 +1664,7 @@ class RequirePart
 			curCodeMember = _codeMember to ?
 			count = 0
 			n = 1
-			while curCodeMember  # CC: make 'post'
+			post while curCodeMember
 				if not curCodeMember.box.isFake and curCodeMember.requirePart and (not curCodeMember.requirePart.isImplicit or curCodeMember.matchingBaseMember is nil)
 					count += 1
 					sw.write('try {\n')
@@ -1728,7 +1722,7 @@ class RequirePart
 			return
 		if not .willWriteSharp
 			return
-		static = if(_codeMember.isShared, 'static ', '') # CC: rename to 'static'
+		static = if(_codeMember.isShared, 'static ', '')
 		access = if(_codeMember.box inherits Struct, 'private', 'protected')
 		sw.write('[static][access] void [.sharpMethodName](')
 		_codeMember.writeSharpRequireParamDecls(sw)

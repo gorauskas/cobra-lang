@@ -338,24 +338,28 @@ class Compiler
 					filenames.insert(3, path)
 
 			modules = List<of Module>()
-			for filename in filenames
-				if filename.endsWith('.cs')
-					if _verbosity
-						print 'Noting  [filename]'  # extra space to line up with 'Parsing [filename]'
-					modules.add(SharpModule(filename, _verbosity))
-				else
-					parser = Parser()
-					parser.verbosity = _verbosity
-					parser.typeProvider = this
-					parser.warningRecorder = this
-					parser.globalNS = _globalNS
-					# @@ TODO: assert _globalNS is parser.nameSpaceStack[0]
-					try
-						module = parser.parseFileNamed(filename)
-					catch ce as SourceException
-						.recordError(ce)
-					success
-						modules.add(module)
+			Node.setCompiler(this)
+			try
+				for filename in filenames
+					if filename.endsWith('.cs')
+						if _verbosity
+							print 'Noting  [filename]'  # extra space to line up with 'Parsing [filename]'
+						modules.add(SharpModule(filename, _verbosity))
+					else
+						parser = Parser()
+						parser.verbosity = _verbosity
+						parser.typeProvider = this
+						parser.warningRecorder = this
+						parser.globalNS = _globalNS
+						# @@ TODO: assert _globalNS is parser.nameSpaceStack[0]
+						try
+								module = parser.parseFileNamed(filename)
+						catch ce as SourceException
+							.recordError(ce)
+						success
+							modules.add(module)
+			finally
+				Node.setCompiler(nil)
 			assert modules.count
 			_modules.addRange(modules)
 			if _errors.count

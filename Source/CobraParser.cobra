@@ -1850,11 +1850,7 @@ class Parser
 
 	def throwStmt as Stmt
 		token = .expect('THROW')
-		expr as Expr?  # CC: axe
-		if .peek.which=='EOL'
-			expr = nil
-		else
-			expr = .expression
+		expr = if(.peek.which == 'EOL', nil, .expression)
 		return ThrowStmt(token, expr)
 
 	def tryStmt as Stmt
@@ -1889,16 +1885,14 @@ class Parser
 			.throwError(useCatchMsg)
 		if .peek.which=='ELSE'
 			.throwError('There is no "else" for a "try". There is a "success" however.')
-		successBlock as BlockStmt?  # CC: find a way to remove this decl. possibly by adding "to ?" below
 		if .peek.which=='SUCCESS'
 			.grab
-			successBlock = .block
+			successBlock = .block to ?
 		else
 			successBlock = nil
-		finallyBlock as BlockStmt?  # CC: find a way to remove this decl.
 		if .peek.which=='FINALLY'
 			.grab
-			finallyBlock = .block
+			finallyBlock = .block to ?
 		else
 			finallyBlock = nil
 		if not catchBlocks.count and not successBlock and not finallyBlock
@@ -1913,7 +1907,7 @@ class Parser
 		# TODO: consider pushing the test method as the current code member
 		token = .expect('TEST')
 		.indent
-		testMethod = TestMethod(token, codeMember, .typeProvider.voidType)
+		testMethod = TestMethod(token, codeMember)
 		.statementsFor(testMethod)
 		codeMember.testMethod = testMethod
 		return testMethod
@@ -1922,7 +1916,7 @@ class Parser
 		# TODO: consider pushing the test method as the current code member
 		token = .expect('TEST')
 		.indent
-		testMethod = TestMethod(token, box, .typeProvider.voidType)
+		testMethod = TestMethod(token, box)
 		.statementsFor(testMethod)
 		box.testMethod = testMethod
 		return testMethod
@@ -2099,15 +2093,9 @@ class Parser
 
 	def expression as Expr
 		test
-			# CC: neither of these work and both should
-
-			#assert 0 not in _binaryOpPrec.values
-
-			#for v in _binaryOpPrec.values
-			#	assert v<>0
-
-			pass
-
+			# CC: assert 0 not in _binaryOpPrec.values
+			for v in _binaryOpPrec.values
+				assert v<>0
 		body
 			expr = .expression(0, nil)
 			if expr.isParened
@@ -2458,7 +2446,7 @@ class Parser
 				if sep=='COMMA'
 					.throwError('Not expecting a colon.')
 				.grab
-				exprs.add(nil to passthrough)  # CC: clean up
+				exprs.add(nil)
 				sep = 'COLON'  # because sep could be nil
 				lastThingWasColon = true
 				continue
@@ -2475,7 +2463,7 @@ class Parser
 				.delOpStack
 			expectSep = true
 		if lastThingWasColon
-			exprs.add(nil to passthrough)  # CC: clean up
+			exprs.add(nil)
 		if sep=='COLON'
 			assert exprs.count>=2, exprs
 			if exprs.count>3
@@ -2651,7 +2639,7 @@ class Parser
 	def genericTypeId(openGenericToken as IToken) as AbstractTypeIdentifier
 		require openGenericToken.text.trim.endsWith('<of')
 		fullName = openGenericToken.text.trim + ' '
-		rootName = fullName.substring(0, fullName.length-4)  # CC: [:-4]
+		rootName = fullName[:-4]
 		expectComma = false
 		types = List<of ITypeProxy>()
 		while true
@@ -2786,11 +2774,7 @@ class Parser
 	def _popCodePart
 		require _codeParts.count
 		_codeParts.pop
-		# CC: _curCodePart = if(_codeParts.count, _codeParts.peek, nil)
-		if _codeParts.count
-			_curCodePart = _codeParts.peek to !
-		else
-			_curCodePart = nil
+		_curCodePart = if(_codeParts.count, _codeParts.peek, nil)
 
 	def _spaceAgnostic
 		"""
