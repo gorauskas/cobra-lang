@@ -1,3 +1,3 @@
 @cls
 cobra -testify %*
-e r-run
+e r-testify
