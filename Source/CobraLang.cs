@@ -498,7 +498,7 @@ static public class CobraImp {
 
 	static public bool In(object a, IEnumerable b) {
 		foreach (object item in b) {
-			if (item.Equals(a))  // TODO: decimal.Equals has returned false in the past when it should be true
+			if (Equals(item, a))
 				return true;
 		}
 		return false;
@@ -510,7 +510,7 @@ static public class CobraImp {
 
 	static public bool In<innerType>(innerType a, IEnumerable<innerType> b) {
 		foreach (innerType item in b) {
-			if (item.Equals(a))  // TODO: decimal.Equals has returned false in the past when it should be true
+			if (Equals(item, a))
 				return true;
 		}
 		return false;
@@ -527,13 +527,9 @@ static public class CobraImp {
 			throw new Exception(string.Format("_noNestedIn a={0}, a.getType={1}, b={2}, b.getType={3}", a, a==null?"":a.GetType().Name, b, b==null?"":b.GetType().Name));
 		_noNestedIn = true;
 		try {
-			if (b is IList) {
+			if (b is IList) { // probably the most common case
 				return In(a, (IList)b);
-			} else if (b is IEnumerable) {
-				return In(a, (IEnumerable)b);
-			} else if (b is IDictionary) {
-				return In(a, (IDictionary)b);
-			} else if (b is String) {
+			} else if (b is String) {  // check has to come before IEnumerable
 				if (a is String) {
 					return In((String)a, (String)b);
 				} if (a is char) {
@@ -541,6 +537,10 @@ static public class CobraImp {
 				} else {
 					throw new CannotInTypeException(a, "a of `a in b`", a.GetType());
 				}
+			} else if (b is IEnumerable) {
+				return In(a, (IEnumerable)b);
+			} else if (b is IDictionary) {
+				return In(a, (IDictionary)b);
 			} else {
 				throw new CannotInTypeException(b, "b of `a in b`", b.GetType());
 			}
