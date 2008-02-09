@@ -2592,6 +2592,8 @@ class Parser
 			else
 				return QualifiedTypeIdentifier(types)
 
+	var _validIntSizes = @[8, 16, 32, 64]
+
 	def nonqualifiedTypeId as AbstractTypeIdentifier
 		token = .grab
 		assert token
@@ -2608,6 +2610,16 @@ class Parser
 			on 'dynamic': t = TypeIdentifier(token, .typeProvider.dynamicType)
 			else 
 				branch token.which
+					on 'INT_SIZE'
+						size = token.value to int
+						if token.value not in _validIntSizes
+							.throwError('Unsupported integer size: [size]. Try 8, 16, 32 or 64.')
+						t = TypeIdentifier(token, .typeProvider.intType(true, size))
+					on 'UINT_SIZE'
+						size = token.value to int
+						if token.value not in _validIntSizes
+							.throwError('Unsupported integer size: [size]. Try 8, 16, 32 or 64.')
+						t = TypeIdentifier(token, .typeProvider.intType(false, size))
 					on 'ID'
 						t = TypeIdentifier(token)
 						if .peek and .peek.which == 'LT'

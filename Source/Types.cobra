@@ -2,6 +2,11 @@ interface ITypeProvider
 	"""
 	A type provider can provide essential types and serve as a place
 	they are "uniqued" in order to avoid type duplication.
+
+	The Cobra types themselves rely on having a type provider available to implement some of their methods.
+
+	The main type provider is Compiler.
+	There is also a BasicTypeProvider that is useful in setting up tests.
 	"""
 
 	def typeForName(name as String) as IType
@@ -16,7 +21,10 @@ interface ITypeProvider
 
 	get floatType as FloatType
 
-	get intType as IntType
+	def intType as IntType
+
+	def intType(signed as bool, size as int) as IntType
+		require size in @[8, 16, 32, 64]
 
 	get dynamicType as DynamicType
 
@@ -36,6 +44,8 @@ interface ITypeProvider
 
 	def variType(type as IType) as VariType
 
+	def libraryType(qualifiedName as String) as IType
+
 
 class BasicTypeProvider
 	implements ITypeProvider
@@ -43,12 +53,13 @@ class BasicTypeProvider
 	TODO: rename to TypeProvider, change to a "mix-in" and have the Compiler class inherit it
 	"""
 
+	var _anyIntType			as AnyIntType?
 	var _boolType			as BoolType?
 	var _charType			as CharType?
 	var _decimalType		as DecimalType?
 	var _dynamicType		as DynamicType?
 	var _floatType			as FloatType?
-	var _intType			as IntType?
+	var _intTypes			=  Dictionary<of int, IntType>()
 	var _nilType			as NilType?
 	var _numberType			as NumberType?
 	var _passThroughType	as PassThroughType?
@@ -64,6 +75,11 @@ class BasicTypeProvider
 	def typeOrNilForName(name as String) as IType?
 		assert false, 'TODO'
 		return nil
+
+	get anyIntType as AnyIntType
+		if _anyIntType is nil
+			_anyIntType = AnyIntType()
+		return _anyIntType to !
 
 	get boolType as BoolType
 		if _boolType is nil
@@ -90,11 +106,19 @@ class BasicTypeProvider
 			_floatType = FloatType()
 		return _floatType to !
 
-	get intType as IntType
-		if _intType is nil
-			_intType = IntType()
-		return _intType to !
+	def intType as IntType
+		return .intType(true, 32)
 
+	def intType(signed as bool, size as int) as IntType
+		require size in @[8, 16, 32, 64] # CC: inherit from interface
+		key = if(signed, -1, +1) * size
+		type as IntType?
+		if _intTypes.tryGetValue(key, out type)
+			return type to !
+		else
+			type = _intTypes[key] = IntType(signed, size, .anyIntType)
+			return type to !
+		
 	get nilType as NilType
 		if _nilType is nil
 			_nilType = NilType()
@@ -132,6 +156,230 @@ class BasicTypeProvider
 			return _variTypes[type]
 		_variTypes[type] = vt = VariType(type)
 		return vt
+
+	def libraryType(qualifiedName as String) as IType
+		clrType = $sharp('Type.GetType(qualifiedName)') to Type?
+		return BasicLibraryType(clrType)
+		
+
+class BasicLibraryType
+	implements IType
+	"""
+	These objects are created by BasicTypeProvider and only for testing purposes.
+	The real library types used by the compiler are instances of Class, Interface, Struct, etc.
+	See BasicTypeProvider.libraryType and Compiler.libraryType.
+	"""
+
+	shared
+		
+		def systemObjectType as BasicLibraryType
+			return BasicLibraryType($sharp('typeof(System.Object)'))
+
+	var _clrType as Type
+
+	def init(clrType as Type)
+		_clrType = clrType
+
+	def toString as String is override
+		return '[.getType.name]([.clrType])'
+
+	def equals(other as Object?) as bool is override
+		if other
+			if other inherits BasicLibraryType
+				return .clrType == other.clrType
+			else
+				return false
+		else
+			return false
+
+	def getHashCode as int is override
+		return _clrType.getHashCode
+
+	get clrType from var
+
+	## IType Properties
+
+	get innerType as IType?
+		return nil
+
+	get realType as IType
+		return this
+
+	get superType as IType?
+		return if(.isSystemObject, nil, .systemObjectType)
+
+	## IType isFoo
+
+	get isDynamic as bool
+		return false
+
+	get isSystemObject as bool
+		return _clrType.name == 'Object'
+
+	def isAssignableTo(t as IType) as bool
+		return this is t or t.isSystemObject
+
+	def isComparableTo(t as IType) as bool
+		return this is t
+
+	def isEquatableTo(t as IType) as bool
+		return this is t
+
+	def isDescendantOf(t as IType) as bool
+		return this is t or t.isSystemObject
+
+	get isReference as bool
+		return not _clrType.isValueType
+
+	def isStrictDescendantOf(t as IType) as bool
+		return this is not t and t.isSystemObject
+
+	## Methods
+
+	def greatestCommonDenominatorWith(type as IType) as IType
+		if type is this
+			return this
+		else
+			return .systemObjectType
+
+	def memberForName(name as String) as IMember?
+		return nil
+
+	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType
+		return this
+
+	## INode
+
+	def bindAll as INode
+		.bindInh
+		.bindInt
+		return this
+
+	def bindInh
+		pass
+
+	def bindInt as INode
+		_didBindInt = true
+		return this
+
+	var _didBindInt as bool
+	get didBindInt from var
+
+	def bindImp as INode
+		_didBindImp = true
+		return this
+
+	var _didBindImp as bool
+	get didBindImp from var
+
+	get hasError as bool
+		return false
+
+	get serialNum as int
+		return 1
+
+	pro superNode as INode?
+		get
+			return nil
+		set
+			pass
+
+	def toTechString as String
+		return .toString
+
+	def throwError(msg as String)
+		throw NodeException(this, msg)
+
+	def writeDeepString
+		.writeDeepString(IndentedWriter(CobraCore.printDestination))
+
+	def writeDeepString(iw as IndentedWriter)
+		pass
+
+	get deepString as String
+		return .toString
+
+	get minimalString as String
+		return .toString
+	
+	get shallowString as String
+		return .toString
+
+	## INamedNode
+	
+	get name as String
+		return .clrType.name
+
+	get typeForIdentifier as IType
+		return this # well should really be System.Type
+
+	get typeForReceiver as IType
+		return this
+
+	get isMethod as bool
+		return false
+
+	pro isUsed as bool
+		get
+			return false
+		set
+			pass
+
+	## IMember
+
+	get englishName as String
+		return 'library type'
+
+	get isCallable as bool
+		return true
+
+	get isShared as bool
+		return true
+
+	pro parentNameSpace as NameSpace?
+		get
+			return nil
+		set
+			pass
+
+	get requiresThis as bool
+		return false
+
+	get resultType as IType
+		return this
+
+	def unNilReturnType
+		pass
+
+	def writeSharpTestInvocation(sw as SharpWriter)
+		throw NoSharpGenException(this)
+
+	## Code gen
+	
+	get sharpInit as String
+		throw NoSharpGenException(this)
+
+	get sharpName as String
+		throw NoSharpGenException(this)
+
+	get sharpNameComponent as String
+		throw NoSharpGenException(this)
+
+	get sharpParamRef as String
+		throw NoSharpGenException(this)
+
+	get sharpRef as String
+		throw NoSharpGenException(this)
+
+	def writeSharpDef(sw as SharpWriter)
+		throw NoSharpGenException(this)
+
+
+class NoSharpGenException
+	inherits Exception
+	
+	def init(blt as BasicLibraryType)
+		base.init('Not expecting to generate C# with BasicLibraryType ([blt])')
 
 
 interface ITypeProxy
@@ -406,6 +654,11 @@ interface IType
 		And as opposed to value type such as a struct, int, etc.).
 		"""
 
+	get isSystemObject as bool
+		"""
+		Return true if this type represents/is System.Object.
+		"""
+
 	def isComparableTo(t as IType) as bool
 		"""
 		Returns true if this type can be compared to the given type via comparison operators such as `>`, `<=`, etc.
@@ -497,7 +750,15 @@ class CobraType
 	var _isUsed as bool
 
 	def init
+		.init(nil)
+
+	def init(superType as IType?)
 		base.init
+		_superType = superType
+
+	def addMinFields
+		base.addMinFields
+		.addField('didBindInh', _didBindInh)
 
 	get englishName as String is abstract
 
@@ -519,6 +780,9 @@ class CobraType
 
 	get isShared as bool
 		return true
+
+	get isSystemObject as bool
+		return false
 
 	def isComparableTo(t as IType) as bool
 		if t inherits NilableType
@@ -578,17 +842,17 @@ class CobraType
 		if .superType and type.superType
 			return .superType.greatestCommonDenominatorWith(type.superType to !)
 		else
-			return .compiler.libraryType('System.Object')
+			return .typeProvider.libraryType('System.Object')
 
 	def isAssignableTo(type as IType) as bool
 		require
-			.compiler
+			.typeProvider
 		body
-			if type is .compiler.passThroughType
+			if type is .typeProvider.passThroughType
 				return true
-			if type is .compiler.dynamicType
+			if type is .typeProvider.dynamicType
 				return true
-			if type is .compiler.libraryType('System.Object')
+			if type is .typeProvider.libraryType('System.Object')
 				return true
 			# TODO: remove this:
 			if type inherits GenericParam
@@ -703,6 +967,12 @@ class ValueType
 	is abstract
 	inherits CobraType
 
+	def init
+		pass
+
+	def init(superType as IType?)
+		base.init(superType)
+
 	get englishName as String is override
 		return 'primitive type'
 
@@ -730,9 +1000,16 @@ class PrimitiveType
 	Used in part for classification purposes (`t inherits PrimitiveType`).
 	"""
 
+	def init
+		pass
+
+	def init(superType as IType?)
+		base.init(superType)
+
 	def _bindInh
 		base._bindInh
-		_superType = .compiler.libraryClass('System.Object')
+		if _superType is nil
+			_superType = .compiler.libraryClass('System.Object')
 
 	def isComparableTo(t as IType) as bool
 		r = base.isComparableTo(t)
@@ -857,20 +1134,127 @@ class FloatType
 		return r
 
 
-class IntType
+class AnyIntType
 	inherits NumberType
-
+	
 	def init
-		base.init
+		pass
+
+	def init(superType as IType?)
+		base.init(superType)
+
+
+class IntType
+	inherits AnyIntType
+
+	test
+		saveTP = if(Node.hasTypeProvider, Node.typeProvider, nil)
+		Node.typeProvider = BasicTypeProvider()
+		try
+			anyInt = AnyIntType()
+
+			snt16 = IntType(true, 16, anyInt)
+			assert snt16.name == 'int16'
+			assert snt16.isSigned == true
+			assert snt16.size == 16
+
+			snt64 = IntType(true, 64, anyInt)
+
+			assert snt64.isEquatableTo(snt16)
+			assert snt16.isEquatableTo(snt64)
+			assert snt16.isAssignableTo(snt64)
+			assert not snt64.isAssignableTo(snt16)
+			
+			snt16b = IntType(true, 16, anyInt)
+			assert snt16 == snt16b
+			assert snt16 <> snt64
+		finally
+			Node.typeProvider = saveTP
+
+	var _signed as bool
+	var _size as int
+	var _clrType as Type
+
+	def init(signed as bool, size as int, superType as IType?)
+		require
+			size in @[8, 16, 32, 64]
+			superType implies superType inherits AnyIntType
+		body
+			base.init(superType)
+			_signed = signed
+			_size = size
+			if signed
+				branch size
+					on  8: _clrType = SByte
+					on 16: _clrType = Int16
+					on 32: _clrType = Int32
+					on 64: _clrType = Int64
+					else: throw FallThroughException(size)
+			else
+				branch size
+					on  8: _clrType = Byte
+					on 16: _clrType = UInt16
+					on 32: _clrType = UInt32
+					on 64: _clrType = UInt64
+					else: throw FallThroughException(size)
+
+	def addMinFields
+		base.addMinFields
+		.addField('isSigned', .isSigned)
+		.addField('size', .size)
+
+	def equals(other as Object?) as bool is override
+		if other is this
+			return true
+		else if other
+			if other inherits IntType
+				return .isSigned == other.isSigned and .size == other.size
+			else
+				return false
+		else
+			return false
+	
+	def getHashCode as int is override
+		code = if(.isSigned, -1, 1) * .size
+		return code.getHashCode
+		
+	get clrType from var
+
+	get isDefaultIntType as bool
+		return _signed and _size == 32
+
+	get isDefaultSize as bool
+		return _size == 32
+
+	get isSigned as bool
+		return _signed
+	
+	get isUnsigned as bool
+		return not _signed
 
 	get name as String is override
-		return 'int'
+		if .isDefaultIntType
+			return 'int'
+		prefix = if(.isSigned, '', 'u')
+		if .isDefaultSize
+			return '[prefix]int'
+		else
+			return '[prefix]int[.size]'
+
+	get size from var
 
 	def isAssignableTo(type as IType) as bool
-		if type is .compiler.decimalType
+		if type is this  # common case
 			return true
-		if type is .compiler.floatType
+		if type is .typeProvider.decimalType
 			return true
+		if type is .typeProvider.floatType
+			return true
+		if type inherits IntType
+			if .isSigned == type.isSigned and .size == type.size
+				return true
+			if .size < type.size
+				return true
 		return base.isAssignableTo(type)
 
 	def isComparableTo(t as IType) as bool
@@ -878,6 +1262,17 @@ class IntType
 		if not r and (t inherits DecimalType or t inherits FloatType)
 			r = true
 		return r
+
+	def greatestCommonDenominatorWith(type as IType) as IType is override
+		if type inherits IntType
+			# TODO: same size different signs
+			maxSize = if(type.size > .size, type.size, .size)
+			return .compiler.intType(.isSigned, maxSize)
+		else
+			return base.greatestCommonDenominatorWith(type)
+
+	get sharpName as String is override
+		return _clrType.name
 
 
 class NilableType
@@ -995,6 +1390,12 @@ class NumberType
 	"""
 	The base class for int, float and decimal.
 	"""
+
+	def init
+		base.init
+
+	def init(superType as IType?)
+		base.init(superType)
 
 	get sharpInit as String is override
 		return '0'
@@ -1122,8 +1523,8 @@ class ArrayType
 	"""
 
 	test
-		a1 = ArrayType(IntType())
-		a2 = ArrayType(IntType())
+		a1 = ArrayType(BoolType())
+		a2 = ArrayType(BoolType())
 		assert a1 is not a2
 		assert a1 == a2
 

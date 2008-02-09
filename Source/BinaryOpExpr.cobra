@@ -345,7 +345,7 @@ class NumericPromoExpr
 		if _left.type.isDynamic or _right.type.isDynamic
 			_type = .compiler.dynamicType
 			return
-		tint = .compiler.intType
+		tint = .compiler.anyIntType
 		tdecimal = .compiler.decimalType
 		tfloat = .compiler.floatType
 		tpassthrough = .compiler.passThroughType
@@ -357,6 +357,7 @@ class NumericPromoExpr
 		rightType = _right.type
 		if rightType inherits NilableType
 			rightType = rightType.theWrappedType
+
 		if leftType.isDescendantOf(tint)
 			if rightType.isDescendantOf(tint)
 				# special case: true division
@@ -364,7 +365,7 @@ class NumericPromoExpr
 				if _op=='SLASH'
 					_type = tdecimal
 				else
-					_type = tint
+					_type = leftType.greatestCommonDenominatorWith(rightType to !)
 			else if rightType.isDescendantOf(tdecimal)
 				_type = tdecimal
 			else if rightType.isDescendantOf(tfloat)
@@ -544,9 +545,9 @@ class BinaryMathExpr
 			_type = lt
 		else
 			# TODO: this will need to be more sophisticated in the future with different sized ints and floats
-			if lt.isDescendantOf(.compiler.intType)
+			if lt.isDescendantOf(.compiler.anyIntType)
 				_type = rt
-			else if rt.isDescendantOf(.compiler.intType)
+			else if rt.isDescendantOf(.compiler.anyIntType)
 				_type = lt
 			else if lt.isDescendantOf(.compiler.decimalType)
 				if rt.isDescendantOf(.compiler.floatType)
@@ -575,7 +576,7 @@ class BinaryMathExpr
 			_right.writeSharpDef(sw)
 			sw.write(')')
 			return
-		intType = .compiler.intType
+		intType = .compiler.anyIntType
 		left = _left
 		right = _right
 		op = ''
@@ -595,7 +596,7 @@ class BinaryMathExpr
 				if _left.isKindOf(intType) and _right.isKindOf(intType)
 					pre = '(decimal)'
 			on 'SLASHSLASH'
-				if left.isKindOf(.compiler.intType) and right.isKindOf(.compiler.intType)
+				if left.isKindOf(intType) and right.isKindOf(intType)
 					op = '/'
 				else if left.isKindOf(.compiler.decimalType) or right.isKindOf(.compiler.decimalType)
 					op = 'Decimal.Floor('
@@ -696,7 +697,7 @@ class CompareExpr
 				else if left.type inherits Box  # TODO: try skipping on requiring that the type is a Box
 					leftBox = left.type to Box
 					compareTo = leftBox.memberForName('compareTo')
-					if compareTo and compareTo.isMethod and compareTo.resultType is .compiler.intType and right.type.isDescendantOf(leftBox)  # need last condition to prevent someString.CompareTo(someChar)
+					if compareTo and compareTo.isMethod and compareTo.resultType.isDescendantOf(.compiler.anyIntType) and right.type.isDescendantOf(leftBox)  # need last condition to prevent someString.CompareTo(someChar)
 						op = '.CompareTo('
 						done = true
 				if not done
@@ -725,7 +726,7 @@ class CompareExpr
 				if left.type inherits Box  # TODO: try skipping on requiring that the type is a Box
 					leftBox = left.type to Box
 					compareTo = leftBox.memberForName('compareTo')
-					if compareTo and compareTo.isMethod and compareTo.resultType is .compiler.intType and left.type == right.type  # need last condition to prevent someString.CompareTo(someChar)
+					if compareTo and compareTo.isMethod and compareTo.resultType.isDescendantOf(.compiler.anyIntType) and left.type == right.type  # need last condition to prevent someString.CompareTo(someChar)
 						op = '.CompareTo('
 						done = true
 				if not done

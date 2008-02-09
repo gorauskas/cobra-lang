@@ -371,12 +371,13 @@ class Compiler
 	## ITypeProvider
 	##
 
+	var _anyIntType as AnyIntType?
 	var _boolType as BoolType?
 	var _charType as CharType?
 	var _decimalType as DecimalType?
 	var _dynamicType as DynamicType?
 	var _floatType as FloatType?
-	var _intType as IntType?
+	var _intTypes			=  Dictionary<of int, IntType>()
 	var _nilType as NilType?
 	var _numberType as NumberType?
 	var _passThroughType as PassThroughType?
@@ -392,6 +393,11 @@ class Compiler
 	def typeOrNilForName(name as String) as IType?
 		assert false, 'TODO'
 		return nil
+
+	get anyIntType as AnyIntType
+		if _anyIntType is nil
+			_anyIntType = AnyIntType()
+		return _anyIntType to !
 
 	get boolType as BoolType
 		if _boolType is nil
@@ -413,11 +419,19 @@ class Compiler
 			_dynamicType = DynamicType()
 		return _dynamicType to !
 
-	get intType as IntType
-		if _intType is nil
-			_intType = IntType()
-		return _intType to !
+	def intType as IntType
+		return .intType(true, 32)
 
+	def intType(signed as bool, size as int) as IntType
+		require size in @[8, 16, 32, 64] # CC: inherit from interface
+		key = if(signed, -1, +1) * size
+		type as IntType?
+		if _intTypes.tryGetValue(key, out type)
+			return type to !
+		else
+			type = _intTypes[key] = IntType(signed, size, .anyIntType)
+			return type to !
+		
 	get floatType as FloatType
 		if _floatType is nil
 			_floatType = FloatType()
@@ -718,6 +732,7 @@ class Compiler
 			try
 				Node.setCompiler(this)
 				try
+					.anyIntType.bindInh  # TODO: bindInh to all existing built-in types
 					for _curModule in _modules
 						try
 							_curModule.bindInh
@@ -741,13 +756,13 @@ class Compiler
 			not .isBindingInt
 			not .isBindingImp
 		body
-			# TODO: bindInt to all existing types
 			if .verbosity >= 2
 				print 'Binding interface'
 			_isBindingInt = true
 			try
 				Node.setCompiler(this)
 				try
+					.anyIntType.bindInt  # TODO: bindInt to all existing built-in types
 					.fixNilableMemberSigs
 					for _curModule in _modules
 						try
