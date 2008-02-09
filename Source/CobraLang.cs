@@ -496,8 +496,24 @@ static public class CobraImp {
 		return b.Contains(a);
 	}
 
+	static public bool In(object a, IEnumerable b) {
+		foreach (object item in b) {
+			if (item.Equals(a))  // TODO: decimal.Equals has returned false in the past when it should be true
+				return true;
+		}
+		return false;
+	}
+
 	static public bool In<innerType>(innerType a, IList<innerType> b) {
 		return b.Contains(a);
+	}
+
+	static public bool In<innerType>(innerType a, IEnumerable<innerType> b) {
+		foreach (innerType item in b) {
+			if (item.Equals(a))  // TODO: decimal.Equals has returned false in the past when it should be true
+				return true;
+		}
+		return false;
 	}
 
 	static public bool In<keyType,valueType>(keyType a, IDictionary<keyType,valueType> b) {
@@ -513,6 +529,8 @@ static public class CobraImp {
 		try {
 			if (b is IList) {
 				return In(a, (IList)b);
+			} else if (b is IEnumerable) {
+				return In(a, (IEnumerable)b);
 			} else if (b is IDictionary) {
 				return In(a, (IDictionary)b);
 			} else if (b is String) {
