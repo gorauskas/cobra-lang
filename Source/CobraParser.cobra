@@ -477,13 +477,14 @@ class Parser
 		.expect('PERCENTPERCENT')
 		# 'stop' is already handled in main parse loop
 		token = .grab
-		if token.text == 'throw'
-			# throw an internal error. used for testing that the compiler will catch and report these as internal errors
-			.expect('EOL')
-			# TODO: throw AssertException(SourceSite sourceSite, object[] expressions, object thiss, object info)
-			assert false, IdentifierExpr(token, 'throw', nil)
-		else
-			.throwError('Unknown compiler directive.')
+		branch token.text
+			on 'throw'
+				# throw an internal error. used for testing that the compiler will catch and report these as internal errors
+				.expect('EOL')
+				# TODO: throw AssertException(SourceSite sourceSite, object[] expressions, object thiss, object info)
+				assert false, IdentifierExpr(token, 'throw', nil)
+			else
+				.throwError('Unknown compiler directive.')
 
 	def useDirective as UseDirective
 		"""
@@ -1573,10 +1574,13 @@ class Parser
 				# SomeClass<of Blah>()
 				#if token.which=='OPEN_GENERIC'
 				#	.throwError('The correct local variable syntax is "name as Type" or "name = initValue".')
-				if .looksLikeType(0) and .looksLikeVarNameIsNext(1)
-					.throwError('The correct local variable syntax is "name as Type" or "name = initValue". Try "[.peek(1).text] as [.peek(0).text]."')
-				s = .expression
-				s.afterParserRecognizesStatement
+				if token.which == 'ID' and token.text == 'ct_trace'  # TODO: need something other than ct_trace
+					s = CompileTimeTraceStmt(.grab, .expression)
+				else
+					if .looksLikeType(0) and .looksLikeVarNameIsNext(1)
+						.throwError('The correct local variable syntax is "name as Type" or "name = initValue". Try "[.peek(1).text] as [.peek(0).text]."')
+					s = .expression
+					s.afterParserRecognizesStatement
 		if expectEOL
 			if .verbosity>=5
 				print '<> last statement start token=[token]'

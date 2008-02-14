@@ -103,6 +103,8 @@ class Box
 
 	get baseInterfaces from var
 
+	get baseInterfaceProxies from var
+
 	get canHaveDetailedStackTrace as bool
 		"""
 		Normally returns true, but will return false for some key run-time support classes that help *implement* the DST.
@@ -156,6 +158,13 @@ class Box
 		return _baseClass is nil and .name == 'Object' and .parentNameSpace and .parentNameSpace.fullName == 'System'
 
 	pro membersToUnNil from var
+
+	get needScanClrType from var
+	
+	get nestedBoxes as IEnumerable<of Box>
+		for decl in _declsInOrder
+			if decl inherits Box
+				yield decl
 
 	pro parentNameSpace as NameSpace?
 		get
@@ -357,19 +366,16 @@ class Box
 				# nilable is not a concern; unwrap it:
 				rt = rt.theWrappedType
 			if rt inherits Box and (rt to Box).isGeneric
-				# TODO: this is a hack. should check for IEnumerator and 'current' like we do for non-generics further below
-				# assert not rt.isGenericDef
-				it = (rt to Box).genericParams[0]
-				if it inherits GenericParam
-					#it = .typeForGenericParam(it) # CC: this fails because IType on the right is more general than GenericParam on the left. But I'm thinking Cobra should allow you to back up to the original type if you like
-					return .typeForGenericParam(it)
-				else
-					return it
+				# don't take the first argument of the result type -- that won't work for a nested type in a generic class, like ValueCollection, which gets the generic params of its parents
+				rt = rt.memberForName('current').resultType
+				if rt inherits NilableType  # has to do with a generic being <of U> but current returning U?
+					rt = rt.theWrappedType
+				return rt
 			else
 				if rt.isDescendantOf(.compiler.libraryType('System.Collections.IEnumerator'))
 					return rt.memberForName('current').resultType
 				else
-					throw FallThroughException(rt)
+					throw FallThroughException({'rt': rt, 'this': this, 'getEnum': getEnum})
 		return nil
 
 	def isEquatableTo(t as IType) as bool
@@ -410,9 +416,13 @@ class Box
 						else
 							_badInterfaceError(baseWhat)
 					catch ne as NodeException
+						hadBaseInterfaceError = ne to ?
 						.compiler.recordError(ne)
+			for box in .nestedBoxes
+				box.bindInh
 		finally
 			.compiler.boxStack.pop
+			assert hadBaseInterfaceError or .baseInterfaceProxies.count == 0 or .baseInterfaceProxies.count == .baseInterfaces.count, [.baseInterfaceProxies.count, .baseInterfaces.count]
 		_didBindInh = true
 
 	def bindInt as INode
@@ -757,13 +767,20 @@ class Box
 			# construct the declarations
 			_overloads = List<of MemberOverload>()
 			newDecls = List<of IBoxMember>()
+			# hmmm, is it really necessary to do the nested boxes before the other members?
+			for decl in _declsInOrder
+				if decl inherits Box
+					nd = decl.constructedTypeFor(typeArgs) to IBoxMember
+					assert nd <> decl
+					newDecls.add(nd)
 			for decl in _declsInOrder
 				if decl inherits BoxMember
 					nd = decl.constructedFor(this, gpToType)
 					assert nd <> decl
 					newDecls.add(nd)
-				else
-					throw FallThroughException(decl)
+				else if not decl inherits Box
+					trace '|| || ||', decl  # delme
+					newDecls.add(nd)
 			_declsInOrder = List<of IBoxMember>()
 			_declsByName = Dictionary<of String, IBoxMember>()
 			_declsByNameCI = Dictionary<of String, IBoxMember>()
@@ -862,6 +879,22 @@ class Box
 			if _badRelatedType(interf)
 				continue
 			_baseInterfaceProxies.add(ClrTypeProxy(interf))
+
+	def _scanNestedTypes
+		for type in _clrType.getNestedTypes
+			if type.isClass
+				.addDecl(Class(type))
+			else if type.isInterface
+				.addDecl(Interface(type))
+			else if type.isEnum
+				.addDecl(EnumDecl(this, type, List<of String>(), ''))  # TODO: isNames; docString?
+			else if type.isValueType
+				.addDecl(Struct(type))
+			else if type.isAnsiClass
+				# The Enum class is an example that returns false for .isClass but true for .isAnsiClass
+				.addDecl(Class(type))
+			else
+				throw FallThroughException(type)
 
 	def _scanFields
 		for fieldInfo in _clrType.getFields(BindingFlags(Instance, Static, DeclaredOnly, Public))
@@ -1089,13 +1122,17 @@ class Box
 		"""
 		if t is nil
 			return false
-		if t.isNested and not t.isGenericParameter
+
+		# Need nested types for .controls is a subclass of Control. type Control+ControlCollection
+		if t.isNested and t.isNestedPrivate and not t.isGenericParameter  # TODO: need the generic param check?
 			return true
+
 		# FYI: MS .NET 2.0 (but not Mono 1.2.6) will return true for .isNotPublic for types are "by ref"
 		if t.isByRef # TODO: or t.isArray
 			return _badRelatedType(t.getElementType)
-		if t.isNotPublic
+		if t.isNotPublic or t.isNestedAssembly  # .isNestedAssembly should imply .isNotPublic but at least in System.Windows.Forms, on Novell Mono 1.2.6, Control+LayoutType reports .isNestedAssembly but not .isNotPublic
 			return true
+
 		return false
 
 	def _memberTypeProxy(clrType as Type?) as ITypeProxy
@@ -1313,6 +1350,7 @@ class Class
 		base._scanClrType
 		_scanIsNames
 		_scanImplements
+		_scanNestedTypes
 		_scanFields
 		_scanInitializers
 		_scanProperties
@@ -1494,6 +1532,7 @@ class Interface
 		base._scanClrType
 		_scanIsNames
 		_scanImplements
+		_scanNestedTypes
 		_scanFields
 		_scanProperties
 		_scanMethods
@@ -1567,6 +1606,7 @@ class Struct
 		base._scanClrType
 		_scanIsNames
 		_scanImplements
+		_scanNestedTypes
 		_scanFields
 		_scanInitializers
 		_scanProperties
@@ -1575,6 +1615,24 @@ class Struct
 	
 	get englishName as String is override
 		return 'struct'
+
+	def isDescendantOf(type as IType) as bool is override
+		# TODO: hmmm, almost duplicated from Class
+		if not .baseClass # and _baseNode
+			.bindInh
+		if .compiler
+			type.bindInh
+		if this is type
+			return true
+		if type inherits Interface
+			if .isDescendantOfInterface(type)
+				return true
+		baseClass = .baseClass
+		# assert baseClass is not this, this  # check for direct cycles
+		if baseClass
+			return baseClass.isDescendantOf(type)
+		else
+			return false
 
 	get isCallable as bool is override
 		return true

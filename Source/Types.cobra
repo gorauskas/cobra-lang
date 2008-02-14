@@ -1,3 +1,6 @@
+use System.Reflection
+
+
 interface ITypeProvider
 	"""
 	A type provider can provide essential types and serve as a place
@@ -538,10 +541,20 @@ class ClrTypeProxy
 		if clrType is Double
 			return .compiler.floatType
 
-		# handle nested types, like arrays and pointers, with recursive calls
+		# handle wrapped types, like arrays and pointers, with recursive calls
 		if clrType.isArray
 			# assert clrType.name.endsWith(r'[]') # could be [,] so TODO: handle multidim arrays
 			return ArrayType(_realType(clrType.getElementType to !))
+		else if clrType.isNested and not clrType.isGenericParameter
+			declaringType = _realType(clrType.declaringType to !)
+			declaringType.bindInh  # trigger scanning the clr type if needed
+			potential = declaringType.memberForName(clrType.name)
+			if potential is nil
+				.throwError('Cannot locate nested CLR type "[clrType]" (simple name is "[clrType.name]").')
+			else if potential inherits IType
+				return potential
+			else
+				.throwError('Located CLR type spec "[clrType]" but got a [potential.englishName] instead of a type.')
 		else if clrType.isPointer
 			assert clrType.name.endsWith('*')
 			# TODO: handle pointer types
@@ -561,17 +574,14 @@ class ClrTypeProxy
 			# generic like IComparable`1
 			assert r'[' not in typeName
 			typeName = .cobraNameForSharpBoxName(typeName)
-		else if clrType.isNested
-			typeName = 'Object'
-			# TODO: handle nested types
 		else if typeName == 'IBuiltInEvidence' or typeName == 'IConstantMembershipCondition'
 			# TODO: wow really weird.  2007-11-20.  problem on Mono. How about on .NET?
 			typeName = 'IMembershipCondition'
 		else if $sharp(r'char.IsLetterOrDigit(typeName[typeName.Length-1])')
 			pass
 		else
-			msg = 'Cannot locate CLR type "[_clrType]".'
-			if _clrType.namespace and _clrType.namespace.startsWith('System.')
+			msg = 'Cannot locate CLR type "[clrType]".'
+			if clrType.namespace and clrType.namespace.startsWith('System.')
 				# Since most (and usually all) System.Foo types can be read, don't choke up on a bad one
 				# TODO: .compiler.warning(msg)
 				typeName = 'Object'
@@ -580,11 +590,17 @@ class ClrTypeProxy
 
 		# compute namespace
 		nameParts = clrType.namespace.split(c'.')
-		member = .compiler.symbolForName(nameParts[0], true, false)
+		member = .compiler.globalNS.symbolForName(nameParts[0])
 		if member inherits NameSpace
 			curNS = member
 		else
-			.throwError('Cannot find top level namespace "[nameParts[0]]" of CLR type "[clrType.fullName]".')
+			msg = 'Cannot find top level namespace "[nameParts[0]]" of CLR type "[clrType.fullName]".'
+			if nameParts[0] == 'Accessibility'
+				# not sure what's going on here. happens with: cobra -c -t:winexe -r:System.Windows.Forms winforms1.cobra  on Novell Mono 1.2.6. Does it happen with .NET?
+				if Utils.isDevMachine
+					print msg  # could do a .compiler.warning, but then testify gets messed up
+					return _hack(clrType)
+			.throwError(msg)
 		i = 1
 		while i < nameParts.length
 			possible = curNS.declForName(nameParts[i])
@@ -613,8 +629,8 @@ class ClrTypeProxy
 				member = (member to Box).constructedTypeFor(args)
 			return member
 		else
-			msg = 'Cannot locate CLR type "[_clrType]".'
-			if _clrType.namespace and _clrType.namespace.startsWith('System.')
+			msg = 'Cannot locate CLR type "[clrType]".'
+			if clrType.namespace and clrType.namespace.startsWith('System.')
 				# TODO: On .NET 2.0 only \Tests\110-basics-two\550-collection-equality.cobra
 				# fails with: Cannot locate CLR type "System.Collections.KeyValuePairs[]".
 				# Figure out why.

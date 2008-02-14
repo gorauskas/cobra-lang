@@ -199,6 +199,47 @@ class AssertStmt
 		sw.dedent
 
 
+class CompileTimeTraceStmt
+	inherits Stmt
+
+	var _expr as Expr
+	
+	def init(token as IToken, expr as Expr)
+		base.init(token)
+		_expr = expr
+
+	def addSubFields
+		base.addSubFields
+		.addField('expr', _expr)
+
+	get expr from var
+
+	def _bindImp
+		base._bindImp
+		expr = _expr
+		# this output will likely need to be done as warning output so it works with IDEs
+		prefix = '    -'
+		print 'Compile-time trace at [.token.toTechString]'
+		print '[prefix] before bind imp on expression: [expr.toCobraSource] = [expr]'
+		expr.bindImp
+		print '[prefix] after bind imp on expression:  [expr.toCobraSource] = [expr]'
+		dexpr = expr to dynamic
+		try
+			defi = dexpr.definition to ?
+			if defi
+				print '    - definition = [defi]'
+		catch DynamicOperationException
+			print '[prefix] no definition'
+		try
+			type = dexpr.type to ?
+			if type
+				print '    - type = [type]'
+		catch DynamicOperationException
+			print '[prefix] no type'
+
+	# no writeSharpDef for a compile-time trace
+
+
 class BranchStmt
 	inherits Stmt
 
