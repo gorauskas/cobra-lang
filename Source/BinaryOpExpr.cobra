@@ -796,6 +796,7 @@ class DotExpr
 			if _left inherits ThisOrBaseLit
 				if .curCodeMember and .curCodeMember.isShared and not _dotRightExpr.member.isShared  # .curCodeMember is nil when bind imp'ing on var init exprs like "var _x = someExpr"
 					.throwError('Cannot access instance member "[_dotRightExpr.name]" from the current shared member. Make the member "shared" or create an instance of the type.')
+
 	get potentialType as IType?
 		# overridden to return the type this dotted expr represents in those cases when it does represent a type
 		assert .didBindImp
@@ -839,6 +840,14 @@ class DotExpr
 					if _left inherits DotExpr
 						sw.write('new ')
 						_right.willWriteSharpNew = false
+			if _dotRightExpr.member inherits BoxMember
+				backing = (_dotRightExpr.member to BoxMember).sharedMethodBacking
+				if backing
+					# example:  Cobra: c.isUpper   C#: char.IsUpper(c)
+					sw.write(backing+'(')
+					_left.writeSharpDef(sw, false)
+					sw.write(')')
+					return
 			# handle static typing
 			# don't write 'this' for shared members
 			writeThis = true

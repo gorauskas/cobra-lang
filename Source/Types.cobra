@@ -1029,10 +1029,10 @@ class PrimitiveType
 			_superType = .compiler.libraryClass('System.Object')
 
 	def isComparableTo(t as IType) as bool
-		r = base.isComparableTo(t)
-		if not r and t is this
-			r = true
-		return r
+		if this is t
+			return true
+		else
+			return base.isComparableTo(t)
 
 
 class BoolType
@@ -1051,11 +1051,42 @@ class BoolType
 class CharType
 	inherits PrimitiveType
 
+	var _clrType as Type
+	var _box as Box?  # TODO: move this and related code up to PrimitiveType
+
 	def init
 		base.init
+		_clrType = Char
 
 	get name as String is override
 		return 'char'
+
+	def _bindInh
+		base._bindInh
+		_box = Class(Token.empty, '[.getType.name]_[.serialNum]', List<of IType>(), List<of String>(), AttributeList(), ClrTypeProxy(Object), List<of ITypeProxy>(), nil)
+		_box.bindInh
+
+	def _bindInt
+		base._bindInt
+		for methInfo in _clrType.getMethods(BindingFlags(Static, DeclaredOnly, Public))
+			if methInfo.isSpecialName
+				continue
+			params = methInfo.getParameters
+			if params and params.length and params[0].parameterType == Char
+				# should be a member of char instances
+				if params.length == 1
+					# TODO: scan parameters and deal with overloads
+					meth = Method(Token.empty, _box, Utils.uncapped(methInfo.name), List<of Param>(), ClrTypeProxy(methInfo.returnType), nil, List<of String>(), AttributeList(), '')
+					meth.sharedMethodBacking = 'char.' + methInfo.name
+					_box.addDecl(meth)
+					# print '[.name].[meth.name]'
+		_box.bindInt
+
+	def memberForName(name as String) as IMember?
+		member = base.memberForName(name)
+		if member is nil
+			member = _box.symbolForName(name, true)
+		return member
 
 	def isComparableTo(b as IType) as bool
 		r = base.isComparableTo(b)
