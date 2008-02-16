@@ -911,7 +911,8 @@ class Box
 					isNames.add('private')
 				if fieldInfo.isStatic
 					isNames.add('shared')
-				prop = Property(TokenFix.empty, this, Utils.uncapped(fieldInfo.name), _memberTypeResultProxy(fieldInfo, fieldInfo.fieldType), isNames, AttributeList(), '')
+				prop = Property(TokenFix.empty, this, Utils.cobraNameForSharpMemberName(fieldInfo.name), _memberTypeResultProxy(fieldInfo, fieldInfo.fieldType), isNames, AttributeList(), '')
+				prop.binaryName = fieldInfo.name
 				prop.makeGetPart(TokenFix.empty)
 				.addDecl(prop)
 
@@ -964,7 +965,8 @@ class Box
 				isNames = _isNamesForMethodInfo(propInfo.getSetMethod(true) to !)
 			else
 				throw FallThroughException(propInfo)
-			prop = Property(TokenFix.empty, this, Utils.uncapped(propInfo.name), _memberTypeResultProxy(propInfo, propInfo.propertyType), isNames, attribs, docString)
+			prop = Property(TokenFix.empty, this, Utils.cobraNameForSharpMemberName(propInfo.name), _memberTypeResultProxy(propInfo, propInfo.propertyType), isNames, attribs, docString)
+			prop.binaryName = propInfo.name
 			if propInfo.canRead
 				prop.makeGetPart(TokenFix.empty)
 			if propInfo.canWrite
@@ -1026,7 +1028,7 @@ class Box
 				# TODO: these are mostly (maybe all) explicit implementations of interfaces
 				# print 'xxx dotted name: [methInfo]'
 				continue
-			name = Utils.uncapped(methInfo.name)
+			name = Utils.cobraNameForSharpMemberName(methInfo.name)
 			if name == 'init'
 				# there is at least one of these: System.Runtime.Remoting.Messaging.MethodCall.init
 				# TODO: What to do? Change 'def init' to 'def .init' or 'def .ctor'? No quadruple underscores.
@@ -1038,6 +1040,7 @@ class Box
 			docString = ''  # TODO: get doc string for class?
 			implementsTypeNode as ITypeProxy?  # TODO: explicit interface implementation?
 			method = Method(TokenFix.empty, this, name, params, _memberTypeResultProxy(methInfo, methInfo.returnType), implementsTypeNode, isNames, attribs, docString)
+			method.binaryName = methInfo.name
 			overload as MemberOverload? = nil
 			other = .declForName(name)
 			if other
@@ -1082,7 +1085,7 @@ class Box
 				# TODO: these are mostly (maybe all) explicit implementations of interfaces
 				# print 'xxx dotted name: [methInfo]'
 				continue
-			name = Utils.uncapped(eventInfo.name)
+			name = Utils.cobraNameForSharpMemberName(eventInfo.name)
 # TODO:
 #			isNames = _isNamesForMethodInfo(eventInfo)
 #			attribs = _attribsForMethodInfo(eventInfo)
@@ -1090,6 +1093,7 @@ class Box
 			attribs = AttributeList()
 			docString = ''  # TODO: get doc string for class?
 			evt = BoxEvent(TokenFix.empty, this, name, isNames, attribs, docString, ClrTypeProxy(eventInfo.eventHandlerType))
+			evt.binaryName = eventInfo.name
 			.addDecl(evt)
 
 	def _isNamesForMethodInfo(mi as MethodBase) as List<of String>

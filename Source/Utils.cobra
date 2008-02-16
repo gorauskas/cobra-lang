@@ -50,26 +50,6 @@ class Utils
 					return s
 				return s[0:1].toUpper + s[1:]
 
-		def uncapped(s as String) as String
-			"""
-			Returns the string with the first character NOT-capitalized.
-			Returns a blank string for a blank string.
-			"""
-			ensure
-				result.length == s.length
-				result.length implies result[0] == result[0].toString.toLower
-			test
-				assert Utils.uncapped('Chuck')=='chuck'
-				assert Utils.uncapped('chuck')=='chuck'
-				assert Utils.uncapped('')==''
-				assert Utils.uncapped(' foo')==' foo'
-				assert Utils.uncapped('F')=='f'
-				assert Utils.uncapped('1aoeu')=='1aoeu'
-			body
-				if s.length==0
-					return s
-				return s[0].toLower.toString + s[1:]
-
 		def isCapped(s as String) as bool
 			test
 				assert Utils.isCapped('Aoeu')
@@ -159,6 +139,53 @@ class Utils
 
 		def join(sep as String, parts as vari String) as String  # CC: shouldn't need this because vari should implement IEnumerable
 			return .join(sep, parts to System.Collections.IEnumerable)
+
+
+		## C#
+		
+		def cobraNameForSharpMemberName(name as String) as String
+			require
+				name.length
+			ensure
+				not result[0].isUpper
+			test
+				cases = [
+					'Foo foo',
+					'FooBar fooBar',
+					'PI pi',
+					'OSVersion osVersion',
+					'XMLParser xmlParser',
+					'foo foo',
+					'fooBar fooBar',
+					'_foo _foo',
+					'_fooBar _fooBar',
+					'_Foo _Foo',
+					'_FooBar _FooBar',
+					'_ _',
+				]
+				for case in cases
+					parts = case.split
+					assert Utils.cobraNameForSharpMemberName(parts[0]) == parts[1]
+			body
+				if name.length == 1
+					return name.toLower
+				else
+					upperCount = 0
+					for ch in name
+						if ch.isUpper
+							upperCount += 1
+						else
+							break
+					if upperCount == 0
+						return name
+					if upperCount == name.length  # all upper like 'PI'
+						return name.toLower
+					if upperCount == 1
+						return name[0].toLower.toString + name[1:]
+					else
+						# multi upper count like OSVersion
+						return name[:upperCount-1].toLower + name[upperCount-1:]
+
 
 		## Code gen
 
