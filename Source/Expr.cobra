@@ -121,6 +121,13 @@ class Expr
 		body
 			return .receiverType.memberForName(name)
 
+	def suggestionsForBadMemberName(name as String) as List<of String>
+		require
+			.didBindImp
+			.type
+		body
+			return .receiverType.suggestionsForBadMemberName(name)
+
 	get binarySuperNode as BinaryOpExpr
 		require
 			.superNode inherits BinaryOpExpr
@@ -1417,14 +1424,23 @@ class MemberExpr
 				if .binarySuperNode.left.receiverType.isDynamic
 					_type = .compiler.dynamicType
 					return
-				if Utils.isCapped(_name)
-					sugg = 'If the name is essentially correct, try the lowercase version ("[Utils.cobraNameForSharpMemberName(_name)]") instead.'
+				suggs = .binarySuperNode.left.suggestionsForBadMemberName(_name)
+				if suggs.count
+					if suggs.count == 1
+						sugg = ' There is a member named "[suggs[0]]" with a similar name.'
+					else
+						sugg = ' There are members with similar names including '
+						sep = ''
+						for i = 0 .. suggs.count
+							sugg += '[sep]"[suggs[i]]"'
+							sep = if(i<suggs.count-2, ', ', ' and ')
+						sugg += '.'
 				else
 					sugg = ''
 				left = .binarySuperNode.left
 				isBoxAccess = left inherits IdentifierExpr and (left to IdentifierExpr).definition inherits Box  # like "Console.writeLine" where the receiver is a literal class or struct reference
 				whoseTypeIs = if(isBoxAccess, '', ' whose type is "[left.receiverType.name]"')
-				.throwError('Cannot find a definition for "[_name]" in "[left.toCobraSource]"[whoseTypeIs]. [sugg]')
+				.throwError('Cannot find a definition for "[_name]" in "[left.toCobraSource]"[whoseTypeIs].[sugg]')
 			assert _definition
 			if _definition inherits IType
 				effectiveType as IType = .compiler.typeType  # namespace, class, interface

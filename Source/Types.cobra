@@ -248,6 +248,9 @@ class BasicLibraryType
 	def memberForName(name as String) as IMember?
 		return nil
 
+	def suggestionsForBadMemberName(name as String) as List<of String>
+		return List<of String>()
+
 	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType
 		return this
 
@@ -725,6 +728,11 @@ interface IType
 		Should return members that are inherited (if any).
 		"""
 
+	def suggestionsForBadMemberName(name as String) as List<of String>
+		"""
+		When .memberForName returns nil for the given name, provide suggestions of names that actually exist.
+		"""
+
 	## Code gen
 
 	get sharpInit as String
@@ -919,6 +927,12 @@ class CobraType
 		"""
 		objectClass = .compiler.libraryType('System.Object')
 		return objectClass.memberForName(name)
+
+	def suggestionsForBadMemberName(name as String) as List<of String>
+		suggs = List<of String>()
+		if _superType
+			suggs.addRange(_superType.suggestionsForBadMemberName(name))
+		return suggs
 
 	def equals(obj as Object?) as bool is override
 		if obj is nil
