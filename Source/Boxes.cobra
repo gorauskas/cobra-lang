@@ -528,6 +528,11 @@ class Box
 					attrib.bindImp
 				catch ne as NodeException
 					.compiler.recordError(ne)
+			for i = 0 .. _invariants.count
+				invari = _invariants[i]
+				invari.bindImp
+				if invari.type is not .compiler.boolType
+					_invariants[i] = TruthExpr(invari).bindAll to Expr
 			for invari in _invariants
 				invari.bindImp
 			for decl in _declsInOrder
@@ -1281,6 +1286,8 @@ class Box
 	get sharpInvariantVisibility as String is abstract
 
 	def writeSharpInvariantMethod(sw as SharpWriter)
+		if .compiler.options['contracts'] <> 'none'
+			sw.write('\nint _ih_invariantGuard;\n\n')
 		if .compiler.options['contracts'] <> 'methods'
 			return
 		sw.write('\n[.sharpInvariantVisibility] void invariant_[.rootName]() {\n')
@@ -1310,7 +1317,7 @@ class Box
 			sharpThis = 'typeof([.sharpName])'
 			sw.write('if (!')
 			expr.writeSharpDef(sw)
-			sw.write(') ')
+			sw.write(')\n')
 			sw.indent
 			sw.write('throw new InvariantException([expr.sharpSourceSite(.name, "invariant", sharpThis)], ')
 			expr.writeSharpBreakdown(sw)

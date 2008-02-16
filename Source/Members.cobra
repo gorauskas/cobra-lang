@@ -1098,6 +1098,11 @@ class Initializer
 		if .compiler.includeTests
 			.writeSharpTest(sw)
 
+	def writeSharpImpHeader(sw as SharpWriter)
+		base.writeSharpImpHeader(sw)
+		if .isStructMember and .compiler.options['contracts'] <> 'none'
+			sw.write('\n_ih_invariantGuard = 0;\n\n')  # otherwise C# complains: Field "STRUCTNAME._ih_invariantGuard" must be fully assigned before control leaves the constructor
+		
 
 class Method
 	inherits AbstractMethod
@@ -1867,11 +1872,16 @@ class EnsurePart
 			sw.write('[.sharpThis], null);\n')
 			sw.dedent
 		if not _codeMember.isShared
-			sw.write('if (CobraCore._willCheckInvariant) {')
+			sw.write('if (CobraCore._willCheckInvariant && _ih_invariantGuard == 0) {\n')
+			sw.indent
+			sw.write('_ih_invariantGuard += 1;\n')
+			sw.write('try {\n')
 			sw.indent
 			if .willInlineSharp
 				.codeMember.box.writeAllSharpInvariantChecks(sw)
 			else
 				sw.write('invariant_[_codeMember.box.rootName]();')
 			sw.dedent
-			sw.write('}\n')
+			sw.write('} finally { _ih_invariantGuard -= 1; }\n')
+			sw.dedent
+			sw.write('} // invariant\n')
