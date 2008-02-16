@@ -1032,7 +1032,7 @@ class Initializer
 				if decl inherits BoxVar
 					assert decl.type
 					if not decl.type inherits NilableType and decl.type.isReference and not decl.isShared
-						stmts.add(AssertStmt(token, IsNotNilExpr(token, IdentifierExpr(token, decl.name, decl)), nil))
+						stmts.add(AssertStmt(token, IsNotNilExpr(token, IdentifierExpr(token, decl)), nil))
 			if stmts.count
 				sharpToken = token.copy
 				sharpToken.which = 'STRING'
@@ -1328,6 +1328,15 @@ class ProperDexer
 				assert _returnTypeNode
 				_returnType = _returnTypeNode.realType
 		assert _returnType  # properties always have a return type
+
+		if _coverVar
+			if _coverAccess in ['getset', 'get']
+				# return VARNAME
+				.makeGetPart(.token).statements.add(ReturnStmt(.token, IdentifierExpr(.token, _coverVar)))
+			if _coverAccess in ['getset', 'set']
+				# VARNAME = value
+				.makeSetPart(.token).statements.add(AssignExpr(.token, 'ASSIGN', IdentifierExpr(.token, _coverVar), IdentifierExpr(.token, 'value')))
+
 		if _getPart
 			_getPart.bindInt
 		if _setPart
@@ -1352,26 +1361,20 @@ class ProperDexer
 	def writeSharpBody(sw as SharpWriter)
 		sw.write(' {\n')
 		sw.indent
-		if _coverVar
-			if _coverAccess in ['getset', 'get']
-				sw.write('get { return [_coverVar.sharpName]; }')
-			if _coverAccess in ['getset', 'set']
-				sw.write('set { [_coverVar.sharpName] = value; }')
-		else
-			if _getPart
-				if .isAbstract or .isInterfaceMember
-					sw.write('\tget;\n')
-				else if .isClassMember or .isStructMember
-					_getPart.writeSharpDef(sw)
-				else
-					throw FallThroughException(this)
-			if _setPart
-				if .isAbstract or .isInterfaceMember
-					sw.write('\tset;\n')
-				else if .isClassMember or .isStructMember
-					_setPart.writeSharpDef(sw)
-				else
-					throw FallThroughException(this)
+		if _getPart
+			if .isAbstract or .isInterfaceMember
+				sw.write('\tget;\n')
+			else if .isClassMember or .isStructMember
+				_getPart.writeSharpDef(sw)
+			else
+				throw FallThroughException(this)
+		if _setPart
+			if .isAbstract or .isInterfaceMember
+				sw.write('\tset;\n')
+			else if .isClassMember or .isStructMember
+				_setPart.writeSharpDef(sw)
+			else
+				throw FallThroughException(this)
 		sw.dedent
 		sw.write('}\n')
 
