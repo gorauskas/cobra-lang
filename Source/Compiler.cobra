@@ -1179,15 +1179,29 @@ class Compiler
 				print 'Compiling generated code'
 			# locate the C# compiler
 			isUnix = Utils.isRunningOnUnix
+			isMono = CobraCore.isRunningOnMono
 			found = false
 			for execPathSpec in _cscExecPaths
 				cscPath = execPathSpec[0]
 				platform = execPathSpec[1]
+				if isMono and platform <> 'novell'
+					continue
 				if isUnix and '\\' in cscPath
 					continue  # skip windows paths
 				if File.exists(cscPath) or File.exists(cscPath+'.exe')
 					found = true
 					break
+			# special case: you're running Mono on MS Windows
+			if not found and isMono and not isUnix
+				paths = Environment.getEnvironmentVariable('PATH')
+				if paths and paths.length
+					for path in paths.split(c';')
+						possible = Path.combine(path, 'gmcs.bat')
+						if File.exists(possible)
+							cscPath = possible
+							platform = 'novell'
+							found = true
+							break
 			if not found
 				print 'Looked for C# compiler at:'
 				for execPathSpec in _cscExecPaths
