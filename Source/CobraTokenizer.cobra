@@ -74,8 +74,9 @@ class CobraTokenizer
 			# whitespace
 			r'BLANK_TABS_LINE_1		^[\t]+$',
 			r'BLANK_TABS_LINE_2		^[\t]+\#.*$',
-			r'INDENT_MIXED_1		^[\t]+[ ]+',
-			r'INDENT_MIXED_2		^[ ]+[\t]+',
+			r'INDENT_MIXED_TSNS		^[\t]+[ ]+(?=[^\t ])',
+			r'INDENT_MIXED_TS		^[\t]+[ ]+',
+			r'INDENT_MIXED_ST		^[ ]+[\t]+',
 			r'INDENT_ALL_TABS		^[\t]+',
 			r'INDENT_ALL_SPACES		^[ ]+',
 			r'NO_INDENT				^(?=[^\t\n#])',
@@ -225,7 +226,18 @@ class CobraTokenizer
 		#print '<> onBLANK_TABS_LINE_2'
 		return nil
 
-	def onINDENT_MIXED_1(tok as IToken) as IToken?
+	def onINDENT_MIXED_TSNS(tok as IToken) as IToken?
+		# expecting tabs, spaces, non-whitespace
+		assert tok.text.startsWith('\t')
+		assert tok.text.endsWith(' ')
+		# this is okay on continued lines
+		if .justDidLineContinuation
+			indentLevel = Utils.countChars(tok.text, c'\t') + Utils.countChars(tok.text, c' ') // 4
+			return _processNumIndentLevels(indentLevel)  # will check continuation indentation rules
+		else
+			return .onINDENT_MIXED_TS(tok)
+
+	def onINDENT_MIXED_TS(tok as IToken) as IToken?
 		sb = StringBuilder()
 		for c in tok.text
 			if c==c' '
@@ -235,10 +247,10 @@ class CobraTokenizer
 			else
 				sb.append(c)
 		.throwError('Cannot mix tabs and spaces in indentation. [sb]...')
-		return nil  # make compiler happy.  CC?: new "never" statement. meaning execution should never get here (and therefore no return is needed). Throws NeverException.
+		return nil  # make compiler happy.
 
-	def onINDENT_MIXED_2(tok as IToken) as IToken?
-		return .onINDENT_MIXED_1(tok)
+	def onINDENT_MIXED_ST(tok as IToken) as IToken?
+		return .onINDENT_MIXED_TS(tok)
 
 	def onINDENT_ALL_TABS(tok as IToken) as IToken?
 		numTabs = Utils.countChars(tok.text, c'\t')
@@ -246,9 +258,9 @@ class CobraTokenizer
 
 	def onINDENT_ALL_SPACES(tok as IToken) as IToken?
 		numSpaces = Utils.countChars(tok.text, c' ')
-		if numSpaces % 4  # yes, 4. hard coded, intentionally.
-			# TODO: should really just record an error and take round(numSpaces/4) as the indent
-			.throwError('Space based indentation must be a multiple of 4. This line has a remainder of [numSpaces%4].')
+		if numSpaces % 4 and not .justDidLineContinuation # yes, 4. hard coded, intentionally.
+			# TODO: should really just record an error and take (numSpaces/4).round as the indent
+			.throwError('Space-based indentation must be a multiple of 4. This line has a remainder of [numSpaces%4].')
 		return _processNumIndentLevels(numSpaces // 4)
 
 	def onNO_INDENT(tok as IToken) as IToken?
@@ -258,6 +270,10 @@ class CobraTokenizer
 		return t
 
 	def _processNumIndentLevels(numTabs as int) as IToken?
+		if .justDidLineContinuation
+			if numTabs < _indentCount
+				.recordError('Must indent same amount or more on a continued line.')
+			return nil
 		firstTok as IToken?
 		lastTok as IToken?
 		while numTabs>_indentCount
@@ -281,7 +297,13 @@ class CobraTokenizer
 				firstTok = lastTok = newTok
 		return firstTok
 
+	var _didLineContinuation as bool  # only meaningful after an EOL
+
+	get justDidLineContinuation as bool
+		return .lastToken and .lastToken.which == 'EOL' and _didLineContinuation
+
 	def onEOL(tok as IToken) as IToken?
+		_didLineContinuation = .lastToken and .lastToken.text == '_' and .lastToken.which == 'ID'
 		return tok
 
 	def onSINGLE_LINE_COMMENT(tok as IToken) as IToken?

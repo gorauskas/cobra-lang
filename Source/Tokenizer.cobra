@@ -224,11 +224,18 @@ class TokenizerError
 	"""
 
 	var _tokenizer as Tokenizer
+	var _token as IToken?
 
 	def init(tokenizer as Tokenizer, msg as String)
 		require msg.length
 		base.init(msg)
 		_tokenizer = tokenizer
+		if tokenizer.curToken
+			_token = tokenizer.curToken
+		else
+			_token = tokenizer.lastToken
+
+	get token from var
 
 	get tokenizer from var
 
@@ -246,6 +253,7 @@ class Tokenizer
 	var _willAlwaysEndWithNewLine = true
 	var _didReset = false
 	var _didStart = false
+	var _errors as List<of TokenizerError>
 
 	var _fileName as String?
 	var _stream as TextReader?
@@ -323,10 +331,13 @@ class Tokenizer
 
 	get fileName from var
 
+	get errors from var
+
 
 	## Other
 
 	def _reset
+		_errors = List<of TokenizerError>()
 		_fileName = nil
 		_stream = nil
 		_curToken = nil
@@ -707,8 +718,14 @@ class Tokenizer
 	def isActiveCall(tok as TokenDef) as bool
 		return true
 
+	def recordError(msg as String) as TokenizerError
+		err = TokenizerError(this, msg)
+		_errors.add(err)
+		return err
+
 	def throwError(msg as String)
-		throw TokenizerError(this, msg)
+		# TODO: like parser, this should probably not be recorded unless it "makes it out". see comment in CobraParser.throwError
+		throw .recordError(msg)
 
 	def checkTokens(tokens as List<of IToken>, expected as String)
 		is shared

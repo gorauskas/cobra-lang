@@ -35,7 +35,7 @@ enum PlatformEnum
 
 
 class Compiler
-	implements ITypeProvider, IWarningRecorder
+	implements ITypeProvider, IWarningRecorder, IErrorRecorder
 	"""
 	General notes:
 
@@ -350,20 +350,24 @@ class Compiler
 						parser.verbosity = _verbosity
 						parser.typeProvider = this
 						parser.warningRecorder = this
+						parser.errorRecorder = this
 						parser.globalNS = _globalNS
 						# @@ TODO: assert _globalNS is parser.nameSpaceStack[0]
 						try
-								module = parser.parseFileNamed(filename)
-						catch ce as SourceException
-							.recordError(ce)
+							module = parser.parseFileNamed(filename)
+						catch SourceException
+							pass
 						success
+							# There could still be parse errors that were recorded, but not thrown.
+							# But that's okay because _errors.count is checked further below.
 							modules.add(module)
 			finally
 				Node.setCompiler(nil)
-			assert modules.count
-			_modules.addRange(modules)
 			if _errors.count
 				_exitFromErrors
+			else
+				assert modules.count
+				_modules.addRange(modules)
 			return modules
 
 

@@ -41,6 +41,11 @@ interface IWarningRecorder
 	def warning(we as CobraWarning)
 
 
+interface IErrorRecorder
+
+	def recordError(error as SourceException)
+
+
 class Parser
 	"""
 	Notes:
@@ -102,9 +107,10 @@ class Parser
 
 	# TODO: do this with a callback/delegate instead of this bullshit Java-style interface technique
 	var _warningRecorder as IWarningRecorder?
+	var _errorRecorder as IErrorRecorder?
 
 	pro warningRecorder from var
-
+	pro errorRecorder from var
 
 	def init
 		_boxStack = Stack<of Box>()
@@ -147,14 +153,19 @@ class Parser
 		"""
 		Parses module source code and returns resulting module.
 		"""
-		.preParseSource(fileName, source)
-		if source.length==0
-			_warning('File is empty.')
-		else if source.trim.length==0
-			_warning('File is completely blank.')
-		return .parseTokens
+		try
+			_preParseSource(fileName, source)
+			if source.length==0
+				_warning('File is empty.')
+			else if source.trim.length==0
+				_warning('File is completely blank.')
+			return _parseTokens()
+		catch pe as ParserException
+			if _errorRecorder
+				_errorRecorder.recordError(pe)
+			throw
 
-	def preParseSource(fileName as String, source as String)
+	def _preParseSource(fileName as String, source as String)
 		"""
 		Sets up for parsing, but does not invoke `parseTokens`.
 		Used by `parseSource` and various test sections.
@@ -170,14 +181,28 @@ class Parser
 		.newOpStack
 
 		_tokens = nil
+		tokenizer = CobraTokenizer(tokVerbosity)
 		try
-			_tokens = CobraTokenizer(tokVerbosity).startSource(_fileName, source).allCachedTokens
+			tokens = tokenizer.startSource(_fileName, source).allCachedTokens
+			_tokens = List<of IToken>(tokens.count)
+			for i = 0 .. tokens.count
+				if tokens[i].text == '_' and tokens[i].which == 'ID'
+					if i < tokens.count-1 and tokens[i+1].which == 'EOL'
+						i += 1
+					else
+						.recordError(tokens[i], 'Unexpected line continuation character.')
+				else
+					_tokens.add(tokens[i])
 		catch te as TokenizerError
 			msg = te.message
 			if _verbosity>=5
 				msg = 'Token error: ' + msg
-			.throwError(te.tokenizer.curToken, msg)
+			.throwError(te.token, msg)
 
+		if tokenizer.errors.count
+			for error in tokenizer.errors
+				.recordError(error.token, error.message)
+			
 		_nextTokenIndex = 0
 
 
@@ -253,7 +278,7 @@ class Parser
 		test
 			p = Parser()
 			s = 'namespace class Foo def'
-			p.preParseSource('(no filename)', s)
+			p._preParseSource('(no filename)', s)
 			p.grab
 			p.grab
 			p.grab
@@ -287,7 +312,7 @@ class Parser
 			if whatTypes[0]=='DEF' and t.which=='CUE'
 				t.which = 'DEF'
 			else
-				.throwError('Expecting [whatTypes], but got [t] instead.')
+				.throwError('Expecting [Utils.join(" or ",whatTypes)], but got [t] instead.')
 		return t to !
 
 	def optional(whatTypes as vari String) as IToken?
@@ -312,7 +337,7 @@ class Parser
 		Example:  .oneOrMore('EOL')
 		"""
 		.expect(which)
-		while .peek.which == which
+		while .peek and .peek.which == which
 			.grab
 
 	def zeroOrMore(which as String)
@@ -415,7 +440,7 @@ class Parser
 
 	var _module as CobraModule?
 
-	def parseTokens as CobraModule
+	def _parseTokens as CobraModule
 		"""
 		Parses and then returns an instance of Module.
 		"""
@@ -2754,10 +2779,21 @@ class Parser
 		token = .peek(peekAhead)
 		return token is not nil and token.which=='ID' and Utils.startsWithLowerLetter(token.text)
 
+	def recordError(msg as String) as ParserException
+		return .recordError(.last, msg)
+
+	def recordError(token as IToken?, msg as String) as ParserException
+		err = _makeError(token, msg)
+		_errorRecorder.recordError(err)
+		return err
+		
 	def throwError(msg as String)
 		.throwError(.last, msg)
 
 	def throwError(token as IToken?, msg as String)
+		throw _makeError(token, msg)  # will get recorded in .parseSource if the exception actually "makes it out" (some parser logic catches errors)
+
+	def _makeError(token as IToken?, msg as String) as ParserException
 		if token
 			msg = '[token.fileName]([token.lineNum],[token.colNum]): error: [msg]'
 		else
@@ -2773,9 +2809,9 @@ class Parser
 			# assert false
 		token ?= .last
 		if token is nil
-			throw ParserException(_fileName, msg)
+			return ParserException(_fileName, msg)
 		else
-			throw ParserException(token, msg)
+			return ParserException(token, msg)
 
 	def _warning(msg as String)
 		_warning(.last, msg)
