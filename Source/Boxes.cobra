@@ -154,8 +154,12 @@ class Box
 		else
 			return false
 
+	# TODO: cache
 	get isSystemObjectClass as bool
 		return _baseClass is nil and .name == 'Object' and .parentNameSpace and .parentNameSpace.fullName == 'System'
+
+	get isSystemTypeClass as bool
+		return .name == 'Type' and .parentNameSpace and .parentNameSpace.fullName == 'System'
 
 	pro membersToUnNil from var
 
@@ -464,6 +468,8 @@ class Box
 		base._bindInt
 		.compiler.boxStack.push(this)
 		try
+			if .isSystemObjectClass
+				.prepSystemObjectClass
 			errorCount = .compiler.errors.count
 			if _needScanClrType
 				_scanClrType
@@ -502,6 +508,16 @@ class Box
 						ct.bindInt
 		finally
 			.compiler.boxStack.pop
+
+	def prepSystemObjectClass
+		# Pretend .NET is a bit more OO, consistent and elegant.
+		# C#'s typeof(X) is X.getType in Cobra.
+		meth = Method(TokenFix.empty, this, 'getType', List<of Param>(), ClrTypeProxy(Type), nil, ['shared'], AttributeList(), 'Returns the System.Type instance that defines this type.')
+		meth.sharedMethodBacking = 'typeof'
+		existing = .declForName('getType') to BoxMember
+		overload = MemberOverload(existing)
+		.registerOverload(overload)
+		overload.addMember(meth)
 
 	def _bindBase
 		# invoked by _bindInt
