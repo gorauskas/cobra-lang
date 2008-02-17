@@ -1721,7 +1721,12 @@ class RefExpr
 class SharpExpr
 	inherits Expr
 
-	var _expr as StringLit
+	var _expr as StringLit?
+	var _sharpSource as String?
+
+	def init(token as IToken, sharpSource as String)
+		base.init(token)
+		_sharpSource = sharpSource
 
 	def init(token as IToken, expr as Expr)
 		base.init(token)
@@ -1730,25 +1735,37 @@ class SharpExpr
 		else
 			assert false, expr
 
+	get sharpSource from var
+	
+	get expr from var
+
 	get hasError as bool is override
 		if base.hasError
 			return true
-		if _expr.hasError
+		if _expr and _expr.hasError
 			return true
 		return false
 
 	def toCobraSource as String is override
-		return "$sharp('[_expr.toCobraSource]')"
+		if _sharpSource
+			quote = if(.token.text.startsWith('sharp"'), '"', "'")
+			return "sharp[quote][_sharpSource][quote]"
+		else
+			return "$sharp('[_expr.toCobraSource]')"
 
 	def _bindImp is override
 		base._bindImp
 		_type = .compiler.passThroughType
-		_expr.bindImp
+		if _expr
+			_expr.bindImp
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		if parens
 			sw.write('(')
-		sw.write(_expr.token.value)
+		if _sharpSource
+			sw.write(_sharpSource)
+		else
+			sw.write(_expr.token.value)
 		if parens
 			sw.write(')')
 

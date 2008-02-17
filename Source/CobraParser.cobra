@@ -2290,7 +2290,7 @@ class Parser
 			return TypeExpr(.typeId)
 		else if peek=='ID'
 			return .identifierExpr
-		else if peek=='SHARP_OPEN'
+		else if peek in ['SHARP_OPEN', 'SHARP_SINGLE', 'SHARP_DOUBLE']
 			return .sharpExpr
 		else if .opStack.count and .opStack.peek=='DOT' and .peek.isKeyword
 			return .identifierExpr
@@ -2552,10 +2552,20 @@ class Parser
 			return IdentifierExpr(nameToken, name)
 
 	def sharpExpr as SharpExpr
-		token = .expect('SHARP_OPEN')
-		expr = .expression
-		.expect('RPAREN')
-		return SharpExpr(token, expr)
+		token = .grab
+		branch token.which
+			on 'SHARP_SINGLE'
+				assert token.text.startsWith("sharp'")
+				return SharpExpr(token, token.text["sharp'".length:-1])
+			on 'SHARP_DOUBLE'
+				assert token.text.startsWith('sharp"')
+				return SharpExpr(token, token.text['sharp"'.length:-1])
+			on 'SHARP_OPEN'
+				expr = .expression
+				.expect('RPAREN')
+				return SharpExpr(token, expr)
+			else
+				throw FallThroughException(token)
 
 	def stringWithSubstitutionLit(whichStart as String, whichPart as String, whichStop as String) as StringSubstLit
 		# comment this mo-fo
