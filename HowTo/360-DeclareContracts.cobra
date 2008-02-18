@@ -1,0 +1,158 @@
+"""
+Cobra supports contracts which are expressed through lists of truthful
+expressions attached to objects and methods (and properties). They act as
+documentation, specification and run-time assertions.
+
+Cobra's approach to contracts is modeled directly after Eiffel.
+
+Like the other How To's, this program demonstrates language features with
+explanatory comments. It is not a practical sample.
+
+Keywords and implicit variables related to contracts include:
+	invariant, require, ensure
+	result, old, implies
+	or require
+	and ensure
+
+When a contract condition fails, an exception is raised. The exception message
+shows the value of each subexpression in the condition, just like the Cobra
+'assert' exception. For example, 'x > y' will show the values of 'x' and 'y'.
+
+You may wish to turn off contracts before shipping software in order to boost
+run-time performance and/or reduce executable size. From the command line, you
+can turn off contracts with:
+	cobra -contracts:none foo.cobra
+"""
+
+class Entity
+
+	# 'invariant' is followed by a list of truthful expressions
+	# These are executed at the end of each code member (initializer, method,
+	# property, etc.). They speak to the state of the object.
+	invariant
+		.serialNum >= 1000
+		.name.length > 0
+		.actionCount >= 0
+
+	var _serialNum as int
+	var _name as String
+	var _isActive as bool
+	var _actionCount as int
+
+	def init(serialNum as int, name as String)
+		require
+			serialNum > 0
+			name.length > 0
+		body
+			_serialNum = serialNum
+			_name = name
+
+	get serialNum from var
+	
+	get name from var
+
+	pro isActive from var
+
+	get actionCount from var
+
+	def act(ctx as Context)
+		require           # Requirements can speak to...
+			.isActive     #   the state of the current object
+			ctx.isActive  #   the state of the arguments
+		ensure
+			# Can refer to 'old' values in 'ensure'
+			.actionCount == old .actionCount + 1
+		body
+			_actionCount += 1
+
+	# Properties can have contracts too:
+	get upperName as String
+		ensure
+			# 'result' is an implicit variable in the 'ensure' clause
+			result.length == .name.length
+		body
+			return .name.toUpper
+
+
+class Context
+	"""
+	Dummy support class.
+	"""
+
+	get isActive as bool
+		return true
+
+
+class Utils
+
+	shared
+
+		def compute(x as float, y as float) as float
+			require
+				x > 0
+				y > 0
+			ensure
+				result > 0   
+			body
+				return Math.sqrt(x) + Math.sqrt(y)
+
+		def normalizeName(name as String) as String
+			# If a contract has only one condition, you can write it
+			# on one line and skip 'body'.
+			require name.trim.length
+			ensure result.length <= name.length
+			return Utils.capped(name.trim)
+
+		def capped(s as String) as String
+			"""
+			Returns the string with the first character capitalized.
+			Returns a blank string for a blank string.
+			"""
+			ensure
+				result.length == s.length
+				result.length implies result[0] == result[0].toUpper
+			test
+				# Unit tests can enhance contracts by showing example
+				# invocations and verifying behavior.
+				assert Utils.capped('chuck')=='Chuck'
+				assert Utils.capped('Chuck')=='Chuck'
+				assert Utils.capped('')==''
+				assert Utils.capped(' foo')==' foo'
+				assert Utils.capped('f')=='F'
+				assert Utils.capped('1aoeu')=='1aoeu'
+			body
+				if s.length
+					return s[0:1].toUpper + s[1:]
+				else
+					return s
+
+
+class BaseClass
+
+	def normalizeName(name as String) as String
+		require name.trim.length
+		return Utils.capped(name.trim)
+
+
+class DerivedClass
+	inherits BaseClass
+
+	def normalizeName(name as String) as String is override
+		# When method contracts are inherited, the 'require' can be weakened 
+		# through 'or require' meaning that the DerivedClass is more flexible 
+		# about what conditions the work can be done in. The 'ensure' can be 
+		# strengthened with 'and ensure' meaning that DerivedClass can 
+		# guarantee additional conditions about the results of the work.
+		or require
+			true   # take any kind of string
+		and ensure
+			name.trim.length == 0 implies result == '(noname)'
+		body
+			return Utils.capped(if(name.trim.length, name.trim, '(noname)'))
+
+
+class Program
+
+	def main is shared
+		expect RequireException
+			Utils.normalizeName('')  # contract violations throw exceptions
