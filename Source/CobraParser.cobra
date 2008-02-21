@@ -1067,7 +1067,7 @@ class Parser
 			if other
 				.throwError('There is already another class member with the name "[other.name]". You must differentiate member names by more than just case.')
 			if name[0] in _uppercaseLetters
-				.throwError('Method names must start with lowercase letters. ([name])')
+				.recordError('Method names must start with lowercase letters. ([name])')
 
 		if opener.which=='OPEN_CALL'
 			params = .paramDecls(true)
@@ -2754,15 +2754,21 @@ class Parser
 		Makes an error if identifier does not match 'foo'.
 		whatName should be capitalized.
 		"""
-		if identifier[0]=='_'
-			sugg = identifier.substring(1, identifier.length-1)
-			while sugg.length
-				sugg = sugg.substring(1, sugg.length-1)
-			sugg = sugg[0].toString.toLower + sugg.substring(1, sugg.length-1)
-			.throwError('[whatName] declarations cannot start with an underscore. Those are reserved for class variables. Try "[sugg]".')
-		if Utils.startsNonLower(identifier)  # CC: should be char.isLower(identifier[0]), but cannot see members of char at this time
-			sugg = identifier[0].toString.toLower + identifier.substring(1, identifier.length-1)
-			.throwError('[whatName] declarations must start with a lowercase letter to distinguish them from other types of identifiers. Try "[sugg]".')
+		if identifier[0] == '_'
+			sugg = identifier[1:]
+			while sugg.startsWith('_')
+				sugg = sugg[1:]
+			if sugg.length == 0
+				sugg = ''
+			else if sugg.length == 1
+				sugg = ' Try "[sugg.toLower]".'
+			else
+				sugg = sugg[0].toString.toLower + sugg[1:]
+				sugg = ' Try "[sugg]".'
+			.recordError('[whatName] declarations cannot start with an underscore. Those are reserved for class variables.[sugg]')
+		if Utils.startsNonLower(identifier)
+			sugg = identifier[0].toString.toLower + identifier[1:]
+			.recordError('[whatName] declarations must start with a lowercase letter to distinguish them from other types of identifiers. Try "[sugg]".')
 
 	def looksLikeType(peekAhead as int) as bool
 		"""
