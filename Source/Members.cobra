@@ -46,7 +46,16 @@ class BoxMember
 
 	## Properties
 
+	get attributes from _attribs
+
 	get box from var
+
+	get canHaveMatchingBaseMember as bool
+		"""
+		Used by .computeMatchingBaseMember to skip over members that cannot have base members.
+		Typically, explicit interface implementations like 'ICollection.IsSynchronized'
+		"""
+		return '.' not in _name
 
 	pro binaryName from var
 		"""
@@ -115,7 +124,12 @@ class BoxMember
 	get isStructMember as bool
 		return _box inherits Struct
 
-	pro matchingBaseMember from var
+	pro matchingBaseMember as BoxMember?
+		get
+			ensure result is not this
+			return _matchingBaseMember
+		set
+			_matchingBaseMember = value 
 
 	pro parentNameSpace as NameSpace?
 		get
@@ -244,6 +258,7 @@ class BoxMember
 	## Generics
 	
 	def constructedFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as BoxMember  # CC: as same
+		require .didBindInt
 		newMember = .memberwiseClone to BoxMember
 		newMember._box = box
 		newMember._overloadGroup = nil
@@ -708,6 +723,7 @@ class AbstractMethod
 		base._bindImp
 		.compiler.codeMemberStack.push(this)
 		try
+			.computeMatchingBaseMember  # cannot currently go in .bindInt because it uses .memberForName which triggers other things like generic construction completion
 			for param in _params
 				param.bindImp
 			for local in _locals
@@ -732,14 +748,16 @@ class AbstractMethod
 				_requirePart.checkConnectToken
 			if _ensurePart
 				_ensurePart.checkConnectToken
-			.computeMatchingBaseMember  # TODO: put this in _bindInt where it belongs. but note that last attempt broke a test case for indexers and requires...
 			.checkForUnmarkedOverrideOrNew  # have to do this after statements bindImp since using base can add `override`
 			.checkForUnusedVariables
 		finally
 			.compiler.codeMemberStack.pop
 
 	def computeMatchingBaseMember
+		ensure .matchingBaseMember is not this
 		if _matchingBaseMember
+			return
+		if not .canHaveMatchingBaseMember
 			return
 		if _box inherits Class
 			if _box.baseClass
@@ -764,7 +782,7 @@ class AbstractMethod
 					# not really a base member in the "base class" sense of the word.
 					# would not require marking as "is override" for example
 					_matchingBaseMember = nil
-				
+
 	def checkForUnmarkedOverrideOrNew
 		# require called computeMatchingBaseMember  # CC:? TODO?
 		if 'new' not in .isNames and 'override' not in .isNames and _matchingBaseMember
@@ -1135,6 +1153,8 @@ class Method
 	get isMethod as bool is override
 		return true
 
+	get implementsType from var
+
 	def addRefFields is override
 		base.addRefFields
 		.addField('implementsType', _implementsType)
@@ -1393,6 +1413,9 @@ class ProperDexerXetter
 		_name = parent.name + '.' + .xetPartName  # CC: somewhat awkward. belongs in the base.init() call
 		_parent = parent
 
+	get canHaveMatchingBaseMember as bool is override
+		return _parent.canHaveMatchingBaseMember
+
 	get parent from var
 
 	get xetPartName as String is abstract
@@ -1487,6 +1510,15 @@ class MemberOverload
 		body
 			_members.add(member)
 
+	def addInheritedMemberIfNoMatch(member as BoxMember)
+		"""
+		Utility method for _finishOverloads to avoid the mistake of putting an ancestor method in an overload that was an override or new.
+		"""
+		for existing in _members
+			if member.matchesSignature(existing)
+				return
+		.addInheritedMember(member)
+			
 	get resultType as IType? is override
 		assert .didBindInt
 		assert _members[0] is not this
@@ -1498,6 +1530,16 @@ class MemberOverload
 
 	def _bindInt is override
 		base._bindInt
+		# sanity check that members all have the right name
+		name = .name
+		for member in _members
+			assert member.name == name
+		# sanity check that members don't have the same signature
+		#if name <> 'getType'  # TODO: HACK: See Box.prepSystemObjectClass
+		# TODO: having problems with explicit interface implementation. I think these probably should have their name changed from "foo" to "Type.foo"
+		#	for i = 0 .. _members.count
+		#		for j = i+1 .. _members.count
+		#			assert not _members[i].matchesSignature(_members[j])
 		# rename the test members of the overload by suffixing them with '_o1' '_o2' etc.
 		i = 1
 		for member in _members # CC: for i, member in _members.numbered

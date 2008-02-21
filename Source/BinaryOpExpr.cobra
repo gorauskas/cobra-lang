@@ -753,6 +753,7 @@ class CompareExpr
 
 
 interface IDotRightExpr
+	inherits IExpr
 	"""
 	IDotRightExpr is an expression that can appear on the right hand side of a DotExpr.
 	Implemented by MemberExpr and CallExpr.
@@ -797,6 +798,27 @@ class DotExpr
 			if _left inherits ThisOrBaseLit
 				if .curCodeMember and .curCodeMember.isShared and not _dotRightExpr.member.isShared  # .curCodeMember is nil when bind imp'ing on var init exprs like "var _x = someExpr"
 					.throwError('Cannot access instance member "[_dotRightExpr.name]" from the current shared member. Make the member "shared" or create an instance of the type.')
+
+	def afterStatementBindImp
+		base.afterStatementBindImp
+		if not .hasError
+			# TODO: inheritance
+			# TODO: test on DLLs
+			member = _dotRightExpr.member
+			if member inherits MemberOverload
+				member = member.members[0]
+			if member inherits BoxMember
+				post while member to ?
+					found = false
+					for attrib in member.attributes
+						if attrib.name in ['MustUseResult', 'MustUseResultAttribute']
+							found = true
+							break
+					if found
+						break
+					member = member.matchingBaseMember
+			if found
+				.compiler.warning(this, 'The result of [.definition.name] should be used in an expression such as assignment or passing arguments (as indicated by its MustUseResult attribute).')
 
 	get potentialType as IType?
 		# overridden to return the type this dotted expr represents in those cases when it does represent a type
