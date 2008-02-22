@@ -1262,6 +1262,15 @@ class Compiler
 			if _verbosity<3
 				options += ' [optChar]nologo'  # TODO: mono?
 
+			options += ' [optChar]nowarn:0162,0169,0183,0184,0219,0414,0429'
+				# CS0162: Unreachable code detected
+				# CS0169: The private field `Cobra.Lang.CannotReadPropertyException._ih_invariantGuard' is never used
+				# CS0183: The given expression is always of the provided (`int') type
+				# CS0184: The given expression is never of the provided (`decimal') type
+				# CS0219: The variable `x' is assigned but its value is never used / Cobra handles these
+				# CS0414: The private field `Point._ih_invariantGuard' is assigned but its value is never used
+				# CS0429: Unreachable expression code detected / MS C# 2.0 gives these especially for the 'bool' test case in 'basics'
+
 			options += ' ' + extraCscOptions
 
 			sharpArgs = .options.getDefault('sharp-args', '') to String
@@ -1299,18 +1308,6 @@ class Compiler
 					continue
 				if SharpCompilationMessage.willSkipMessage(line)
 					continue
-				if 'Unreachable code detected' in line
-					# because Cobra forces you to put in a "return" stmt even though you have a "throw" and then C# warns about that  TODO: fix
-					pass
-				else if 'is assigned but its value' in line
-					# Cobra catches this one itself
-					pass
-				else if line.startsWith('Compilation succeeded')
-					# Novell Mono gmcs ends with this
-					pass
-				else if line.startsWith('Compilation failed')
-					# Novell Mono
-					pass
 				else
 					_addMessage(SharpCompilationMessage(line, this))
 			if .errors.count
@@ -1400,21 +1397,18 @@ class SharpCompilationMessage
 	inherits SourceException
 
 	def willSkipMessage(msg as String) as bool is shared
-		# comes up on Novell Mono: '/Library/Frameworks/Mono.framework/Versions/1.2.4/lib/mono/2.0/mscorlib.dll (Location of the symbol related to previous error)'
 		if '.dll' in msg
+			# comes up on Novell Mono: '/Library/Frameworks/Mono.framework/Versions/1.2.4/lib/mono/2.0/mscorlib.dll (Location of the symbol related to previous error)'
 			# TODO: try removing these
 			if msg.endsWith(' (Location of the symbol related to previous error)')
 				return true
 			if msg.endsWith(' (Location of the symbol related to previous warning)')
 				return true
-		if 'The given expression is always of the provided ' in msg or 'The given expression is never of the provided ' in msg
-			# Cobra handles these itself
+		if msg.startsWith('Compilation succeeded')
+			# Novell Mono gmcs ends with this. Cobra handles this itself.
 			return true
-		if 'Unreachable expression code detected' in msg
-			# MS C# 2.0 gives these especially for the 'bool' test case in 'basics'
-			return true
-		if '_ih_invariantGuard' in msg and 'is never used' in msg
-			# The private field "Test.Test._ih_invariantGuard" is never used
+		if msg.startsWith('Compilation failed')
+			# Novell Mono gmcs ends with this. Cobra handles this itself.
 			return true
 		return false
 		
