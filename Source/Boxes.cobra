@@ -202,6 +202,16 @@ class Box
 			not result.endsWith('.')
 			not .parentNameSpace.isRoot implies '.' in result
 		body
+			return _qualifiedPrefix + .rootName
+
+	get qualifiedName as String
+		return _qualifiedPrefix + .name
+
+	get _qualifiedPrefix as String
+		ensure
+			result.length implies result.endsWith('.')
+			' ' not in result
+		body
 			nameSpaces = List<of NameSpace>()
 			ns = .parentNameSpace
 			while ns and not ns.isRoot
@@ -209,11 +219,10 @@ class Box
 				assert ns is not ns.superNameSpace
 				ns = ns.superNameSpace
 			nameSpaces.reverse
-			name = Utils.join('.', for ns in nameSpaces get ns.name)
-			if name.length
-				name += '.'
-			name += .rootName
-			return name
+			prefix = Utils.join('.', for ns in nameSpaces get ns.name)
+			if prefix.length
+				prefix += '.'
+			return prefix
 
 	get superType as IType? is override
 		or require true
@@ -635,6 +644,9 @@ class Box
 		if not r
 			if type inherits NilableType
 				type = type.theWrappedType
+			if type inherits PrimitiveType
+				if type.systemAliasType == this
+					return true  # example: this is System.Int32 and type is int
 			if type inherits Box
 				if (.isGeneric and type.isGeneric and .genericDef is type.genericDef) or (.isGenericDef and type.isGeneric and this is type.genericDef)
 					# CC?: r = all true for i, gp in .genericParams.numbered get gp.isAssignableTo(type.genericParams[i])

@@ -78,6 +78,9 @@ class Compiler
 	var _baseExeFileName as String = ''
 	var _fullExeFileName as String = ''
 
+	# caches
+	var _clrPrimitiveToITypeCache as IDictionary<of System.Type, IType>?
+
 
 	def init(verbosity as int)
 		.init(verbosity, nil)
@@ -124,6 +127,12 @@ class Compiler
 	get isBindingInt from var
 
 	get isBindingImp from var
+
+	get clrPrimitiveToITypeCache from var
+		"""
+		Returns a cache mapping CLR types to their corresponding ITypes.
+		Populated and used by ClrTypeProxy.
+		"""
 
 	get globalNS from var
 
@@ -723,8 +732,16 @@ class Compiler
 			if _errors.count
 				_exitFromErrors
 
+	var _basicTypes as List<of PrimitiveType>?
+
 	get basicTypes as IList<of PrimitiveType>
-		return [.anyIntType, .boolType, .charType]  # TODO: should cover all basic types
+		if _basicTypes is nil
+			_basicTypes = List<of PrimitiveType>()
+			_basicTypes.addRange([.anyIntType, .boolType, .charType, .decimalType, .floatType])
+			for signed in [true, false]
+				for size in [8, 16, 32, 64]
+					_basicTypes.add(.intType(signed, size))
+		return _basicTypes to !
 
 	def bindInh
 		require
@@ -939,6 +956,11 @@ class Compiler
 			.codeMemberStack.count
 		body
 			return .codeMemberStack.peek.findLocal(name)
+
+	def clrType(qualifiedName as String) as System.Type
+		# eventually this method will be key in targeting different versions of the CLR
+		# suppose you are on .NET 3.0 and want to target .NET 2.0
+		return sharp'Type.GetType(qualifiedName)' to System.Type
 
 	def libraryType(qualifiedName as String) as IType
 		"""

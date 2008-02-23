@@ -49,6 +49,8 @@ interface ITypeProvider
 
 	def libraryType(qualifiedName as String) as IType
 
+	def clrType(qualifiedName as String) as System.Type
+
 
 class BasicTypeProvider
 	implements ITypeProvider
@@ -163,7 +165,10 @@ class BasicTypeProvider
 	def libraryType(qualifiedName as String) as IType
 		clrType = $sharp('Type.GetType(qualifiedName)') to Type?
 		return BasicLibraryType(clrType)
-		
+
+	def clrType(qualifiedName as String) as System.Type
+		return sharp'Type.GetType(qualifiedName)' to System.Type
+
 
 class BasicLibraryType
 	implements IType
@@ -438,6 +443,24 @@ class TypeProxy
 		return _type
 
 
+class LibraryTypeProxy
+	inherits AbstractTypeProxy
+	"""
+	Relies on .compiler.libraryType(qualifiedName) to locate the Cobra type.
+	Useful for the primitive types that need a reference to, for example, System.Char.
+	"""
+
+	var _qualifiedName as String
+	
+	def init(qualifiedName as String)
+		_qualifiedName = qualifiedName
+
+	get qualifiedName from var
+	
+	get realType as IType is override
+		return .compiler.libraryType(_qualifiedName)
+
+
 class NilableTypeProxy
 	inherits AbstractTypeProxy
 	"""
@@ -539,17 +562,23 @@ class ClrTypeProxy
 				# error: Cannot find top level namespace "Mono" of CLR type "Mono.Security.X509.X509Store".
 				return _hack(clrType)
 
-		# handle primitive types
-		# TODO: either map primitive CLR types to their Cobra types, or make them compatible so the following is not even necessary
-		if clrType is Boolean
-			return .compiler.boolType
-		if clrType is Char
-			return .compiler.charType
-		if clrType is Int32
-			return .compiler.intType
-		if clrType is Double
-			return .compiler.floatType
+		assert .compiler.basicTypes.count > 9   # should have bool, char, all the ints, etc.
+		
+		# Must return the Cobra primitive types in place of System.Boolean, System.Char, System.Int16, etc.
+		# because it's the primitives that are used all over the compiler.
 
+		clrPrimitiveToIType = .compiler.clrPrimitiveToITypeCache
+		if clrPrimitiveToIType is nil or clrPrimitiveToIType.count == 0
+			clrPrimitiveToIType = Dictionary<of System.Type, IType>()
+			for bt in .compiler.basicTypes
+				if bt.systemAliasProxy
+					key = .compiler.clrType((bt.systemAliasProxy to LibraryTypeProxy).qualifiedName)
+					clrPrimitiveToIType[key] = bt
+			assert clrPrimitiveToIType.count == 0 or clrPrimitiveToIType.count > 9
+		basicType as IType?
+		if clrPrimitiveToIType.tryGetValue(clrType, out basicType)
+			return basicType to !
+		
 		# handle wrapped types, like arrays and pointers, with recursive calls
 		if clrType.isArray
 			# assert clrType.name.endsWith(r'[]') # could be [,] so TODO: handle multidim arrays
@@ -1052,16 +1081,50 @@ class PrimitiveType
 	Used in part for classification purposes (`t inherits PrimitiveType`).
 	"""
 
+	var _systemAliasProxy as ITypeProxy?
+		"""
+		Subclasses set this to a LibraryTypeProxy instead of ClrTypeProxy because, for example, the
+		ClrTypeProxy for the clr type System.Boolean would return BoolType instance! Then the
+		primitive type has a self reference when what it really wanted was the Struct instance for
+		System.Boolean.
+		"""
+
+	var _systemAliasType as IType?
+
 	def init
 		pass
 
 	def init(superType as IType?)
 		base.init(superType)
 
+	get systemAliasProxy from var
+
+	get systemAliasType from var
+
 	def _bindInh
 		base._bindInh
 		if _superType is nil
 			_superType = .compiler.libraryClass('System.Object')
+	
+	def _bindInt
+		base._bindInt
+		if not _systemAliasType and _systemAliasProxy
+			_systemAliasType = _systemAliasProxy.realType
+		# causes an exception and isn't necessary:
+		#if _systemAliasType
+		#	_systemAliasType.bindInt
+
+	def isAssignableTo(type as IType) as bool
+		r = base.isAssignableTo(type)
+		if not r
+			r = _systemAliasType == type  # TODO: try "is"
+		return r
+
+	# TODO?
+#	def isComparableTo(t as IType) as bool
+#		return this is t
+
+#	def isEquatableTo(t as IType) as bool
 
 	def isComparableTo(t as IType) as bool
 		if this is t
@@ -1075,6 +1138,7 @@ class BoolType
 
 	def init
 		base.init
+		_systemAliasProxy = LibraryTypeProxy('System.Boolean')
 
 	get name as String is override
 		return 'bool'
@@ -1091,7 +1155,8 @@ class CharType
 
 	def init
 		base.init
-		_clrType = Char
+		_clrType = .typeProvider.clrType('System.Char')
+		_systemAliasProxy = LibraryTypeProxy('System.Char')
 
 	get name as String is override
 		return 'char'
@@ -1144,6 +1209,7 @@ class DecimalType
 
 	def init
 		base.init
+		_systemAliasProxy = LibraryTypeProxy('System.Decimal')
 
 	get name as String is override
 		return 'decimal'
@@ -1203,6 +1269,7 @@ class FloatType
 
 	def init
 		base.init
+		_systemAliasProxy = LibraryTypeProxy('System.Double')
 
 	get name as String is override
 		return 'float'
@@ -1268,18 +1335,19 @@ class IntType
 			_size = size
 			if signed
 				branch size
-					on  8: _clrType = SByte
-					on 16: _clrType = Int16
-					on 32: _clrType = Int32
-					on 64: _clrType = Int64
+					on  8: _clrType = .typeProvider.clrType('System.SByte')
+					on 16: _clrType = .typeProvider.clrType('System.Int16')
+					on 32: _clrType = .typeProvider.clrType('System.Int32')
+					on 64: _clrType = .typeProvider.clrType('System.Int64')
 					else: throw FallThroughException(size)
 			else
 				branch size
-					on  8: _clrType = Byte
-					on 16: _clrType = UInt16
-					on 32: _clrType = UInt32
-					on 64: _clrType = UInt64
+					on  8: _clrType = .typeProvider.clrType('System.Byte')
+					on 16: _clrType = .typeProvider.clrType('System.UInt16')
+					on 32: _clrType = .typeProvider.clrType('System.UInt32')
+					on 64: _clrType = .typeProvider.clrType('System.UInt64')
 					else: throw FallThroughException(size)
+			_systemAliasProxy = LibraryTypeProxy(_clrType.fullName)
 
 	def addMinFields
 		base.addMinFields
@@ -1606,10 +1674,15 @@ class ArrayType
 	"""
 
 	test
-		a1 = ArrayType(BoolType())
-		a2 = ArrayType(BoolType())
-		assert a1 is not a2
-		assert a1 == a2
+		saveTP = if(Node.hasTypeProvider, Node.typeProvider, nil)
+		Node.typeProvider = BasicTypeProvider()
+		try
+			a1 = ArrayType(BoolType())
+			a2 = ArrayType(BoolType())
+			assert a1 is not a2
+			assert a1 == a2
+		finally
+			Node.typeProvider = saveTP
 
 	var _box as Box?
 
