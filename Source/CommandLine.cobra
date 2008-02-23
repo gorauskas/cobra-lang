@@ -71,7 +71,7 @@ class CommandLine
 			'name': 'debug',
 			'synonyms': ['d'],
 			'type': 'string',
-			'description': 'Turn on system debugging information. The value 1 implies full, which enables attaching a debugger to a running program.',
+			'description': 'Turn on system debugging information. The value 1 implies full, which enables attaching a debugger to a running program. Turning on implies -debugging-tips:no.',
 			'args': '0|1|pdbonly|full'
 		},
 		{
@@ -398,13 +398,14 @@ class CommandLine
 			fileList = List<of String>()
 			value = 'no-value' to dynamic
 			mainOptions = List<of String>()
+			didSpecify = Dictionary<of String, bool>()  # CC: could just be a Set
 			for arg in args
 				if arg.trim.length == 0
 					continue
 				if arg.startsWith(optionPrefix)
 					isOption = true
 					while arg.startsWith(optionPrefix)
-						arg = arg.substring(1)
+						arg = arg[1:]
 				else
 					isOption = false
 				if isOption
@@ -437,6 +438,7 @@ class CommandLine
 							(valueDict[name] to System.Collections.IList).add(valueStr to passthrough)
 						else
 							valueDict[name] = [valueStr]
+							didSpecify[name] = true
 					else
 						cannotProcess = false
 						if name=='debug'
@@ -463,6 +465,7 @@ class CommandLine
 						if cannotProcess
 							.error('Cannot process value "[valueStr]" for option "[name]".')
 						valueDict[name] = value
+						didSpecify[name] = true
 				else # not isOption
 					if File.exists(arg)
 						fileList.add(arg)
@@ -530,14 +533,18 @@ class CommandLine
 
 			# set the out parameters
 			options = Options(valueDict)
+			for name in didSpecify.keys
+				options.didSpecify(name)
 			paths = fileList
 
 			.computeArgImplications(options to !)
 
 	
 	def computeArgImplications(options as Options)
-		if options.getDefault('target', '') == 'lib' and not options.boolValue('compile')
+		if options.getDefault('target', '') == 'lib' and not options.isSpecified('compile')
 			options['compile'] = true
+		if options.getDefault('debug', '') not in ['', '0', '-'] and not options.isSpecified('debugging-tips')
+			options['debugging-tips'] = false
 
 	def interpretValue(valueStr as String, spec as Dictionary<of String, Object>) as dynamic?
 		value as dynamic?
@@ -1333,11 +1340,23 @@ class HtmlWriter
 class Options
 	inherits Dictionary<of String, Object>
 	
+	var _isSpecified = Dictionary<of String, bool>()  # CC: could just be a Set
+
 	def init
 		pass
 
 	def init(d as IDictionary<of String, Object>)
 		base.init(d)
+
+	def isSpecified(name as String) as bool
+		"""
+		Returns true if the given option name is explicitly specified (as opposed to being present
+		in the options dictionary due to having a default value).
+		"""
+		return _isSpecified.containsKey(name)
+
+	def didSpecify(name as String)
+		_isSpecified[name] = true
 
 	def boolValue(key as String) as bool
 		if .containsKey(key)
