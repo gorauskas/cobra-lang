@@ -537,12 +537,18 @@ class CallExpr
 				_isCallOnSystemType = not definition inherits Box and not definition inherits GenericParam and not definition inherits Method and not definition inherits MemberOverload
 			if definition
 				if definition inherits IVar
-					# such as having:
-					#	t as Type
-					#	...
-					#	x = t()
+					# if you're calling on a variable such as:
+					#     someVar()
+					# then it must be:
+					#     * a System.Type
+					#     * a dynamic variable
+					#     * a delegate / method sig
 					if definition.type.isDynamic or definition.type.isDescendantOf(.compiler.libraryType('System.Type'))
 						type = .compiler.dynamicType
+					else if definition.type.isDescendantOf(.compiler.libraryType('System.Delegate'))
+						invokeMethod = definition.type.memberForName('invoke') to Method
+						type = invokeMethod.resultType
+						_isCallOnSystemType = false
 					else
 						.throwError('Cannot call a variable of type [definition.type.name].')
 				else if definition inherits Box
