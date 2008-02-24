@@ -467,8 +467,9 @@ class Parser
 				tok = .peek
 				if tok is nil
 					break
+				isGood = true
 				branch tok.which
-					on 'PERCENTPERCENT'
+					on 'PERCENTPERCENT'  # TODO: this has to be changed. doubling other math ops yields math ops or math related purpose (// ** -- ++)
 						if .peek(1) and .peek(1).text == 'stop'
 							keepParsing = false
 						else
@@ -489,9 +490,17 @@ class Parser
 						.grab
 					on 'NAMESPACE'
 						.nameSpaceDecl
+					on 'ID'
+						if tok.text == 'assembly'  # pseudo keyword
+							what = .assemblyDecl
+						else
+							isGood = false
 					else
-						.throwError('Expecting use, import, namespace, class, interface or enum, but got [tok]')
-						break
+						isGood = false
+				if not isGood
+					sugg = Compiler.suggestionFor(tok.text)
+					sugg = if(sugg, ' Try "[sugg]".', '')
+					.throwError('Expecting use, assembly, namespace, class, interface or enum, but got [tok].[sugg]')
 				if what
 					_nameSpaceAddDecl(_module.topNameSpace, what)
 				if what inherits Box
@@ -531,6 +540,22 @@ class Parser
 		return UseDirective(token, names)
 
 	var _syntaxForClassInheritanceMsg = 'The syntax for inheritance is to put "inherits BaseClass" on the following line, indented.'
+
+	def assemblyDecl as AssemblyDecl
+		token = .expect('ID')
+		assert token.text == 'assembly'
+		.indent
+		if .peek and .peek.which == 'PASS'
+			.grab
+			.endOfLine
+			attribs = AttributeList()
+		else
+			attribs = .hasAttribs
+			# assembly can have multiple "has" lines in case you want to stack your attributes vertically
+			while .peek and .peek.which == 'HAS'
+				attribs.addRange(.hasAttribs)
+		.dedent
+		return AssemblyDecl(token, attribs)
 
 	def classDecl as Class
 		token = .expect('CLASS')

@@ -179,9 +179,12 @@ class Compiler
 		return _options.boolValue('detailed-stack-trace')
 
 	get willTrackLocals as bool
-		require .boxStack.count
-		# the code member stack can be empty due to class variables (ex: var _x = 1)
-		return .hasDetailedStackTraceOption and (.codeMemberStack.count == 0 or .curCodeMember.box.canHaveDetailedStackTrace)
+		# the box stack can be empty because of assembly; has SomeAttr
+		if .boxStack.count
+			# the code member stack can be empty due to class variables (ex: var _x = 1)
+			return .hasDetailedStackTraceOption and (.codeMemberStack.count == 0 or .curCodeMember.box.canHaveDetailedStackTrace)
+		else
+			return false
 
 	get hasExceptionReportOption as bool
 		return .options.boolValue('exception-report')
@@ -1013,7 +1016,7 @@ class Compiler
 		else
 			throw FallThroughException('found [name], but it is not an IType. it is [thing]')
 	
-	def suggestionFor(name as String) as String?
+	def suggestionFor(name as String) as String? is shared
 		require name.length
 		# CC: return _unknownSuggestions.getDefault(name, nil)
 		if _unknownSuggestions.containsKey(name)
@@ -1029,7 +1032,8 @@ class Compiler
 		require not cw.isError
 		_addMessage(cw)
 
-	var _unknownSuggestions = {
+	shared
+		var _unknownSuggestions = {
 		# literals
 		'null':		'nil',
 		'NULL':		'nil',
@@ -1038,9 +1042,12 @@ class Compiler
 		'True':		'true',
 		'False':	'false',
 
-		# special
+		# Python
 		'self':		'this',
 		'super':	'base',
+		
+		# C#
+		'using':	'use',
 
 		# operators (word ones anyway)
 		'isa':		'inherits',
@@ -1060,9 +1067,9 @@ class Compiler
 		'boolean':	'bool',
 		'double':	'float',
 		'single':	'float32',
-		'str':		'string',
+		'str':		'String',
 		# TODO: various int types like short, byte, long
-	}
+		}
 
 	get unknownSuggestions from var
 

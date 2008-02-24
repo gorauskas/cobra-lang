@@ -46,7 +46,11 @@ class AttributeDecl
 		throw ShouldNotCallException(.getType)
 
 	def writeSharpDef(sw as SharpWriter) is override
+		.writeSharpDef(sw, '')
+
+	def writeSharpDef(sw as SharpWriter, prefix as String)
 		sw.write(r'[')
+		sw.write(prefix)
 		expr = _expr
 		sw.write('[expr.name]')
 		if expr.args.count
@@ -63,3 +67,77 @@ class AttributeDecl
 				sep = ', '
 			sw.write(')')
 		sw.writeLine(r']')
+
+
+class AssemblyDecl
+	inherits NamedNode
+	implements INameSpaceMember
+	"""
+	The only purpose of an assembly declaration is to hold assembly level attributes.
+	"""
+	
+	var _parentNameSpace as NameSpace?
+	var _attribs as AttributeList
+
+	def init(token as IToken, attribs as AttributeList)
+		base.init(token)
+		_attribs = attribs
+
+	get attributes from _attribs
+
+	get englishName as String
+		return 'assembly'
+
+	get typeForIdentifier as IType? is override
+		assert false
+		return nil
+	
+	get typeForReceiver as IType? is override
+		assert false
+		return nil
+
+	pro parentNameSpace from var
+	
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		for attrib in _attribs
+			attrib.writeSharpDef(sw, 'assembly: ')
+
+	def bindInh
+		pass
+
+	def _bindInt
+		base._bindInt
+		for attrib in _attribs
+			try
+				attrib.bindInt
+			catch ne as NodeException
+				.compiler.recordError(ne)
+
+	def _bindImp
+		base._bindImp
+		for attrib in _attribs
+			try
+				attrib.bindImp
+			catch ne as NodeException
+				.compiler.recordError(ne)
+	
+	# TODO: shouldn't need these, but INameSpaceMember forces it on us (mostly/entirely through inheriting IMember)
+	
+	def unNilReturnType
+		pass
+	
+	def writeSharpTestInvocation(sw as SharpWriter)
+		pass
+	
+	get isCallable as bool
+		return false
+	
+	get isShared as bool
+		return false
+
+	get requiresThis as bool
+		return false
+		
+	get resultType as IType?
+		return nil
