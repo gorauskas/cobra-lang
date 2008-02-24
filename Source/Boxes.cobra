@@ -442,6 +442,9 @@ class Box
 		if _didBindInh
 			return
 		base.bindInh
+		_bindInh
+	
+	def _bindInh
 		.compiler.boxStack.push(this)
 		try
 			if _needScanClrType
@@ -1732,6 +1735,79 @@ class Struct
 	def writeSharpInheritance(sw as SharpWriter) is override
 		if _baseInterfaces.count
 			sw.write(' : ')
+
+
+class MethodSig
+	inherits Class
+	"""
+	Example Cobra source:
+		sig ComputeSomething(a is int, b as int) as int
+
+	.NET's calls these delegates and describes them as type-safe method signatures.
+	The "sig" keyword fits nicely with other declaration keywords like "var" "def" and "get".
+	And "sig" is a more platform neutral term should we have other non-CLI backends.
+	
+	MethodSigs are only created when parsing. When reading from a DLL, delegates are merely subclasses of Delegate or MulticastDelegate.
+	
+	Reference: Pro C# 2008, Chapter 11
+	"""
+
+	var _params as List<of Param>
+	var _returnTypeProxy as ITypeProxy
+	var _returnType as IType?
+
+	def init(token as IToken, parent as IParentSpace?, name as String, params as List<of Param>, returnTypeProxy as ITypeProxy, isNames as List<of String>, attribs as AttributeList, docString as String)
+		base.init(token, name, List<of IType>(), isNames, attribs, LibraryTypeProxy('System.MulticastDelegate'), List<of ITypeProxy>(), docString)
+		_initParent(parent)
+		_params = params
+		_returnTypeProxy = returnTypeProxy
+
+	get params from var
+	
+	get returnTypeProxy from var
+	
+	get returnType from var
+	
+	get resultType as IType? is override
+		return .returnType
+
+	def _bindInh
+		base._bindInh
+		assert _baseClass
+		assert _baseClass.qualifiedName == 'System.MulticastDelegate'
+
+	def _bindInt
+		m = Method(.token, this, 'invoke', List<of Param>(.params), .returnType ? .returnTypeProxy, nil, List<of String>(.isNames), AttributeList(), '')
+		m.statements.add(ThrowStmt(.token, CallExpr(.token, 'Exception', List<of Expr>()))) # just to avoid a Cobra warning during .bindImp
+		.addDecl(m)
+		base._bindInt
+		for param in .params
+			param.bindInt
+		if not _returnType
+			_returnType = _returnTypeProxy.realType
+
+	def _bindImp
+		base._bindImp
+
+	def writeSharpDef(sw as SharpWriter) is override
+		.writeSharpAttribs(sw)
+		.writeSharpIsNames(sw)
+		sw.write('delegate [.resultType.sharpRef] [.rootName]')
+		if _genericParams.count
+			sw.write('<')
+			sep = ''
+			for genericParam in _genericParams
+				sw.write(sep)
+				genericParam.writeSharpDef(sw)
+				sep = ', '
+			sw.write('>')
+		sw.write('(')
+		sep = ''
+		for param in .params
+			sw.write(sep)
+			param.writeSharpDef(sw)
+			sep = ', '
+		sw.write(');\n')
 
 
 class GenericParam

@@ -137,6 +137,12 @@ class Parser
 	get curNameSpace as NameSpace
 		return _nameSpaceStack.peek to !
 
+	get curContainer as IContainer
+		if _boxStack.count
+			return _boxStack.peek to !
+		else
+			return _nameSpaceStack.peek to !
+
 	def parseFileNamed(fileName as String) as CobraModule
 		require .typeProvider
 		if .verbosity >= 1
@@ -482,6 +488,8 @@ class Parser
 						what = .classDecl
 					on 'INTERFACE'
 						what = .interfaceDecl
+					on 'SIG'
+						what = .declareMethodSig
 					on 'STRUCT'
 						what = .structDecl
 					on 'ENUM'
@@ -1174,6 +1182,63 @@ class Parser
 		else
 			return method
 
+	def declareMethodSig as MethodSig?
+		require _typeProvider
+		token = .expect('SIG')
+		opener = .grab
+		if opener.which not in ['ID', 'OPEN_CALL'] and not opener.isKeyword
+			.throwError('Encountered [opener.which] when expecting an identifier.')
+		name = opener.value to String
+		curContainer = .curContainer
+		other = curContainer.declForName(name)
+		if other
+			.throwError('There is already another class member with the name "[name]".')  # TODO list its location and possibly what it is
+		else
+			other = curContainer.declForName(name)  # TODO: should be a CI there for case-insensitive
+			if other
+				.throwError('There is already another class member with the name "[other.name]". You must differentiate member names by more than just case.')
+			if not name[0].isUpper
+				.recordError('Method signatures are types and must start with an uppercase letter to distinguish them from other types of identifiers. ([name])')
+
+		if opener.which=='OPEN_CALL'
+			params = .paramDecls(true)
+			if params.count == 0
+				_warning(opener, 'Unnecessary parentheses. You can remove them.')
+		else
+			params = List<of Param>()
+
+		if .optional('AS')
+			returnType = .typeId to ITypeProxy?
+		else
+			returnType = _typeProvider.voidType
+		assert returnType
+
+		hasIsNames = false
+		if .peek.which == 'IS'
+			isNames = .isDeclNames
+			hasIsNames = true
+		else
+			.endOfLine
+
+		if not .optional('INDENT')
+			# with no indent there can be no additional specs like attributes, contracts or body
+			nothingMore = true
+			if not hasIsNames
+				isNames = List<of String>(_isNamesStack)
+			attribs = AttributeList()
+			docString = '' to ?
+		else
+			# parse additional method declaration
+			nothingMore = false
+			if not hasIsNames
+				isNames = .isDeclNames
+			attribs = .hasAttribs
+			docString = .docString
+
+		methodSig = MethodSig(token, curContainer to IParentSpace, name, params, returnType, isNames, attribs, docString)
+
+		return methodSig
+		
 	def declareProperty as ProperDexer?
 		"""
 		Example source
