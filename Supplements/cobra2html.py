@@ -16,8 +16,8 @@ Command line options:
 
 Support:
     Requires Python and Pygments.
-    Tested with Python 2.5 and Pygments 0.9 on Mac OS X 10.5
-    http://cobra-language.com/forums/    
+    Tested with Python 2.5 and Pygments 0.9 on Mac OS X 10.4
+    http://cobra-language.com/forums/
 
 Credits:
     Pygments library by Georg Brandl.
@@ -36,7 +36,6 @@ class MoreNotes:
 
 	TODO:
 	Cobra specific highlighting.
-	-page for writing out complete page instead of just fragment
 	-source for putting some source right on the command line
 	-q or -quiet for less output
 	"""
