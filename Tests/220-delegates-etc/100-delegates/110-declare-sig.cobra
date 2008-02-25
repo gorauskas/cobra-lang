@@ -1,9 +1,11 @@
-# TODO: test passing a ref to a method
-# TODO: test accessing inherited members of MulticastDelegate and Delegate
-# TODO: test wrapping a ref in a delegate instantiation
 # TODO: test a sig decl inside a class
+# TODO: test Delegate.combine  .remove  .removeAll
+# TODO: test narrowing the return type
+
 # TODO: in a different test file, test various errors
+
 # TODO: test with dynamic (put with dynamic tests)
+
 
 sig BinaryOp(a as int, b as int) as int
 
@@ -19,6 +21,10 @@ class Computer
 		_b = b
 
 	pro op from var
+
+	def setOp(op as BinaryOp)
+		# just to test passing the delegate as a parameter
+		_op = op
 
 	def eval1 as int
 		if _op
@@ -39,18 +45,41 @@ class Program
 		Program().run
 	
 	def run
-		computer = Computer(2, 3)
+		c = Computer(3, 2)
 
-		computer.op = ref .add
-		assert computer.eval1 == 5
-		assert computer.eval2 == 5
+		c.op = ref .add
+		assert c.eval1 == 5
+		assert c.eval2 == 5
 
-		computer.op = ref .mul
-		assert computer.eval2 == 6
-		assert computer.eval2 == 6
+		c.op = ref .mul
+		assert c.eval1 == 6
+		assert c.eval2 == 6
+
+		c.op = BinaryOp(ref .sub)  # explicit instantiation
+		assert c.eval1 == 1
+		assert c.eval2 == 1
+
+		c.setOp(ref .mul)  # pass as arg to method
+		assert c.eval1 == 6
+
+		bo = BinaryOp(ref .add)  # explicit instantiation assigned to a local var
+		c.op = bo
+		c.setOp(bo)
+		assert c.eval1 == 5
+
+		# test accessing members of Delegate and SystemDelegate
+		assert c.op.method.name == 'Add'
+		assert c.op.target == this
+		assert c.op.getInvocationList.length == 1
+		for d in c.op.getInvocationList
+			assert d.method.name == 'Add'
+			assert d.target is this
 
 	def add(a as int, b as int) as int
 		return a + b
 	
+	def sub(a as int, b as int) as int
+		return a - b
+
 	def mul(a as int, b as int) as int
 		return a * b
