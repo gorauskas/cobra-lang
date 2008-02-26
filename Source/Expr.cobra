@@ -564,7 +564,7 @@ class CallExpr
 					#     * a System.Type
 					#     * a dynamic variable
 					#     * a delegate / method sig
-					if definition.type.isDynamic or definition.type.isDescendantOf(.compiler.libraryType('System.Type'))
+					if definition.type.isDynamic or definition.type.isDescendantOf(.compiler.typeType)
 						type = .compiler.dynamicType
 					else if definition.type.isDescendantOf(.compiler.libraryType('System.Delegate'))
 						invokeMethod = definition.type.memberForName('invoke') to Method
@@ -938,7 +938,7 @@ class IdentifierExpr
 		Returns true if this identifier directly names a type.
 		"""
 		require .didBindImp
-		r = .definition inherits Box and _type.isDescendantOf(.compiler.libraryType('System.Type'))
+		r = .definition inherits Box and _type.isDescendantOf(.compiler.typeType)
 		assert not r or not .definition.sharpName.startsWith('_lh')
 		return r
 		
@@ -1050,7 +1050,7 @@ class IdentifierExpr
 
 	def writeSharpDefForBreakdown(sw as SharpWriter)
 		sharpName = .sharpName
-		if (.type inherits TypeType or .isKindOf(.compiler.libraryType('System.Type'))) and .definition inherits IType and 'typeof(' not in sharpName
+		if .isKindOf(.compiler.typeType) and .definition inherits IType and 'typeof(' not in sharpName
 			sw.write('typeof([.sharpName])')
 		else
 			base.writeSharpDefForBreakdown(sw)
@@ -1200,7 +1200,7 @@ class IndexExpr
 		_target.bindImp
 		args = _args
 		if args.count == 0
-			if _target.isKindOf(.compiler.libraryType('System.Type')) or _target.type inherits TypeType  # TODO: lameness. Make TypeType() inherit System.Type, or lose TypeType and/or have an .isAType property and use everywhere
+			if _target.isKindOf(.compiler.typeType)
 				if _target inherits IPotentialTypeExpr and (pt = (_target to IPotentialTypeExpr).potentialType)
 					_type = ArrayType(pt)
 					_isArrayType = true
@@ -1287,7 +1287,7 @@ class IndexExpr
 		if parens
 			sw.write('(')
 		if _target inherits IdentifierExpr
-			if _target.isKindOf(.compiler.libraryType('System.Type'))
+			if _target.isKindOf(.compiler.typeType)
 				# here we're favoring "Foo[]" being an array type rather than a shared indexer
 				sw.write(_target.name)
 				handled = true
@@ -1466,8 +1466,8 @@ class MemberExpr
 				receiverType as IType? = _definition
 			else if _definition inherits MemberOverload and _definition.name == 'getType'
 				# see Box.prepSystemObjectClass
-				if (.binarySuperNode.left.type inherits Box and (.binarySuperNode.left.type to Box).isSystemTypeClass) or .binarySuperNode.left.type inherits TypeType
-					sysType = .compiler.libraryType('System.Type')
+				if .binarySuperNode.left.type.isSystemTypeClass
+					sysType = .compiler.typeType
 					for member in (_definition to MemberOverload).members
 						if member.isShared and member.resultType is sysType
 							_definition = member
@@ -1648,7 +1648,7 @@ class PostCallExpr
 		if not isArrayCreation  # CC: combine next if when if-inherits gets smarter
 			if _expr inherits IndexExpr
 				subExpr = _expr.target
-				if subExpr.isKindOf(.compiler.libraryType('System.Type')) or subExpr.type inherits TypeType  # TODO: more "check System.Type and TypeType" lameness
+				if subExpr.isKindOf(.compiler.typeType)
 					# example: String[](10)
 					sw.write('new ')
 					if subExpr inherits IdentifierExpr
