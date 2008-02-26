@@ -185,6 +185,25 @@ class Expr
 			return true
 		return false
 
+	def _suggestionsMessage(suggs as List<of String>) as String
+		"""
+		Shared by MemberExpr and CallExpr to give suggestions in an error message about an unknown member.
+		"""
+		if suggs.count
+			if suggs.count == 1
+				sugg = ' There is a member named "[suggs[0]]" with a similar name.'
+			else
+				sugg = ' There are members with similar names including '
+				sep = ''
+				for i = 0 .. suggs.count
+					sugg += '[sep]"[suggs[i]]"'
+					sep = if(i<suggs.count-2, ', ', ' and ')
+				sugg += '.'
+		else
+			sugg = ''
+		return sugg
+
+
 	## Code gen
 
 	def writeSharpDefInContext(sw as SharpWriter)
@@ -496,8 +515,6 @@ class CallExpr
 					checkName = _name
 					while checkName.startsWith('_')
 						checkName = checkName.substring(1)
-					if _superNode.left.type inherits Box and Utils.startsNonLower(checkName)
-						.throwError('Methods must start with lowercase letters (not counting underscores). The name is \"[_name]\".')
 					# handle foo.bar() where this is the `bar()` part
 					if not _superNode.left.didBindImp
 						assert _superNode.left.hasError, _superNode.left
@@ -515,7 +532,11 @@ class CallExpr
 							else
 								type = .compiler.passThroughType
 						else
-							.throwError('Cannot find a definition for "[_name]" in "[_superNode.left.receiverType.name]".')
+							suggs = .binarySuperNode.left.suggestionsForBadMemberName(_name)
+							left = _superNode.left
+							isBoxAccess = left inherits IdentifierExpr and (left to IdentifierExpr).definition inherits Box  # like "Console.writeLine" where the receiver is a literal class or struct reference
+							whoseTypeIs = if(isBoxAccess, '', ' whose type is "[left.receiverType.name]"')
+							.throwError('Cannot find a definition for "[_name]" in "[left.toCobraSource]"[whoseTypeIs].[_suggestionsMessage(suggs)]')
 					else
 						if not possibleDefinition.isCallable
 							.throwError('Cannot call "[_name]" because it is a "[possibleDefinition.englishName]".')
@@ -1435,22 +1456,10 @@ class MemberExpr
 					_type = .compiler.dynamicType
 					return
 				suggs = .binarySuperNode.left.suggestionsForBadMemberName(_name)
-				if suggs.count
-					if suggs.count == 1
-						sugg = ' There is a member named "[suggs[0]]" with a similar name.'
-					else
-						sugg = ' There are members with similar names including '
-						sep = ''
-						for i = 0 .. suggs.count
-							sugg += '[sep]"[suggs[i]]"'
-							sep = if(i<suggs.count-2, ', ', ' and ')
-						sugg += '.'
-				else
-					sugg = ''
 				left = .binarySuperNode.left
 				isBoxAccess = left inherits IdentifierExpr and (left to IdentifierExpr).definition inherits Box  # like "Console.writeLine" where the receiver is a literal class or struct reference
 				whoseTypeIs = if(isBoxAccess, '', ' whose type is "[left.receiverType.name]"')
-				.throwError('Cannot find a definition for "[_name]" in "[left.toCobraSource]"[whoseTypeIs].[sugg]')
+				.throwError('Cannot find a definition for "[_name]" in "[left.toCobraSource]"[whoseTypeIs].[_suggestionsMessage(suggs)]')
 			assert _definition
 			if _definition inherits IType
 				effectiveType as IType = .compiler.typeType  # namespace, class, interface

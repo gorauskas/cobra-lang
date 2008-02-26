@@ -347,10 +347,15 @@ class Box
 				x = nil
 		if x is nil and checkNameSpace
 			nameSpace = .parentNameSpace
-			if not .name.startsWith('ArrayType_')  # TODO: axe this guard when ArrayType.memberForName's TODO to read System.Array is done
-				if .didBindInt
-					assert nameSpace
-			if nameSpace
+			if nameSpace is nil
+				# happens for nested boxes which currently means sig/delegate inside a class
+				# when classes can really be nested, or generic sigs are supported, we'll need some more work here
+				if .parentBox
+					x = .parentBox.symbolForName(name, haveThis, checkNameSpace)
+			else
+				if not .name.startsWith('ArrayType_')  # TODO: axe this guard when ArrayType.memberForName's TODO to read System.Array is done
+					if .didBindInt
+						assert nameSpace
 				assert not nameSpace.isUnified
 				x = nameSpace.symbolForName(name)
 		return x
@@ -844,7 +849,6 @@ class Box
 					assert nd <> decl
 					newDecls.add(nd)
 				else if not decl inherits Box
-					trace '|| || ||', decl  # delme
 					newDecls.add(nd)
 			_declsInOrder = List<of IBoxMember>()
 			_declsByName = Dictionary<of String, IBoxMember>()
@@ -1266,6 +1270,8 @@ class Box
 			sharp = .name
 		if .parentNameSpace and not .parentNameSpace.isRoot
 			sharp = .parentNameSpace.fullName + '.' + sharp
+		else if .parentBox
+			sharp = .parentBox.sharpRef + '.' + sharp
 		return sharp
 
 	def writeSharpDef(sw as SharpWriter)
@@ -1762,6 +1768,11 @@ class MethodSig
 		_params = params
 		_returnTypeProxy = returnTypeProxy
 
+	get isShared as bool is override
+		# When a sig is declared inside a class, you can say: SomeClass.SomeSig
+		# DotExpr needs to know this, hence return true for .isShared
+		return true
+
 	get params from var
 	
 	get returnTypeProxy from var
@@ -1775,6 +1786,7 @@ class MethodSig
 		base._bindInh
 		assert _baseClass
 		assert _baseClass.qualifiedName == 'System.MulticastDelegate'
+		assert .parentBox or .parentNameSpace
 
 	def _bindInt
 		m = Method(.token, this, 'invoke', List<of Param>(.params), .returnType ? .returnTypeProxy, nil, List<of String>(.isNames), AttributeList(), '')
@@ -1808,6 +1820,12 @@ class MethodSig
 			param.writeSharpDef(sw)
 			sep = ', '
 		sw.write(');\n')
+
+	def writeSharpTest(sw as SharpWriter) is override
+		pass
+
+	def writeSharpTestInvocation(sw as SharpWriter) is override
+		pass
 
 
 class GenericParam

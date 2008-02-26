@@ -939,6 +939,7 @@ class Parser
 					on 'USE': curNameSpace.addUseDirective(.useDirective)
 					on 'NAMESPACE': .nameSpaceDecl
 					on 'ENUM': _nameSpaceAddDecl(curNameSpace, .enumDecl)
+					on 'SIG': _nameSpaceAddDecl(curNameSpace, .declareMethodSig)
 					else: .throwError('expecting a namespace member but got [tok]')
 			.dedent
 		finally
@@ -974,6 +975,7 @@ class Parser
 					on 'INVARIANT': .declareInvariant
 					on 'EOL': .endOfLine
 					on 'ENUM': .addDecl(box, .enumDecl)
+					on 'SIG': .addDecl(box, .declareMethodSig)
 					on 'SHARED': .bodiedBoxMemberDeclsShared(box)
 					on 'TEST': .testSection(box)
 					else
@@ -1007,7 +1009,7 @@ class Parser
 		.expect('VAR')
 		tok = .expect('ID')
 		identifier = tok.text
-		other = .curBox.symbolForName(identifier, true)  # TODO: should probably really be `symbolForName` even after the current `symbolForName` becomes `findSymbol` or `findMember`
+		other = .curBox.declForName(identifier)
 		if other
 			.throwError('The name "[identifier]" was already declared earlier.')  # TODO: show the location of the previous symbol
 		if identifier[0]<>'_'
@@ -1182,7 +1184,7 @@ class Parser
 		else
 			return method
 
-	def declareMethodSig as MethodSig?
+	def declareMethodSig as MethodSig
 		require _typeProvider
 		token = .expect('SIG')
 		opener = .grab
