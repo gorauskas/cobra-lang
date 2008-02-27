@@ -1,0 +1,158 @@
+"""
+This sample program demonstrates a technique for node transformations.
+
+All the machinery is found in the root class Node and can then be used by subclassses.
+
+author:  Chuck Esterbrook
+created: 2008-02
+"""
+
+use System.Reflection
+
+
+class Node
+	is abstract
+	"""
+	Rules:
+		* Override _bind. Invoke base.
+		* Invoke .bind. Do not override it except for special circumstances.
+		* Override _replaceChild if the default implementation is not sufficient or performant.
+		* Override .superNode if the default implementation is not sufficient (rare).
+
+	What you can do:
+		* Get .superNode during _bind if you need it for anything.
+		* Invoke _transformTo(newNode) to replace the current node with newNode the .superNode.
+		* Assign the results of .bind to a local var. This will contain the transformed value, if any.
+		  Or you can just rely on the original field such as "_left.bind; print _left".
+
+	Study subclasses for examples of following these rules and using these features.	
+	"""
+
+	shared
+
+		var _bindStack = List<of Node>()  # not a Stack<of> because we want second to top elemest
+			"""
+			Through maintaining _bindStack and the rule of "invoke .bind, override _bind",
+			the .superNode can be computed with no additional code or requiring back refs
+			in all nodes.
+			"""
+
+		var _secondToLast as Node?
+
+	var _transformedTo as Node?
+		"""
+		Set by _transformTo and used by .bind.
+		"""
+
+	def init
+		pass
+
+	def dump
+		print this
+
+	def bind as Node
+		print 'bind:', this
+		_bindStack.add(this)
+		try
+			_bind()
+		finally
+			_bindStack.removeAt(_bindStack.count-1)
+		return _transformedTo ? this
+
+	def _bind
+		pass
+
+	get superNode as Node
+		"""
+		Returns the superNode of this node.
+		The default implementation can automatically determine this when binding.
+		But subclasses may override if needed or desired.
+		"""
+		assert _bindStack.count > 1
+		return _bindStack[_bindStack.count - 2]
+		
+	def _transformTo(newNode as Node)
+		print 'transform from [this] to [newNode]'
+		assert _bindStack.count > 1
+		superNode = .superNode
+		print '    superNode:', superNode
+		superNode._replaceChild(this, newNode)
+		_transformedTo = this
+		
+	def _replaceChild(find as Node, replace as Node)
+		"""
+		Received by a child node that is being transformed.
+		The default implementation uses reflection of fields to effect the result.
+		Parent nodes with other needs like handling collections of child nodes or requiring better performance can override this method.
+		"""
+		for field in .getType.getFields(BindingFlags(Instance, NonPublic))
+			if field.fieldType is Node or field.fieldType.isSubclassOf(Node)
+				value = field.getValue(this)
+				if value is find
+					print '    replacing:', field
+					field.setValue(this, replace)
+
+
+class BinaryOp
+	inherits Node
+
+	var _left as Node
+	var _right as Node
+	
+	def init(left as Node, right as Node)
+		_left = left
+		_right = right
+		
+	get left from var
+	
+	get right from var
+	
+	def dump is override
+		base.dump
+		print '    left:', .left
+		print '    right:', .right
+
+	def _bind
+		base._bind
+		.left.bind
+		.right.bind
+
+
+class Number
+	inherits Node
+	
+	var _i as int
+	
+	def init(i as int)
+		_i = i
+	
+	get i from var
+	
+	def toString as String is override
+		return '[.getType]([.i])'
+
+	def _bind
+		base._bind
+		# an arbitrary transformation for demonstration purposes:
+		# 0 --> -1
+		if .i == 0
+			_transformTo(Number(-1))
+		
+		
+class Program
+
+	def main is shared
+		b = BinaryOp(Number(5), Number(0))
+		b.dump
+		
+		print
+		b.bind
+		
+		print
+		b.dump  # will show that Number(0) became a Number(-1)
+		
+		# assert that:
+		assert (b.right to Number).i == -1
+
+		print
+		print 'Success.'
