@@ -586,11 +586,44 @@ class CallExpr
 					# TODO: check that the GenericParam is callable (has the callable constraint)
 					type = definition
 				else if definition inherits BoxMember
-					type = definition.resultType  # NOTE: used to have .realType at the end
+					args = _args
 					if definition inherits MemberOverload
-						pass  # TODO handle overloads (1)
+						# Note that overloads can have different return types (even if more than just the return type is needed to distinguish them). Example: Math.
+						# Plenty of info here:
+						# http://www.google.com/search?hl=en&q=C%23+overloaded+method+resolution
+						
+						# I cooked up the algorithm below as a quick way to fix some bugs caused by the previous implementation of um, doing nothing.
+						# But this likely needs to be rewritten.
+						candidates = []
+						# print
+						for member in definition.members
+							if member.params.count <> args.count
+								score = -1000
+							else
+								score = 0
+								i = 0
+								for param in member.params
+									arg = args[i]
+									if arg.type == param.type
+										score += 2
+									else if arg.canBeAssignedTo(param.type)
+										score += 1
+									else
+										score -= 100
+									i += 1
+							# print 'candidate:', score, member.name, member.serialNum, Utils.join(', ', (for param in member.params get param.type.name))
+							candidates.add([score, member])
+						maxScore = -10_000
+						winner = nil to BoxMember?
+						for pair in candidates
+							if pair[0] to int > maxScore
+								maxScore = pair[0] to int
+								winner = pair[1] to BoxMember
+						sharp'definition = winner'
+						type = sharp'winner.ResultType'
+						# print 'winner:', score, winner
 					else
-						args = _args
+						type = definition.resultType
 						hasVari = false
 						for param in definition.params
 							if param.type inherits VariType
@@ -2123,7 +2156,7 @@ class TypeExpr
 
 	def _bindImp is override
 		base._bindImp
-		if _typeNode
+		if not _containedType and _typeNode
 			_containedType = _receiverType = _typeNode.realType
 		_type = .compiler.typeType
 
