@@ -540,7 +540,7 @@ class Box
 	def prepSystemObjectClass
 		# Pretend .NET is a bit more OO, consistent and elegant.
 		# C#'s typeof(X) is X.getType in Cobra.
-		meth = Method(TokenFix.empty, this, 'getType', List<of Param>(), ClrTypeProxy(Type), nil, ['shared'], AttributeList(), 'Returns the System.Type instance that defines this type.')
+		meth = Method(TokenFix.empty, this, 'getType', List<of GenericParam>(), List<of Param>(), ClrTypeProxy(Type), nil, ['shared'], AttributeList(), 'Returns the System.Type instance that defines this type.')
 		meth.sharedMethodBacking = 'typeof'
 		existing = .declForName('getType') to BoxMember
 		overload = MemberOverload(existing)
@@ -1102,12 +1102,13 @@ class Box
 				# TODO: What to do? Change 'def init' to 'def .init' or 'def .ctor'? No quadruple underscores.
 				# or allow it in DLLs and use a different underlying name in the decl dict for initializers like the CLR name .ctor
 				continue
+			genericParams = List<of GenericParam>()
 			params = _scanParams(methInfo.getParameters)
 			isNames = _isNamesForMethodInfo(methInfo)
 			attribs = _attribsForMethodInfo(methInfo)
 			docString = ''  # TODO: get doc string for class?
 			implementsTypeNode as ITypeProxy?  # TODO: explicit interface implementation?
-			method = Method(TokenFix.empty, this, name, params, _memberTypeResultProxy(methInfo, methInfo.returnType), implementsTypeNode, isNames, attribs, docString)
+			method = Method(TokenFix.empty, this, name, genericParams, params, _memberTypeResultProxy(methInfo, methInfo.returnType), implementsTypeNode, isNames, attribs, docString)
 			method.binaryName = methInfo.name
 			overload as MemberOverload? = nil
 			other = .declForName(name)
@@ -1788,7 +1789,7 @@ class MethodSig
 		assert .parentBox or .parentNameSpace
 
 	def _bindInt
-		m = Method(.token, this, 'invoke', List<of Param>(.params), .returnType ? .returnTypeProxy, nil, List<of String>(.isNames), AttributeList(), '')
+		m = Method(.token, this, 'invoke', List<of GenericParam>(), List<of Param>(.params), .returnType ? .returnTypeProxy, nil, List<of String>(.isNames), AttributeList(), '')
 		m.statements.add(ThrowStmt(.token, CallExpr(.token, 'Exception', List<of Expr>()))) # just to avoid a Cobra warning during .bindImp
 		.addDecl(m)
 		base._bindInt

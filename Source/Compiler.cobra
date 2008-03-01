@@ -840,6 +840,15 @@ class Compiler
 		body
 			# TODO: remove canBeMember arg
 			assert _curModule
+			
+			# check for generic parameters in methods
+			if not haveThis and not name[0].isLower
+				if _codeMemberStack.count and _codeMemberStack.peek inherits Method
+					m = (_codeMemberStack.peek to Method).genericParamForName(name) to IMember?
+					if m
+						return m
+
+			# check the current box which will ask its namespace which will ask its `use` directives
 			if _boxStack.count
 				#print '>> .compiler.symbolForName([name], [canBeMember], [haveThis])'
 				if name[0].toString.toLower==name[0] and name[0]>=c'a' and name[0]<=c'z'  # CC: if name[0].isLower
@@ -1347,6 +1356,8 @@ class Compiler
 				if SharpCompilationMessage.willSkipMessage(line)
 					continue
 				else
+					if _verbosity >= 4
+						print 'Got C# message: [line]'
 					_addMessage(SharpCompilationMessage(line, this))
 			if .errors.count
 				_exitFromErrors

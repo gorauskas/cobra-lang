@@ -694,10 +694,11 @@ class Parser
 		types. Box declarations only have generic parameter names.
 		"""
 		params = List<of GenericParam>()
-		if token.which=='OPEN_GENERIC'
+		# trace token
+		if token.which == 'OPEN_GENERIC'
 			expectComma = false
 			while true
-				if .peek.which=='GT'
+				if .peek.which == 'GT'
 					.grab
 					break
 				if expectComma
@@ -707,6 +708,7 @@ class Parser
 					.throwError('Generic parameter names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 				params.add(GenericParam(ident))
 				expectComma = true
+		# trace params
 		return params
 
 	def nameForDeclGenericParams(token as IToken, paramList as List<of GenericParam>) as String
@@ -1081,14 +1083,18 @@ class Parser
 	def declareMethod as AbstractMethod?
 		require _typeProvider
 		token = .expect('DEF')
-		opener = .grab
-		if opener.which not in ['ID', 'OPEN_CALL'] and not opener.isKeyword
+		opener = .grab to !
+		if opener.which not in ['ID', 'OPEN_CALL', 'OPEN_GENERIC'] and not opener.isKeyword
 			.throwError('Encountered [opener.which] when expecting an identifier.')
+		if opener.which == 'OPEN_GENERIC'
+			genericParams = .declGenericParams(opener)
+		else
+			genericParams = List<of GenericParam>()
 		name = opener.value to String
 		curBox = .curBox
-		if name==curBox.name or Utils.capped(name)==curBox.name
+		if name == curBox.name or Utils.capped(name) == curBox.name
 			.throwError('Method names cannot be the same as their enclosing [curBox.englishName]. Use `def init` for creating an initializer/constructor or choose another name.')  # TODO list the enclosing types location
-		overload as MemberOverload? = nil
+		overload as MemberOverload?
 		other = curBox.declForName(name)
 		if other
 			if other inherits MemberOverload
@@ -1105,7 +1111,9 @@ class Parser
 			if name[0] in _uppercaseLetters
 				.recordError('Method names must start with lowercase letters. ([name])')
 
-		if opener.which=='OPEN_CALL'
+		if opener.which in ['OPEN_CALL', 'OPEN_GENERIC']
+			if opener.which == 'OPEN_GENERIC'
+				.expect('LPAREN')
 			params = .paramDecls(true)
 			if params.count == 0
 				_warning(opener, 'Unnecessary parentheses. You can remove them.')
@@ -1161,7 +1169,7 @@ class Parser
 				.throwError('Cannot specify `implements` for an initializer.')
 			method = Initializer(token, .curBox, params, isNames, attribs, docString)
 		else
-			method = Method(token, .curBox, name, params, returnType, implementsType, isNames, attribs, docString)
+			method = Method(token, .curBox, name, genericParams, params, returnType, implementsType, isNames, attribs, docString)
 		if nothingMore
 			if not 'abstract' in isNames and not curBox inherits Interface
 				.throwError('Missing method body for "[name]".')
@@ -2340,6 +2348,8 @@ class Parser
 				expr = MemberExpr(memberToken) to Expr
 			else if peek=='OPEN_CALL'
 				expr = .callExpr
+			else if peek=='OPEN_GENERIC'
+				expr = .callExpr
 			else
 				.throwError('Syntax error after "."')
 			return BinaryOpExpr.make(token to !, 'DOT', ThisLit(token, .curBox), expr)
@@ -2391,7 +2401,10 @@ class Parser
 		else if peek=='OPEN_CALL'
 			return .callExpr
 		else if peek=='OPEN_GENERIC'
-			return TypeExpr(.typeId)
+			if .opStack.count and .opStack.peek == 'DOT'
+				return .callExpr
+			else
+				return TypeExpr(.typeId)
 		else if peek=='ID'
 			return .identifierExpr
 		else if peek in ['SHARP_OPEN', 'SHARP_SINGLE', 'SHARP_DOUBLE']
@@ -2416,7 +2429,7 @@ class Parser
 		Syntax:
 			foo(args)
 		"""
-		token = .expect('OPEN_CALL')
+		token = .expect('OPEN_CALL', 'OPEN_GENERIC') 
 		callName = token.value to String
 		assert not callName.endsWith('(')
 		exprs = .commaSepExprs(['RPAREN'], false, true)

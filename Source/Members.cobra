@@ -803,6 +803,13 @@ class AbstractMethod
 
 	## Code gen
 
+	get sharpGenericParams as String
+		"""
+		Can return, for example, '<TKey,TValue>' or ''.
+		"""
+		ensure ' ' not in result
+		return ''
+
 	get sharpResultVarName from var
 
 	def writeSharpDef(sw as SharpWriter)
@@ -1125,11 +1132,13 @@ class Initializer
 class Method
 	inherits AbstractMethod
 
+	var _genericParams as List<of GenericParam>
 	var _implementsTypeNode as ITypeProxy?
 	var _implementsType as IType?
 
-	def init(token as IToken, box as Box, name as String, paramsList as List<of Param>, returnTypeNode as ITypeProxy, implementsTypeNode as ITypeProxy?, isNames as List<of String>, attribs as AttributeList, docString as String)
+	def init(token as IToken, box as Box, name as String, genericParams as List<of GenericParam>, paramsList as List<of Param>, returnTypeNode as ITypeProxy, implementsTypeNode as ITypeProxy?, isNames as List<of String>, attribs as AttributeList, docString as String)
 		base.init(token, box, name, paramsList, isNames, attribs, docString)
+		_genericParams = genericParams
 		_returnTypeNode = returnTypeNode
 		_implementsTypeNode = implementsTypeNode
 		# TODO: feels kind of hacky:
@@ -1139,6 +1148,8 @@ class Method
 
 	get englishName as String is override
 		return 'method'
+
+	get genericParams from var
 
 	get hasVariArgs as bool
 		assert false, 'TODO: complete Method.hasVariArgs'
@@ -1161,6 +1172,7 @@ class Method
 
 	def addSubFields is override
 		base.addSubFields
+		.addField('genericParams', _genericParams)
 		if _implementsTypeNode
 			.addField('implementsTypeNode', _implementsTypeNode)
 
@@ -1175,9 +1187,23 @@ class Method
 		if .isClassMember and not _implementsTypeNode and not _implementsType
 			base.defaultToVirtual
 
+	def genericParamForName(name as String) as GenericParam?
+		# idea: return find param in _genericParams where param.name == name
+		for param in _genericParams
+			if param.name == name
+				return param
+		return nil
+		
+	def _bindInt is override
+		for param in _genericParams
+			param.bindInt
+		base._bindInt
+
 	def _bindImp is override
 		numErrors = .compiler.errors.count
 		base._bindImp
+		for param in _genericParams
+			param.bindImp
 		if _implementsTypeNode
 			_implementsType = _implementsTypeNode.realType
 			# TODO: make sure the type is among the interfaces of the box
@@ -1195,8 +1221,23 @@ class Method
 			if hasYield and returnStmts.count
 				for stmt in returnStmts
 					stmt.recordError('Cannot return a value from an iterator. Use the yield return statement to return a value, or yield break to end the iteration.')
-			
+
+
 	## Code gen
+
+	get sharpGenericParams as String is override
+		if _genericParams.count
+			sb = StringBuilder()
+			sb.append('<')
+			sep = ''
+			for param in _genericParams
+				sb.append(sep)
+				sb.append(param.sharpName)
+				sep = ','
+			sb.append('>')
+			return sb.toString
+		else
+			return ''
 
 	def innerWriteSharpDef(sw as SharpWriter)
 		base.innerWriteSharpDef(sw)
@@ -1207,7 +1248,7 @@ class Method
 		if _implementsType
 			name = _implementsType.sharpRef + '.' + name
 		.writeSharpIsNames(sw)
-		sw.write('[returnType.sharpRef] [name]')
+		sw.write('[returnType.sharpRef] [name][.sharpGenericParams]')
 		.writeSharpParams(sw)
 		if .isInterfaceMember
 			sw.write(';\n')
@@ -1565,14 +1606,14 @@ class TestMethod
 		require
 			member.name.length
 		body
-			base.init(token, member.box, 'test_'+Utils.capped(member.name), List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
+			base.init(token, member.box, 'test_'+Utils.capped(member.name), List<of GenericParam>(), List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
 			_forMember = member
 
 	def init(token as IToken, box as Box)
 		require
 			box.name.length
 		body
-			base.init(token, box, 'test_class_'+Utils.capped(box.sharpNameComponent), List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
+			base.init(token, box, 'test_class_'+Utils.capped(box.sharpNameComponent), List<of GenericParam>(), List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
 			_forBox = box
 
 	pro name as String is new
@@ -1675,7 +1716,7 @@ class ContractPart
 		if _sharpMethodNameCache is nil
 			# TODO: having the serial number in the name avoids problem with overloads, but it's ugly and it can change from run-to-run.
 			# 		would be nice if each member of an overload had an overload number.
-			name = '[prefix]_[_codeMember.sharpName]_[_codeMember.serialNum]_[_codeMember.box.name]'
+			name = '[prefix]_[_codeMember.sharpName][_codeMember.sharpGenericParams]_[_codeMember.serialNum]_[_codeMember.box.name]'
 			name = name.replace(r'[]', 'Item') # indexer # TODO: maybe Indexer should return 'Item' in the first place
 			# properindexers like "name.get" have a '.'
 			# generics have < > and ,
@@ -1794,7 +1835,7 @@ class RequirePart
 			return
 		static = if(_codeMember.isShared, 'static ', '')
 		access = if(_codeMember.box inherits Struct, 'private', 'protected')
-		sw.write('[static][access] void [.sharpMethodName](')
+		sw.write('[static][access] void [.sharpMethodName][_codeMember.sharpGenericParams](')
 		_codeMember.writeSharpRequireParamDecls(sw)
 		sw.write(') {\n')
 		sw.indent
@@ -1898,7 +1939,7 @@ class EnsurePart
 			return
 		static = if(_codeMember.isShared, 'static ', '')
 		access = if(_codeMember.box inherits Struct, 'private', 'protected')
-		sw.write('[static][access] void [.sharpMethodName](')
+		sw.write('[static][access] void [.sharpMethodName][_codeMember.sharpGenericParams](')
 		_codeMember.writeSharpEnsureParamDecls(sw)
 		sw.write(') {\n')
 		sw.indent
