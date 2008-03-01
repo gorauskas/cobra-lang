@@ -34,6 +34,8 @@ class BinaryOpExpr
 					return BinaryBoolExpr(opToken, op, left, right)
 				on 'PLUS', 'MINUS', 'STAR', 'STARSTAR', 'SLASH', 'SLASHSLASH', 'PERCENT'
 					return BinaryMathExpr(opToken, op, left, right)
+				on 'AMPERSAND', 'VERTICAL_BAR', 'CARET', 'DOUBLE_LT', 'DOUBLE_GT'
+					return BinaryBitwiseExpr(opToken, op, left, right)
 				on 'PLUS_EQUALS', 'MINUS_EQUALS', 'STAR_EQUALS', 'STARSTAR_EQUALS', 'SLASH_EQUALS', 'SLASHSLASH_EQUALS', 'PERCENT_EQUALS'
 					return AugAssignMathExpr(opToken, op, left, right)
 				else
@@ -409,6 +411,17 @@ class NumericPromoExpr
 			else
 				.throwError('Cannot apply [_op] to [leftType.name] and [rightType.name]. [sugg]')
 
+	def _writeSharpDefDynamic(sw as SharpWriter)
+		specs = OperatorSpecs.binaryOpSpecsByCobraText
+		assert specs.containsKey(.token.text)
+		spec = specs[.token.text]
+		opText = Utils.sharpStringLiteralFor(spec.opMethodName)
+		sw.write('CobraImp.DynamicOp([opText], ')
+		_left.writeSharpDef(sw)
+		sw.write(', ')
+		_right.writeSharpDef(sw)
+		sw.write(')')
+
 
 class AugAssignMathExpr
 	inherits NumericPromoExpr
@@ -521,6 +534,40 @@ class BinaryBoolExpr
 		sw.write('))')
 
 
+class BinaryBitwiseExpr
+	inherits NumericPromoExpr
+
+	def init(opToken as IToken, op as String, left as Expr, right as Expr)
+		base.init(opToken, op, left, right)
+		assert op in ['AMPERSAND', 'VERTICAL_BAR', 'CARET', 'DOUBLE_LT', 'DOUBLE_GT']
+		
+	def _bindImp
+		base._bindImp
+
+	def _writeSharpDef(sw as SharpWriter) is override
+		if _type.isDynamic
+			_writeSharpDefDynamic(sw)
+			return
+		op = ''
+		branch _op
+			on 'AMPERSAND'
+				op = '&'
+			on 'VERTICAL_BAR'
+				op = '|'
+			on 'CARET'
+				op = '^'
+			on 'DOUBLE_LT'
+				op = '<<'
+			on 'DOUBLE_GT'
+				op = '>>'
+			else
+				throw FallThroughException(_op)
+		assert op.length
+		_left.writeSharpDef(sw)
+		sw.write(op)
+		_right.writeSharpDef(sw)
+
+
 class BinaryMathExpr
 	inherits NumericPromoExpr
 
@@ -567,15 +614,7 @@ class BinaryMathExpr
 
 	def _writeSharpDef(sw as SharpWriter) is override
 		if _type.isDynamic
-			specs = OperatorSpecs.binaryOpSpecsByCobraText
-			assert specs.containsKey(.token.text)
-			spec = specs[.token.text]
-			opText = Utils.sharpStringLiteralFor(spec.opMethodName)
-			sw.write('CobraImp.DynamicOp([opText], ')
-			_left.writeSharpDef(sw)
-			sw.write(', ')
-			_right.writeSharpDef(sw)
-			sw.write(')')
+			_writeSharpDefDynamic(sw)
 			return
 		intType = .compiler.anyIntType
 		left = _left
