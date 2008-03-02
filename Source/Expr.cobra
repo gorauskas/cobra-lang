@@ -605,8 +605,13 @@ class CallExpr
 								for param in member.params
 									arg = args[i]
 									if arg.type == param.type
-										score += 2
+										score += 20
 									else if arg.canBeAssignedTo(param.type)
+										score += 10
+									else if arg.type inherits NilableType and (arg.type to NilableType).theWrappedType.isAssignableTo(param.type) 
+										# Cobra's code and data flow analysis sometimes leaves us with a nilable type that's not actually nil anymore
+										# due to an assignment, possibly wrapped in an if statement. Eventually this will be corrected, but for now
+										# compensate here.
 										score += 1
 									else
 										score -= 100
@@ -619,9 +624,24 @@ class CallExpr
 							if pair[0] to int > maxScore
 								maxScore = pair[0] to int
 								winner = pair[1] to BoxMember
+						if false
+							print
+							trace .token.fileName
+							trace maxScore, _name
+							trace .token.toTechString
+							trace winner
+							print 'args:'
+							for arg in args
+								print '   [arg]'
+							print 'params:'
+							for param in winner.params
+								print '   [param]'
+							print 'overloads:'
+							for member in definition.members
+								print '   [member]'
+						# print 'winner:', score, winner
 						sharp'definition = winner'
 						type = sharp'winner.ResultType'
-						# print 'winner:', score, winner
 					else
 						type = definition.resultType
 						hasVari = false

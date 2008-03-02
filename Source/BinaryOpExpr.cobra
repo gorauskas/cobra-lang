@@ -809,9 +809,12 @@ class DotExpr
 	var _dotRightExpr as IDotRightExpr
 	
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
-		require right inherits IDotRightExpr 
-		base.init(opToken, op, left, right)
-		_dotRightExpr = right to IDotRightExpr
+		require
+			op == 'DOT'
+			right inherits IDotRightExpr 
+		body
+			base.init(opToken, op, left, right)
+			_dotRightExpr = right to IDotRightExpr
 
 	def _bindImp
 		base._bindImp
@@ -943,6 +946,13 @@ class DotExpr
 
 class InExpr
 	inherits BinaryOpExpr
+	"""
+	Syntax:
+		<left> in <right>
+		<left> not in <right>
+	"""
+
+	var _containsExpr as Expr?
 
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
@@ -951,17 +961,28 @@ class InExpr
 	def _bindImp
 		base._bindImp
 		_type = .compiler.boolType
+		if not .hasError and not _right.type.isDynamic
+			# try to use right.contains(left)
+			# this is more direct and offers speed up on some classes like Set
+			contains = DotExpr(.token, 'DOT', _right, CallExpr(.token, 'contains', List<of Expr>([_left])))
+			try
+				contains.bindImp
+			catch SourceException
+				pass
+			success
+				# Not sure what's going on here. Cobra thinks these have "contains" and C# says no way
+				# error: "System.Collections.Generic.Dictionary<string,int>.KeyCollection" does not contain a definition for "Contains" (C#)
+				# error: "System.Collections.Generic.Dictionary<string,int>.ValueCollection" does not contain a definition for "Contains" (C#)
+				if contains.type is .compiler.boolType and not _right.type.name.startsWith('KeyCollection<') and not _right.type.name.startsWith('ValueCollection<')
+					_containsExpr = contains
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		branch _op
 			on 'NOTIN': sw.write('!')
 			on 'IN': pass
 			else: throw FallThroughException(_op)
-		if _right.type.isDescendantOf(.compiler.libraryType('System.Collections.IList')) or _right.type.isDescendantOf(.compiler.libraryType('Cobra.Lang.Set<of>'))
-			_right.writeSharpDef(sw, true)
-			sw.write('.Contains(')
-			_left.writeSharpDef(sw, false)
-			sw.write(')')
+		if _containsExpr
+			_containsExpr.writeSharpDef(sw, parens)
 		else
 			sw.write('CobraImp.In(')
 			_left.writeSharpDef(sw, false)
