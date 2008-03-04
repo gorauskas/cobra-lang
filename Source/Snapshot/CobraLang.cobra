@@ -97,11 +97,11 @@ namespace Cobra.Lang
 				"""
 				Returns a textual description of the version such as "X.Y.Z" or "svn-post-X.Y.Z".
 				"""
-				#return 'svn-post-[.version]'
-				return .version.toString
+				return 'svn-post-[.version]'
+				#return .version.toString
 			
 			get isOfficialRelease
-				return true
+				return false
 
 			get version as Version
 				return Version(0, 7, 4)
@@ -1208,3 +1208,267 @@ namespace Cobra.Lang
 			#base.init('a=[CobraCore.toTechString(a)], a.getType=[a.getType.name], b=[CobraCore.toTechString(b)], b.getType=[b.getType.name]', innerExc)
 			_a = a
 			_b = b
+
+
+	interface ISet<of T>
+		inherits ICollection<of T>, IEnumerable<of T>
+		
+		## Set operations
+	
+		def isSubsetOf(s as ISet<of T>) as bool
+		def isSupersetOf(s as ISet<of T>) as bool
+		def intersection(s as ISet<of T>) as ISet<of T>
+		def union(s as ISet<of T>) as ISet<of T>
+		def difference(s as ISet<of T>) as ISet<of T>
+		def symmetricDifference(s as ISet<of T>) as ISet<of T>
+		def toList as List<of T>
+
+		
+	class Set<of T>
+		implements ISet<of T>, ICollection<of T>, IEnumerable<of T>
+		"""
+		A Set holds a hashed, unordered collections of items.
+		Membership testing and set operations (intersection, union, etc.) are faster than with lists, but order is not preserved.
+		Set implements ICollection, so it has the usual collection operations such as `add`, `count` and `contains`.
+		It also has set specific operations including `union`, `intersection` and `isSubsetOf`.
+
+		As with other collections, to create a copy of a set, create a new one passing the original to the initializer:
+			s = Set<of int>(s)
+
+		TODO:
+			[-] List style items
+			[ ] Can the methods use .getType instead of hardcoding Set? Then subclasses would get created for example .intersection
+			[ ] Test without args: s = Set(s)  (test in C# too)
+			[ ] yielded versions of Set operators?
+			[ ] unit test CobraCore.toTechString() results
+			[ ] ReadOnlySet?
+			[ ] Move some method implementations up to ISet extension
+		"""
+	
+		var _data as Dictionary<of T, T>
+
+
+		## Initialization
+	
+		def init
+			_data = Dictionary<of T, T>()
+
+		def init(capacity as int)
+			_data = Dictionary<of T, T>(capacity)
+
+		def init(items as IEnumerable<of T>)
+			_data = Dictionary<of T, T>()
+			for item in items
+				_data.add(item, item)
+
+
+		## IEnumerable
+	
+		def getEnumerator as IEnumerator<of T>
+			return _data.keys.getEnumerator
+
+		def getEnumerator as System.Collections.IEnumerator
+			implements System.Collections.IEnumerable
+			return .getEnumerator to System.Collections.IEnumerator
+	
+	
+		## Object
+	
+		def equals(other as Object?) as bool is override
+			if other inherits Set<of T>
+				if .count <> other.count
+					return false
+				for item in this
+					if not other.contains(item)
+						return false
+				for item in other
+					if not .contains(item)
+						return false
+				return true
+			else
+				return false
+
+		def getHashCode as int
+			code = base.getHashCode
+			for item in this
+				$sharp('code ^= item.GetHashCode()')
+			return code
+
+
+		## ICollection
+	
+		def add(item as T)
+			ensure .contains(item)
+			_data[item] = item
+
+		def clear
+			ensure .count == 0
+			_data.clear
+
+		def copyTo(array as T[], arrayIndex as int)
+			_data.keys.copyTo(array, arrayIndex)
+
+		get count as int
+			ensure result >= 0
+			return _data.count
+		
+		def contains(item as T) as bool
+			return _data.containsKey(item)
+
+		get isReadOnly as bool
+			return false
+
+		def remove(item as T) as bool
+			ensure
+				not .contains(item)
+				# .contains(item) implies result  TODO: How to say "old this"?
+			body
+				return _data.remove(item)
+
+
+		## Set operations
+	
+		def isSubsetOf(s as ISet<of T>) as bool
+			for item in this
+				if not s.contains(item)
+					return false
+			return true
+
+		def isSupersetOf(s as ISet<of T>) as bool
+			return s.isSubsetOf(this)
+
+		def intersection(s as ISet<of T>) as ISet<of T>
+			"""
+			Returns a new set containing only the elements that are in this set and `s`. (AND)
+			"""
+			r = Set<of T>()
+			for item in this
+				if s.contains(item)
+					r.add(item)
+			return r
+
+		def union(s as ISet<of T>) as ISet<of T>
+			"""
+			Returns a new set containing the elements of that are in this set or `s`. (OR)
+			"""
+			r = Set<of T>(this)
+			r.addRange(s)
+			return r
+	
+		def difference(s as ISet<of T>) as ISet<of T>
+			"""
+			Returns a new set with elements in this set that are not in `s`.
+			"""
+			r = Set<of T>()
+			for item in this
+				if not s.contains(item)
+					r.add(item)
+			return r
+
+		def symmetricDifference(s as ISet<of T>) as ISet<of T>
+			"""
+			Returns a new set with elements in either s or t but not both. (XOR)
+			"""
+			r = Set<of T>()
+			for item in this
+				if not s.contains(item)
+					r.add(item)
+			for item in s
+				if not .contains(item)
+					r.add(item)
+			return r
+
+
+		## List<of T>-inspired Members
+	
+		def addRange(items as ISet<of T>)
+			# ensure all (for item in items get .contains(item))
+			for item in items
+				.add(item)
+	
+		def addRange(items as IEnumerable<of T>)
+			for item in items
+				.add(item)
+
+		#def asReadOnly as ReadOnlyCollection<of T>
+			# TODO
+
+		# TODO
+		#def convertAll<of TOutput>(converter as Converter<of T, TOutput>) as Set<of TOutput>
+		#	newSet = Set<of TOutput>()
+		#	for item in this
+		#		newSet.add(converter(item))
+		#	return newSet
+
+		# TODO
+		#def exists(predicate as Predicate<of T>) as bool
+		#	for item in this
+		#		if predicate(item)
+		#			return true
+		#	return false
+		
+		# TODO: find
+		# TODO: findAll
+		# TODO: forEach (or for)
+		# TODO: removeAll
+		# TODO: trueForAll
+
+		## Other
+		
+		def toList as List<of T>
+			return List<of T>(this)
+
+
+	class TestSet
+
+		test
+			TestSet().run
+
+		def run
+			s = Set<of int>()
+			assert s.count == 0
+			t = Set<of int>()
+			assert t.count == 0
+			assert s is not t
+			assert s == t
+		
+			s.add(1)
+			assert s.contains(1)
+			assert not s.contains(2)
+			assert s <> t
+			assert t.isSubsetOf(s)
+			assert s.isSupersetOf(t)
+			s.clear
+			assert s.count == 0
+		
+			u = s.union(t)
+			assert t is not u
+			assert s.count == 0
+			assert t.count == 0
+			assert u.count == 0
+
+			s = Set<of int>()
+			s.add(1)
+			assert s.contains(1)
+			assert not s.contains(2)
+			
+			# make lists and sets from each other
+			s = Set<of int>([1, 2])
+			assert s.contains(1) and s.contains(2) and s.count == 2
+			list = List<of int>(s)
+			assert list == [1, 2] or list == [2, 1]
+
+			# set operations
+			r = Set<of int>([1, 2]).intersection(Set<of int>([2, 3]))
+			assert r.toList == [2]
+
+			r = Set<of int>([1, 2]).union(Set<of int>([2, 3]))
+			list = r.toList
+			list.sort
+			assert list == [1, 2, 3]
+			
+			r = Set<of int>([1, 2]).difference(Set<of int>([2, 3]))
+			assert r.toList == [1]
+
+			r = Set<of int>([1, 2]).symmetricDifference(Set<of int>([2, 3]))
+			assert r.toList == [1, 3] or r.toList == [3, 1]
