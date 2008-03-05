@@ -42,7 +42,6 @@ class BoxMember
 		_attribs = attribs
 		_box = box
 		_docString = docString
-		.defaultToVirtual
 
 	## Properties
 
@@ -79,8 +78,20 @@ class BoxMember
 	get isCallable as bool
 		return false
 
+	get isInternal as bool
+		return 'internal' in _isNames
+
 	get isOverride as bool
 		return 'override' in _isNames
+
+	get isProtected as bool
+		return 'protected' in _isNames
+
+	get isPrivate as bool
+		return 'private' in _isNames
+
+	get isPublic as bool
+		return 'public' in _isNames
 
 	get isShared as bool
 		return 'shared' in _isNames
@@ -145,15 +156,11 @@ class BoxMember
 		The result type of the var, method or property.
 		"""
 
+	get shouldBeVirtual as bool
+		return false
+
 
 	## Other
-
-	def defaultToVirtual
-		"""
-		A hook for subclasses to add the virtual keyword to _isNames, if appropriate.
-		"""
-		require _isNames
-		pass
 
 	def unNilReturnType
 		"""
@@ -175,11 +182,27 @@ class BoxMember
 
 	## Binding
 
-	def bindInh  # TODO: not needed
+	def bindInh  # TODO: only needed due to IMember
 		pass
 
 	def _bindInt is override
 		base._bindInt
+		if .defaultAccessLevel.length
+			# CC: if not find level in _accessLevel where level in _isNames
+			found = false
+			for level in _accessLevels
+				if level in _isNames
+					found = true
+					break
+			if not found
+				_isNames.insert(0, .defaultAccessLevel)
+		if .shouldBeVirtual
+			found = false
+			for name in ['nonvirtual', 'virtual', 'shared', 'override', 'abstract']
+				if name in _isNames
+					found = true
+			if not found
+				_isNames.add('virtual')
 		for attrib in _attribs
 			attrib.bindInt
 		if _testMethod
@@ -308,24 +331,13 @@ class BoxMember
 		# TODO:
 		# if isNames is nil
 		#	isNames = _isNames
-		isNames = List<of String>()
-		if _isNames.count
-			isNames.addRange(_isNames)
-		if .defaultAccessLevel.length
-			found = false
-			for level in _accessLevels
-				if level in isNames
-					found = true
-					break
-			if not found
-				isNames.insert(0, .defaultAccessLevel)
 		isNameCS = {
 			# only have to specify the ones that are different
 			'shared': 'static',
 			'nonvirtual': '',
 		}
 		sep = ''
-		for name in isNames
+		for name in _isNames
 			name = Utils.getSS(isNameCS, name, name) to !
 			sw.write(sep)
 			sw.write(name)
@@ -416,7 +428,10 @@ class BoxVar
 		.addField('initExpr', _initExpr)
 
 	get defaultAccessLevel as String is override
-		return if(.isStructMember, 'private', 'protected')
+		if .name.startsWith('_')
+			return if(.isStructMember, 'private', 'protected')
+		else
+			return 'public'
 
 	get englishName as String is override
 		return 'variable member'
@@ -500,25 +515,31 @@ class BoxVar
 	## Code Gen
 
 	get sharpAssignmentNames as List<of String>
-		return [.name]
+		return [_sharpName]
 		# return List<of String>(_useSharpNameStack)
 
 	get sharpName as String is override
 		if _ifInheritsStack.count
 			if _type.isReference
-				return '(([_ifInheritsStack.peek.sharpRef])[.name])'
+				return '(([_ifInheritsStack.peek.sharpRef])[_sharpName])'
 			else
 				# could it be a subclass? no. value types are structs and cannot be subclassed so this must be `if i` where `i` is nullable struct
-				return '[.name].Value'  # Nullable<of T>.Value
+				return '[_sharpName].Value'  # Nullable<of T>.Value
 		else
 			return .name
 		# return _useSharpNameStack.peek to !
+
+	get _sharpName as String
+		name = .name
+		if not name.startsWith('_')
+			name = Utils.capped(name)
+		return name
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
 		.writeSharpIsNames(sw)
 		sw.write(_type.sharpRef)
-		sw.write(' [_name]')
+		sw.write(' [_sharpName]')
 		if _initExpr
 			sw.write(' = ')
 			_initExpr.writeSharpDef(sw)
@@ -575,13 +596,6 @@ class AbstractMethod
 			return ''
 		else
 			throw FallThroughException(this)
-
-	def defaultToVirtual is override
-		if .isClassMember
-			for name in ['nonvirtual', 'virtual', 'shared', 'override', 'abstract']
-				if name in _isNames
-					return
-			_isNames.add('virtual')
 
 	get isCallable as bool is override
 		return true
@@ -777,6 +791,7 @@ class AbstractMethod
 				else
 					cannotRedeclare = true
 				if cannotRedeclare
+					# TODO: FIXME: the message uses .englishName twice. one of them needs to change
 					.recordError('Cannot declare a [.englishName] named "[.name]" because the base member "[.name]" is a [.englishName]. this=[.getType.name], baseMember=[baseMember.getType.name]')
 				if _matchingBaseMember and _matchingBaseMember.box inherits Interface
 					# not really a base member in the "base class" sense of the word.
@@ -1030,9 +1045,6 @@ class Initializer
 	get isMethod as bool is override
 		return true  # because this is needed for "base.init" without ()s
 
-	def defaultToVirtual is override
-		pass
-
 	def usesBase is override
 		# initializers cannot be virtual and don't require "is new"
 		pass
@@ -1166,6 +1178,9 @@ class Method
 
 	get implementsType from var
 
+	get shouldBeVirtual as bool is override
+		return .isClassMember and not _implementsTypeNode and not _implementsType
+
 	def addRefFields is override
 		base.addRefFields
 		.addField('implementsType', _implementsType)
@@ -1182,10 +1197,6 @@ class Method
 			return dal
 		else
 			return ''
-
-	def defaultToVirtual is override
-		if .isClassMember and not _implementsTypeNode and not _implementsType
-			base.defaultToVirtual
 
 	def genericParamForName(name as String) as GenericParam?
 		# idea: return find param in _genericParams where param.name == name
@@ -1360,13 +1371,8 @@ class ProperDexer
 
 	get setPart from var
 
-	def defaultToVirtual is override
-		# TODO: dup'ed in AbstractMethod
-		if .isClassMember
-			for name in ['nonvirtual', 'virtual', 'shared', 'override', 'abstract']
-				if name in _isNames
-					return
-			_isNames.add('virtual')
+	get shouldBeVirtual as bool is override
+		return .isClassMember # TODO: and not _implementsTypeNode and not _implementsType
 
 	get defaultAccessLevel as String is override
 		if .isClassMember or .isStructMember
@@ -1512,7 +1518,7 @@ class MemberOverload
 		.addField('members', _members)
 
 	get defaultAccessLevel as String is override
-		return 'public'
+		return ''
 
 	get members from var
 
@@ -1615,6 +1621,9 @@ class TestMethod
 		body
 			base.init(token, box, 'test_class_'+Utils.capped(box.sharpNameComponent), List<of GenericParam>(), List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
 			_forBox = box
+
+	get shouldBeVirtual as bool is override
+		return false
 
 	pro name as String is new
 		"""

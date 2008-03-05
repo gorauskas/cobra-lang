@@ -188,7 +188,7 @@ class Expr
 
 	def _suggestionsMessage(suggs as List<of String>) as String
 		"""
-		Shared by MemberExpr and CallExpr to give suggestions in an error message about an unknown member.
+		Shared by MemberExpr, CallExpr and IdentifierExpr to give suggestions in an error message about an unknown member.
 		"""
 		if suggs.count
 			if suggs.count == 1
@@ -1028,7 +1028,7 @@ class IdentifierExpr
 						if definition
 							.throwError('You must refer to non-underscored members with a leading dot (.). Member name is "[_name]".')
 			if _definition is nil and (not _superNode inherits BinaryOpExpr or .binarySuperNode.op<>'ASSIGN')
-				.errorUnknownId(.name)
+				.throwUnknownIdError
 				throw FallThroughException()
 		if _type is nil
 			if _definition
@@ -1038,7 +1038,7 @@ class IdentifierExpr
 				if .binarySuperNode inherits AssignExpr and this is .binarySuperNode.left
 					pass  # let the AssignExpr have its chance at type inference
 				else
-					.errorUnknownId(.name)
+					.throwUnknownIdError
 					throw FallThroughException()
 
 	def bindImp as dynamic
@@ -1047,13 +1047,24 @@ class IdentifierExpr
 			_definition.isUsed = true
 		return this
 
-	def errorUnknownId(name as String)  # TODO: see if 'name' parameter can be axed
-		require name.length
+	def throwUnknownIdError
+		require .name.length
+		name = .name
 		msg = 'Unknown identifier: "[name]".'
 		if .compiler.unknownSuggestions.containsKey(name)
 			sug = .compiler.unknownSuggestions[name] to ?
 		if sug and sug.length
 			msg += ' Maybe you should try "[sug]".'
+		else
+			# TODO: check for a local with same name but different case
+			sugg = _suggestionsMessage(.compiler.curBox.suggestionsForBadMemberName(name))
+			# example suggs:
+			#     There is a member named "x" with a similar name.
+			#     There are members with similar names including "x" and "y".
+			if sugg.length
+				assert sugg.endsWith('.')
+				sugg = sugg[:-1] + ' that you can access with a leading period (".").'
+			msg += sugg
 		.throwError(msg)
 
 	def postBindImpAssertType is override
@@ -1493,6 +1504,7 @@ class MemberExpr
 		assert .superNode inherits BinaryOpExpr
 		assert .binarySuperNode.op == 'DOT'
 		assert .binarySuperNode.right is this
+		left = .binarySuperNode.left
 		if _definition is nil or _type is nil
 			if not .binarySuperNode.left.didBindImp
 				assert .binarySuperNode.left.hasError, .binarySuperNode.left
@@ -1510,7 +1522,6 @@ class MemberExpr
 					_type = .compiler.dynamicType
 					return
 				suggs = .binarySuperNode.left.suggestionsForBadMemberName(_name)
-				left = .binarySuperNode.left
 				isBoxAccess = left inherits IdentifierExpr and (left to IdentifierExpr).definition inherits Box  # like "Console.writeLine" where the receiver is a literal class or struct reference
 				whoseTypeIs = if(isBoxAccess, '', ' whose type is "[left.receiverType.name]"')
 				.throwError('Cannot find a definition for "[_name]" in "[left.toCobraSource]"[whoseTypeIs].[_suggestionsMessage(suggs)]')
@@ -1537,6 +1548,25 @@ class MemberExpr
 			.binarySuperNode.definition = _definition  # TODO: is this needed?
 			.binarySuperNode.type = .type  # the type of foo.bar is what bar returns. A MemberExpr is the "bar" part.
 			.binarySuperNode.receiverType = receiverType
+			
+			# check visibility: public, protected, private, internal
+			if _definition inherits BoxMember
+				if _definition.isPublic
+					pass
+				else if _definition.isProtected
+					if not .compiler.curBox.isDescendantOf(_definition.box)
+						whoseTypeIs = if(isBoxAccess, '', ' whose type is "[left.receiverType.name]"')
+						.throwError('Cannot access protected "[_name]" in "[left.toCobraSource]"[whoseTypeIs].')
+				else if _definition.isPrivate
+					if not .compiler.curBox is _definition.box
+						whoseTypeIs = if(isBoxAccess, '', ' whose type is "[left.receiverType.name]"')
+						.throwError('Cannot access private "[_name]" in "[left.toCobraSource]"[whoseTypeIs].')
+				else if _definition.isInternal
+					# TODO
+					pass
+			else
+				# TODO: type access like enum, class, delegate
+				pass
 		assert _type
 
 	def toCobraSource as String is override
@@ -1549,7 +1579,7 @@ class MemberExpr
 		if name is nil
 			name = Utils.capped(_name)
 		sw.write(name)
-		if _definition and (_definition.isMethod or _name=='toString') and not _isReference
+		if _definition and (_definition.isMethod or _name=='toString') and not _isReference  # TODO: axe the 'toString' check
 			sw.write('()')
 
 	def writeSharpBreakdownItems(sw as SharpWriter) is override
