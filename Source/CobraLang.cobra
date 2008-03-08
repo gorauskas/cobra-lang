@@ -1211,7 +1211,7 @@ namespace Cobra.Lang
 
 
 	interface ISet<of T>
-		inherits ICollection<of T>, IEnumerable<of T>
+		inherits ICollection<of T>, IEnumerable<of T>, ISet
 		
 		## Set operations
 	
@@ -1238,6 +1238,7 @@ namespace Cobra.Lang
 		TODO:
 			[-] List style items
 			[ ] Can the methods use .getType instead of hardcoding Set? Then subclasses would get created for example .intersection
+			[ ] could use an indexer: s[key].  Does it return bool or T? like NSSet?
 			[ ] Test without args: s = Set(s)  (test in C# too)
 			[ ] yielded versions of Set operators?
 			[ ] unit test CobraCore.toTechString() results
@@ -1257,9 +1258,11 @@ namespace Cobra.Lang
 			_data = Dictionary<of T, T>(capacity)
 
 		def init(items as IEnumerable<of T>)
+			# CC: ensure for item in items assert .contains(item)    or,
+			# CC: ensure for item in items get .contains(item)
 			_data = Dictionary<of T, T>()
 			for item in items
-				_data.add(item, item)
+				_data[item] = item
 
 
 		## IEnumerable
@@ -1275,6 +1278,7 @@ namespace Cobra.Lang
 		## Object
 	
 		def equals(other as Object?) as bool is override
+			# TODO: could this be more efficient?
 			if other inherits Set<of T>
 				if .count <> other.count
 					return false
@@ -1285,13 +1289,27 @@ namespace Cobra.Lang
 					if not .contains(item)
 						return false
 				return true
+			else if other inherits ISet
+				# TODO: cleanup the following
+				if .countOfISet <> other.countOfISet
+					return false
+				for item in this
+					if not other.contains(item)
+						return false
+				for item2 in other
+					if not sharp'item2 is T'
+						return false
+					if not .contains(item2 to T)
+						return false
+				return true
 			else
 				return false
 
 		def getHashCode as int
 			code = base.getHashCode
 			for item in this
-				$sharp('code ^= item.GetHashCode()')
+				sharp'code ^= item.GetHashCode()'
+				# code = code ^ item.getHashCode
 			return code
 
 
@@ -1324,6 +1342,16 @@ namespace Cobra.Lang
 				# .contains(item) implies result  TODO: How to say "old this"?
 			body
 				return _data.remove(item)
+
+
+		# ISet
+		
+		get countOfISet as int
+			return _data.count
+
+		def contains(item as Object) as bool
+			implements ISet
+			return if(sharp'item is T', .contains(item to T), false)
 
 
 		## Set operations
@@ -1418,6 +1446,16 @@ namespace Cobra.Lang
 		def toList as List<of T>
 			return List<of T>(this)
 
+	interface ISet
+		inherits IEnumerable
+		"""
+		This interface is to facilitate Set<of>.equals when the generic types are different (which
+		does not necessarily restrict the two sets from having the same contents).
+		
+		Use ISet<of T> instead.
+		"""
+		get countOfISet as int
+		def contains(item as Object) as bool
 
 	class TestSet
 
@@ -1438,7 +1476,10 @@ namespace Cobra.Lang
 			assert s <> t
 			assert t.isSubsetOf(s)
 			assert s.isSupersetOf(t)
+			t.add(1)
+			assert s == t
 			s.clear
+			t.clear
 			assert s.count == 0
 		
 			u = s.union(t)
@@ -1451,12 +1492,18 @@ namespace Cobra.Lang
 			s.add(1)
 			assert s.contains(1)
 			assert not s.contains(2)
-			
+
 			# make lists and sets from each other
 			s = Set<of int>([1, 2])
 			assert s.contains(1) and s.contains(2) and s.count == 2
 			list = List<of int>(s)
 			assert list == [1, 2] or list == [2, 1]
+
+			# repeated element
+			s = Set<of int>([1, 1])
+			assert s.contains(1) and not s.contains(2) and s.count == 1
+			s.add(1)
+			assert s.contains(1) and not s.contains(2) and s.count == 1
 
 			# set operations
 			r = Set<of int>([1, 2]).intersection(Set<of int>([2, 3]))

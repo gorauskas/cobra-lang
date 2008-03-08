@@ -2757,16 +2757,17 @@ class SequenceLit
 
 	def _makeTypeWith(type as IType) as IType is abstract
 
-	get openingBracket as String is abstract
+	get brackets as List<of String> is abstract
 
 	def toCobraSource as String is override
-		sb = StringBuilder(.openingBracket)
+		brackets = .brackets
+		sb = StringBuilder(brackets[0])
 		sep = ''
 		for expr in _exprs
 			sb.append(sep)
 			sb.append(expr.toCobraSource)
 			sep = ', '
-		sb.append(']')
+		sb.append(brackets[1])
 		return sb.toString
 
 	def writeSharpBreakdownItems(sw as SharpWriter) is override  # CC: axe is override
@@ -2787,8 +2788,8 @@ class ListLit
 	def _makeTypeWith(type as IType) as IType is override
 		return .compiler.libraryClass('System.Collections.Generic.List<of>').constructedTypeFor([type])
 
-	get openingBracket as String is override
-		return r'['
+	get brackets as List<of String> is override
+		return [r'[', ']']
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		innerType = (_type to Box).genericParams[0]
@@ -2813,8 +2814,8 @@ class ArrayLit
 	def _makeTypeWith(type as IType) as IType is override
 		return ArrayType(type)
 
-	get openingBracket as String is override
-		return r'@['
+	get brackets as List<of String> is override
+		return [r'@[', ']']
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		sw.write('new [_type.sharpRef] { ')
@@ -2827,6 +2828,43 @@ class ArrayLit
 		sw.write(' }')
 
 
+class SetLit
+	inherits SequenceLit
+	"""
+	Sets aren't exactly sequences although they appear that way in source code which itself is a sequence of characters.
+	Like lists, sets have one generic type param.
+
+	Hence it's convenient to inherit SequenceLit, the base class for ListLit and ArrayLit as well.
+
+	Examples:
+		{1, 2, 3}
+		{'Cobra', 'Python'}
+		{1, Object(), 'Car'}
+		{,}
+	"""
+
+	def init(token as IToken, exprs as List<of Expr>)
+		base.init(token, exprs)
+
+	def _makeTypeWith(type as IType) as IType is override
+		return .compiler.libraryClass('Cobra.Lang.Set<of>').constructedTypeFor([type])
+
+	get brackets as List<of String> is override
+		return [r'{', '}']
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		innerType = (_type to Box).genericParams[0]
+		sw.write('CobraImp.MakeSet<[innerType.sharpRef]>(typeof([_type.sharpRef])')
+		if _exprs.count
+			sw.write(', ')
+			sep = ''
+			for expr in _exprs
+				sw.write(sep)
+				expr.writeSharpDef(sw, false)
+				sep = ', '
+		sw.write(')')
+
+	
 class DictLit
 	inherits CompositeLiteral
 
@@ -2838,7 +2876,7 @@ class DictLit
 
 	def addSubFields is override
 		base.addSubFields
-		.addField('_entries', _entries)
+		.addField('entries', _entries)
 
 	get hasError as bool is override
 		if base.hasError

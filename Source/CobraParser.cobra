@@ -2389,7 +2389,7 @@ class Parser
 		else if peek=='ARRAY_OPEN'
 			return .literalArray
 		else if peek=='LCURLY'
-			return .literalDict
+			return .literalDictOrSet
 		else if peek=='OPEN_IF'
 			return .ifExpr
 		else if peek=='FOR'
@@ -2629,31 +2629,94 @@ class Parser
 		exprs = .commaSepExprs(['RBRACKET'], true)
 		return ArrayLit(token, exprs)
 
-	def literalDict as DictLit
+	def literalDictOrSet as CompositeLiteral
 		token = .expect('LCURLY')
-		expectComma = false
-		entries = List<of List<of Expr>>()
-		while true
+		_spaceAgnostic
+		try
+			expr as Expr?
+			branch .peek.which
+				on 'COMMA'
+					return _literalSet(token, expr)
+				on 'COLON'
+					return _literalDict(token, expr)
+				on 'RCURLY'
+					.grab
+					_warning('Assuming empty dictionary, but please use "{:}" for empty dictionary or "{,}" for empty set')
+					return DictLit(token, List<of List<of Expr>>())
+			expr = .expression
 			_spaceAgnostic
-			if .peek.which=='RCURLY'
-				.grab
-				break
-			if expectComma
-				.expect('COMMA')
-			if .peek.which=='RCURLY'
-				.grab
-				break
-			_spaceAgnostic
-			if .peek.which=='RCURLY'
-				.grab
-				break
-			key = .expression
-			.expect('COLON')
-			value = .expression
-			entries.add([key, value])
-			expectComma = true
-		return DictLit(token, entries)
+			branch .peek.which
+				on 'COMMA'
+					return _literalSet(token, expr)
+				on 'COLON'
+					return _literalDict(token, expr)
+				on 'RCURLY'
+					.grab
+					return SetLit(token, [expr])  # example: {1}
+				else
+					.throwError('Expecting a comma, colon or right curly brace for set literal or dictionary literal.')
+					throw Exception('')  # for code flow analysis
+		success
+			_finishSpaceAgnostic
 
+	def _literalSet(token as IToken, expr as Expr?) as SetLit
+		if expr
+			exprs = [expr]
+			while true
+				.expect('COMMA')
+				_spaceAgnostic
+				if .optional('RCURLY')
+					break
+				.newOpStack
+				try
+					exprs.add(.expression)
+				finally
+					.delOpStack
+				_spaceAgnostic
+				if .optional('RCURLY')
+					break
+			return SetLit(token, exprs)
+		else
+			.expect('COMMA')
+			_spaceAgnostic
+			.expect('RCURLY')
+			return SetLit(token, List<of Expr>())
+
+	def _literalDict(token as IToken, expr as Expr?) as DictLit
+		if expr
+			expectComma = false
+			entries = List<of List<of Expr>>()
+			first = true
+			while true
+				if first
+					key = expr
+					first = false
+				else
+					_spaceAgnostic
+					if .peek.which=='RCURLY'
+						.grab
+						break
+					if expectComma
+						.expect('COMMA')
+					if .peek.which=='RCURLY'
+						.grab
+						break
+					_spaceAgnostic
+					if .peek.which=='RCURLY'
+						.grab
+						break
+					key = .expression
+				.expect('COLON')
+				value = .expression
+				entries.add([key, value])
+				expectComma = true
+			return DictLit(token, entries)
+		else
+			.expect('COLON')
+			_spaceAgnostic
+			.expect('RCURLY')
+			return DictLit(token, List<of List<of Expr>>())
+		
 	def nameExpr as NameExpr
 		nameToken = .expect('ID')
 		name = nameToken.text
@@ -2961,7 +3024,7 @@ class Parser
 		"""
 		Eats up EOLs, INDENTs and DEDENTs.
 		Call this to go into "space agnostic" mode.
-		Call finishSpaceAgnostic afterwards to eat up subsequent INDENTs and DEDENTs.
+		Call _finishSpaceAgnostic afterwards to eat up subsequent INDENTs and DEDENTs.
 		"""
 		while true
 			peek = .peek.which
