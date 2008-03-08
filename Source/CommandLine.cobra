@@ -172,6 +172,14 @@ class CommandLine
 			'description': "The command line's output will be in HTML.",
 		},
 		{
+			'name': 'pkg',
+			'type': 'string',
+			'isAccumulator': true,
+			'description': 'References package via "pkg-config --libs". (Mono only.)',
+			'args': 'NAME',
+			'restriction': 'mono',
+		},
+		{
 			'name': 'reference',
 			'synonyms': ['r'],
 			'isAccumulator': true,
@@ -383,6 +391,16 @@ class CommandLine
 		# trace options
 		return options to !
 
+	def isOptionSpecRestrictionViolated(optionSpec as Dictionary<of String, Object>) as bool
+		"""
+		Returns true if the option spec has a 'restriction' key and the check against that restriction is true.
+		"""
+		if optionSpec.containsKey('restriction')
+			branch optionSpec['restriction'] to String
+				on 'mono-only'
+					return not CobraCore.isRunningOnMono
+		return false
+
 	def parseArgs(args as String, options as out Options?, paths as out List<of String>?)
 		ensure
 			options
@@ -413,6 +431,8 @@ class CommandLine
 				# ^ maps synonyms to their full names
 			synList = List<of String>()
 			for d in _optionSpecs
+				if .isOptionSpecRestrictionViolated(d)
+					continue
 				specDict[d['name'] to String] = d
 				if d.containsKey('synonyms')
 					syns = d['synonyms'] to System.Collections.IList
@@ -765,6 +785,8 @@ class CommandLine
 			if spec.containsKey('type') and spec['type']=='main' # CC: spec.get('main', '')
 				continue
 			if spec.containsKey('developer-only') and spec['developer-only'] to bool and not Utils.isDevMachine
+				continue
+			if .isOptionSpecRestrictionViolated(spec)
 				continue
 			print
 			print '    -[spec["name"]]' stop

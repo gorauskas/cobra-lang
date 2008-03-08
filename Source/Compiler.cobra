@@ -1,4 +1,5 @@
 use System.Reflection
+use System.Diagnostics
 
 
 class StopCompilation
@@ -512,71 +513,116 @@ class Compiler
 		.readAssembly(t.assembly) # System.dll
 
 	def readAssemblyTypes
+		references = List<of String>()
 		if .options.containsKey('reference')
-			# Here be "reflectionOnlyLoad" code... which does not work on Mono 1.2.4
-			# The run-time error message says:
-			#   ** (./cobra.exe:24284): WARNING **: Cannot resolve dependency to assembly 'System, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089' because it has not been preloaded. When using the ReflectionOnly APIs, dependent assemblies must be pre-loaded or loaded on demand through the ReflectionOnlyAssemblyResolve event.
-			# But hooking ReflectionOnlyAssemblyResolve has no effect as it never gets called.
-			# Looks like others are having problems too:
-			#   http://csammisrun.net/shaim/viewtopic.php?t=29&sid=e46dc962b1e4d14a5210ae2852ac7d87
-			# General references:
-			# * "Reflection Only Assembly Loading" blog entry by Junfeng Zhang
-			#   http://blogs.msdn.com/junfeng/archive/2004/08/24/219691.aspx
-			# * http://forums.microsoft.com/MSDN/ShowPost.aspx?PostID=2485940&SiteID=1
-			#   Justin Pinnix from MSFT says "Once our assembly resolver finds your DLL, it calls
-			#   Assembly.LoadFrom().  So, even though your code calls Assembly.Load, we still
-			#   call Assembly.LoadFrom"
-			# TODO: try this out on MS .NET and if it works there, use it there
-			# TODO: file a Mono bug report (or ping an existing one)
-			# curDomain = AppDomain.currentDomain
-			# $sharp('curDomain.ReflectionOnlyAssemblyResolve += _resolveEvent')
+			references.addRange(.options['reference'] to List<of String>)
+		if .options.containsKey('pkg')
+			for pkgName in .options['pkg'] to List<of String>
+				references.addRange(.refsForPackage(pkgName))
 
-			i = 0
-			references = .options['reference'] to List<of String>
-			for reference in List<of String>(references)
-				if .verbosity > 0
-					print 'Loading reference:', reference
-				if false
-					# Does not work on Novell Mono. See notes above.
-					referredAss = Assembly.reflectionOnlyLoadFrom(reference)
-					# TODO: handle all the exceptions from Assembly.loadFrom
+		if .verbosity > 1
+			if references.count == 0
+				print 'No additional assembly references.'
+			else
+				print 'Final assembly reference list:'
+				i = 0
+				for refPath in references
+					print '[i]. [refPath]'
+					i += 1
+
+		# Here be "reflectionOnlyLoad" code... which does not work on Mono 1.2.4
+		# The run-time error message says:
+		#   ** (./cobra.exe:24284): WARNING **: Cannot resolve dependency to assembly 'System, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089' because it has not been preloaded. When using the ReflectionOnly APIs, dependent assemblies must be pre-loaded or loaded on demand through the ReflectionOnlyAssemblyResolve event.
+		# But hooking ReflectionOnlyAssemblyResolve has no effect as it never gets called.
+		# Looks like others are having problems too:
+		#   http://csammisrun.net/shaim/viewtopic.php?t=29&sid=e46dc962b1e4d14a5210ae2852ac7d87
+		# General references:
+		# * "Reflection Only Assembly Loading" blog entry by Junfeng Zhang
+		#   http://blogs.msdn.com/junfeng/archive/2004/08/24/219691.aspx
+		# * http://forums.microsoft.com/MSDN/ShowPost.aspx?PostID=2485940&SiteID=1
+		#   Justin Pinnix from MSFT says "Once our assembly resolver finds your DLL, it calls
+		#   Assembly.LoadFrom().  So, even though your code calls Assembly.Load, we still
+		#   call Assembly.LoadFrom"
+		# TODO: try this out on MS .NET and if it works there, use it there
+		# TODO: file a Mono bug report (or ping an existing one)
+		# curDomain = AppDomain.currentDomain
+		# $sharp('curDomain.ReflectionOnlyAssemblyResolve += _resolveEvent')
+
+		i = 0
+		for reference in references
+			if .verbosity > 0
+				print 'Loading reference:', reference
+			if false
+				# Does not work on Novell Mono. See notes above.
+				referredAss = Assembly.reflectionOnlyLoadFrom(reference)
+				# TODO: handle all the exceptions from Assembly.loadFrom
+			else
+				if not CobraCore.isRunningOnMono and not reference.endsWith('.dll') and not reference.endsWith('.exe')
+					# On Microsoft .NET 2.0, excluding the extension is problematic
+					reference += '.dll'
+					references[i] = reference
+				if File.exists(reference)
+					# try current directory
+					referredAss = Assembly.loadFrom(reference)
 				else
-					if not CobraCore.isRunningOnMono and not reference.endsWith('.dll') and not reference.endsWith('.exe')
-						# On Microsoft .NET 2.0, excluding the extension is problematic
-						reference += '.dll'
-						references[i] = reference
-					if File.exists(reference)
-						# try current directory
-						referredAss = Assembly.loadFrom(reference)
-					else
-						# TODO: the problem with -lib: in both Cobra and C# is that it has no effect on runtime,
-						# you must still register the DLLs in the GAC or copy them into the same dir as the .exe
-						# because the -lib: paths are not passed into executable.
-						# So should Cobra copy the .dll's into the target directory (if their paths are not in MONO_PATH)?
-						searchPaths = .options.getDefault('library-directory', List<of String>()) to List<of String>
-						# TODO: ?: searchPaths.add(Path.getDirectoryName(Assembly.getExecutingAssembly.location))  # try Cobra's directory - also should be added to .options.'library-directory' not to a local var
-						found = false
-						for searchPath in searchPaths
-							combinedPath = Path.combine(searchPath, reference)
-							for ext in ['', '.dll', '.exe']
-								path = combinedPath + ext
-								if File.exists(path)
-									referredAss = Assembly.loadFrom(path)
-									found = true
-									break
-							if found
+					# TODO: the problem with -lib: in both Cobra and C# is that it has no effect on runtime,
+					# you must still register the DLLs in the GAC or copy them into the same dir as the .exe
+					# because the -lib: paths are not passed into executable.
+					# So should Cobra copy the .dll's into the target directory (if their paths are not in MONO_PATH)?
+					searchPaths = .options.getDefault('library-directory', List<of String>()) to List<of String>
+					# TODO: ?: searchPaths.add(Path.getDirectoryName(Assembly.getExecutingAssembly.location))  # try Cobra's directory - also should be added to .options.'library-directory' not to a local var
+					found = false
+					for searchPath in searchPaths
+						combinedPath = Path.combine(searchPath, reference)
+						for ext in ['', '.dll', '.exe']
+							path = combinedPath + ext
+							if File.exists(path)
+								referredAss = Assembly.loadFrom(path)
+								found = true
 								break
-						if not found
-							# try system wide (GAC)
-							if reference.endsWith('.dll')
-								reference = reference[:-4]
-							referredAss = Assembly.loadWithPartialName(reference)  # TODO: Holy crap! loadWithPartialName is marked obsolete, but I know of no other way to support a library reference like "compiler /r:System.Data.dll myprog.ext" as C#, Cobra, etc. do. If they remove this method, we're screwed!
-					# TODO: handle all the exceptions from Assembly.loadFrom
-				if referredAss
-					.readAssembly(referredAss, reference <> 'Cobra.Lang.dll')
-				else
-					_addMessage(SourceException('Cannot locate assembly reference "[reference]".'))
-				i += 1
+						if found
+							break
+					if not found
+						# try system wide (GAC)
+						if reference.endsWith('.dll')
+							reference = reference[:-4]
+						referredAss = Assembly.loadWithPartialName(reference)  # TODO: Holy crap! loadWithPartialName is marked obsolete, but I know of no other way to support a library reference like "compiler /r:System.Data.dll myprog.ext" as C#, Cobra, etc. do. If they remove this method, we're screwed!
+				# TODO: handle all the exceptions from Assembly.loadFrom
+			if referredAss
+				.readAssembly(referredAss, reference <> 'Cobra.Lang.dll')
+			else
+				_addMessage(SourceException('Cannot locate assembly reference "[reference]".'))
+			i += 1
+
+	def refsForPackage(pkgName as String) as List<of String>
+		"""
+		Returns the library/DLL refs for the give package name.
+		Runs pkg-config to get that list.
+		See HowTo/GTK.cobra
+		"""
+		refs = List<of String>()
+
+		# example: pkg-config --libs gtk-sharp-2.0
+		p = Process()
+		p.startInfo.fileName = 'pkg-config'
+		p.startInfo.arguments = '--libs [pkgName]'
+		if .verbosity > 1
+			print 'Running: [p.startInfo.fileName] [p.startInfo.arguments]'
+		output = CobraCore.runAndCaptureAllOutput(p).trim
+		if p.exitCode
+			_addMessage(SourceException('Cannot locate package "[pkgName]"'))
+			print ' $ [p.startInfo.fileName] [p.startInfo.arguments]'
+			for line in output.split(c'\n')
+				print ' |', line
+			return refs
+
+		parts = output.replace('-r:', '\0').split(c'\0')
+		for part in parts
+			part = part.trim
+			if part <> ''
+				refs.add(part)
+		
+		return refs
 
 	def _resolveEvent(sender as Object, args as ResolveEventArgs) as Assembly?
 		return nil
@@ -1341,8 +1387,11 @@ class Compiler
 					sharpArgs = sharpArgs[1:-1]
 				options += ' ' + sharpArgs
 
-			for libPath in .options.getDefault('library-directory', '')
+			for libPath in .options.getDefault('library-directory', [])
 				options += ' ' + '-lib:[libPath]'
+
+			for pkgName in .options.getDefault('pkg', [])
+				options += ' ' + '-pkg:[pkgName]'
 
 			# .cs files
 			sharpFileNameList = List<of String>()
