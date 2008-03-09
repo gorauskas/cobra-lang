@@ -34,10 +34,12 @@ class BinaryOpExpr
 					return BinaryBoolExpr(opToken, op, left, right)
 				on 'PLUS', 'MINUS', 'STAR', 'STARSTAR', 'SLASH', 'SLASHSLASH', 'PERCENT'
 					return BinaryMathExpr(opToken, op, left, right)
-				on 'AMPERSAND', 'VERTICAL_BAR', 'CARET', 'DOUBLE_LT', 'DOUBLE_GT'
-					return BinaryBitwiseExpr(opToken, op, left, right)
 				on 'PLUS_EQUALS', 'MINUS_EQUALS', 'STAR_EQUALS', 'STARSTAR_EQUALS', 'SLASH_EQUALS', 'SLASHSLASH_EQUALS', 'PERCENT_EQUALS'
 					return AugAssignMathExpr(opToken, op, left, right)
+				on 'AMPERSAND', 'VERTICAL_BAR', 'CARET', 'DOUBLE_LT', 'DOUBLE_GT'
+					return BinaryBitwiseExpr(opToken, op, left, right)
+				on 'AMPERSAND_EQUALS', 'VERTICAL_BAR_EQUALS', 'CARET_EQUALS', 'DOUBLE_LT_EQUALS', 'DOUBLE_GT_EQUALS'
+					return AugAssignBitwiseExpr(opToken, op, left, right)
 				else
 					throw FallThroughException([opToken, op, left, right])
 
@@ -487,6 +489,55 @@ class AugAssignMathExpr
 			sw.write(sep)
 			_right.writeSharpDef(sw)
 			sw.write(')')
+
+
+class AugAssignBitwiseExpr
+	inherits NumericPromoExpr
+	"""
+	"""
+
+	# TODO: does not inherit AbstractAssignExpr. Does not participate in super stack trace
+
+	def init(opToken as IToken, op as String, left as Expr, right as Expr)
+		base.init(opToken, op, left, right)
+		assert op in ['AMPERSAND_EQUALS', 'VERTICAL_BAR_EQUALS', 'CARET_EQUALS', 'DOUBLE_LT_EQUALS', 'DOUBLE_GT_EQUALS']
+
+	def _bindImp
+		base._bindImp
+		# TODO: does NumericPromoExpr cover everything we need?
+
+	def _writeSharpDef(sw as SharpWriter) is override
+		if _left.type.isDynamic
+			_left.writeSharpDef(sw)
+			sw.write(' = ')
+			specs = OperatorSpecs.binaryOpSpecsByCobraText
+			assert specs.containsKey(.token.text)
+			spec = specs[.token.text]
+			opText = Utils.sharpStringLiteralFor(spec.opMethodName)
+			sw.write('CobraImp.DynamicOp([opText], ')
+			_left.writeSharpDef(sw)  # TODO: add , false
+			sw.write(', ')
+			_right.writeSharpDef(sw)  # TODO: add , false
+			sw.write(')')
+			return
+		op = ''
+		branch _op
+			on 'AMPERSAND_EQUALS'
+				op = '&='
+			on 'VERTICAL_BAR_EQUALS'
+				op = '|='
+			on 'CARET_EQUALS'
+				op = '^='
+			on 'DOUBLE_LT_EQUALS'
+				op = '<<='
+			on 'DOUBLE_GT_EQUALS'
+				op = '>>='
+			else
+				throw FallThroughException(_op)
+		assert op.length
+		_left.writeSharpDef(sw)
+		sw.write(op)
+		_right.writeSharpDef(sw)
 
 
 class BinaryBoolExpr
