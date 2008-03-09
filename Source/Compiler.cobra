@@ -513,9 +513,19 @@ class Compiler
 		.readAssembly(t.assembly) # System.dll
 
 	def readAssemblyTypes
-		references = List<of String>()
-		if .options.containsKey('reference')
-			references.addRange(.options['reference'] to List<of String>)
+		references = .options.getDefault('reference', List<of String>()) to List<of String>
+
+		# On Microsoft .NET 2.0, excluding the extension is problematic
+		i = 0
+		for reference in List<of String>(references)
+			if not CobraCore.isRunningOnMono and not reference.endsWith('.dll') and not reference.endsWith('.exe')
+				reference += '.dll'
+				references[i] = reference
+			i += 1
+
+		# now that references are fixed, make a copy so that .options['references'] is not modified further
+		references = List<of String>(references)
+
 		if .options.containsKey('pkg')
 			for pkgName in .options['pkg'] to List<of String>
 				references.addRange(.refsForPackage(pkgName))
@@ -548,8 +558,7 @@ class Compiler
 		# curDomain = AppDomain.currentDomain
 		# $sharp('curDomain.ReflectionOnlyAssemblyResolve += _resolveEvent')
 
-		i = 0
-		for reference in List<of String>(references)
+		for reference in references
 			if .verbosity > 0
 				print 'Loading reference:', reference
 			if false
@@ -557,10 +566,6 @@ class Compiler
 				referredAss = Assembly.reflectionOnlyLoadFrom(reference)
 				# TODO: handle all the exceptions from Assembly.loadFrom
 			else
-				if not CobraCore.isRunningOnMono and not reference.endsWith('.dll') and not reference.endsWith('.exe')
-					# On Microsoft .NET 2.0, excluding the extension is problematic
-					reference += '.dll'
-					references[i] = reference
 				if File.exists(reference)
 					# try current directory
 					referredAss = Assembly.loadFrom(reference)
@@ -574,13 +579,9 @@ class Compiler
 					found = false
 					for searchPath in searchPaths
 						combinedPath = Path.combine(searchPath, reference)
-						for ext in ['', '.dll', '.exe']
-							path = combinedPath + ext
-							if File.exists(path)
-								referredAss = Assembly.loadFrom(path)
-								found = true
-								break
-						if found
+						if File.exists(combinedPath)
+							referredAss = Assembly.loadFrom(combinedPath)
+							found = true
 							break
 					if not found
 						# try system wide (GAC)
