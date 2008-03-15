@@ -1734,9 +1734,26 @@ class Parser
 					.grab
 					if elsePart
 						.throwError('Cannot have "on" parts after an "else" part.')
-					exprs = .commaSepExprs(['COLON', 'EOL'])
-					.undo
-					block = .branchPartStatements
+					exprs = List<of Expr>()
+					expr = .expression
+					while expr inherits BinaryBoolExpr
+						binExpr = expr to BinaryBoolExpr
+						if binExpr.op == 'OR'
+							right = binExpr.right
+							if right inherits TruthExpr
+								right = right.expr
+							exprs.add(right)
+							expr = binExpr.left
+						else
+							.throwError('Unexpected "[expr.token.text]" in "on" value.')
+					if expr inherits TruthExpr
+						expr = expr.expr
+					exprs.add(expr)
+					if CobraCore.willCheckAssert
+						for expr in exprs
+							assert not expr inherits TruthExpr
+							assert not expr inherits BinaryOpExpr
+					block = .block
 					onParts.add(BranchOnPart(exprs, block))
 				on 'ELSE'
 					.grab
@@ -1830,7 +1847,7 @@ class Parser
 		if .peek.which=='ELSE'
 			.grab
 			peek = .peek.which
-			if peek=='EOL'
+			if peek in ['EOL', 'COMMA', 'COLON']
 				falseStmts = .block
 			else if peek=='IF'
 				falseStmts = BlockStmt(.peek, [.ifStmt])
@@ -2081,17 +2098,37 @@ class Parser
 		Consumes the (optional colon,) indent, statements and dedent.
 		Returns a BlockStmt.
 		"""
-		token = .indent
 		stmts = List<of Stmt>()
-		while true
+		done = false
+		if .optional('COMMA')
+			token = .last
 			stmt = .stmt
 			if stmt
 				stmts.add(stmt)
-			if .peek.which=='DEDENT'
-				break
-		if not stmts.count
-			.throwError('Missing statements in block. Add a real statement or a "pass".')
-		.dedent
+			else
+				.throwError('Missing statement after comma.')
+			done = true
+		else if .optional('COLON')
+			token = .last
+			if not .optional('EOL')
+				_warning('Colons are not used to put a target statement on the same line. Use a comma (,) instead.')
+				stmt = .stmt
+				if stmt
+					stmts.add(stmt)
+				else
+					.throwError('Missing statement after colon.')
+				done = true
+		if not done
+			token = .indent
+			while true
+				stmt = .stmt
+				if stmt
+					stmts.add(stmt)
+				if .peek.which=='DEDENT'
+					break
+			if not stmts.count
+				.throwError('Missing statements in block. Add a real statement or a "pass".')
+			.dedent
 		return BlockStmt(token, stmts)
 
 	def localVarDecl as AbstractLocalVar
