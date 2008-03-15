@@ -329,14 +329,14 @@ class Box
 		return nil
 
 	def symbolForName(name as String, haveThis as bool) as IMember?
-		return .symbolForName(name, haveThis, true)
+		return _symbolForName(name, haveThis, true)
 
-	def symbolForName(name as String, haveThis as bool, checkNameSpace as bool) as IMember?
+	def _symbolForName(name as String, haveThis as bool, firstCall as bool) as IMember?
 		"""
 		Unlike the inherited .declForName, this method follows the
 		inheritance chain and provides options for haveThis.
 		"""
-		if name == _name
+		if firstCall and name == _name
 			return this
 		p = .paramForName(name)
 		if p
@@ -346,19 +346,21 @@ class Box
 				return p
 		x = .declForName(name) to IMember?
 		if x is nil and _baseClass
-			x = _baseClass.symbolForName(name, haveThis, false)
+			# try base class to look for nested types
+			x = _baseClass._symbolForName(name, haveThis, false)
 		if x is nil
 			x = .interfaceMemberForName(name)
 		if x and not haveThis
 			if x.requiresThis
 				x = nil
-		if x is nil and checkNameSpace
+		if x is nil and firstCall
+			# try parent box or namespace because they are in lexical scope
 			nameSpace = .parentNameSpace
 			if nameSpace is nil
 				# happens for nested boxes which currently means sig/delegate inside a class
 				# when classes can really be nested, or generic sigs are supported, we'll need some more work here
 				if .parentBox
-					x = .parentBox.symbolForName(name, haveThis, checkNameSpace)
+					x = .parentBox._symbolForName(name, haveThis, firstCall)
 			else
 				if not .name.startsWith('ArrayType_')  # TODO: axe this guard when ArrayType.memberForName's TODO to read System.Array is done
 					if .didBindInt
