@@ -670,7 +670,7 @@ class Compiler
 						curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(Token.empty, name)
 						assert not curNameSpace.isUnified
 					namespaceQualNameToNameSpaceObject[namespaceName] = curNameSpace
-			if verbosity >= 3
+			if verbosity >= 4
 				print '  Reading type [type.name] in namespace "[namespaceName]"'
 			if type.isClass
 				curNameSpace.addDecl(Class(type))
@@ -1410,8 +1410,8 @@ class Compiler
 				if SharpCompilationMessage.willSkipMessage(line)
 					continue
 				else
-					if _verbosity >= 4
-						print 'Got C# message: [line]'
+					if _verbosity >= 3
+						print 'C# message: [line]'
 					_addMessage(SharpCompilationMessage(line, this))
 			if .errors.count
 				_exitFromErrors
@@ -1499,6 +1499,35 @@ class InternalError
 class SharpCompilationMessage
 	inherits SourceException
 
+	test
+		line = r"c:\Documents and Settings\Chuck\My Documents\Projects\Cobra\Workspace-New\Tests\tests\720-libraries\200-tao.cobra(11,4): error CS0246: The type or namespace name 'SDL_Event' could not be found (are you missing a using directive or an assembly reference?)"
+		msg = SharpCompilationMessage(line, TestCompiler())
+		assert 'error ' in line
+		assert msg.isError
+		assert msg.hasSourceSite
+		assert 'tao.cobra' in msg.fileName and 'Documents' in msg.fileName
+		assert msg.lineNum == 11
+
+		line = "foo.cobra.cs(14,14): error CS0535: `Foo' does not implement interface member `IFoo.Baz()'"
+		msg = SharpCompilationMessage(line, TestCompiler())
+		assert msg.isError
+		assert msg.hasSourceSite
+		assert msg.fileName == 'foo.cobra'
+		assert msg.lineNum == 14
+		
+		line = "error CS5001: Program `bugs/bugs-no-main.exe' does not contain a static `Main' method suitable for an entry point"
+		msg = SharpCompilationMessage(line, TestCompiler())
+		assert msg.isError
+		assert not msg.hasSourceSite
+		
+		line = "foo.cobra(15,3): warning CS1111: Blah blah"
+		msg = SharpCompilationMessage(line, TestCompiler())
+		assert not msg.isError
+		assert msg.hasSourceSite
+		assert msg.fileName == 'foo.cobra'
+		assert msg.lineNum == 15
+		assert msg.message == 'Blah blah'
+
 	def willSkipMessage(msg as String) as bool is shared
 		if '.dll' in msg
 			# comes up on Novell Mono: '/Library/Frameworks/Mono.framework/Versions/1.2.4/lib/mono/2.0/mscorlib.dll (Location of the symbol related to previous error)'
@@ -1521,6 +1550,9 @@ class SharpCompilationMessage
 
 	def init(line as String, compiler as Compiler)
 		require not .willSkipMessage(line)
+# CC:
+#		require compiler responds to (get verbosity as int)
+#		require compiler responds to (def cobraLineNumForSharp(fileName as String, lineNum as int) as int)
 		base.init(line)
 
 		#   example lines:
@@ -1556,7 +1588,7 @@ class SharpCompilationMessage
 					_fileName = fileName
 					if willFixLineNum
 						_lineNum = compiler.cobraLineNumForSharp(fileName, _lineNum to !)
-					i = line.indexOf(':')
+					i = line.indexOf(':', i)
 					if i <> -1
 						line = line[i+1:].trim
 						_isError = line.startsWith('error')
@@ -1584,3 +1616,20 @@ class SharpCompilationMessage
 
 	get lineNum as int is override
 		return _lineNum to !
+
+
+class TestCompiler
+	inherits Compiler
+	"""
+	Used by SharpCompilationMessage.test
+	CC: should be inside the test or easy to remove via a test attribute
+	"""
+
+	def init
+		base.init(0)
+
+	get verbosity as int is override
+		return 0
+	
+	def cobraLineNumForSharp(fileName as String, lineNum as int) as int is override
+		return lineNum
