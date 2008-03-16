@@ -555,7 +555,16 @@ class CallExpr
 				else if not .isForAttribute  # otherwise .compiler.codeMemberStack is empty (so no .findLocal), plus Cobra doesn't allow lowercase members anyway
 					definition = .compiler.findLocal(_name)
 				if definition is nil
-					.throwError('Cannot find "[_name]".')
+					definition = .compiler.curBox.symbolForName(_name, true)
+					if definition
+						.throwError('You must refer to non-underscored members with a leading dot (.). Member name is "[_name]".')
+					msg = 'Cannot find "[_name]".'
+					suggs = .compiler.curBox.suggestionsForBadMemberName(_name)
+					if suggs.count
+						msg += _suggestionsMessage(suggs)
+						assert msg.endsWith('.')
+						msg = msg[:-1] + ' if you were thinking of member access, but you will need a leading dot (.).'
+					.throwError(msg)
 				_isCallOnSystemType = not definition inherits Box and not definition inherits GenericParam and not definition inherits Method and not definition inherits MemberOverload
 			if definition
 				if definition inherits IVar
