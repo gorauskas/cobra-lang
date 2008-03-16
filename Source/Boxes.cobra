@@ -54,6 +54,7 @@ class Box
 		_invariants = List<of Expr>()
 
 	def _initClrType(t as Type)
+		ensure .needScanClrType
 		_clrType = t
 		_needScanClrType = true
 		_scanGenericArgs
@@ -62,6 +63,7 @@ class Box
 		"""
 		Subclasses should invoke base and then invoke the various _scanFoo methods that are appropriate for them.
 		"""
+		ensure not .needScanClrType
 		_needScanClrType = false
 		# print '<> _scanClrType for [.name] in [_parentNameSpace.fullName], class is [.getType.name]'
 
@@ -989,6 +991,13 @@ class Box
 				prop.binaryName = fieldInfo.name
 				prop.makeGetPart(TokenFix.empty)
 				.addDecl(prop)
+			else
+				isNames = [if(fieldInfo.isPublic, 'public', 'protected')]  # private was guarded against above
+				if fieldInfo.isStatic
+					isNames.add('shared')
+				varr = BoxVar(TokenFix.empty, this, Utils.cobraNameForSharpMemberName(fieldInfo.name), _memberTypeResultProxy(fieldInfo, fieldInfo.fieldType), isNames, nil, '')
+				varr.binaryName = fieldInfo.name
+				.addDecl(varr)
 
 	def _scanInitializers
 		for conInfo in _clrType.getConstructors  # TODO: get protected constructors
