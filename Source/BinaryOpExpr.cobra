@@ -352,7 +352,7 @@ class NumericPromoExpr
 			return
 		tint = .compiler.anyIntType
 		tdecimal = .compiler.decimalType
-		tfloat = .compiler.floatType
+		tfloat = .compiler.anyFloatType
 		tpassthrough = .compiler.passThroughType
 		tstring = .compiler.libraryType('System.String')
 		cannotMix = false
@@ -363,6 +363,8 @@ class NumericPromoExpr
 		if rightType inherits NilableType
 			rightType = rightType.theWrappedType
 
+		tgcd = leftType.greatestCommonDenominatorWith(rightType to !)
+
 		if leftType.isDescendantOf(tint)
 			if rightType.isDescendantOf(tint)
 				# special case: true division
@@ -370,11 +372,11 @@ class NumericPromoExpr
 				if _op=='SLASH'
 					_type = tdecimal
 				else
-					_type = leftType.greatestCommonDenominatorWith(rightType to !)
+					_type = tgcd
 			else if rightType.isDescendantOf(tdecimal)
 				_type = tdecimal
 			else if rightType.isDescendantOf(tfloat)
-				_type = tfloat
+				_type = tgcd
 		else if leftType.isDescendantOf(tdecimal)
 			if rightType.isDescendantOf(tdecimal)
 				_type = tdecimal
@@ -386,9 +388,9 @@ class NumericPromoExpr
 				cannotMix = true
 		else if leftType.isDescendantOf(tfloat)
 			if rightType.isDescendantOf(tfloat)
-				_type = tfloat
+				_type = tgcd
 			else if rightType.isDescendantOf(tint)
-				_type = tfloat
+				_type = tgcd
 			else if rightType.isDescendantOf(tdecimal)
 				cannotMix = true
 			else
@@ -649,12 +651,12 @@ class BinaryMathExpr
 			else if rt.isDescendantOf(.compiler.anyIntType)
 				_type = lt
 			else if lt.isDescendantOf(.compiler.decimalType)
-				if rt.isDescendantOf(.compiler.floatType)
+				if rt.isDescendantOf(.compiler.anyFloatType)
 					.throwError('Cannot promote between decimal and float for operator "[_op]". Decimal is more accurate and float has more range.')
 				else
 					# int case already taken care of, so...
 					.throwError('Cannot promote between decimal and "[rt.name]".')
-			else if lt.isDescendantOf(.compiler.floatType)
+			else if lt.isDescendantOf(.compiler.anyFloatType)
 				if rt.isDescendantOf(.compiler.decimalType)
 					.throwError('Cannot promote between float and decimal for operator "[_op]". Decimal is more accurate and float has more range.')
 				else
@@ -692,7 +694,7 @@ class BinaryMathExpr
 				else if left.isKindOf(.compiler.decimalType) or right.isKindOf(.compiler.decimalType)
 					op = 'Decimal.Floor('
 					sep = '/'
-				else if left.isKindOf(.compiler.floatType) or right.isKindOf(.compiler.floatType)
+				else if left.isKindOf(.compiler.anyFloatType) or right.isKindOf(.compiler.anyFloatType)
 					op = 'Math.Floor('
 					sep = '/'
 				else

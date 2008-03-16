@@ -22,7 +22,9 @@ interface ITypeProvider
 
 	get decimalType as DecimalType
 
-	get floatType as FloatType
+	def floatType as FloatType
+
+	def floatType(size as int) as FloatType
 
 	def intType as IntType
 
@@ -60,12 +62,13 @@ class BasicTypeProvider
 	TODO: rename to TypeProvider, change to a "mix-in" and have the Compiler class inherit it
 	"""
 
+	var _anyFloatType		as AnyFloatType?
 	var _anyIntType			as AnyIntType?
 	var _boolType			as BoolType?
 	var _charType			as CharType?
 	var _decimalType		as DecimalType?
 	var _dynamicType		as DynamicType?
-	var _floatType			as FloatType?
+	var _floatTypes			=  Dictionary<of int, FloatType>()
 	var _intTypes			=  Dictionary<of int, IntType>()
 	var _nilType			as NilType?
 	var _numberType			as NumberType?
@@ -81,6 +84,11 @@ class BasicTypeProvider
 	def typeOrNilForName(name as String) as IType?
 		assert false, 'TODO'
 		return nil
+
+	get anyFloatType as AnyFloatType
+		if _anyFloatType is nil
+			_anyFloatType = AnyFloatType()
+		return _anyFloatType to !
 
 	get anyIntType as AnyIntType
 		if _anyIntType is nil
@@ -107,10 +115,17 @@ class BasicTypeProvider
 			_dynamicType = DynamicType()
 		return _dynamicType to !
 
-	get floatType as FloatType
-		if _floatType is nil
-			_floatType = FloatType()
-		return _floatType to !
+	def floatType as FloatType
+		return .floatType(64)
+	
+	def floatType(size as int) as FloatType
+		require size in [32, 64]
+		type as FloatType?
+		if _floatTypes.tryGetValue(size, out type)
+			return type to !
+		else
+			type = _floatTypes[size] = FloatType(size, .anyFloatType)
+			return type to !
 
 	def intType as IntType
 		return .intType(true, 32)
@@ -119,7 +134,7 @@ class BasicTypeProvider
 		return .intType(false, 32)
 
 	def intType(signed as bool, size as int) as IntType
-		require size in @[8, 16, 32, 64] # CC: inherit from interface
+		require size in [8, 16, 32, 64] # CC: inherit from interface
 		key = if(signed, -1, +1) * size
 		type as IntType?
 		if _intTypes.tryGetValue(key, out type)
@@ -1238,24 +1253,120 @@ class DynamicType
 		return this
 
 
-class FloatType
+class AnyFloatType
 	inherits NumberType
-
+	
 	def init
-		base.init
-		_systemAliasProxy = LibraryTypeProxy('System.Double')
+		pass
+	
+	def init(superType as IType?)
+		base.init(superType)
+
+
+class FloatType
+	inherits AnyFloatType
+
+	test
+		saveTP = if(Node.hasTypeProvider, Node.typeProvider, nil)
+		Node.typeProvider = BasicTypeProvider()
+		try
+			anyFloat = AnyFloatType()
+
+			f32 = FloatType(32, anyFloat)
+			assert f32.name == 'float32'
+			assert f32.size == 32
+			
+			f64 = FloatType(64, anyFloat)
+			assert f64.name == 'float'
+			assert f64.size == 64
+
+			assert f64.isEquatableTo(f32)
+			assert f32.isEquatableTo(f64)
+			assert f32.isAssignableTo(f64)
+			assert not f64.isAssignableTo(f32)
+
+			f32b = FloatType(32, anyFloat)
+			assert f32 == f32b
+			assert f32 <> f64
+		finally
+			Node.typeProvider = saveTP
+
+	var _size as int
+	var _clrType as Type
+
+	def init(size as int, superType as IType?)
+		require
+			size in [8, 16, 32, 64]
+			superType implies superType inherits AnyFloatType
+		body
+			base.init(superType)
+			_size = size
+			branch size
+				on 32: _clrType = .typeProvider.clrType('System.Single')
+				on 64: _clrType = .typeProvider.clrType('System.Double')
+				else: throw FallThroughException(size)
+			_systemAliasProxy = LibraryTypeProxy(_clrType.fullName)
+
+	def addMinFields
+		base.addMinFields
+		.addField('size', .size)
+
+	def equals(other as Object?) as bool is override
+		if other is this
+			return true
+		else if other
+			if other inherits FloatType
+				return .size == other.size
+			else
+				return false
+		else
+			return false
+
+	def getHashCode as int is override
+		return .size.getHashCode
+
+	get clrType from var
+
+	get isDefaultFloatType as bool
+		return _size == 64
+
+	get isDefaultSize as bool
+		return _size == 64
 
 	get name as String is override
-		return 'float'
+		if .isDefaultFloatType
+			return 'float'
+		else
+			return 'float[.size]'
 
-	get sharpName as String is override
-		return 'double'
+	get size from var
+
+	def isAssignableTo(type as IType) as bool
+		if type is this  # common case
+			return true
+		if type inherits FloatType
+			if .size <= type.size
+				return true
+		return base.isAssignableTo(type)
 
 	def isComparableTo(t as IType) as bool
 		r = base.isComparableTo(t)
-		if not r and t inherits IntType
-			r = true
+		if not r
+			if t inherits IntType
+				r = true
+			else if t inherits FloatType
+				r = true
 		return r
+
+	def greatestCommonDenominatorWith(type as IType) as IType is override
+		if type inherits FloatType
+			maxSize = if(type.size > .size, type.size, .size)
+			return .compiler.floatType(maxSize)
+		else
+			return base.greatestCommonDenominatorWith(type)
+
+	get sharpName as String is override
+		return _clrType.name
 
 
 class AnyIntType
@@ -1373,7 +1484,7 @@ class IntType
 			return true
 		if type is .typeProvider.decimalType
 			return true
-		if type is .typeProvider.floatType
+		if type inherits AnyFloatType
 			return true
 		if type inherits IntType
 			if .isSigned == type.isSigned and .size == type.size
