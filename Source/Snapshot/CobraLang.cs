@@ -807,6 +807,10 @@ static public class CobraImp {
 		return new List<innerType>(args);
 	}
 
+	static public Set<innerType> MakeSet<innerType>(Type listType, params innerType[] args) {
+		return new Set<innerType>(args);
+	}
+
 	static public Dictionary<keyType,valueType> MakeDict<keyType,valueType>(Type dictType, params object[] args) {
 		Dictionary<keyType,valueType> d = new Dictionary<keyType,valueType>();
 		for (int i=0; i<args.Length; i+=2)
