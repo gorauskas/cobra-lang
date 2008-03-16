@@ -89,9 +89,9 @@ class CobraTokenizer
 			r'OPEN_IF				if\(',
 			r'OPEN_CALL				[A-Za-z_][A-Za-z0-9_]*\(',
 
-			r'FLOAT_LIT_1			\d[\d_]*\.\d+f',
-			r'FLOAT_LIT_2			\d[\d_]*f',
-			r'DECIMAL_LIT			\d[\d_]*\.\d+d?',
+			r'FLOAT_LIT_1			\d[\d_]*\.\d+_?f(32|64)?',
+			r'FLOAT_LIT_2			\d[\d_]*(f|_f)(32|64)?',
+			r'DECIMAL_LIT			\d[\d_]*\.\d+(d|_d)?',
 			r'INTEGER_LIT			\d[\d_]*',
 
 			r'INT_SIZE				int[0-9]+',
@@ -355,20 +355,39 @@ class CobraTokenizer
 		return tok
 
 	def onFLOAT_LIT_1(tok as IToken) as IToken?
-		try
+		ensure
+			result.which == 'FLOAT_LIT'
+			# CC: result.info in [32, 64]
+		body
 			s = tok.text.replace('_', '')
 			if s.endsWith('f')
+				size = 64
 				s = s[:-1]
-			tok.value = float.parse(s, Utils.cultureInfoForNumbers)
-		catch FormatException
-			assert false, 'not expecting to get here given regex'
-		catch OverflowException
-			assert false, 'TODO'
-		tok.which = 'FLOAT_LIT'
-		return tok
+			else if s.endsWith('f32')
+				size = 32
+				s = s[:-3]
+			else if s.endsWith('f64')
+				size = 64
+				s = s[:-3]
+			else
+				# cannot have other size specs given regex
+				size = 64
+			try
+				tok.value = float.parse(s, Utils.cultureInfoForNumbers)
+			catch FormatException
+				assert false, 'not expecting to get here given regex'
+			catch OverflowException
+				assert false, 'TODO'
+			tok.which = 'FLOAT_LIT'
+			tok.info = size
+			return tok
 
 	def onFLOAT_LIT_2(tok as IToken) as IToken?
-		return .onFLOAT_LIT_1(tok)
+		ensure
+			result.which == 'FLOAT_LIT'
+			# CC: result.info in [32, 64]
+		body
+			return .onFLOAT_LIT_1(tok)
 
 	def onDECIMAL_LIT(tok as IToken) as IToken?
 		try
