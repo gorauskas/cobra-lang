@@ -91,7 +91,8 @@ class CobraTokenizer
 
 			r'FLOAT_LIT_1			\d[\d_]*\.\d+_?f(32|64)?',
 			r'FLOAT_LIT_2			\d[\d_]*(f|_f)(32|64)?',
-			r'DECIMAL_LIT			\d[\d_]*\.\d+(d|_d)?',
+			r'DECIMAL_LIT			\d[\d_]*\.\d+(d|_d)',
+			r'FRACTIONAL_LIT		\d[\d_]*\.\d+',
 			r'INTEGER_LIT			\d[\d_]*',
 
 			r'INT_SIZE				int[0-9]+',
@@ -357,7 +358,7 @@ class CobraTokenizer
 	def onFLOAT_LIT_1(tok as IToken) as IToken?
 		ensure
 			result.which == 'FLOAT_LIT'
-			# CC: result.info in [32, 64]
+			(result.info to int) in [32, 64]  # CC: axe cast
 		body
 			s = tok.text.replace('_', '')
 			if s.endsWith('f')
@@ -385,15 +386,26 @@ class CobraTokenizer
 	def onFLOAT_LIT_2(tok as IToken) as IToken?
 		ensure
 			result.which == 'FLOAT_LIT'
-			# CC: result.info in [32, 64]
+			(result.info to int) in [32, 64]  # CC: axe cast
 		body
 			return .onFLOAT_LIT_1(tok)
 
 	def onDECIMAL_LIT(tok as IToken) as IToken?
+		s = tok.text
+		assert s.endsWith('d')
+		s = s[:-1]
+		s = s.replace('_', '')
 		try
-			s = tok.text.replace('_', '')
-			if s.endsWith('d')
-				s = s[:-1]
+			tok.value = decimal.parse(s, Utils.cultureInfoForNumbers)
+		catch FormatException
+			assert false, 'not expecting to get here given regex'
+		catch OverflowException
+			assert false, 'TODO'
+		return tok
+
+	def onFRACTIONAL_LIT(tok as IToken) as IToken?
+		s = tok.text.replace('_', '')
+		try
 			tok.value = decimal.parse(s, Utils.cultureInfoForNumbers)
 		catch FormatException
 			assert false, 'not expecting to get here given regex'
