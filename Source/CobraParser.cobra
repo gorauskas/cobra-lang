@@ -1650,7 +1650,7 @@ class Parser
 				s = .expectStmt
 				expectEOL = false
 			on 'FOR'
-				s = .forStmt
+				s = .forStmtBeginning
 				expectEOL = false
 #			on 'DEF'
 #				s = .declareMethod
@@ -1802,7 +1802,7 @@ class Parser
 		block = .block
 		return ExpectStmt(token, type, block)
 
-	def forStmt as Stmt
+	def forStmtBeginning as Stmt
 		"""
 		numeric    for int x = 0 up to n step 2
 		enumerable for Customer cust in customers
@@ -1811,14 +1811,20 @@ class Parser
 		varr = .nameExpr
 		peek = .peek.which
 		if peek=='ASSIGN'
-			return .forNumericStmt(token, varr)
+			return .oldNumericForStmt(token, varr)
 		else if peek=='IN'
-			return .forEnumerableStmt(token, varr)
+			return .forStmt(token, varr)
 		else
 			.throwError('Expecting "=" or "in".')
 			throw FallThroughException(peek)  # make C# code flow analysis happy
 
-	def forNumericStmt(token as IToken, varr as NameExpr) as ForNumericStmt
+	def oldNumericForStmt(token as IToken, varr as NameExpr) as ForStmt
+		"""
+		Syntax:
+			for x = 0 .. t.count ++ 2
+		deprecated 2008-03: the use of .. and ++ just doesn't relate to anything
+		See forEnumerableStmt below.
+		"""
 		.expect('ASSIGN')
 		start = .expression
 		.expect('DOTDOT')
@@ -1837,13 +1843,32 @@ class Parser
 		else
 			stepp = .expression
 		stmts = .block
-		return ForNumericStmt(token, varr, start, stopp, dir, stepp, stmts)
+		return OldForNumericStmt(token, varr, start, stopp, dir, stepp, stmts)
 
-	def forEnumerableStmt(token as IToken, varr as NameExpr) as ForEnumerableStmt
+	def forStmt(token as IToken, varr as NameExpr) as ForStmt
+		"""
+		Syntax:
+			for x in stuff
+				statements
+			for x in i : j
+				statements
+			for x in i : j : k
+				statements
+		"""
 		.expect('IN')
 		what = .expression
-		stmts = .block
-		return ForEnumerableStmt(token, varr, what, stmts)
+		if .optional('COLON')
+			# for x in start : stop
+			# for x in start : stop : step
+			b = .expression
+			if .optional('COLON')
+				c = .expression
+				return ForNumericStmt(token, varr, what, b, 0, c, .block)
+			else
+				return ForNumericStmt(token, varr, what, b, 0, nil, .block)
+		else
+			# for x in stuff
+			return ForEnumerableStmt(token, varr, what, .block)
 
 	def ifStmt as Stmt
 		token = .expect('IF')

@@ -336,6 +336,7 @@ class BlockStmt
 	var _stmts as List<of Stmt>
 	var _ifInheritsVar as IVar?
 	var _ifInheritsType as IType?
+	var _curStmtIndex as int  # to implement .replaceChild
 
 	def init(token as IToken, stmts as List<of Stmt>)
 		base.init(token)
@@ -354,8 +355,16 @@ class BlockStmt
 
 	get stmts from var
 
+	def replaceChild(find as INode, replace as INode) as bool
+		if _curStmtIndex < _stmts.count and _stmts[_curStmtIndex] is find
+			_stmts[_curStmtIndex] = replace to Stmt
+			return true
+		else
+			return base.replaceChild(find, replace)
+
 	def _bindImp
 		base._bindImp
+		_curStmtIndex = 0
 		for stmt in _stmts
 			stmt.parent = this
 			try
@@ -363,6 +372,7 @@ class BlockStmt
 				stmt.afterStatementBindImp  # to let expressions know when they are used as statements
 			catch ne as NodeException
 				.compiler.recordError(ne)
+			_curStmtIndex += 1
 
 	def writeSharpDef(sw as SharpWriter)
 		base.writeSharpDef(sw)
@@ -516,7 +526,6 @@ class ForStmt
 		if false
 			varr = .var
 			existingVar = .compiler.curCodeMember.findLocal(varr.name)
-			trace existingVar, varr.name, varr
 			if existingVar
 				# that's fine as long as the types are the name
 				if varr.type is .compiler.passThroughType
@@ -543,7 +552,7 @@ class ForStmt
 		#	.compiler.nameStack.peek.pop   # TODO should be popSymbol() or popVar()
 
 
-class ForNumericStmt
+class OldForNumericStmt
 	inherits ForStmt
 
 	var _start as Expr
@@ -623,6 +632,179 @@ class ForNumericStmt
 		_block.writeSharpDef(sw)
 
 
+class ForNumericStmt
+	inherits ForStmt
+
+	var _start as Expr
+	var _stop as Expr
+	var _dir as int
+	var _step as Expr?
+
+	def init(token as IToken, varr as NameExpr, start as Expr, stopp as Expr, dir as int, stepp as Expr?, block as BlockStmt)
+		require
+			dir in [-1, 0, +1]  # 0 is for current syntax. -1 and +1 are for old "for x = 0 .. n ++ 2" syntax
+		body
+			base.init(token, varr, block)
+			_start = start
+			_stop = stopp
+			_dir = dir
+			_step = stepp
+
+	def addSubFields
+		base.addSubFields
+		.addField('start', _start)
+		.addField('stop', _stop)
+		.addField('dir', _dir)
+		.addField('step', _step)
+		.addField('block', _block)
+
+	get start from var
+	
+	get stop from var
+	
+	get step from var
+	
+	get dir from var
+	
+	def _bindImp
+		_start.bindImp
+		_stop.bindImp
+		if _step
+			_step.bindImp
+		_var = .bindVar(_varExpr)
+		base._bindImp
+		_block.bindImp
+		# optimization:
+		if _dir == 0  # the value for: for x in start : stop : step
+			if _step is nil
+				_dir = +1
+				_step = IntegerLit(.token, +1)
+				_step.bindImp
+			else if _step inherits IntegerLit
+				_dir = if(_step.value < 0, -1, +1)
+
+	def inferredType as IType? is override
+		return _start.type.greatestCommonDenominatorWith(_stop.type to !)
+
+	def writeSharpDef(sw as SharpWriter)
+		"""
+		Pseudo example:
+			Cobra:
+				for x in start : stop : step
+					statements
+			C#:
+				{
+				type _lh_start_1 = start;
+				type _lh_stop_2 = stop;
+				type _lh_step_3 = step;
+				int _lh_dir_4 = (_lh_stop_2 - _lh_start_1) < 0 ? -1 : +1;
+				x = start;
+				while ((_lh_dir_4==-1) ? x > stop : x < stop) {
+					statements
+					x += step
+				}
+				}
+		"""
+		base.writeSharpDef(sw)
+		if _var.type.isDynamic
+			_writeSharpDefForDynamic(sw)
+		else
+			_writeSharpDefForStatic(sw)
+	
+	def _writeSharpDefForDynamic(sw as SharpWriter)
+		# TODO: this is the old numeric for loop behavior. 
+		csVar = _var.sharpName
+		trackLocals = .compiler.willTrackLocals
+		if trackLocals
+			sw.write('for (CobraImp.SetLocal("[.var.name]", [csVar]=')
+		else
+			sw.write('for ([csVar]=')
+		_start.writeSharpDef(sw)
+		if trackLocals
+			sw.write(')')
+		sw.write('; CobraImp.DynamicCompare([csVar], ')
+		_stop.writeSharpDef(sw, false)
+		sw.write(')[if(_dir==1, "<", ">")]0')
+		opName = if(_dir==1, 'op_Addition', 'op_Subtraction')
+		sw.write('; [csVar]=CobraImp.DynamicOp("[opName]", [csVar], ')
+		if _step
+			_step.writeSharpDef(sw, false)
+		else
+			sw.write('1')
+		sw.write(')')
+		sw.write(')')
+		_block.writeSharpDef(sw)
+
+	def _writeSharpDefForStatic(sw as SharpWriter)
+		"""
+		Pseudo example:
+			Cobra:
+				for x in start : stop : step
+					statements
+			C#:
+				{
+				type _lh_start_1 = start;
+				type _lh_stop_2 = stop;
+				type _lh_step_3 = step;
+				int _lh_dir_4 = (_lh_stop_2 - _lh_start_1) < 0 ? -1 : +1;
+				x = start;
+				while ((_lh_dir_4==-1) ? x > stop : x < stop) {
+					statements
+					x += step
+				}
+				}
+		In the case that the 'stop' or 'step' are integer literals, no variables are needed for them.
+		TODO: If 'stop' or 'step' are const or readonly, same thing.
+		"""
+		trackLocals = .compiler.willTrackLocals
+		sw.write('{ // for [.var.name] in [.start.toCobraSource] : [.stop.toCobraSource]' + if(.step, ' : [.step.toCobraSource]', '') + '\n')
+		sharpVar = _var.sharpName
+		sharpStart = '_lh_start_[.serialNum]'
+		sharpStop = '_lh_stop_[.serialNum]'
+		sharpStep = '_lh_step_[.serialNum]'
+		sharpDir = '_lh_dir_[.serialNum]'
+		sharpType = _var.type.sharpRef
+
+		sw.write('[sharpType] [sharpStart] = ')
+		.start.writeSharpDef(sw)
+		sw.write(';\n')
+		
+		if .stop inherits IntegerLit
+			sharpStop = (.stop to IntegerLit).asSharp
+		else
+			sw.write('[sharpType] [sharpStop] = ')
+			.stop.writeSharpDef(sw)
+			sw.write(';\n')
+
+		if .step is nil
+			sharpStep = '1'
+		else if .step inherits IntegerLit
+			sharpStep = (.step to IntegerLit).asSharp
+		else
+			sw.write('[sharpType] [sharpStep] = ')
+			.step.writeSharpDef(sw)
+			sw.write(';\n')
+
+		sw.write('int [sharpDir] = ([sharpStop] - [sharpStart]) < 0 ? -1 : +1;\n')
+
+		if trackLocals
+			sw.write('CobraImp.SetLocal("[.var.name]", [sharpVar] = [sharpStart]);\n')
+		else
+			sw.write('[sharpVar] = [sharpStart];\n')
+		
+		sw.write('while (([sharpDir]==1) ? [sharpVar] < [sharpStop] : [sharpVar] > [sharpStop]) ')
+
+		_block.writeSharpDef(sw, false)
+
+		if trackLocals
+			sw.write('CobraImp.SetLocal("[.var.name]", [sharpVar] += [sharpStep]);\n')
+		else
+			sw.write('[sharpVar] += [sharpStep];\n')
+		sw.dedent
+		sw.write('}\n')
+		sw.write('} // for [.var.name]\n')
+
+
 class ForEnumerableStmt
 	inherits ForStmt
 
@@ -646,10 +828,15 @@ class ForEnumerableStmt
 		_what.bindImp
 		if _what.type.isDynamic
 			_what.contextType = .compiler.libraryType('System.Collections.IEnumerable')
-		_var = .bindVar(_varExpr)
-		base._bindImp
-		_varNumber = .compiler.curBox.makeNextPrivateSerialNumber
-		_block.bindImp
+		if _what.type inherits AnyIntType
+			# 'for x in 10' is a numeric for loop
+			_transformTo(ForNumericStmt(.token, _varExpr, IntegerLit(.token.copy('INTEGER_LIT', '0'), 0), _what, 1, nil, _block).bindAll)
+			base._bindImp  # just to pass the assertion that base._bindImp was invoked
+		else
+			_var = .bindVar(_varExpr)
+			base._bindImp
+			_varNumber = .compiler.curBox.makeNextPrivateSerialNumber
+			_block.bindImp
 
 	def inferredType as IType? is override
 		assert _what.type

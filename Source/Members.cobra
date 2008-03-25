@@ -569,6 +569,7 @@ class AbstractMethod
 	var _hasReturnStmt as bool
 	var _hasThrowStmt as bool
 	var _hasYieldStmt as bool
+	var _curStmtIndex as int  # to implement .replaceChild
 	var _sharpResultVarName = ''
 
 	def init(token as IToken, box as Box, name as String, paramsList as List<of Param>, isNames as List<of String>, attribs as AttributeList, docString as String)
@@ -706,6 +707,13 @@ class AbstractMethod
 		# in the future, this will also depend on a command line option to include/exclude preconditions
 		return .box.canHaveDetailedStackTrace
 
+	def replaceChild(find as INode, replace as INode) as bool
+		if _curStmtIndex < _stmts.count and _stmts[_curStmtIndex] is find
+			_stmts[_curStmtIndex] = replace to Stmt
+			return true
+		else
+			return base.replaceChild(find, replace)
+
 	def _bindInt is override
 		base._bindInt
 		.compiler.codeMemberStack.push(this)
@@ -745,12 +753,14 @@ class AbstractMethod
 				_sharpResultVarName = '_lh_result'
 			else
 				_sharpResultVarName = ''
-			for stmt in _stmts
+			_curStmtIndex = 0
+			for stmt in List<of Stmt>(_stmts)
 				try
 					stmt.bindImp
 					stmt.afterStatementBindImp  # to let expressions know when they are used as statements
 				catch ne as NodeException
 					.compiler.recordError(ne)
+				_curStmtIndex += 1
 			for param in _params
 				assert param.ifInheritsStack.count == 0
 			if _ensurePart
