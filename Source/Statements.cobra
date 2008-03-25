@@ -678,7 +678,7 @@ class ForNumericStmt
 		if _dir == 0  # the value for: for x in start : stop : step
 			if _step is nil
 				_dir = +1
-				_step = IntegerLit(.token, +1)
+				_step = IntegerLit(.token.copy('INTEGER_LIT', '+1'), +1)
 				_step.bindImp
 			else if _step inherits IntegerLit
 				_dir = if(_step.value < 0, -1, +1)
@@ -687,24 +687,6 @@ class ForNumericStmt
 		return _start.type.greatestCommonDenominatorWith(_stop.type to !)
 
 	def writeSharpDef(sw as SharpWriter)
-		"""
-		Pseudo example:
-			Cobra:
-				for x in start : stop : step
-					statements
-			C#:
-				{
-				type _lh_start_1 = start;
-				type _lh_stop_2 = stop;
-				type _lh_step_3 = step;
-				int _lh_dir_4 = (_lh_stop_2 - _lh_start_1) < 0 ? -1 : +1;
-				x = start;
-				while ((_lh_dir_4==-1) ? x > stop : x < stop) {
-					statements
-					x += step
-				}
-				}
-		"""
 		base.writeSharpDef(sw)
 		if _var.type.isDynamic
 			_writeSharpDefForDynamic(sw)
@@ -785,7 +767,7 @@ class ForNumericStmt
 			.step.writeSharpDef(sw)
 			sw.write(';\n')
 
-		sw.write('int [sharpDir] = ([sharpStop] - [sharpStart]) < 0 ? -1 : +1;\n')
+		sw.write('int [sharpDir] = [sharpStep] < 0 ? -1 : +1;\n')
 
 		if trackLocals
 			sw.write('CobraImp.SetLocal("[.var.name]", [sharpVar] = [sharpStart]);\n')
