@@ -1,6 +1,18 @@
 use System.Reflection
 
 
+class SubnodesAttribute
+	inherits Attribute
+	"""
+	Put this attribute on properties that represent a collection of subnodes of the declaring node class.
+	Node.reploceChild will use these properties when searching for node references to be replaced (which happens during node transformation).
+	There may be other uses for this in the future.
+	The property value should respond to .indexOf(node) and "subnodes[index] = newNode" which are covered by List<of>.
+	Since dynamic binding is used, inheriting from List<of> is not strictly required.
+	"""
+	pass
+
+
 class SourceException
 	inherits SystemException
 	"""
@@ -543,10 +555,12 @@ class Node
 
 	def replaceChild(find as INode, replace as INode) as bool
 		"""
-		Received by a child node that is being transformed.
-		The default implementation uses reflection of fields to effect the result.
-		Parent nodes with other needs like handling collections of child nodes or requiring better performance can override this method.
+		Received by a node whose child node is being transformed.
+		The default implementation uses reflection of fields and properties to perform the replacement.
+		Nodes with other needs like examining unusual collections or requiring better performance can override this method.
+		See also: class SubnodesAttribute
 		"""
+		# TODO: could use some caching on field and property info
 		for field in .getType.getFields(BindingFlags(Instance, NonPublic))
 			if field.fieldType is Node or field.fieldType.isSubclassOf(Node)
 				value = field.getValue(this)
@@ -554,6 +568,19 @@ class Node
 					if _verboseTransform, print '    replacing:', field
 					field.setValue(this, replace)
 					didReplace = true
+		for prop in .getType.getProperties(BindingFlags(Instance, Public, NonPublic))
+			for attr in prop.getCustomAttributes(true)
+				if attr inherits SubnodesAttribute
+					subnodes = prop.getValue(this, nil) to dynamic?
+					if subnodes
+						while true
+							i = subnodes.indexOf(find)
+							if i >= 0
+								if _verboseTransform, print '    replacing [i] of [subnodes] in [prop.name]'
+								subnodes[i] = replace
+								didReplace = true
+							else
+								break
 		return didReplace
 
 	pro transformedFrom from var
