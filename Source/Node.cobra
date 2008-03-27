@@ -359,7 +359,10 @@ class Node
 		"""
 		Set by _transformTo.
 		"""
-
+	var _willReplaceChild as dynamic?
+		"""
+		Used by replaceChild and _finishTransformation.
+		"""
 
 	def init
 		ensure
@@ -412,6 +415,7 @@ class Node
 					assert _didBindInhBase, this
 					_didBindInh = true
 				finally
+					_finishChildReplacements
 					if .compiler
 						.compiler.nodeStack.pop
 					_isBindingInh = false
@@ -454,11 +458,12 @@ class Node
 					assert _didBindIntBase, this
 					_didBindInt = true
 				finally
+					_finishChildReplacements
+					.compiler.nodeStack.pop
+					_isBindingInt = false
 					if v > 3
 						print
 						print '<< did _bindInt() on [this]'
-					.compiler.nodeStack.pop
-					_isBindingInt = false
 			return this
 
 	def _bindInt
@@ -495,6 +500,7 @@ class Node
 					assert _didBindImpBase, this
 					_didBindImp = true
 				finally
+					_finishChildReplacements
 					.compiler.nodeStack.pop
 					_isBindingImp = false
 			return _transformedTo ? this
@@ -573,15 +579,29 @@ class Node
 				if attr inherits SubnodesAttribute
 					subnodes = prop.getValue(this, nil) to dynamic?
 					if subnodes
+						i = -1
 						while true
-							i = subnodes.indexOf(find)
+							i = subnodes.indexOf(find, i+1)
 							if i >= 0
 								if _verboseTransform, print '    replacing [i] of [subnodes] in [prop.name]'
-								subnodes[i] = replace
+								# subnodes[i] = replace
+								# .NET complains if you modify a collection while its enumerated (Mono does not), so
+								if _willReplaceChild is nil, _willReplaceChild = []
+								_willReplaceChild.add([subnodes, i, replace])
 								didReplace = true
 							else
 								break
 		return didReplace
+
+	def _finishChildReplacements
+		if _willReplaceChild
+			for pair in _willReplaceChild
+				# CC: subnodes, i, replace = pair
+				subnodes = pair[0]
+				i = pair[1] to int
+				replace = pair[2]
+				subnodes[i] = replace
+			_willReplaceChild = nil
 
 	pro transformedFrom from var
 
