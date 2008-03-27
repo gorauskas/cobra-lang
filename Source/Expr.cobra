@@ -480,16 +480,20 @@ class CallExpr
 	def _bindImp is override
 		base._bindImp
 
-		# check for EnumName(MemberA, MemberB)
-		if not _superNode inherits DotExpr
-			if _definition is nil and Utils.isCapped(.name)
+		# check for EnumName(MemberA, MemberB) or Foo.Bar.EnumName(MemberA, MemberB)
+		defin as IMember?
+		if _definition is nil and Utils.isCapped(.name)
+			if _superNode inherits DotExpr
+				if this is not _superNode.left
+					defin = _superNode.left.memberForName(_name)
+			else
 				defin = .compiler.symbolForName(.name, true, false)
-				if defin inherits EnumDecl
-					enumCall = EnumCallExpr(.token, _name, _args, defin)
-					enumCall.bindImp  # CC: combine this line into above
-					_type = enumCall.type
-					_transformTo(enumCall)
-					return
+		if defin inherits EnumDecl
+			enumCall = EnumCallExpr(.token, _name, _args, defin)
+			enumCall.bindImp  # CC: combine this line into above
+			_type = enumCall.type
+			_transformTo(enumCall)
+			return					
 
 		num = 1
 		for arg in _args

@@ -871,7 +871,6 @@ class DotExpr
 
 	def _bindImp
 		base._bindImp
-
 		if _left inherits BaseLit
 			.compiler.curCodeMember.usesBase  # use of base implies override if the containing member is not already marked new
 		else if _left inherits ThisLit
@@ -930,6 +929,11 @@ class DotExpr
 			return '[_left.toCobraSource].[_right.toCobraSource]'
 
 	def _writeSharpDef(sw as SharpWriter) is override
+		if _right inherits EnumCallExpr
+			# For: SomeNameSpace.EnumName(MemberA, MemberB)
+			# TODO: Hack alert. Ideally a transformation should have happened earlier during _bindImp such that this DotExpr no longer exists
+			_right.writeSharpDef(sw)
+			return
 		if _left.receiverType.isDynamic
 			# handle dynamic typing
 			if _right inherits MemberExpr
