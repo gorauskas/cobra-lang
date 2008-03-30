@@ -147,7 +147,7 @@ class Expr
 		do nothing.)
 		"""
 		if not .hasError
-			assert .type, this
+			assert .type or .transformedTo
 
 	def _bindImp is override
 # TODO:
@@ -274,7 +274,7 @@ interface IPotentialTypeExpr
 	inherits IExpr
 	"""
 	An implementor of IPotentialType *could* be a representation of a type.
-	This is implemented by expressions such as DotExpr, IdentifierExpr, IndexExpr and TypeExpr.
+	This is implemented by expressions such as DotExpr, IdentifierExpr and TypeExpr.
 	It "inherits IExpr" to emphasize and verify that fact. This interface is not for statements, classes, etc.
 	"""
 
@@ -407,7 +407,7 @@ class CallExpr
 	A CallExpr may be on the right side of a dot expression as in `obj.foo(x, y)` but it could also be `SomeType()` or `_someMember(x, y)`.
 	
 	It might be a nice clean up in the future to treat `_someMember(x, y)` as `._someMember(x, y)` and transform `SomeType()` to
-	something like an InstantiateExpr. But right now there is no provision for _bindImp being able to transform the current instance.
+	something like an InstantiateExpr.
 	"""
 
 	var _name as String
@@ -1234,13 +1234,14 @@ class IfExpr
 
 class IndexExpr
 	inherits Expr
-	implements IPotentialTypeExpr  # because String[] is a type, not an indexer invocation
+	"""
+	May transform to a TypeExpr for cases like "int[]".
+	"""
 
 	var _target as Expr
 	var _args as List<of Expr>
-	var _isArrayType as bool
 	var _definition as IMember?
-	
+
 	def init(token as IToken, target as Expr, args as List<of Expr>)
 		base.init(token)
 		_target = target
@@ -1250,8 +1251,6 @@ class IndexExpr
 		base.addSubFields
 		.addField('target', _target)
 		.addField('args', _args)
-
-	get isArrayType from var
 
 	get definition from var
 
@@ -1270,10 +1269,6 @@ class IndexExpr
 				return true
 		return false
 
-	get potentialType as IType?
-		assert .didBindImp
-		return if(.isArrayType, .type, nil)
-	
 	def _bindImp is override
 		base._bindImp
 		_target.bindImp
@@ -1281,9 +1276,8 @@ class IndexExpr
 		if args.count == 0
 			if _target.isKindOf(.compiler.typeType)
 				if _target inherits IPotentialTypeExpr and (pt = (_target to IPotentialTypeExpr).potentialType)
-					_type = ArrayType(pt)
-					_isArrayType = true
-					return
+					_transformTo(TypeExpr(.token, ArrayType(pt)))
+					return					
 				else
 					.throwError('Unknown array type.')
 			else
@@ -1299,10 +1293,6 @@ class IndexExpr
 		if hasArgError or target.hasError
 			_type = .compiler.passThroughType
 		else if _type is nil
-			# CC: use a list comprehension to get the types
-			argTypes = List<of IType>()
-			for arg in args
-				argTypes.add(arg.type to !)
 			_definition = target.memberForName(r'[]')  # TODO: will this need to be 'Index' to match DLLs/C#/VB?
 			if _definition is nil
 				if target.receiverType is .compiler.passThroughType
@@ -1674,7 +1664,6 @@ class PostCallExpr
 
 	def init(token as IToken, expr as Expr, args as List<of Expr>)
 		require expr inherits TypeExpr or expr inherits IndexExpr
-		# TODO: I think the allowance of IndexExpr can be axed when AST transforms are supported and IndexExpr recognizes when it represents an array type
 		base.init(token)
 		_expr = expr
 		_args = args
@@ -1710,7 +1699,7 @@ class PostCallExpr
 			assert _expr.containedType
 			_type = _expr.containedType
 		else if _expr inherits IndexExpr
-			# could be array instantiation or calling the result of stuff[i] which could be System.Type, a delegate or what-have-you
+			# TODO: this needs to handle stuff[i] which could be System.Type, a delegate or what-have-you
 			if (target = _expr.target) inherits IPotentialTypeExpr
 				_type = target.potentialType
 				assert _type, target
@@ -2197,7 +2186,7 @@ class TypeExpr
 		_receiverType = type
 
 	get hasError as bool is override
-		return base.hasError or .typeNode.hasError
+		return base.hasError or (.typeNode and .typeNode.hasError)
 
 	get containedType from var
 
