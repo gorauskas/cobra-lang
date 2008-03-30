@@ -638,6 +638,24 @@ static public class CobraImp {
 		return results;
 	}
 
+	static public List<TOut> For<TIn, TOut>(IEnumerable<TIn> list, ForGet<TIn, TOut> forGet) {
+		// TODO: if possible, it might be nice to get the generic type of the list coming in and then make a constructed type from it with TOut.
+		List<TOut> results = new List<TOut>();
+		foreach (TIn item in list)
+			results.Add(forGet(item));
+		return results;
+	}
+
+	static public List<TOut> For<TIn, TOut>(IEnumerable<TIn> list, ForWhereGet<TIn, TOut> forWhereGet) {
+		List<TOut> results = new List<TOut>();
+		foreach (TIn item in list) {
+			TOut value;
+			if (forWhereGet(item, out value))
+				results.Add(value);
+		}
+		return results;
+	}
+
 	static private void ProcessGetSliceArgs(int count, ref int? start, ref int? stop, ref int? step) {
 		if (start==null)
 			start = 0;
