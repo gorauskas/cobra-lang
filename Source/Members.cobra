@@ -25,12 +25,13 @@ class BoxMember
 
 	var _box as Box
 	var _docString as String?
-	var _isNames as List<of String>?  # CC: make a Set
+	var _isNames as List<of String>?
 	var _attribs as AttributeList
 	var _overloadGroup as MemberOverload?
 	var _testMethod as TestMethod?
 	var _matchingBaseMember as BoxMember?
 	var _sharedMethodBacking as String?
+	var _sharpExtraIsNames as Set<of String>?
 	var _binaryName as String?
 
 	def init(token as IToken, box as Box, name as String, isNames as List<of String>, attribs as AttributeList)
@@ -127,13 +128,16 @@ class BoxMember
 		return List<of Param>()
 
 	get isClassMember as bool
-		return _box inherits Class
+		return _box inherits Class or (_box inherits Extension and (_box to Extension).extendedBox inherits Class)
 
 	get isInterfaceMember as bool
-		return _box inherits Interface
+		return _box inherits Interface or (_box inherits Extension and (_box to Extension).extendedBox inherits Interface)
 
 	get isStructMember as bool
-		return _box inherits Struct
+		return _box inherits Struct or (_box inherits Extension and (_box to Extension).extendedBox inherits Struct)
+
+	get isExtensionMember as bool
+		return _box inherits Extension
 
 	pro matchingBaseMember as BoxMember?
 		get
@@ -293,9 +297,11 @@ class BoxMember
 
 	## Code gen
 
+	pro sharpExtraIsNames from var
+	
 	get sharpThis as String
 		# sigh. I wish .NET had metaclasses instead of this instance vs. static crap
-		return if(.isShared, 'typeof([.box.sharpName])', 'this')
+		return if(.isShared, 'typeof([.box.sharpName])', .box.sharpThis)
 
 	def writeSharpNotNull(sw as SharpWriter)
 		if .resultType.isReference and not .resultType inherits NilableType
@@ -339,12 +345,20 @@ class BoxMember
 			'shared': 'static',
 			'nonvirtual': '',
 		}
+		wroteNames = Set<of String>()
 		sep = ''
 		for name in _isNames
 			name = Utils.getSS(isNameCS, name, name) to !
 			sw.write(sep)
 			sw.write(name)
 			sep = ' '
+			wroteNames.add(name)
+		if _sharpExtraIsNames
+			for name in _sharpExtraIsNames
+				if name not in wroteNames
+					sw.write(sep)
+					sw.write(name)
+					sep = ' '
 		if sep.length
 			sw.write(' ')
 
@@ -594,7 +608,7 @@ class AbstractMethod
 	get locals from var
 
 	get defaultAccessLevel as String is override
-		if .isClassMember or .isStructMember
+		if .isExtensionMember or .isClassMember or .isStructMember
 			return 'public'
 		else if .isInterfaceMember
 			return ''
@@ -1029,7 +1043,7 @@ class AbstractMethod
 		if not .canHaveDetailedStackTrace
 			return
 		# sw.writeLine('Console.WriteLine("<< [.box.name].[.name]");')
-		# TODO: this catch all is going to clash with yield statements! crap...
+		# this catch all clashes with yield statements. which is why .canHaveDetailedStackTrace returns false if a method has a yield statement.
 		sw.dedentAndWrite('} catch {\n')
 		sw.indent
 		sw.write('CobraImp.CaughtUncaughtException();\n')
@@ -1283,7 +1297,7 @@ class Method
 		.writeSharpIsNames(sw)
 		sw.write('[returnType.sharpRef] [name][.sharpGenericParams]')
 		.writeSharpParams(sw)
-		if .isInterfaceMember
+		if .isInterfaceMember and not .isExtensionMember
 			sw.write(';\n')
 		else
 			if .isAbstract

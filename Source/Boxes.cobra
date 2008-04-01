@@ -19,6 +19,7 @@ class Box
 	var _genericParams as List<of IType>  # as in generic parameters
 	var _genericDef as Box?
 	var _constructedTypes as Dictionary<of String, Box>?
+	var _extensions as List<of Extension>
 
 	var _baseClass as Class?
 	var _baseInterfaceProxies as List<of ITypeProxy>
@@ -48,6 +49,7 @@ class Box
 			p = _genericParams[i]
 			if p inherits GenericParam
 				p.index = i
+		_extensions = List<of Extension>()
 		_baseInterfaceProxies = baseInterfaceNodes
 		_baseInterfaces = List<of Interface>()
 		_overloads = List<of MemberOverload>()
@@ -136,6 +138,8 @@ class Box
 
 	get defaultAccessLevel as String is override
 		return 'public'
+
+	get extensions from var
 
 	get isFromAssembly as bool
 		"""
@@ -351,11 +355,11 @@ class Box
 			# try base class to look for nested types
 			x = _baseClass._symbolForName(name, haveThis, false)
 		if x is nil
-			x = .interfaceMemberForName(name)
+			x = .interfaceMemberForName(name)  # TODO: can this be guarded by haveThis? can interfaces have enum decls and sigs?
 		if x and not haveThis
-			if x.requiresThis
-				x = nil
+			if x.requiresThis, x = nil
 		if x is nil and firstCall
+			# TODO: can this be guarded by haveThis
 			# try parent box or namespace because they are in lexical scope
 			nameSpace = .parentNameSpace
 			if nameSpace is nil
@@ -392,6 +396,13 @@ class Box
 		for ch in '.<>, '
 			name = name.replace(ch, c'_')
 		return name
+
+	get sharpThis as String
+		"""
+		Returns 'this' as you would expect.
+		Overridden by Extension.
+		"""
+		return 'this'
 
 	get innerType as IType? is override
 		if _clrType
@@ -540,6 +551,9 @@ class Box
 				assert not decl is this
 				.compiler.boxMemberStack.push(decl)
 				try
+					if decl inherits BoxMember
+						if decl.box is not this
+							continue
 					decl.bindInt
 				catch ne as NodeException
 					.compiler.recordError(ne)
@@ -592,17 +606,21 @@ class Box
 					attrib.bindImp
 				catch ne as NodeException
 					.compiler.recordError(ne)
-			for i = 0 .. _invariants.count
+			for i in _invariants.count
 				invari = _invariants[i]
 				invari.bindImp
 				if invari.type is not .compiler.boolType
 					_invariants[i] = TruthExpr(invari).bindAll to Expr
+			# TODO: should be able to remove the following
 			for invari in _invariants
 				invari.bindImp
 			for decl in _declsInOrder
 				assert not decl is this
 				.compiler.boxMemberStack.push(decl)
 				try
+					if decl inherits BoxMember
+						if decl.box is not this
+							continue
 					decl.bindImp
 				catch ne as NodeException
 					.compiler.recordError(ne)
@@ -1313,16 +1331,8 @@ class Box
 		assert not .isConstructed
 		.writeSharpAttribs(sw)
 		.writeSharpIsNames(sw)
-		sw.write('[.sharpKeyWord] [.rootName]')
-		if _genericParams.count
-			sw.write('<')
-			sep = ''
-			for param in _genericParams
-				sw.write(sep)
-				param.writeSharpDef(sw)
-				sep = ', '
-			sw.write('>')
-
+		sw.write('[.sharpKeyWord] ')
+		.writeSharpDefName(sw)
 		.writeSharpInheritance(sw)
 
 		sep = ''
@@ -1345,6 +1355,9 @@ class Box
 		for decl in _declsInOrder
 			.compiler.boxMemberStack.push(decl)
 			try
+				if decl inherits BoxMember
+					if decl.box is not this  # skip extension methods that were not declared in this box
+						continue
 				decl.writeSharpDef(sw)
 			finally
 				.compiler.boxMemberStack.pop
@@ -1356,6 +1369,17 @@ class Box
 	def writeSharpAttribs(sw as SharpWriter)
 		for attrib in _attribs
 			attrib.writeSharpDef(sw)
+
+	def writeSharpDefName(sw as SharpWriter)
+		sw.write('[.rootName]')
+		if _genericParams.count
+			sw.write('<')
+			sep = ''
+			for param in _genericParams
+				sw.write(sep)
+				param.writeSharpDef(sw)
+				sep = ', '
+			sw.write('>')
 
 	def writeSharpInheritance(sw as SharpWriter)
 		"""
@@ -2068,3 +2092,105 @@ class GenericTypeConstraint
 
 	def writeSharpDef(sw as SharpWriter) is override
 		sw.write(_representedType.sharpRef)
+
+
+class Extension
+	inherits Box
+	"""
+	Example:
+		extend String		
+			get doubleLength as int
+				return .length * 2
+	"""
+
+	var _extendedBoxProxy as ITypeProxy
+	var _extendedBox as Box?
+	
+	def init(token as IToken, extendedBoxProxy as ITypeProxy, isNames as List<of String>, docString as String?)
+		base.init(token, '(unnamed extension)', List<of IType>(), isNames, AttributeList(), List<of ITypeProxy>(), docString)
+		_name = '(unnamed extension [.serialNum])'
+		_extendedBoxProxy = extendedBoxProxy
+
+	get extendedBox from var
+
+	get isReference as bool is override
+		return _extendedBox.isReference
+
+	get englishName as String is override
+		return if(_extendedBox, _extendedBox.englishName+' ', '') + 'extension'
+
+	def memberForName(name as String) as IMember?
+		result = base.memberForName(name)
+		if result is nil
+			result = .extendedBox.memberForName(name)
+		return result
+
+	def _symbolForName(name as String, haveThis as bool, firstCall as bool) as IMember?
+		result = base._symbolForName(name, haveThis, firstCall)
+		if result is nil
+			result = .extendedBox._symbolForName(name, haveThis, firstCall)
+		return result
+
+	def _bindInh
+		base._bindInh
+		realType = _extendedBoxProxy.realType
+		if realType inherits Box
+			_extendedBox = realType
+			_name = '[_extendedBox.name].extension.[.serialNum]'
+		else
+			.throwError('Cannot extend a [realType]. You can extend classes, structs and interfaces.')
+
+		# shouldn't need or use inherited types
+		_baseClass = nil
+		_baseInterfaceProxies = List<of ITypeProxy>()
+		_baseInterfaces = List<of Interface>()
+
+		# connect up
+		_extendedBox.extensions.add(this)  # TODO: can probably axe this
+
+	def _bindInt
+		base._bindInt
+		# TODO: deal with overloads
+		sharpName = .sharpName
+		for decl in .declsInOrder
+			if decl inherits BoxMember
+				decl.sharedMethodBacking = '[sharpName].[Utils.capped(decl.name)]'
+				decl.isNames.remove('virtual')
+				decl.isNames.add('nonvirtual')
+			decl.bindInt
+			_extendedBox.addDecl(decl)
+
+	def _bindImp
+		base._bindImp
+		for decl in .declsInOrder
+			decl.bindImp
+
+	def addDecl(decl as IBoxMember) is override
+		base.addDecl(decl)
+
+	get sharpInit as String is override
+		return _extendedBox.sharpInit
+
+	get sharpInvariantVisibility as String is override
+		return _extendedBox.sharpInvariantVisibility
+
+	get sharpKeyWord as String is override
+		return 'class'  # because the extension is always housed in a C# class
+
+	get sharpName as String is override
+		return 'Extend_[.extendedBox.sharpNameComponent]_[.serialNum]'
+
+	get sharpThis as String is override
+		return '_lh_this'
+
+	def writeSharpDefName(sw as SharpWriter) is override
+		# replace base behavior
+		sw.write(.sharpName)
+
+	def writeSharpDef(sw as SharpWriter) is override
+		for decl in .declsInOrder
+			if decl inherits BoxMember
+				decl.sharpExtraIsNames = {'static'}
+				if decl inherits AbstractMethod
+					decl.params.insert(0, Param('_lh_this', .extendedBox).bindAll to Param)
+		base.writeSharpDef(sw)

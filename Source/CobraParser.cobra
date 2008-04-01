@@ -494,6 +494,8 @@ class Parser
 						what = .structDecl
 					on 'ENUM'
 						what = .enumDecl
+					on 'EXTEND'
+						what = .extendDecl
 					on 'EOL'
 						.grab
 					on 'NAMESPACE'
@@ -867,6 +869,37 @@ class Parser
 		else
 			parent = .curNameSpace to IParentSpace
 		return EnumDecl(parent, token, name, isNames, storageType, docString, enumMembers)
+
+	def extendDecl as Extension
+		# TODO: extend Qualified.Name
+		token = .expect('EXTEND')
+		extendedTypeId = .typeId
+
+		.indent
+
+		isNames = .isDeclNames
+		attribs = .hasAttribs
+		if attribs.count
+			.throwError('Extensions cannot add attributes.')
+
+		if .optional('WHERE')
+			.throwError('Extensions cannot add constraints.')
+
+		if .optional('INHERITS')
+			.throwError('Extensions cannot change inheritance.')
+
+		if .optional('IMPLEMENTS')
+			.throwError('Extensions cannot add interface implementations.')
+
+		docString = .docString
+
+		ext = Extension(token, extendedTypeId, isNames, docString)
+
+		_boxStack.push(ext)
+		.bodiedBoxMemberDecls(ext)
+		_boxStack.pop
+
+		return ext
 
 	def genericConstraints(token as IToken, params as List<of GenericParam>)
 		while .optional('WHERE')
