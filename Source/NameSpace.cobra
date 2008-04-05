@@ -4,7 +4,8 @@ interface INameSpaceMember
 	Anything that can be a member of a namespace should implement INameSpaceMember.
 	This includes boxes, enums and namespaces.
 	"""
-	pass
+
+	def extensionMemberFor(box as Box, name as String) as IMember?
 
 
 class NameSpace
@@ -177,33 +178,50 @@ class NameSpace
 		finally
 			.compiler.nameSpaceStack.pop
 
+	def extensionMemberFor(box as Box, name as String) as IMember?
+		if not .isUnified
+			m = _unifiedNameSpace.extensionMemberFor(box, name)
+			if m, return m
+			return _extensionMemberFromUseDirectives(box, name)
+		else
+			# our decl?
+			for decl in .declsInOrder
+				if decl inherits Box
+					m = decl.extensionMemberFor(box, name)
+					if m, return m
+			if _superNameSpace
+				m = _superNameSpace.extensionMemberFor(box, name)
+				if m, return m
+		return nil
+
+	def _extensionMemberFromUseDirectives(box as Box, name as String) as IMember?
+		for ud in _useDirectives
+			m = ud.extensionMemberFor(box, name)
+			if m, return m
+		return if(_superNameSpace, _superNameSpace._extensionMemberFromUseDirectives(box, name), nil)
+
 	def symbolForName(name as String) as IMember?
 		if not .isUnified
 			x = _unifiedNameSpace.symbolForName(name)
-			if x
-				return x
+			if x, return x
 			# inside a use directive?
 			return _symbolForNameFromUseDirectives(name)
 		else
 			# our decl?
 			# TODO: should this come before checking our name? what does C# do?
 			x = .declForName(name)
-			if x
-				return x
+			if x, return x
 
 			# a parent namespace?
 			if _superNameSpace
 				x = _superNameSpace.symbolForName(name)
-				if x
-					return x
-
+				if x, return x
 		return nil
 
 	def _symbolForNameFromUseDirectives(name as String) as IMember?
 		for ud in _useDirectives
 			x = ud.findSymbol(name)
-			if x
-				return x
+			if x, return x
 		if _superNameSpace
 			return _superNameSpace._symbolForNameFromUseDirectives(name)
 		else
@@ -319,6 +337,10 @@ class UseDirective
 		.addField('boundNameSpace', _boundNameSpace)
 
 	get didBindUse from var
+
+	def extensionMemberFor(box as Box, name as String) as IMember?
+		require .didBindUse
+		return _boundNameSpace.symbolForName(name)
 
 	def findSymbol(name as String) as IMember?
 		require .didBindUse

@@ -277,12 +277,23 @@ class Box
 	get canAccessMemberForName as bool is override
 		return .didBindInh or (_clrType and (.compiler.isBindingInt or .compiler.isBindingImp))
 
+	def extensionMemberFor(box as Box, name as String) as IMember?
+		# in the future, in support of C# 3.0, it will be necessary to implement this,
+		# or for Extensions to be instantiated when DLLs are scanned
+		return nil
+
 	def memberForName(name as String) as IMember?
 		if _clrType
 			_prepLibraryBox
 		else
 			.completeMemberConstructionIfNeeded
-		return base.memberForName(name)
+		m = base.memberForName(name)
+		if m is nil and .compiler
+			# look for an extension member
+			for ns in .compiler.nameSpaceStack
+				m = ns.extensionMemberFor(this, name)
+				if m, break
+		return m
 
 	def suggestionsForBadMemberName(name as String) as List<of String>
 		suggs = base.suggestionsForBadMemberName(name)
@@ -2145,7 +2156,7 @@ class Extension
 		_baseInterfaces = List<of Interface>()
 
 		# connect up
-		_extendedBox.extensions.add(this)  # TODO: can probably axe this
+		_extendedBox.extensions.add(this)
 
 	def _bindInt
 		base._bindInt
@@ -2157,7 +2168,6 @@ class Extension
 				decl.isNames.remove('virtual')
 				decl.isNames.add('nonvirtual')
 			decl.bindInt
-			_extendedBox.addDecl(decl)
 
 	def _bindImp
 		base._bindImp
@@ -2167,6 +2177,13 @@ class Extension
 	def addDecl(decl as IBoxMember) is override
 		base.addDecl(decl)
 
+	def extensionMemberFor(box as Box, name as String) as IMember? is override
+		assert .didBindInh
+		if box is _extendedBox
+			return .declForName(name)
+		else
+			return nil
+			
 	get sharpInit as String is override
 		return _extendedBox.sharpInit
 
