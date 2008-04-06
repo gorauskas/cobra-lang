@@ -141,6 +141,13 @@ class Box
 
 	get extensions from var
 
+	get hasExtensions as bool
+		if _extensions.count, return true
+		if _baseClass and _baseClass.hasExtensions, return true
+		for bi in _baseInterfaces
+			if bi.hasExtensions, return true
+		return false
+
 	get isFromAssembly as bool
 		"""
 		Returns true if this box was read from an assembly (usually a .dll, but could be an .exe) as opposed to be source based.
@@ -288,11 +295,11 @@ class Box
 		else
 			.completeMemberConstructionIfNeeded
 		m = base.memberForName(name)
-		if m is nil and .compiler
-			# look for an extension member
-			for ns in .compiler.nameSpaceStack
-				m = ns.extensionMemberFor(this, name)
-				if m, break
+		if m is nil and .hasExtensions and .compiler
+			# look for an extension member, but it has to be accessible according to namespaces
+			if .compiler.nameSpaceStack.count
+				# don't need to go through the whole namespace stack because the namespace will check its parent
+				m = .compiler.curNameSpace.extensionMemberFor(this, name)
 		return m
 
 	def suggestionsForBadMemberName(name as String) as List<of String>
@@ -2179,7 +2186,7 @@ class Extension
 
 	def extensionMemberFor(box as Box, name as String) as IMember? is override
 		assert .didBindInh
-		if box is _extendedBox
+		if box.isDescendantOf(_extendedBox to !)
 			return .declForName(name)
 		else
 			return nil
