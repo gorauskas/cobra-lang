@@ -979,7 +979,6 @@ static public class CobraImp {
 				throw new UnknownMemberException(obj, propertyName, type);
 			}
 		}
-
 	}
 
 	static public object SetPropertyValue(Object obj, string propertyName, Object value) {
@@ -1020,7 +1019,30 @@ static public class CobraImp {
 		if (mi!=null) {
 			return mi.Invoke(obj, args);
 		} else {
+			// HACK. TODO. This needs to be generalized where extension methods can be registered with the dynamic binder. Will/does DLR have something like this?
+			if (methodName == "Swap" && obj is System.Collections.IList) {
+				Type extension = Type.GetType("Cobra.Lang.Extend_IList_CobraLang");
+				Type extendedType = typeof(System.Collections.IList); // this reference could be put with the extension using an attribute
+				return InvokeMethodFromExtension(extension, extendedType, obj, methodName, argsTypes, args);
+			}
 			throw new UnknownMemberException(obj, methodName, type);
+		}
+	}
+
+	static public object InvokeMethodFromExtension(System.Type extension, System.Type extendedType, Object obj, string methodName, Type[] argTypes, object[] args) {
+		// Utility method for InvokeMethod and eventually InvokeProperty which gets "obj.foo" calls where "foo" could be a method.
+		Type[] argTypes2 = new Type[argTypes.Length+1];
+		argTypes2[0] = extendedType;
+		argTypes.CopyTo(argTypes2, 1);
+
+		MethodInfo mi = extension.GetMethod(methodName, argTypes2);
+		if (mi != null) {
+			object[] args2 = new object[args.Length+1];
+			args2[0] = obj;
+			args.CopyTo(args2, 1);
+			return mi.Invoke(obj, args2);
+		} else {
+			throw new UnknownMemberException(obj, methodName, obj.GetType());
 		}
 	}
 
