@@ -1137,12 +1137,9 @@ class Box
 
 	def _scanMethods
 		for methInfo in _clrType.getMethods(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
-			if methInfo.isSpecialName
-				continue
-			if methInfo.isPrivate
-				continue
-			if methInfo.declaringType is not _clrType
-				continue
+			if methInfo.isSpecialName, continue
+			if methInfo.isPrivate, continue
+			if methInfo.declaringType is not _clrType, continue
 			skip = false
 			if _badRelatedType(methInfo.returnType)
 				skip = true
@@ -1151,8 +1148,7 @@ class Box
 					if _badRelatedType(paramInfo.parameterType)
 						skip = true
 						break
-			if skip
-				continue
+			if skip, continue
 			# TODO: handle generic methods
 			if methInfo.isGenericMethod or methInfo.isGenericMethodDefinition
 				# print 'xxx generic methInfo, [methInfo.isGenericMethod], [methInfo.isGenericMethodDefinition], [methInfo]'
@@ -1334,7 +1330,7 @@ class Box
 			sb.append('>')
 			sharp = sb.toString
 		else
-			sharp = .name
+			sharp = .sharpName
 		if .parentNameSpace and not .parentNameSpace.isRoot
 			sharp = .parentNameSpace.fullName + '.' + sharp
 		else if .parentBox
@@ -1475,7 +1471,7 @@ class Box
 		if .isGenericDef  # sorry, but static methods always require a type arg even if you don't need it. workaround. make another class with a 'test' section that tests the generic class TODO: make Cobra do this, but then watch for use of the generic param!
 			return
 		assert .parentNameSpace
-		sw.write('\t\t[.qualifiedRootName].RunTestsIfNeeded();\n')
+		sw.write('\t\t[.sharpRef].RunTestsIfNeeded();\n')
 		_didWriteSharpTestInvocation = true
 
 	get newForSharpTest as String
@@ -2122,11 +2118,39 @@ class Extension
 
 	var _extendedBoxProxy as ITypeProxy
 	var _extendedBox as Box?
-	
+
 	def init(token as IToken, extendedBoxProxy as ITypeProxy, isNames as List<of String>, docString as String?)
 		base.init(token, '(unnamed extension)', List<of IType>(), isNames, AttributeList(), List<of ITypeProxy>(), docString)
 		_name = '(unnamed extension [.serialNum])'
 		_extendedBoxProxy = extendedBoxProxy
+
+	def init(clrType as Type)
+		# this only for Cobra specific extensions. Example: class Extend_String_1939
+		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(clrType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
+		_initClrType(clrType)
+		# the real extended type is not this type, but the type of the first argument of any method
+		for methInfo in clrType.getMethods
+			clrType = methInfo.getParameters[0].parameterType
+			break
+		_extendedBoxProxy = ClrTypeProxy(clrType)
+		(.compiler.curModule to AssemblyModule).addMustBindInh(this)
+
+	def _scanClrType
+		# this only for Cobra specific extensions. Example: class Extend_String_1939
+		base._scanClrType
+		_scanIsNames
+		#_scanImplements
+		#_scanNestedTypes
+		#_scanFields
+		#_scanInitializers
+		#_scanProperties
+		_scanMethods
+		#_scanEvents
+
+	def _scanParams(paramInfos as ParameterInfo[]?) as List<of Param>
+		# the first argument is implicit in an Extension
+		results = base._scanParams(paramInfos)
+		return results[1:]
 
 	get extendedBox from var
 
@@ -2136,6 +2160,20 @@ class Extension
 	get englishName as String is override
 		return if(_extendedBox, _extendedBox.englishName+' ', '') + 'extension'
 
+	def addDecl(decl as IBoxMember) is override
+		base.addDecl(decl)
+
+	def extensionMemberFor(box as Box, name as String) as IMember? is override
+		assert .didBindInh
+		if _clrType
+			_prepLibraryBox
+		else
+			.completeMemberConstructionIfNeeded
+		if box.isDescendantOf(_extendedBox to !)
+			return .declForName(name)
+		else
+			return nil
+			
 	def memberForName(name as String) as IMember?
 		result = base.memberForName(name)
 		if result is nil
@@ -2150,25 +2188,27 @@ class Extension
 
 	def _bindInh
 		base._bindInh
-		realType = _extendedBoxProxy.realType
-		if realType inherits Box
-			_extendedBox = realType
-			_name = '[_extendedBox.name].extension.[.serialNum]'
-		else
-			.throwError('Cannot extend a [realType]. You can extend classes, structs and interfaces.')
+
+		if _extendedBox is nil
+			realType = _extendedBoxProxy.realType
+			if realType inherits Box
+				_extendedBox = realType
+			else
+				.throwError('Cannot extend a [realType]. You can extend classes, structs and interfaces.')
+		_name = '[_extendedBox.name].extension.[.serialNum]'
 
 		# shouldn't need or use inherited types
 		_baseClass = nil
 		_baseInterfaceProxies = List<of ITypeProxy>()
 		_baseInterfaces = List<of Interface>()
-
+		
 		# connect up
 		_extendedBox.extensions.add(this)
-
+	
 	def _bindInt
 		base._bindInt
 		# TODO: deal with overloads
-		sharpName = .sharpName
+		sharpName = .sharpRef
 		for decl in .declsInOrder
 			if decl inherits BoxMember
 				decl.sharedMethodBacking = '[sharpName].[Utils.capped(decl.name)]'
@@ -2181,16 +2221,6 @@ class Extension
 		for decl in .declsInOrder
 			decl.bindImp
 
-	def addDecl(decl as IBoxMember) is override
-		base.addDecl(decl)
-
-	def extensionMemberFor(box as Box, name as String) as IMember? is override
-		assert .didBindInh
-		if box.isDescendantOf(_extendedBox to !)
-			return .declForName(name)
-		else
-			return nil
-			
 	get sharpInit as String is override
 		return _extendedBox.sharpInit
 
@@ -2201,7 +2231,7 @@ class Extension
 		return 'class'  # because the extension is always housed in a C# class
 
 	get sharpName as String is override
-		return 'Extend_[.extendedBox.sharpNameComponent]_[.serialNum]'
+		return if(_clrType, _clrType.name, 'Extend_[.extendedBox.sharpNameComponent]_[.serialNum]')
 
 	get sharpThis as String is override
 		return '_lh_this'
@@ -2215,5 +2245,5 @@ class Extension
 			if decl inherits BoxMember
 				decl.sharpExtraIsNames = {'static'}
 				if decl inherits AbstractMethod
-					decl.params.insert(0, Param('_lh_this', .extendedBox).bindAll to Param)
+					decl.params.insert(0, Param('_lh_this', .extendedBox, true).bindAll to Param)
 		base.writeSharpDef(sw)

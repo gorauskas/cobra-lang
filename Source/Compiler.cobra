@@ -144,6 +144,8 @@ class Compiler
 
 	pro willPrintSuccessMsg from var
 
+	get curModule from var
+
 	get nodeStack from var
 
 	get nameSpaceStack from var
@@ -332,32 +334,32 @@ class Compiler
 						print 'Adding reference to [libName]'
 					refs.add(libName)
 
-			if _modules.count == 0  # attempt at caching modules during testify. incomplete.
-				.writeSharpInfoClass
-				.readSystemTypes
-				.readAssemblyTypes
-
-			if true # _modules.count == 0
-				path = Path.combine(.cobraExeDir, 'CobraInfo.cs')
-				assert File.exists(path)
-				filenames.insert(0, path)
-
-				if embedRunTime
-					path = Path.combine(.cobraExeDir, 'SystemInterfaces.cobra')
-					assert File.exists(path)
-					filenames.insert(1, path)
-
-					path = Path.combine(.cobraExeDir, 'CobraLang.cobra')
-					assert File.exists(path)
-					filenames.insert(2, path)
-
-					path = Path.combine(.cobraExeDir, 'CobraLang.cs')
-					assert File.exists(path)
-					filenames.insert(3, path)
-
-			modules = List<of Module>()
 			Node.setCompiler(this)
 			try
+				if _modules.count == 0  # attempt at caching modules during testify. incomplete.
+					.writeSharpInfoClass
+					.readSystemTypes
+					.readAssemblyTypes
+
+				if true # _modules.count == 0
+					path = Path.combine(.cobraExeDir, 'CobraInfo.cs')
+					assert File.exists(path)
+					filenames.insert(0, path)
+
+					if embedRunTime
+						path = Path.combine(.cobraExeDir, 'SystemInterfaces.cobra')
+						assert File.exists(path)
+						filenames.insert(1, path)
+
+						path = Path.combine(.cobraExeDir, 'CobraLang.cobra')
+						assert File.exists(path)
+						filenames.insert(2, path)
+
+						path = Path.combine(.cobraExeDir, 'CobraLang.cs')
+						assert File.exists(path)
+						filenames.insert(3, path)
+
+				modules = List<of Module>()
 				for filename in filenames
 					if filename.endsWith('.cs')
 						if _verbosity
@@ -550,13 +552,13 @@ class Compiler
 			return NilableType(t).bindAll to NilableType  # CC: axe cast after "as this"
 
 	def readSystemTypes
-		# TODO: support targeting a specific CLR version, but not under 2.0
+		# TODO: support targeting a specific CLR version, but not below 2.0
 		.readAssembly(Assembly.load('mscorlib.dll') to !)
 
 		# TODO: .readAssembly(Assembly.loadFrom('System.dll') to !)
 		#       gives: Unhandled Exception: System.IO.FileNotFoundException: Could not load file or assembly 'System.dll' or one of its dependencies. The system cannot find the file specified.
 
-		t = $sharp('typeof(System.Diagnostics.Process)') to System.Type
+		t = System.Diagnostics.Process.getType
 		.readAssembly(t.assembly) # System.dll
 
 	def readAssemblyTypes
@@ -666,9 +668,7 @@ class Compiler
 
 		parts = output.replace('-r:', '\0').split(c'\0')
 		for part in parts
-			part = part.trim
-			if part <> ''
-				refs.add(part)
+			if part.trim <> '', refs.add(part.trim)
 		
 		return refs
 
@@ -688,47 +688,54 @@ class Compiler
 			print 'Reading assembly:  [ass] at [ass.location]'  # extra space lines up with 'Loading reference:'
 		namespaceQualNameToNameSpaceObject = Dictionary<of String, NameSpace>()
 		module = AssemblyModule(ass, .globalNS)
-		_modules.add(module)
-		skipCobra = false
-		for type in ass.getExportedTypes
-			if skipCobra and type.namespace and (type.namespace == 'Cobra' or type.namespace.startsWith('Cobra.'))
-				# this is a huge hack to get around the repetition of the Cobra run-time support which gets embedded in both programs and libraries
-				# TODO: this should go away
-				continue
-			if '__CompilerGenerated' in type.name  # TODO: does that work in .NET?
-				continue
-			if type.isNested or type.declaringType
-				# these will be scanned by Box._scanNestedTypes
-				# print '### skipping [type.name] in [type.namespace]. isNested=[type.isNested], declaringType=[type.declaringType]'
-				continue
-			if type.namespace is nil or type.namespace == ''
-				# happens for classes etc. that are not declared in a namespace
-				curNameSpace = module.topNameSpace
-			else
-				namespaceName = type.namespace to !
-				if namespaceQualNameToNameSpaceObject.containsKey(namespaceName)
-					curNameSpace = namespaceQualNameToNameSpaceObject[namespaceName]
-				else
+		_curModule = module
+		try
+			_modules.add(module)
+			skipCobra = false
+			for type in ass.getExportedTypes
+				if skipCobra and type.namespace and (type.namespace == 'Cobra' or type.namespace.startsWith('Cobra.'))
+					# this is a huge hack to get around the repetition of the Cobra run-time support which gets embedded in both programs and libraries
+					# TODO: this should go away
+					continue
+				if '__CompilerGenerated' in type.name  # TODO: does that work in .NET?
+					continue
+				if type.isNested or type.declaringType
+					# these will be scanned by Box._scanNestedTypes
+					# print '### skipping [type.name] in [type.namespace]. isNested=[type.isNested], declaringType=[type.declaringType]'
+					continue
+				if type.namespace is nil or type.namespace == ''
+					# happens for classes etc. that are not declared in a namespace
 					curNameSpace = module.topNameSpace
-					for name in type.namespace.split(c'.')
-						curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(Token.empty, name)
-						assert not curNameSpace.isUnified
-					namespaceQualNameToNameSpaceObject[namespaceName] = curNameSpace
-			if verbosity >= 4
-				print '  Reading type [type.name] in namespace "[namespaceName]"'
-			if type.isClass
-				curNameSpace.addDecl(Class(type))
-			else if type.isInterface
-				curNameSpace.addDecl(Interface(type))
-			else if type.isEnum
-				curNameSpace.addDecl(EnumDecl(curNameSpace, type, List<of String>(), ''))  # TODO: isNames; docString?
-			else if type.isValueType
-				curNameSpace.addDecl(Struct(type))
-			else if type.isAnsiClass
-				# The Enum class is an example that returns false for .isClass but true for .isAnsiClass
-				curNameSpace.addDecl(Class(type))
-			else
-				throw FallThroughException(type)
+				else
+					namespaceName = type.namespace to !
+					if namespaceQualNameToNameSpaceObject.containsKey(namespaceName)
+						curNameSpace = namespaceQualNameToNameSpaceObject[namespaceName]
+					else
+						curNameSpace = module.topNameSpace
+						for name in type.namespace.split(c'.')
+							curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(Token.empty, name)
+							assert not curNameSpace.isUnified
+						namespaceQualNameToNameSpaceObject[namespaceName] = curNameSpace
+				if verbosity >= 4
+					print '  Reading type [type.name] in namespace "[namespaceName]"'
+				if type.isClass
+					if type.name.startsWith('Extend_') and Utils.countChars(type.name, c'_') >= 2
+						curNameSpace.addDecl(Extension(type))
+					else
+						curNameSpace.addDecl(Class(type))
+				else if type.isInterface
+					curNameSpace.addDecl(Interface(type))
+				else if type.isEnum
+					curNameSpace.addDecl(EnumDecl(curNameSpace, type, List<of String>(), ''))  # TODO: isNames; docString?
+				else if type.isValueType
+					curNameSpace.addDecl(Struct(type))
+				else if type.isAnsiClass
+					# The Enum class is an example that returns false for .isClass but true for .isAnsiClass
+					curNameSpace.addDecl(Class(type))
+				else
+					throw FallThroughException(type)
+		finally
+			_curModule = nil
 
 	def fixNilableMemberSigs
 		# TODO: this really needs to go in a separate file that the compiler reads each time

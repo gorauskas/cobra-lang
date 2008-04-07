@@ -73,6 +73,7 @@ class AssemblyModule
 	"""
 	
 	var _topNameSpace as NameSpace
+	var _mustBindInhList = List<of INameSpaceMember>()
 
 	def init(ass as Assembly, globalNS as NameSpace)
 		.init(ass, 0, globalNS)
@@ -85,6 +86,10 @@ class AssemblyModule
 	get sharpSource as String is override
 		return '(no C# source for [this])'
 
+	def addMustBindInh(what as INameSpaceMember)
+		require .compiler.curModule is this
+		_mustBindInhList.add(what)
+
 	get topNameSpace from var
 		"""
 		Returns the top namespace for this module.
@@ -94,6 +99,11 @@ class AssemblyModule
 	def bindUse
 		base.bindUse
 		.topNameSpace.bindUse
+
+	def _bindInh
+		base._bindInh
+		# .topNameSpace.bindInh - It's too expensive to scan all types in a DLL. Do them as needed.
+		for item in _mustBindInhList, item.bindInh
 
 	def _bindInt
 		base._bindInt
