@@ -1624,10 +1624,11 @@ class MemberOverload
 		#		for j = i+1 .. _members.count
 		#			assert not _members[i].matchesSignature(_members[j])
 		# rename the test members of the overload by suffixing them with '_o1' '_o2' etc.
+
 		i = 1
 		for member in _members # CC: for i, member in _members.numbered
 			if member.testMethod
-				member.testMethod.name = member.testMethod.name + '_ol' + i.toString
+				member.testMethod.overloadId = i
 			i += 1
 		# TODO: error if the returnType is different among any members
 		# TODO: error if the two members have the same arguments
@@ -1643,6 +1644,7 @@ class TestMethod
 
 	var _forMember as BoxMember?
 	var _forBox as Box?
+	var _overloadId = -1
 
 	def init(token as IToken, member as BoxMember)
 		require
@@ -1655,7 +1657,7 @@ class TestMethod
 		require
 			box.name.length
 		body
-			base.init(token, box, 'test_class_'+Utils.capped(box.sharpNameComponent), List<of GenericParam>(), List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
+			base.init(token, box, 'test_class_'+Utils.capped(box.name), List<of GenericParam>(), List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
 			_forBox = box
 
 	get shouldBeVirtual as bool is override
@@ -1672,6 +1674,17 @@ class TestMethod
 		set
 			require value.length
 			_name = value
+
+	pro overloadId from var
+
+	get sharpName as String is override
+		if _forMember
+			name = 'test_'+Utils.capped(_forMember.name)
+			if .overloadId <> -1
+				name += '_ol_[.overloadId]'
+			return name
+		else
+			return 'test_[_forBox.sharpKeyWord]_'+_forBox.sharpNameComponent
 
 
 class ContractPart
