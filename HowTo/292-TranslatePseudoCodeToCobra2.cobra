@@ -1,0 +1,191 @@
+"""
+This program is the same as "Translate Psuedo Code To Cobra 2", but uses some
+typing to improve compile-time error checking and boost run-time performance.
+The list elements are still treated as dynamically typed so that any kind of
+list can be used.
+
+Authors: Max Grender-Jones, Chuck Esterbrook
+"""
+
+class Sorter
+
+	sig SortMethod(list as IList) as dynamic
+	
+	shared
+	
+		def testSort(sortMethod as SortMethod)
+			assert sortMethod([1,2,3,4]) == [1,2,3,4]
+			assert sortMethod([3,4,1,2]) == [1,2,3,4]
+			assert sortMethod([4,3,2,1]) == [1,2,3,4]
+			assert sortMethod(['c','d','b','a']) == ['a','b','c','d']
+			assert sortMethod([1,1,1,1]) == [1,1,1,1]
+
+		def bubbleSort(list as IList) as dynamic
+			"""
+			From http://en.wikipedia.org/wiki/Bubble_sort#Pseudocode_implementation
+			procedure bubbleSort( A : list of sortable items ) defined as:
+			  do
+			    swapped := false
+			    for each i in 0 to length( A ) - 2 do:
+			      if A[ i ] > A[ i + 1 ] then
+			        swap( A[ i ], A[ i + 1 ] )
+			        swapped := true
+			      end if
+			    end for
+			  while swapped
+			end procedure
+			"""
+			test
+				.testSort(ref .bubbleSort)
+			body
+				swapped = false
+				post while swapped
+					swapped = false
+					for i in list.count - 1
+						if list[i] to dynamic > list[i+1] to dynamic
+							list.swap(i, i+1)
+							swapped = true
+				return list
+
+		def heapSort(list as IList) as dynamic
+			"""
+			From http://en.wikipedia.org/wiki/Heapsort#Pseudocode
+			function heapSort(a, count) is
+		     input:  an unordered array a of length count
+		 
+		     (first place a in max-heap order)
+		     heapify(a, count)
+		 
+		     end := count - 1
+		     while end > 0 do
+		         (swap the root(maximum value) of the heap with the last element of the heap)
+		         swap(a[end], a[0])
+		         (decrease the size of the heap by one so that the previous max value will
+		         stay in its proper placement)
+		         end := end - 1
+		         (put the heap back in max-heap order)
+		         siftDown(a, 0, end)
+			"""
+			test
+				.testSort(ref .heapSort)
+			body
+				.heapify(list)
+				last = list.count - 1
+				while last > 0
+					list.swap(0, last)
+					last -= 1
+					.siftDown(list, 0, last)
+				return list
+
+		def heapify(list as IList)
+			"""
+			From http://en.wikipedia.org/wiki/Heapsort#Pseudocode
+			function heapify(a,count) is
+		     (start is assigned the index in a of the last parent node)
+		     start := (count - 1) / 2
+		     
+		     while start >= 0 do
+		         (sift down the node at index start to the proper place such that all nodes below
+		          the start index are in heap order)
+		         siftDown(a, start, count-1)
+		         start := start - 1
+		     (after sifting down the root all nodes/elements are in heap order)
+			
+			"""
+			start = (list.count-1) // 2
+			while start >= 0
+				.siftDown(list, start, list.count-1)
+				start -= 1
+		
+		def siftDown(list as IList, first as int, last as int)
+			"""
+			From http://en.wikipedia.org/wiki/Heapsort#Pseudocode
+			function siftDown(a, start, end) is
+		     input:  end represents the limit of how far down the heap to sift.
+		     root := start
+		
+		     while root * 2 + 1 <= end do         (While the root has at least one child)
+		         child := root * 2 + 1            (root*2+1 points to the left child)
+		         (If the child has a sibling and the child's value is less than its sibling's...)
+		         if child < end and a[child] < a[child + 1] then
+		             child := child + 1           (... then point to the right child instead)
+		         if a[root] < a[child] then       (out of max-heap order)
+		             swap(a[root], a[child])
+		             root := child                (repeat to continue sifting down the child now)
+		         else
+		             return
+			"""
+			root = first
+			while root*2+1 <= last
+				child = root*2 + 1
+				if child < last and list[child] to dynamic < list[child+1] to dynamic
+					child += 1
+				if list[root] to dynamic < list[child] to dynamic
+					list.swap(root, child)
+					root = child
+				else
+					return
+
+		def insertionSort(list as IList) as dynamic 
+			"""
+			From http://en.wikipedia.org/wiki/Insertion_sort
+			insertionSort(array A)
+		    	for i = 1 to length[A]-1 do
+			        value = A[i]
+			        j = i-1
+			        while j >= 0 and A[j] > value do
+			            A[j + 1] = A[j]
+			            j = j-1
+			        A[j+1] = value
+			"""
+			test
+				.testSort(ref .insertionSort)
+			body
+				for i in 1 : list.count
+					value = list[i] to dynamic
+					j = i - 1
+					while j >= 0 and list[j] > value
+						list[j+1] = list[j]
+						j -= 1
+					list[j+1] = value
+				return list
+
+
+		def quickSort(list as IList) as dynamic
+			"""
+			From http://en.wikipedia.org/wiki/Quicksort
+			function quicksort(array)
+			 var list less, equal, greater
+			 if length(array) <= 1  
+			     return array  
+			 select a pivot value pivot from array
+			 for each x in array
+			     if x < pivot then append x to less
+			     if x = pivot then append x to equal
+			     if x > pivot then append x to greater
+			 return concatenate(quicksort(less), equal, quicksort(greater))
+			"""
+			test
+				.testSort(ref .quickSort)
+			body
+				if list.count <= 1
+					return list
+				else
+					less = []
+					equal = []
+					more = []
+					for x as dynamic in list[1:]
+						if x < list[0] 
+							less.add(x)
+						else if x > list[0]
+							more.add(x)
+						else 
+							equal.add(x)
+					equal.add(list[0])
+					result = .quickSort(less)
+					result.addRange(equal)
+					result.addRange(.quickSort(more))
+					return result
+
+	def main is shared
+		.quickSort([1,2,3,4])
