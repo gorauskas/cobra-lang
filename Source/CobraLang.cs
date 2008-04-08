@@ -955,6 +955,22 @@ static public class CobraImp {
 	static private readonly BindingFlags PropertyFlags = BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.GetProperty;
 	static private readonly BindingFlags FieldFlags = BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.GetField;
 
+	static public IEnumerable GetEnumerable(Object obj) {
+		// IEnumerator GetEnumerator()
+		if (obj is IEnumerable)
+			return (IEnumerable)obj;
+		if (obj is int) // TODO: is there a fast way to detect any of the int types?
+			return EnumerateInt((int)obj);
+		if (obj == null)
+			throw new CannotEnumerateException("Cannot enumerate nil.");
+		throw new CannotEnumerateException(string.Format("Cannot enumerate object of type '{0}'.", obj.GetType()));
+	}
+
+	static private IEnumerable EnumerateInt(int i) {
+		for (int j = 0; j < i; j++)
+			yield return j;
+	}
+
 	static public object GetPropertyValue(Object obj, string propertyName) {
 		if (obj==null)
 			throw new ArgumentNullException("obj");
