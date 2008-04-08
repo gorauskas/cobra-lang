@@ -444,11 +444,9 @@ class CallExpr
 		# has Subnodes  # TODO: Node.replaceChild uses dynamic binding, but the specific type arg (AssignExpr) is causing problems. But you'd think IList.IndexOf(Object) would get picked up... See also: CobraImp.InvokeMember
 
 	get hasError as bool is override
-		if base.hasError
-			return true
+		if base.hasError, return true
 		for arg in _args
-			if arg.hasError
-				return true
+			if arg.hasError, return true
 		return false
 
 	get isCalling as bool is override
@@ -596,112 +594,116 @@ class CallExpr
 					# TODO: check that the GenericParam is callable (has the callable constraint)
 					type = definition
 				else if definition inherits BoxMember
-					args = _args
-					if definition inherits MemberOverload
-						# Note that overloads can have different return types (even if more than just the return type is needed to distinguish them). Example: Math.
-						# Plenty of info here:
-						# http://www.google.com/search?hl=en&q=C%23+overloaded+method+resolution
+					if not .hasError
+						args = _args
+						if definition inherits MemberOverload
+							# Note that overloads can have different return types (even if more than just the return type is needed to distinguish them). Example: Math.
+							# Plenty of info here:
+							# http://www.google.com/search?hl=en&q=C%23+overloaded+method+resolution
 						
-						# I cooked up the algorithm below as a quick way to fix some bugs caused by the previous implementation of um, doing nothing.
-						# But this likely needs to be rewritten.
-						candidates = []
-						# print
-						for member in definition.members
-							if member.params.count <> args.count
-								score = -1000
-							else
-								score = 0
-								i = 0
-								for param in member.params
-									arg = args[i]
-									if arg.type == param.type
-										score += 20
-									else if arg.canBeAssignedTo(param.type)
-										score += 10
-									else if arg.type inherits NilableType and (arg.type to NilableType).theWrappedType.isAssignableTo(param.type) 
-										# Cobra's code and data flow analysis sometimes leaves us with a nilable type that's not actually nil anymore
-										# due to an assignment, possibly wrapped in an if statement. Eventually this will be corrected, but for now
-										# compensate here.
-										score += 1
-									else
-										score -= 100
-									i += 1
-							# print 'candidate:', score, member.name, member.serialNum, Utils.join(', ', (for param in member.params get param.type.name))
-							candidates.add([score, member])
-						maxScore = -10_000
-						winner = nil to BoxMember?
-						for pair in candidates
-							if pair[0] to int > maxScore
-								maxScore = pair[0] to int
-								winner = pair[1] to BoxMember
-						if false
-							print
-							trace .token.fileName
-							trace maxScore, _name
-							trace .token.toTechString
-							trace winner
-							print 'args:'
-							for arg in args
-								print '   [arg]'
-							print 'params:'
-							for param in winner.params
-								print '   [param]'
-							print 'overloads:'
+							# I cooked up the algorithm below as a quick way to fix some bugs caused by the previous implementation of um, doing nothing.
+							# But this likely needs to be rewritten.
+							candidates = []
+							# print
 							for member in definition.members
-								print '   [member]'
-						# print 'winner:', score, winner
-						sharp'definition = winner'
-						type = sharp'winner.ResultType'
-					else
-						type = definition.resultType
-						hasVari = false
-						for param in definition.params
-							if param.type inherits VariType
-								hasVari = true
-						if hasVari
-							# TODO handle variable number of args (4)
-							pass
-						else
-							check = true
-							if not definition.hasParams
-								if .name == 'toString'
-									# HACK
-									# this enables someFloat.toString('0.0')
-									# can remove when primitives know their CLR types and look up their methods
-									pass
-								else if args.count
-									.throwError('The method "[definition.name]" is expecting 0 arguments, but [args.count] are being supplied in this call.')
-							else
-								params = definition.params
-								if args.count <> params.count
-									if _name=='toString'  # TODO because many structs like Decimal have a toString() overload which cannot currently be expressed in SystemInterfaces.cobra
-										check = false
-									else
-										.throwError('The method "[definition.name]" is expecting [params.count] argument[Utils.plural(params)], but [args.count] are being supplied in this call.')
-								if check
-									for i = 0 .. args.count
+								if member.params.count <> args.count
+									score = -1000
+								else
+									score = 0
+									i = 0
+									for param in member.params
 										arg = args[i]
-										param = params[i]
-										if arg.hasError
-											break
-										if arg inherits AssignExpr  # assignments in arguments have special treatment
-											break
-										assert arg.didBindImp, arg
-										assert param.didBindInt, param
-										if arg.canBeAssignedTo(param.type)
-											arg.contextType = param.type
+										if not arg.didBindImp
+											trace arg
+											trace arg.hasError
+										if arg.type == param.type
+											score += 20
+										else if arg.canBeAssignedTo(param.type)
+											score += 10
+										else if arg.type inherits NilableType and (arg.type to NilableType).theWrappedType.isAssignableTo(param.type) 
+											# Cobra's code and data flow analysis sometimes leaves us with a nilable type that's not actually nil anymore
+											# due to an assignment, possibly wrapped in an if statement. Eventually this will be corrected, but for now
+											# compensate here.
+											score += 1
 										else
-											if false
-												print
-												print '<> definition = [definition]'
-												print '<> arg = ' stop
-												arg.writeDeepString
-												print '<> arg.type =', arg.type
-												print '<> param = ' stop
-												param.writeDeepString
-												print '<> param.type =', param.type
-												print '<> param.ifInheritsStack.count =', param.ifInheritsStack.count
-											.throwError('Argument [i+1] of method "[_name]" expects type [param.type.name], but the call is supplying type [arg.type.name].')
+											score -= 100
+										i += 1
+								# print 'candidate:', score, member.name, member.serialNum, Utils.join(', ', (for param in member.params get param.type.name))
+								candidates.add([score, member])
+							maxScore = -10_000
+							winner = nil to BoxMember?
+							for pair in candidates
+								if pair[0] to int > maxScore
+									maxScore = pair[0] to int
+									winner = pair[1] to BoxMember
+							if false
+								print
+								trace .token.fileName
+								trace maxScore, _name
+								trace .token.toTechString
+								trace winner
+								print 'args:'
+								for arg in args
+									print '   [arg]'
+								print 'params:'
+								for param in winner.params
+									print '   [param]'
+								print 'overloads:'
+								for member in definition.members
+									print '   [member]'
+							# print 'winner:', score, winner
+							sharp'definition = winner'
+							type = sharp'winner.ResultType'
+						else
+							type = definition.resultType
+							hasVari = false
+							for param in definition.params
+								if param.type inherits VariType
+									hasVari = true
+							if hasVari
+								# TODO handle variable number of args (4)
+								pass
+							else
+								check = true
+								if not definition.hasParams
+									if .name == 'toString'
+										# HACK
+										# this enables someFloat.toString('0.0')
+										# can remove when primitives know their CLR types and look up their methods
+										pass
+									else if args.count
+										.throwError('The method "[definition.name]" is expecting 0 arguments, but [args.count] are being supplied in this call.')
+								else
+									params = definition.params
+									if args.count <> params.count
+										if _name=='toString'  # TODO because many structs like Decimal have a toString() overload which cannot currently be expressed in SystemInterfaces.cobra
+											check = false
+										else
+											.throwError('The method "[definition.name]" is expecting [params.count] argument[Utils.plural(params)], but [args.count] are being supplied in this call.')
+									if check
+										for i = 0 .. args.count
+											arg = args[i]
+											param = params[i]
+											if arg.hasError
+												break
+											if arg inherits AssignExpr  # assignments in arguments have special treatment
+												break
+											assert arg.didBindImp, arg
+											assert param.didBindInt, param
+											if arg.canBeAssignedTo(param.type)
+												arg.contextType = param.type
+											else
+												if false
+													print
+													print '<> definition = [definition]'
+													print '<> arg = ' stop
+													arg.writeDeepString
+													print '<> arg.type =', arg.type
+													print '<> param = ' stop
+													param.writeDeepString
+													print '<> param.type =', param.type
+													print '<> param.ifInheritsStack.count =', param.ifInheritsStack.count
+												.throwError('Argument [i+1] of method "[_name]" expects type [param.type.name], but the call is supplying type [arg.type.name].')
 				else
 					throw FallThroughException(definition)
 			if type is nil
