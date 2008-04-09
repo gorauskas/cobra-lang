@@ -1,4 +1,5 @@
 use System.Diagnostics
+use System.Reflection
 
 
 class TestifyRunner
@@ -248,63 +249,81 @@ class TestifyRunner
 		firstLineInsensitive = firstLine.trim.replace(' ', '')
 
 		fileNames = [baseName]
+		options = .testifyOptions
+		willRunExe = true
 
-		if firstLineInsensitive.startsWith('#.multi.')
-			print 'Running multiple files.'
-			for fileName in firstLine.substring(firstLine.indexOf('.multi.')+8).split
-				if fileName.length
-					fileNames.add(Utils.combinePaths(Path.getDirectoryName(baseName) to !, fileName))
-			print 'Multiple filenames:', Utils.join(', ', fileNames)
-			# enable having another directive on the next line, such as .error.
-			lines = lines[1:]
-			firstLine = lines[0]
-			firstLineInsensitive = firstLine.trim.replace(' ', '')
+		while firstLineInsensitive.startsWith('#.')
 
-		if firstLineInsensitive.startsWith('#.require.')
-			# TODO: add foo.dll support
-			what = firstLineInsensitive[10:]
-			branch what
-				on 'mono'
-					if not CobraCore.isRunningOnMono
-						print 'Skipping because requirement for "mono" is not met.'
-						return 0
-				else
-					.error('Unrecognized requirement: "[what]"')
-			lines = lines[1:]
-			firstLine = lines[0]
-			firstLineInsensitive = firstLine.trim.replace(' ', '')
+			if firstLineInsensitive.startsWith('#.multi.')
+				print 'Running multiple files.'
+				for fileName in firstLine.substring(firstLine.indexOf('.multi.')+8).split
+					if fileName.length
+						fileNames.add(Utils.combinePaths(Path.getDirectoryName(baseName) to !, fileName))
+				print 'Multiple filenames:', Utils.join(', ', fileNames)
+				# enable having another directive on the next line, such as .error.
+				lines = lines[1:]
+				firstLine = lines[0]
+				firstLineInsensitive = firstLine.trim.replace(' ', '')
+				continue
 
-		if firstLineInsensitive.startsWith('#.compile-only.')  # also meaning don't run the .exe
-			willRunExe = false
-			lines = lines[1:]
-			firstLine = lines[0]
-			firstLineInsensitive = firstLine.trim.replace(' ', '')
-		else
-			willRunExe = true
+			if firstLineInsensitive.startsWith('#.require.')
+				what = firstLineInsensitive[10:]
+				branch what
+					on 'mono'
+						if not CobraCore.isRunningOnMono
+							print 'Skipping because requirement for "mono" is not met.'
+							return 0
+					else
+						if what.endsWith('.dll')
+							try
+								loadAssemblyResult = Assembly.loadWithPartialName(what)
+							catch assExc as Exception
+								print 'Skipping test due to DLL requirement "[what]" failing with exception: [assExc]'
+								return 0
+							success
+								if not loadAssemblyResult
+									print 'Skipping test due to DLL requirement "[what]" not found.'
+									return 0
+						else
+							.error('Unrecognized requirement: "[what]"')
+				lines = lines[1:]
+				firstLine = lines[0]
+				firstLineInsensitive = firstLine.trim.replace(' ', '')
+				continue
 
-		if firstLineInsensitive.startsWith('#.args.')
-			i = firstLine.indexOf('.args.')
-			args as Options?
-			.parseArgs(firstLine[i+'.args.'.length:], out args, out _pathList)
-			options = .testifyOptions
-			options.combine(args to !)
-			# enable having another directive on the next line, such as .error.
-			lines = lines[1:]
-			firstLine = lines[0]
-			firstLineInsensitive = firstLine.trim.replace(' ', '')
-		else
-			options = .testifyOptions
+			if firstLineInsensitive.startsWith('#.compile-only.')  # also meaning don't run the .exe
+				willRunExe = false
+				lines = lines[1:]
+				firstLine = lines[0]
+				firstLineInsensitive = firstLine.trim.replace(' ', '')
+				continue
 
-		if firstLineInsensitive.startsWith('#.skip.')
-			print 'Skipping per directive on first line of test source.'
-			return 0
+			if firstLineInsensitive.startsWith('#.args.')
+				i = firstLine.indexOf('.args.')
+				args as Options?
+				.parseArgs(firstLine[i+'.args.'.length:], out args, out _pathList)
+				options = .testifyOptions
+				options.combine(args to !)
+				# enable having another directive on the next line, such as .error.
+				lines = lines[1:]
+				firstLine = lines[0]
+				firstLineInsensitive = firstLine.trim.replace(' ', '')
+				continue
 
-		if firstLineInsensitive.startsWith('#.multipart.')
-			# .multi. is the one that gets run along with its associated files
-			# the associated files then specify .multipart. and get skipped when encountered
-			print 'Skipping per directive on first line of test source.'
-			return 0
+			if firstLineInsensitive.startsWith('#.skip.')
+				print 'Skipping per directive on first line of test source.'
+				return 0
 
+			if firstLineInsensitive.startsWith('#.multipart.')
+				# .multi. is the one that gets run along with its associated files
+				# the associated files then specify .multipart. and get skipped when encountered
+				print 'Skipping per directive on first line of test source.'
+				return 0
+				
+			if firstLineInsensitive.startsWith('#.error.') or firstLineInsensitive.startsWith('#.warning.')
+				# these are handled below
+				break
+		
 		# Check for inline warning and error messages that are expected.
 		# (Starting in 2007-12 this is now the preferred way to specify these messages--
 		#  with the actual line of code that generates them.
@@ -385,6 +404,7 @@ class TestifyRunner
 				return 1
 
 		if firstLineInsensitive.startsWith('#.error.')
+			# deprecated: put errors on the lines where they occur. the "hasInlineMessages" code above will detect them.
 			# note that errors that are only detected by the backend C# compiler are not detectable by testify
 			# CC: support split with a String extension method
 			# error = firstLine.split('.error.',1)[1].trim.toLower
@@ -430,6 +450,7 @@ class TestifyRunner
 			return 1
 
 		if firstLineInsensitive.startsWith('#.warning.')
+			# deprecated: put warnings on the lines where they occur. the "hasInlineMessages" code above will detect them.
 			index = firstLine.indexOf('.warning.')
 			warning = firstLine.substring(index+9).trim.toLower
 			# TODO: the following code both checks for warnings to be thrown as well as going through a list of warnings. Seems like it should just need to do one or the other.
