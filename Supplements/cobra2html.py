@@ -1,4 +1,8 @@
 """
+This program is not yet usable.
+But with some minor effort you can get what you want via:
+http://cobra-language.com/trac/cobra/wiki/PygmentsHighlighter
+
 cobra2html: Convert Cobra source code into syntax highlighted HTML.
 
 Example uses:
