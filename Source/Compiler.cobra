@@ -1305,23 +1305,26 @@ class Compiler
 		body
 			if .verbosity >= 2
 				print 'Compiling generated code'
+			options = .options
+
 			# locate the C# compiler
 			isUnix = Utils.isRunningOnUnix
 			isMono = CobraCore.isRunningOnMono
 			found = false
-			cscPath = .options.getDefault('sharp-compiler', '') to String
+			cscPath = options.getDefault('sharp-compiler', '') to String
 			if cscPath <> ''
 				if File.exists(cscPath)
 					found = true
-					platform = if('Microsoft.NET' in cscPath, 'ms', 'novell')
+					platform = if('Microsoft' in cscPath, 'ms', 'novell')
 				else if File.exists(cscPath+'.exe')
 					found = true
 					cscPath += '.exe'
-					platform = if('Microsoft.NET' in cscPath, 'ms', 'novell')
+					platform = if('Microsoft' in cscPath, 'ms', 'novell')
 				else
 					print 'Cannot find compiler specified by -sharp-compiler argument: [cscPath]'
 					throw StopCompilation(this)
 			else
+				# will use CSharpCodeProvider
 				# special case: you're running Mono on MS Windows
 				if isMono and not isUnix
 					paths = Environment.getEnvironmentVariable('PATH')
@@ -1356,21 +1359,21 @@ class Compiler
 			optChar = if(platform=='ms', '/', '-')  # option prefix character
 
 			# exe names
-			outName = if(_options.boolValue('test'), _modules[_modules.count-1].sharpFileName, _firstFileName to !)
+			outName = if(options.boolValue('test'), _modules[_modules.count-1].sharpFileName, _firstFileName to !)
 			if outName.endsWith('.cs')
 				outName = outName[:-3]
 			if outName.endsWith('.cobra')
 				outName = outName[:-6]
 			_baseExeFileName = outName
 
-			# options
-			options = ''
+			# compute backEndOptions
+			backEndOptions = ''
 
-			target = _options.getDefault('target', '') to String
+			target = options.getDefault('target', '') to String
 			if target.length
 				if target=='lib'
 					target = 'library'
-				options += ' [optChar]target:[target]'
+				backEndOptions += ' [optChar]target:[target]'
 				# TODO: what is the output for a module?
 				branch target
 					on 'exe' or 'winexe', outName = Utils.forceExtension(outName, '.exe')
@@ -1381,38 +1384,38 @@ class Compiler
 				outName += '.exe'
 			_fullExeFileName = outName
 
-			delaySign = _options.boolValue('delay-sign')
+			delaySign = options.boolValue('delay-sign')
 			if delaySign
-				options += ' [optChar]delaysign+'
+				backEndOptions += ' [optChar]delaysign+'
 
-			keyContainer = _options.getDefault('key-container', nil)
+			keyContainer = options.getDefault('key-container', nil)
 			if keyContainer
-				options += ' "[optChar]keycontainer:[keyContainer]"'
+				backEndOptions += ' "[optChar]keycontainer:[keyContainer]"'
 
-			keyFile = _options.getDefault('key-file', nil)
+			keyFile = options.getDefault('key-file', nil)
 			if keyFile
-				options += ' "[optChar]keyfile:[keyFile]"'
+				backEndOptions += ' "[optChar]keyfile:[keyFile]"'
 
-			optimize = _options.boolValue('optimize')
+			optimize = options.boolValue('optimize')
 			if optimize
-				options += ' [optChar]optimize+'
+				backEndOptions += ' [optChar]optimize+'
 
-			thing = _options.getDefault('reference', List<of String>()) to List<of String>
+			thing = options.getDefault('reference', List<of String>()) to List<of String>
 			for refer in thing
-				options += ' "[optChar]r:[refer]"'
+				backEndOptions += ' "[optChar]r:[refer]"'
 
-			debug = _options.getDefault('debug', '') to String
+			debug = options.getDefault('debug', '') to String
 			if debug.length
 				# TODO: mono does not support full and pdbonly afaik
 				assert debug in ['-', '+', 'full', 'pdbonly'], debug
-				options += ' [optChar]debug' + if(debug.length==1, debug, ':[debug]')
+				backEndOptions += ' [optChar]debug' + if(debug.length==1, debug, ':[debug]')
 
-			options += ' "[optChar]out:[outName]"'
+			backEndOptions += ' "[optChar]out:[outName]"'
 
 			if _verbosity<3
-				options += ' [optChar]nologo'
+				backEndOptions += ' [optChar]nologo'
 
-			options += ' [optChar]nowarn:0162,0169,0183,0184,0219,0414,0429'
+			backEndOptions += ' [optChar]nowarn:0162,0169,0183,0184,0219,0414,0429'
 				# CS0162: Unreachable code detected
 				# CS0169: The private field `Cobra.Lang.CannotReadPropertyException._ih_invariantGuard' is never used
 				# CS0183: The given expression is always of the provided (`int') type
@@ -1421,7 +1424,7 @@ class Compiler
 				# CS0414: The private field `Point._ih_invariantGuard' is assigned but its value is never used
 				# CS0429: Unreachable expression code detected / MS C# 2.0 gives these especially for the 'bool' test case in 'basics'
 
-			options += ' ' + extraCscOptions
+			backEndOptions += ' ' + extraCscOptions
 
 			sharpArgs = .options.getDefault('sharp-args', '') to String
 			if sharpArgs.length
@@ -1429,42 +1432,70 @@ class Compiler
 					# on Windows, you should really use double quotes instead of single, but
 					# we try to compensate here.
 					sharpArgs = sharpArgs[1:-1]
-				options += ' ' + sharpArgs
+				backEndOptions += ' ' + sharpArgs
 
 			for libPath in .options.getDefault('library-directory', [])
-				options += ' ' + '-lib:"[libPath]"'
+				backEndOptions += ' ' + '-lib:"[libPath]"'
 
 			for pkgName in .options.getDefault('pkg', [])
-				options += ' ' + '-pkg:[pkgName]'
+				backEndOptions += ' ' + '-pkg:[pkgName]'
 
 			# .cs files
 			sharpFileNameList = List<of String>()
 			for module in _modules[1:]
 				if module.sharpFileName.length
-					sharpFileNameList.add('"' + module.sharpFileName + '"')
-			sharpFileNames = Utils.join(' ', sharpFileNameList)
+					sharpFileNameList.add(module.sharpFileName)
 
 			# compilation command
 			if _verbosity
 				print 'Compiling to produce [outName]'
-			p = System.Diagnostics.Process()
-			p.startInfo.fileName = cscPath
-			p.startInfo.arguments = '[options] [sharpFileNames]'
-			if _verbosity >= 2
-				print '[p.startInfo.fileName] [p.startInfo.arguments]'
-			output = CobraCore.runAndCaptureAllOutput(p)
-			# TODO: check p.exitCode, especially if output is empty
+			if true
+				# use code provider
+				provider = Microsoft.CSharp.CSharpCodeProvider()
+				cp = System.CodeDom.Compiler.CompilerParameters()
+				cp.referencedAssemblies.add('System.dll')
+				cp.generateExecutable = options.getDefault('target', 'exe') in ['exe', 'winexe']
+				cp.outputAssembly = _fullExeFileName
+				cp.compilerOptions = backEndOptions
+				#trace backEndOptions
+				#trace sharpFileNameList
+				cr = provider.compileAssemblyFromFile(cp, sharpFileNameList.toArray)
+				if false
+					trace cr.compiledAssembly
+					trace cr.evidence
+					trace cr.pathToAssembly
+					trace cr.errors
+					trace cr.output
+					trace cr.nativeCompilerReturnValue
+					trace cr.tempFiles
+				if false
+					# It would be nice (and more efficient) to just loop through cr.errors whose elements include warnings,
+					# however, the message "(Location of symbol related to previous error)" is mysteriously left out.
+					# It then becomes necessary to parse the compiler output, thereby making CompilerResults.errors useless.
+					for bem in cr.errors  # cr.errors also includes warnings
+						trace bem
+						backEndMessage = bem to System.CodeDom.Compiler.CompilerError
+						if not SharpCompilationMessage.willSkipMessage(backEndMessage.errorText to !)
+							_addMessage(SharpCompilationMessage(backEndMessage, this))
+				else				
+					#for x in cr.output to dynamic
+					#	print 'output>', x
+					# [1:] below is to chop out the first line which is the C# compilation line
+					output = if(cr.output.count==0, '', Utils.join('\n', cr.output[1:]).trim)
+					# trace output
+					_parseSharpCompilerOutput(output)
+			else
+				# use Process class instead of CSharpCodeProvider
+				p = System.Diagnostics.Process()
+				p.startInfo.fileName = cscPath
+				sharpFileNames = Utils.join(' ', for fileName in sharpFileNameList get '"' + fileName + '"')
+				p.startInfo.arguments = '[options] [sharpFileNames]'
+				if _verbosity >= 2
+					print '[p.startInfo.fileName] [p.startInfo.arguments]'
+				output = CobraCore.runAndCaptureAllOutput(p)
+				# TODO: check p.exitCode, especially if output is empty
+				_parseSharpCompilerOutput(output)
 
-			for line in output.split(c'\n')
-				line = line.trim
-				if not line.length
-					continue
-				if SharpCompilationMessage.willSkipMessage(line)
-					continue
-				else
-					if _verbosity >= 3
-						print 'C# message: [line]'
-					_addMessage(SharpCompilationMessage(line, this))
 			if .errors.count
 				_exitFromErrors
 
@@ -1473,7 +1504,7 @@ class Compiler
 				if _verbosity >= 1
 					print 'No intermediate files to keep or delete.'
 			else
-				if _options.getDefault('keep-intermediate-files', 0)
+				if options.getDefault('keep-intermediate-files', 0)
 					if _verbosity >= 1
 						print 'Keeping intermediate files.'
 				else
@@ -1483,6 +1514,18 @@ class Compiler
 						if _verbosity >= 3
 							print 'Deleting', fileName
 						File.delete(fileName)
+
+	def _parseSharpCompilerOutput(output as String)
+		for line in output.split(c'\n')
+			line = line.trim
+			if not line.length
+				continue
+			if SharpCompilationMessage.willSkipMessage(line)
+				continue
+			else
+				if _verbosity >= 3
+					print 'C# message: [line]'
+				_addMessage(SharpCompilationMessage(line, this))
 
 	def cobraLineNumForSharp(fileName as String, lineNum as int) as int
 		"""
@@ -1581,6 +1624,7 @@ class SharpCompilationMessage
 		assert msg.message == 'Blah blah' or msg.message == 'Blah blah (C#)'
 
 	def willSkipMessage(msg as String) as bool is shared
+		# TODO: Does mono give localized messages? Like in French.
 		if '.dll' in msg
 			# comes up on Novell Mono: '/Library/Frameworks/Mono.framework/Versions/1.2.4/lib/mono/2.0/mscorlib.dll (Location of the symbol related to previous error)'
 			# TODO: try removing these
@@ -1599,6 +1643,16 @@ class SharpCompilationMessage
 	var _fileName as String?
 	var _lineNum as int?
 	var _isError as bool
+
+	def init(message as System.CodeDom.Compiler.CompilerError, compiler as Compiler)
+		base.init('')
+		_isError = not message.isWarning
+		_fileName = message.fileName
+		_lineNum = message.line
+		text = message.errorText ? ''
+		if compiler.verbosity or Utils.isDevMachine
+			text += ' (C#)'  # ' (C# [sharpLineNum])' ... the sharpLineNum is not useful now that #line is being generated
+		_message = _cleanUp(text)
 
 	def init(line as String, compiler as Compiler)
 		require not .willSkipMessage(line)
@@ -1650,12 +1704,15 @@ class SharpCompilationMessage
 					# add (sharp)
 					if compiler.verbosity or Utils.isDevMachine
 						line += ' (C#)'  # ' (C# [sharpLineNum])' ... the sharpLineNum is not useful now that #line is being generated
+		_message = _cleanUp(line)
+
+	def _cleanUp(line as String) as String
 		line = line.replace("`double'", "`float'")
 		line = line.replace("null", "nil")
 		# change C#'s `funky' quotes to double quotes
 		line = line.replace("`", '"')
 		line = line.replace("'", '"')
-		_message = line
+		return line
 
 	get isError as bool is override
 		return _isError
