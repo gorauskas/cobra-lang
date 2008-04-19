@@ -1264,21 +1264,6 @@ class Compiler
 				print '}'
 		_didWriteSharpInfoClass = true
 
-	var _cscExecPaths = [
-		# TODO: should probably loop through available drives, or find the path for .NET and work off that
-		[r'C:\WINDOWS\Microsoft.NET\Framework\v2.0.50727\csc', 'ms'],  # common
-		[r'C:\WINNT\Microsoft.NET\Framework\v2.0.50727\csc', 'ms'],
-		[r'D:\WINDOWS\Microsoft.NET\Framework\v2.0.50727\csc', 'ms'],  # common
-		[r'D:\WINNT\Microsoft.NET\Framework\v2.0.50727\csc', 'ms'],
-		[r'E:\WINDOWS\Microsoft.NET\Framework\v2.0.50727\csc', 'ms'],  # common
-		[r'E:\WINNT\Microsoft.NET\Framework\v2.0.50727\csc', 'ms'],
-		[r'\WINDOWS\Microsoft.NET\Framework\v2.0.50727\csc', 'ms'],
-		[r'\WINNT\Microsoft.NET\Framework\v2.0.50727\csc', 'ms'],
-		[r'/usr/bin/gmcs', 'novell'],  # common
-		[r'/bin/gmcs', 'novell'],
-		[r'/usr/local/bin/gmcs', 'novell'],
-	]
-
 	get baseExeFileName from var
 		"""
 		Returns the exe file name sans extension.
@@ -1308,16 +1293,11 @@ class Compiler
 			options = .options
 
 			# locate the C# compiler
-			isUnix = Utils.isRunningOnUnix
-			isMono = CobraCore.isRunningOnMono
-			found = false
 			cscPath = options.getDefault('sharp-compiler', '') to String
 			if cscPath <> ''
 				if File.exists(cscPath)
-					found = true
 					platform = if('Microsoft' in cscPath, 'ms', 'novell')
 				else if File.exists(cscPath+'.exe')
-					found = true
 					cscPath += '.exe'
 					platform = if('Microsoft' in cscPath, 'ms', 'novell')
 				else
@@ -1325,45 +1305,16 @@ class Compiler
 					throw StopCompilation(this)
 			else
 				# will use CSharpCodeProvider
-				# special case: you're running Mono on MS Windows
-				if isMono and not isUnix
-					paths = Environment.getEnvironmentVariable('PATH')
-					if paths and paths.length
-						for path in paths.split(c';')
-							possible = Path.combine(path, 'gmcs.bat')
-							if File.exists(possible)
-								cscPath = possible
-								platform = 'novell'
-								found = true
-								break
-				for execPathSpec in _cscExecPaths
-					cscPath = execPathSpec[0]
-					platform = execPathSpec[1]
-					if isMono and platform <> 'novell'
-						continue
-					if isUnix and '\\' in cscPath
-						continue  # skip windows paths
-					if File.exists(cscPath) or File.exists(cscPath+'.exe')
-						found = true
-						break
-			if not found
-				print 'Looked for C# compiler at:'
-				for execPathSpec in _cscExecPaths
-					cscPath = execPathSpec[0]
-					print '  [cscPath]'
-				print 'But cannot find a C# compiler from Microsoft .NET or Novell Mono.'
-				throw StopCompilation(this)
+				pass
 
-			assert platform in ['ms', 'novell']
+			platform = if(CobraCore.isRunningOnMono, 'novell', 'ms')
 			_platform = if(platform=='ms', PlatformEnum.Microsoft, PlatformEnum.Novell)
 			optChar = if(platform=='ms', '/', '-')  # option prefix character
 
 			# exe names
 			outName = if(options.boolValue('test'), _modules[_modules.count-1].sharpFileName, _firstFileName to !)
-			if outName.endsWith('.cs')
-				outName = outName[:-3]
-			if outName.endsWith('.cobra')
-				outName = outName[:-6]
+			if outName.endsWith('.cs'), outName = outName[:-3]
+			if outName.endsWith('.cobra'), outName = outName[:-6]
 			_baseExeFileName = outName
 
 			# compute backEndOptions
@@ -1449,7 +1400,18 @@ class Compiler
 			# compilation command
 			if _verbosity
 				print 'Compiling to produce [outName]'
-			if true
+			if cscPath <> ''
+				# use Process class instead of CSharpCodeProvider because the user specified a path to a C# compiler
+				p = System.Diagnostics.Process()
+				p.startInfo.fileName = cscPath
+				sharpFileNames = Utils.join(' ', for fileName in sharpFileNameList get '"' + fileName + '"')
+				p.startInfo.arguments = '[backEndOptions] [sharpFileNames]'
+				if _verbosity >= 2
+					print '[p.startInfo.fileName] [p.startInfo.arguments]'
+				output = CobraCore.runAndCaptureAllOutput(p)
+				# TODO: check p.exitCode, especially if output is empty
+				_parseSharpCompilerOutput(output)
+			else
 				# use code provider
 				provider = Microsoft.CSharp.CSharpCodeProvider()
 				cp = System.CodeDom.Compiler.CompilerParameters()
@@ -1481,20 +1443,14 @@ class Compiler
 					#for x in cr.output to dynamic
 					#	print 'output>', x
 					# [1:] below is to chop out the first line which is the C# compilation line
+					
+					# cr.output is empty if there was no error
+					# otherwise, the first element is the C# compilation line
+					if _verbosity >= 2 and cr.output.count > 0
+						print '>>', cr.output[0], '<<'
 					output = if(cr.output.count==0, '', Utils.join('\n', cr.output[1:]).trim)
 					# trace output
 					_parseSharpCompilerOutput(output)
-			else
-				# use Process class instead of CSharpCodeProvider
-				p = System.Diagnostics.Process()
-				p.startInfo.fileName = cscPath
-				sharpFileNames = Utils.join(' ', for fileName in sharpFileNameList get '"' + fileName + '"')
-				p.startInfo.arguments = '[options] [sharpFileNames]'
-				if _verbosity >= 2
-					print '[p.startInfo.fileName] [p.startInfo.arguments]'
-				output = CobraCore.runAndCaptureAllOutput(p)
-				# TODO: check p.exitCode, especially if output is empty
-				_parseSharpCompilerOutput(output)
 
 			if .errors.count
 				_exitFromErrors
