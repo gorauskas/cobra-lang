@@ -449,6 +449,10 @@ static public class CobraImp {
 		return new string(c, 1) == s;
 	}
 
+	static public bool Equals(String a, String b) {
+		return a == b;
+	}
+
 	static public bool Equals(IList a, IList b) {
 		if (a.Count!=b.Count)
 			return false;

@@ -79,6 +79,9 @@ class Compiler
 	var _baseExeFileName as String = ''
 	var _fullExeFileName as String = ''
 
+	var _clrTypeCache as Dictionary<of String, System.Type>
+
+
 	# caches
 	var _clrPrimitiveToITypeCache as IDictionary<of System.Type, IType>?
 
@@ -104,6 +107,7 @@ class Compiler
 		_errors = List<of SourceException>()
 		_warnings = List<of SourceException>()
 		_intermediateFileNames = List<of String>()
+		_clrTypeCache = Dictionary<of String, System.Type>()
 		if initialModules
 			if false # TODO: not working yet
 				for mod in initialModules
@@ -696,22 +700,24 @@ class Compiler
 					# this is a huge hack to get around the repetition of the Cobra run-time support which gets embedded in both programs and libraries
 					# TODO: this should go away
 					continue
-				if '__CompilerGenerated' in type.name  # TODO: does that work in .NET?
-					continue
+# delme or at least don't run on .NET
+#				if '__CompilerGenerated' in type.name  # TODO: does that work in .NET?
+#					continue
 				if type.isNested or type.declaringType
 					# these will be scanned by Box._scanNestedTypes
 					# print '### skipping [type.name] in [type.namespace]. isNested=[type.isNested], declaringType=[type.declaringType]'
 					continue
-				if type.namespace is nil or type.namespace == ''
+				typeNamespace = type.namespace
+				if typeNamespace is nil or typeNamespace.length == 0
 					# happens for classes etc. that are not declared in a namespace
 					curNameSpace = module.topNameSpace
 				else
-					namespaceName = type.namespace to !
+					namespaceName = typeNamespace to !
 					if namespaceQualNameToNameSpaceObject.containsKey(namespaceName)
 						curNameSpace = namespaceQualNameToNameSpaceObject[namespaceName]
 					else
 						curNameSpace = module.topNameSpace
-						for name in type.namespace.split(c'.')
+						for name in typeNamespace.split(c'.')
 							curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(Token.empty, name)
 							assert not curNameSpace.isUnified
 						namespaceQualNameToNameSpaceObject[namespaceName] = curNameSpace
@@ -1059,7 +1065,12 @@ class Compiler
 	def clrType(qualifiedName as String) as System.Type
 		# eventually this method will be key in targeting different versions of the CLR
 		# suppose you are on .NET 3.0 and want to target .NET 2.0
-		return sharp'Type.GetType(qualifiedName)' to System.Type
+		t as System.Type?
+		_clrTypeCache.tryGetValue(qualifiedName, out t)
+		if t is nil
+			t = sharp'Type.GetType(qualifiedName)' # to System.Type
+			_clrTypeCache[qualifiedName] = t to passthrough  # "to passthrough" instead of "to !" to avoid non-nil check
+		return t to passthrough
 
 	def libraryType(qualifiedName as String) as IType
 		"""
