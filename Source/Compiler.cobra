@@ -1430,12 +1430,11 @@ class Compiler
 					trace cr.output
 					trace cr.nativeCompilerReturnValue
 					trace cr.tempFiles
-				if false
-					# It would be nice (and more efficient) to just loop through cr.errors whose elements include warnings,
-					# however, the message "(Location of symbol related to previous error)" is mysteriously left out.
-					# It then becomes necessary to parse the compiler output, thereby making CompilerResults.errors useless.
-					for bem in cr.errors  # cr.errors also includes warnings
-						trace bem
+				# On MS .NET 2.0, the CompilerResult.errors never include "(Location of symbol related to previous error)", while the CompilerResult.output contains everything
+				# On Novell Mono 1.9, the CompilerResult.output is empty, leaving CompilerResult.errors as the only means to get the C# compiler messages.
+				# Do the Mono .errors have "(Location of symbol related to previous error)"? I haven't checked.
+				if CobraCore.isRunningOnMono
+					for bem in cr.errors  # cr.errors also includes warnings. supposedly.
 						backEndMessage = bem to System.CodeDom.Compiler.CompilerError
 						if not SharpCompilationMessage.willSkipMessage(backEndMessage.errorText to !)
 							_addMessage(SharpCompilationMessage(backEndMessage, this))
