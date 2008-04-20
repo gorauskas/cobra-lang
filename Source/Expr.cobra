@@ -977,6 +977,9 @@ class IdentifierExpr
 	inherits NameExpr
 	implements IPotentialTypeExpr
 
+	def init(token as IToken)
+		.init(token, token.text)
+
 	def init(token as IToken, name as String)
 		base.init(token)
 		_name = name
@@ -3150,9 +3153,11 @@ class ToNonNilableExpr
 			sw.write('(')
 			_expr.writeSharpDef(sw, false)
 			sw.write(').Value')
-		else
-			# TODO: wrap in a run-time setting. something like, (CobraCore._willCheckNonNilCast?CobraImp.CheckNonNil<...>(...):expr)
-			# TODO: provide a compile time setting to remove check
-			sw.write('CobraImp.CheckNonNil<[type.sharpRef]>([.sharpThis], [Utils.sharpStringLiteralFor(_expr.toCobraSource)], ')
+		else if .compiler.options.boolValue('include-nil-checks')
+			sw.write('(CobraCore._willCheckNil?CobraImp.CheckNonNil<[type.sharpRef]>([.sharpThis], [Utils.sharpStringLiteralFor(_expr.toCobraSource)], ')
 			_expr.writeSharpDef(sw, false)
-			sw.write(', [.sharpSourceSite])')
+			sw.write(', [.sharpSourceSite]):')
+			_expr.writeSharpDef(sw, false)
+			sw.write(')')
+		else
+			_expr.writeSharpDef(sw, parens)

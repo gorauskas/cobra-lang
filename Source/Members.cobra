@@ -1022,8 +1022,8 @@ class AbstractMethod
 
 	def writeSharpParamCheck(param as Param, sw as SharpWriter)
 		if param.type.isReference and not param.type inherits NilableType and not param.isOut
-			# TODO: guard with flag like _willCheckNonNilArgs
-			sw.write('if ([param.sharpName]==null) throw new ArgumentNullException("[param.name]");\n')
+			if .compiler.options.boolValue('include-nil-checks')
+				sw.write('if (CobraCore._willCheckNil && [param.sharpName]==null) throw new ArgumentNullException("[param.name]");\n')
 
 	def writeDSTHead(sw as SharpWriter)
 		if not .canHaveDetailedStackTrace
@@ -1092,29 +1092,30 @@ class Initializer
 	def _bindImp
 		if .canHaveDetailedStackTrace  # no extra checks for classes that are sensitive with respect to the DST
 			# add asserts at the end for non-nilable class vars
-			token = .lastToken.copy
-			token.incLineNum
-			stmts = List<of Stmt>()
-			for decl in _box.declsInOrder
-				if decl inherits BoxVar
-					assert decl.type
-					if not decl.type inherits NilableType and decl.type.isReference and not decl.isShared
-						if decl.name.startsWith('_')
-							expr = IdentifierExpr(token, decl) to Expr
-						else
-							expr = BinaryOpExpr.make(token, 'DOT', ThisLit(token, .box), MemberExpr(token, decl.name)) to Expr
-						stmts.add(AssertStmt(token, IsNotNilExpr(token, expr), nil))
-			if stmts.count
-				sharpToken = token.copy
-				sharpToken.which = 'STRING'
-				sharpToken.value = 'CobraCore._willCheckNonNilClassVars'
-				cond = SharpExpr(token, StringLit(sharpToken))
-
-				block = BlockStmt(token, stmts)
-
-				ifStmt = IfStmt(token, cond, block, nil)
-
-				.addStmt(ifStmt)
+			if .compiler.options.boolValue('include-nil-checks')
+				token = .lastToken.copy
+				token.incLineNum
+				stmts = List<of Stmt>()
+				for decl in _box.declsInOrder
+					if decl inherits BoxVar
+						assert decl.type
+						if not decl.type inherits NilableType and decl.type.isReference and not decl.isShared
+							if decl.name.startsWith('_')
+								expr = IdentifierExpr(token, decl) to Expr
+							else
+								expr = BinaryOpExpr.make(token, 'DOT', ThisLit(token, .box), MemberExpr(token, decl.name)) to Expr
+							stmts.add(AssertStmt(token, IsNotNilExpr(token, expr), nil))
+				if stmts.count
+					cond = BinaryOpExpr.make( _
+						.lastToken.copy('DOT', '.'), 'DOT', _
+						IdentifierExpr(.lastToken.copy('ID', 'CobraCore')), _
+						MemberExpr(.lastToken.copy('ID', '_willCheckNil')))
+	
+					block = BlockStmt(token, stmts)
+	
+					ifStmt = IfStmt(token, cond, block, nil)
+	
+					.addStmt(ifStmt)
 
 		base._bindImp
 
