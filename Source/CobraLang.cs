@@ -659,29 +659,32 @@ static public class CobraImp {
 	static private void ProcessGetSliceArgs(int count, ref int? start, ref int? stop, ref int? step) {
 		if (start==null)
 			start = 0;
-		if (start<0) {
+		if (start < 0) {
 			start += count;
-			if (start<0)
-				throw new IndexOutOfRangeException(string.Format("Start is {0} for string of length {1}.", start-count, count));
-		} else if (start>count) {
-			throw new IndexOutOfRangeException(string.Format("Start is {0} for string of length {1}.", start, count));
+			if (start < 0) {
+			    start = 0;
+			}
+		} else if (start > count) {
+			start = count;
 		}
 		if (stop==null)
 			stop = count;
-		if (stop<0) {
+		if (stop < 0) {
 			stop += count;
-			if (stop<0)
-				throw new IndexOutOfRangeException(string.Format("Stop is {0} for string of length {1}.", stop-count, count));
+			if (stop < 0) {
+				stop = 0;
+			}
 		} else if (stop>count) {
-			throw new IndexOutOfRangeException(string.Format("Stop is {0} for string of length {1}.", stop, count));
+			stop = count;
 		}
 		if (step==null)
 			step = 1;
 		if (step==0)
 			throw new SliceException(string.Format("Cannot use a step of zero for slices."));
 		// step is negative
-		if (start>stop)
-			throw new SliceException(string.Format("start={0} is less than stop={1} for a negative step.", start, stop));
+		if (start>stop) {
+			start = stop;
+		}
 		if (step>0) {
 			if (step!=1)
 				throw new SliceException(string.Format("step={0}, but only a step of 1 is currently supported", step));
