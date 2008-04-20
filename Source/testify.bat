@@ -1,3 +1,3 @@
 @cls
 cobra -testify %*
-e r-testify
+@rem e r-testify
