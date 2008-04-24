@@ -733,12 +733,13 @@ class ForNumericStmt
 				type _lh_stop_2 = stop;
 				type _lh_step_3 = step;
 				int _lh_dir_4 = (_lh_stop_2 - _lh_start_1) < 0 ? -1 : +1;
-				x = start;
-				while ((_lh_dir_4==-1) ? x > stop : x < stop) {
+				for (x = start; (_lh_dir_4==-1) ? x > stop : x < stop; x += step) {
 					statements
-					x += step
 				}
 				}
+		Note that it's important that the C# code gen uses a for() loop so that
+		the "continue" statement still increments the control variable.
+		
 		In the case that the 'stop' or 'step' are integer literals, no variables are needed for them.
 		TODO: If 'stop' or 'step' are const or readonly, same thing.
 		"""
@@ -773,19 +774,20 @@ class ForNumericStmt
 
 		sw.write('int [sharpDir] = [sharpStep] < 0 ? -1 : +1;\n')
 
+		sw.write('for(')
 		if trackLocals
-			sw.write('CobraImp.SetLocal("[.var.name]", [sharpVar] = [sharpStart]);\n')
+			sw.write('CobraImp.SetLocal("[.var.name]", [sharpVar] = [sharpStart])')
 		else
-			sw.write('[sharpVar] = [sharpStart];\n')
-		
-		sw.write('while (([sharpDir]==1) ? [sharpVar] < [sharpStop] : [sharpVar] > [sharpStop]) ')
+			sw.write('[sharpVar] = [sharpStart]')		
+		sw.write('; ([sharpDir]==1) ? [sharpVar] < [sharpStop] : [sharpVar] > [sharpStop]; ')
+		if trackLocals
+			sw.write('CobraImp.SetLocal("[.var.name]", [sharpVar] += [sharpStep])')
+		else
+			sw.write('[sharpVar] += [sharpStep]')		
+		sw.write(') ')
 
 		_block.writeSharpDef(sw, false)
 
-		if trackLocals
-			sw.write('CobraImp.SetLocal("[.var.name]", [sharpVar] += [sharpStep]);\n')
-		else
-			sw.write('[sharpVar] += [sharpStep];\n')
 		sw.dedent
 		sw.write('}\n')
 		sw.write('} // for [.var.name]\n')
