@@ -368,9 +368,18 @@ class Tokenizer
 	## Other
 
 	def _reset
-		_errors = List<of TokenizerError>()
+		_reuse
 		_fileName = nil
 		_stream = nil
+		_keywordToWhichToken = Dictionary<of String, String>()
+		_onTokenTypeCache = Dictionary<of String, MethodInfo?>()
+		_didReset = true
+
+	def _reuse
+		"""
+		Resets class vars unrelated to token defs, file name or stream.
+		"""
+		_errors = List<of TokenizerError>()
 		_curToken = nil
 		_lastToken = nil
 
@@ -381,11 +390,6 @@ class Tokenizer
 		_charNum = 1
 
 		_tokenQueue = Queue<of IToken>()
-		# _tokenMethods = {}
-		_keywordToWhichToken = Dictionary<of String, String>()
-		_onTokenTypeCache = Dictionary<of String, MethodInfo?>()
-
-		_didReset = true
 
 	def startFileNamed(fileName as String) as Tokenizer  # TODO: as this
 		_fileName = fileName
@@ -423,27 +427,6 @@ class Tokenizer
 			print '<> .nextToken returning [_lastToken]'
 		return _lastToken
 
-	shared
-		var _cachedTokens = Dictionary<of String, List<of IToken>>()
-
-	def allCachedTokens as List<of IToken>
-		"""
-		Returns all tokens, possibly from a cache.
-		Useful for the regression test suite so that SystemInterfaces isn't reprocessed each time.
-		"""
-		require
-			not .didStart
-			.fileName
-		body
-			fileName = .fileName to !
-			if not fileName.endsWith('SystemInterfaces.cobra')  # being conservative
-				return .allTokens
-			# below, we make a copy of the list to keep the cache safe from mods
-			if _cachedTokens.containsKey(fileName)
-				return List<of IToken>(_cachedTokens[fileName])
-			else
-				return List<of IToken>(_cachedTokens[fileName] = .allTokens)
-
 	def allTokens as List<of IToken>
 		"""
 		Returns all remaining tokens as a list.
@@ -459,12 +442,12 @@ class Tokenizer
 
 	def restart
 		"""
-		After calling this, you can use the tokenizer anew.
-		Normally you would call this after completing the tokenization of a source file.
+		After calling this, you can use the tokenizer anew even with different token defs.
 		"""
 		if _stream
 			_stream.close
 			_stream = nil
+		_tokenDefs = nil  # avoid caching the token defs. now .afterStart will recreate them
 		_reset()
 
 	def keywordOrWhich(tok as IToken) as IToken
@@ -519,6 +502,9 @@ class Tokenizer
 			_tokenDefs
 		body
 			assert _didReset, 'Have not reset. Probably the subclass overrides _reset but forgets to invoke base.'
+			if _tokenDefs and _tokenDefs.count > 0
+				_reuse
+				return
 			# create a single list of all token defs in the correct order
 			_tokenDefs = List<of TokenDef>()
 			if .orderedTokenSpecs.count

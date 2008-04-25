@@ -72,6 +72,14 @@ class Parser
 		p.typeProvider = BasicTypeProvider()
 		p.parseSource('test2', 'class Test\n\tdef main is shared\n\t\treturn\n')
 
+	shared
+		
+		var _tokenizer as CobraTokenizer?
+			"""
+			Caching the tokenizer benefits the performance of testify and any other process that
+			compiles (or even just parses) more than once.
+			"""
+
 	var _lowercaseLetters = 'abcdefghijklmnopqrstuvwxyz'
 	var _uppercaseLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
@@ -169,7 +177,10 @@ class Parser
 		catch pe as ParserException
 			if _errorRecorder
 				_errorRecorder.recordError(pe)
+			_tokenizer = nil
 			throw
+		if _tokenizer and _tokenizer.errors.count <> 0
+			_tokenizer = nil
 
 	def _preParseSource(fileName as String, source as String)
 		"""
@@ -187,9 +198,11 @@ class Parser
 		.newOpStack
 
 		_tokens = nil
-		tokenizer = CobraTokenizer(tokVerbosity)
+		if _tokenizer is nil
+			_tokenizer = CobraTokenizer(tokVerbosity)
+		tokenizer = _tokenizer
 		try
-			tokens = tokenizer.startSource(_fileName, source).allCachedTokens
+			tokens = tokenizer.startSource(_fileName, source).allTokens
 			_tokens = List<of IToken>(tokens.count)
 			for i = 0 .. tokens.count
 				if tokens[i].text == '_' and tokens[i].which == 'ID'
