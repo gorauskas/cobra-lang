@@ -93,6 +93,8 @@ class CobraTokenizer
 			r'FLOAT_LIT_2			\d[\d_]*(f|_f)(32|64)?',
 			r'DECIMAL_LIT			\d[\d_]*\.\d+(d|_d)',
 			r'FRACTIONAL_LIT		\d[\d_]*\.\d+',
+			r'INTEGER_LIT_SIGN		\d[\d_]*(i|_i)(8|16|32|64)?',
+			r'INTEGER_LIT_UNSIGN	\d[\d_]*(u|_u)(8|16|32|64)?',
 			r'INTEGER_LIT			\d[\d_]*',
 
 			r'INT_SIZE				int[0-9]+',
@@ -422,6 +424,62 @@ class CobraTokenizer
 			assert false, 'TODO'
 		return tok
 
+	def onINTEGER_LIT_SIGN(tok as IToken) as IToken?
+		require
+			'i' in tok.text
+		ensure
+			result.which == 'INTEGER_LIT'
+			(result.info to int) in [-8, -16, -32, -64]  # CC: axe cast
+		body
+			_onINTEGER_LIT_EXPLICIT(tok, true)
+			return tok
+	
+	def onINTEGER_LIT_UNSIGN(tok as IToken) as IToken?
+		require
+			'u' in tok.text
+		ensure
+			result.which == 'INTEGER_LIT'
+			(result.info to int) in [8, 16, 32, 64]  # CC: axe cast
+		body
+			_onINTEGER_LIT_EXPLICIT(tok, false)
+			return tok
+			
+	def _onINTEGER_LIT_EXPLICIT(tok as IToken, signed as bool)
+		ensure
+			tok.which == 'INTEGER_LIT'
+			(tok.info to int) in [-8, 8, -16, 16, -32, 32, -64, 64]  # CC: axe cast
+		body
+			k = if(signed, 'i', 'u')	
+			s = tok.text.replace('_', '')
+			if s.endsWith(k)
+				size = 32
+				s = s[:-1]
+			else if s.endsWith('32')
+				size = 32
+				s = s[:-3]
+			else if s.endsWith('64')
+				size = 64
+				s = s[:-3]
+			else if s.endsWith('16')
+				size = 16
+				s = s[:-3]
+			else if s.endsWith('8')
+				size = 8
+				s = s[:-2]
+			else
+				# cannot have other size specs given regex
+				size = 32
+			try
+				# TODO: The use of int.parse, as opposed to say int64.parse, uint32.parse, etc. probably
+				# means that legit int lits outside the signed 32 bit range will not work in Cobra
+				tok.value = int.parse(s, Utils.cultureInfoForNumbers)
+			catch FormatException
+				assert false, 'not expecting to get here given regex'
+			catch OverflowException
+				assert false, 'TODO'
+			tok.which = 'INTEGER_LIT'
+			tok.info = if(signed, -1, +1) * size
+			
 	def onINT_SIZE(tok as IToken) as IToken?
 		size = int.parse(tok.text[3:]) to int
 		tok.value = size
