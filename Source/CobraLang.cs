@@ -338,6 +338,7 @@ static public class CobraImp {
 		if (x is bool)
 			return (bool)x ? "true" : "false";
 		if (x is string) {
+			// TODO: handle double backslash
 			string s = (string)x;
 			s = s.Replace("\n", "\\n");
 			s = s.Replace("\r", "\\r");
