@@ -490,7 +490,16 @@ class Tokenizer
 		re = re.trim
 		assert which.length
 		assert re.length
-		return TokenDef(which, re)
+		
+		return .generateTokenDef(which, re)
+
+	def generateTokenDef(which as String, definition as String) as TokenDef
+		"""
+		Generate a TokenDef for the given Token type/which and definition.
+		Normally, the definition is regular expression source code.
+		Subclasses can override this method to provide a different approach for some or all token defs.
+		"""
+		return TokenDef(which, definition)
 
 	def afterStart
 		"""
@@ -597,13 +606,12 @@ class Tokenizer
 					sourceLine = _sourceLine to !
 					#print '_sourceLineIndex=[_sourceLineIndex]'
 					match = tokenDef.match(sourceLine)
-					if not match.success
+					if not match
 						#print '<> No match on [tokenDef] for [_sourceLine[_sourceLineIndex]]'
 						continue
-					assert match.index==0
 					_lastTokenDef = _curTokenDef
 					_curTokenDef = tokenDef  # this enables .onTOKENWHICH methods to access the current tokenDef
-					text = match.toString
+					text = match.text
 					#print '<> Match! [CobraCore.toTechString(text)] - [tokenDef]'
 					# tok = Token(_fileName, _lineNum, _colNum, _charNum, tokenDef.which, text, text) to ? # CC
 					tok as IToken? = Token(_fileName, _lineNum, _colNum, _charNum, tokenDef.which, text, text)
@@ -840,18 +848,26 @@ class TokenDef
 
 	pro isActive from var
 
-	def match(input as String) as Match
+	def match(input as String) as TokenMatch?
 		require
 			input.length
 		body
-			return _re.match(input)
+			return _match(_re.match(input))
 
-	def match(input as String, startAt as int) as Match
+	def match(input as String, startAt as int) as TokenMatch?
 		require
 			input.length
 			startAt >= 0
 		body
-			return _re.match(input, startAt)
+			return _match(_re.match(input, startAt))
+
+	def _match(reMatch as Match) as TokenMatch?
+		if reMatch.success
+			assert reMatch.index == 0
+			assert reMatch.value
+			return TokenRegexMatch(reMatch)
+		else
+			return nil
 
 	def toString as String is override
 		return '[.getType.name]([_number], [_which], [_regExSource], [_re])'
@@ -863,6 +879,29 @@ class TokenDef
 			return _number - obj.number
 		else
 			return .getType.name.compareTo(obj.getType.name)
+
+
+class TokenMatch
+	is abstract
+	"""
+	The abstract base class for match results returned by TokenDef.match.
+	"""
+	
+	get text as String is abstract
+
+
+class TokenRegexMatch
+	inherits TokenMatch
+	
+	var _match as Match
+	
+	def init(match as Match)
+		_match = match
+
+	get match from var
+
+	get text as String is override
+		return _match.value to !
 
 
 class TokenDefSet
