@@ -499,7 +499,7 @@ class Tokenizer
 		Normally, the definition is regular expression source code.
 		Subclasses can override this method to provide a different approach for some or all token defs.
 		"""
-		return TokenDef(which, definition)
+		return TokenRegexDef(which, definition)
 
 	def afterStart
 		"""
@@ -769,34 +769,90 @@ class Tokenizer
 
 
 class TokenDef
+	is abstract
 	implements IComparable
-
-	shared
-		var _compiledRegExes = Dictionary<of String, Regex>()
 
 	var _number as int
 	var _which as String
-	var _regExSource as String
-	var _re as Regex
-	var _length as int
-	var _firstChars as List<of char>
 	var _requiresBOL as bool
 	var _ignoreCount as int
 	var _isActive = true
 	var _isActiveCall as Object? # @@@@??
+
+	def init(which as String)
+		require
+			which.length
+		body
+			_which = which
+
+	pro number from var
+
+	pro which from var
+
+	get firstChars as List<of char> is abstract
+
+	get length as int is abstract
+		"""
+		Returns the textual length of the token definition.
+		This is only important for the unordered token specs which are arranged longest to shortest.
+		Ordered token specs are left in their specific order.
+		"""
+
+	get requiresBOL from var
+		"""
+		Return true if the token def will only match the very beginning of a line.
+		In practice, this is false for most token def, and when true, the token def is often
+		consuming the entire line or some leading whitespace.
+		"""
+
+	pro ignoreCount from var
+
+	pro isActive from var
+
+	def match(input as String) as TokenMatch? is abstract
+		require input.length
+
+	def toString as String is override
+		return '[.getType.name]([_innerToString()])'
+
+	def _innerToString as String
+		return '[_number], [_which]'
+	
+	def compareTo(obj as Object?) as int
+		if obj is nil
+			return 0
+		if obj inherits TokenDef
+			return _number - obj.number
+		else
+			return .getType.name.compareTo(obj.getType.name)
+
+
+class TokenRegexDef
+	inherits TokenDef
+	"""
+	A token definition that matches based on a regular expression.
+	"""
+
+	shared
+		var _compiledRegExes = Dictionary<of String, Regex>()
+
+	var _regExSource as String
+	var _re as Regex
+	var _length as int
+	var _firstChars as List<of char>
 
 	def init(which as String, regExSource as String)
 		require
 			which.length
 			regExSource.length
 		body
+			base.init(which)
 			_requiresBOL = regExSource.startsWith('^')
 			_firstChars = _computeFirstChars(regExSource)
 			_regExSource = regExSource
 			if not _requiresBOL
 				regExSource = '^' + regExSource
 			_length = regExSource.length
-			_which = which
 			if _compiledRegExes.containsKey(regExSource)
 				_re = _compiledRegExes[regExSource]
 			else
@@ -830,38 +886,20 @@ class TokenDef
 			t.add(s[0])
 		return t
 
-	pro number from var
+	# CC: get firstChars from var is override
+	get firstChars as List<of char> is override
+		return _firstChars
 
-	pro which from var
-
+	# CC: get length from var is override
+	get length as int is override
+		return _length
+	
 	get regExSource from var
-
-	get firstChars from var
-
-	get length from var
-
-	get requiresBOL from var
 
 	get re from var
 
-	pro ignoreCount from var
-
-	pro isActive from var
-
-	def match(input as String) as TokenMatch?
-		require
-			input.length
-		body
-			return _match(_re.match(input))
-
-	def match(input as String, startAt as int) as TokenMatch?
-		require
-			input.length
-			startAt >= 0
-		body
-			return _match(_re.match(input, startAt))
-
-	def _match(reMatch as Match) as TokenMatch?
+	def match(input as String) as TokenMatch? is override
+		reMatch = _re.match(input)
 		if reMatch.success
 			assert reMatch.index == 0
 			assert reMatch.value
@@ -869,25 +907,21 @@ class TokenDef
 		else
 			return nil
 
-	def toString as String is override
-		return '[.getType.name]([_number], [_which], [_regExSource], [_re])'
-
-	def compareTo(obj as Object?) as int
-		if obj is nil
-			return 0
-		if obj inherits TokenDef
-			return _number - obj.number
-		else
-			return .getType.name.compareTo(obj.getType.name)
+	def _innerToString as String is override
+		return base._innerToString + ', [_regExSource], [_re]'
 
 
 class TokenMatch
-	is abstract
 	"""
-	The abstract base class for match results returned by TokenDef.match.
+	The class for match results returned by TokenDef.match.
 	"""
+
+	var _text as String
 	
-	get text as String is abstract
+	def init(text as String)
+		_text = text
+
+	get text from var
 
 
 class TokenRegexMatch
@@ -896,12 +930,10 @@ class TokenRegexMatch
 	var _match as Match
 	
 	def init(match as Match)
+		base.init(match.value to !)
 		_match = match
 
 	get match from var
-
-	get text as String is override
-		return _match.value to !
 
 
 class TokenDefSet
