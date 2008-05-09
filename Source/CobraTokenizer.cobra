@@ -117,13 +117,13 @@ class CobraTokenizer
 
 			# substituted strings
 			r'RBRACKET_SPECIAL		]',
-			r"STRING_START_SINGLE	'[^'\n\[]*\[",
-			r"STRING_PART_SINGLE	\][^'\n\[]*\[",
-			r"STRING_STOP_SINGLE	\][^'\n\[]*'",
+			r"STRING_START_SINGLE	'",  # see "def make_STRING_FOO_BAR"
+			r"STRING_PART_SINGLE	'",
+			r"STRING_STOP_SINGLE	'",
 
-			r'STRING_START_DOUBLE	"[^"\n\[]*\[',
-			r'STRING_PART_DOUBLE	\][^"\n\[]*\[',
-			r'STRING_STOP_DOUBLE	\][^"\n\[]*"',
+			r'STRING_START_DOUBLE	"',
+			r'STRING_PART_DOUBLE	"',
+			r'STRING_STOP_DOUBLE	"',
 
 			r'STRING_PART_FORMAT	:[^X"\n\[]*(?=])'.replace('X', "'"),
 
@@ -210,6 +210,24 @@ class CobraTokenizer
 		base._reset
 		_indentCount = 0
 		_substLBracketCount = 0
+
+	def makeSTRING_START_SINGLE(definition as String) as TokenDef?
+		return StringStartTokenDef('STRING_START_SINGLE', definition[0])
+		
+	def makeSTRING_START_DOUBLE(definition as String) as TokenDef?
+		return StringStartTokenDef('STRING_START_DOUBLE', definition[0])
+
+	def makeSTRING_PART_SINGLE(definition as String) as TokenDef?
+		return StringPartTokenDef('STRING_PART_SINGLE', definition[0])
+		
+	def makeSTRING_PART_DOUBLE(definition as String) as TokenDef?
+		return StringPartTokenDef('STRING_PART_DOUBLE', definition[0])
+
+	def makeSTRING_STOP_SINGLE(definition as String) as TokenDef?
+		return StringStopTokenDef('STRING_STOP_SINGLE', definition[0])
+		
+	def makeSTRING_STOP_DOUBLE(definition as String) as TokenDef?
+		return StringStopTokenDef('STRING_STOP_DOUBLE', definition[0])
 
 	def afterStart is override
 		base.afterStart
@@ -609,7 +627,7 @@ class CobraTokenizer
 			_substLBracketCount
 		body
 			_substLBracketCount -= 1
-			if _substLBracketCount==0
+			if _substLBracketCount == 0
 				_tokenDefsByWhich['RBRACKET_SPECIAL'].isActive = false
 				assert not _tokenDefsByWhich['STRING_PART_FORMAT'].isActive
 				_tokenDefsByWhich['STRING_PART_FORMAT'].isActive = true
@@ -688,3 +706,167 @@ class CobraTokenizer
 		assert false, tok  # wow, this doesn't even work
 		tok.which = 'DEF'
 		return tok
+
+
+class StringTokenDef
+	is abstract
+	inherits TokenDef
+	"""
+	Regexes were:
+		r"STRING_START_SINGLE	'[^'\n\[]*\[",
+		r"STRING_PART_SINGLE	\][^'\n\[]*\[",
+		r"STRING_STOP_SINGLE	\][^'\n\[]*'",
+
+		r'STRING_START_DOUBLE	"[^"\n\[]*\[',
+		r'STRING_PART_DOUBLE	\][^"\n\[]*\[',
+		r'STRING_STOP_DOUBLE	\][^"\n\[]*"',
+
+	But there is also the need to escape left brackets which turned out difficult to express in
+	regexes. I did manage to do it, but the the regexes became *extremely* slow.
+	"""
+
+	var _quote as char
+	
+	def init(which as String, quote as char)
+		base.init(which)
+		_quote = quote
+
+	get length as int is override
+		throw Exception('ordered token')
+
+	def match(input as String) as TokenMatch? is override
+		s = ._match(input)
+		if s
+			return TokenMatch(s)
+		else
+			return nil
+
+	def _match(input as String) as String?
+		is abstract
+
+	def toString as String is override
+		return '[.getType.name]([CobraCore.toTechString(_quote)])'
+
+
+class StringStartTokenDef
+	inherits StringTokenDef
+	
+	def init(which as String, quote as char)
+		base.init(which, quote)
+
+	get firstChars as List<of char> is override
+		return [_quote]
+
+	def _match(input as String) as String? is override
+		test
+			x = StringStartTokenDef('foo', c"\'")
+			# normal:
+			assert x._match('aoeu') is nil
+			assert x._match(r"'foo [bar]") == r"'foo ["
+			# odd:
+			assert x._match(r"'foo[") == r"'foo["
+			# escaped:
+			assert x._match(r"'foo\[ foo[") == r"'foo\[ foo["
+			# not this token def:
+			assert x._match(r"]foo [bar]") is nil
+			assert x._match(r"]foo[") is nil
+			assert x._match(r"]foo[") is nil
+			assert x._match(r"]foo' + ") is nil
+			assert x._match(r"]foo ' bah blah") is nil
+			assert x._match(r"]foo\[ foo'") is nil
+		body
+			quote = _quote
+			if input[0] <> quote, return nil
+			sb = StringBuilder(input[0].toString)
+			for i in 1 : input.length
+				c = input[i]
+				if c == quote, return nil
+				if c == c'\n', return nil
+				sb.append(c)
+				if c == c'[' and input[i-1] <> c'\\'
+					# successful match
+					return sb.toString
+			return nil
+
+
+class StringPartTokenDef
+	inherits StringTokenDef
+	
+	def init(which as String, quote as char)
+		base.init(which, quote)
+
+	get firstChars as List<of char> is override
+		return [c']']
+
+	def _match(input as String) as String? is override
+		test
+			x = StringPartTokenDef('foo', c"\'")
+			# normal:
+			assert x._match('aoeu') is nil
+			assert x._match(r"]foo [bar]") == r"]foo ["
+			# odd:
+			assert x._match(r"]foo[") == r"]foo["
+			# escaped:
+			assert x._match(r"]foo\[ foo[") == r"]foo\[ foo["
+			# not this token def:
+			assert x._match(r"'foo [bar]") is nil
+			assert x._match(r"'foo[") is nil
+			assert x._match(r"'foo\[ foo[") is nil
+			assert x._match(r"]foo' + ") is nil
+			assert x._match(r"]foo ' bah blah") is nil
+			assert x._match(r"]foo\[ foo'") is nil
+		body
+			quote = _quote
+			if input[0] <> ']', return nil
+			sb = StringBuilder(input[0].toString)
+			for i in 1 : input.length
+				c = input[i]
+				if c == quote, return nil
+				if c == c'\n', return nil
+				sb.append(c)
+				if c == c'[' and input[i-1] <> c'\\'
+					# successful match
+					return sb.toString
+			return nil
+
+
+class StringStopTokenDef
+	inherits StringTokenDef
+	
+	def init(which as String, quote as char)
+		base.init(which, quote)
+
+	get firstChars as List<of char> is override
+		return [c']']
+
+	def _match(input as String) as String? is override
+		test
+			x = StringStopTokenDef('foo', c"\'")
+			# normal:
+			assert x._match('aoeu') is nil
+			assert x._match(r"]foo' + ") == r"]foo'"
+			assert x._match(r"] '") == r"] '"
+			# odd:
+			assert x._match(r"]foo ' bah blah") == r"]foo '"
+			# escaped:
+			assert x._match(r"]foo\[ foo'") == r"]foo\[ foo'"
+			# not this token def:
+			assert x._match(r"'foo [bar]") is nil
+			assert x._match(r"'foo[") is nil
+			assert x._match(r"'foo\[ foo[") is nil
+			assert x._match(r"]foo[") is nil
+			assert x._match(r"'foo [bar]") is nil
+			assert x._match(r"'foo[") is nil
+		body
+			quote = _quote
+			if input[0] <> ']', return nil
+			sb = StringBuilder(input[0].toString)
+			for i in 1 : input.length
+				c = input[i]
+				if c == c'\n', return nil
+				if c == c'[' and input[i-1] <> c'\\'
+					return nil
+				sb.append(c)
+				if c == quote
+					return sb.toString
+			return nil
