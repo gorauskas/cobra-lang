@@ -767,6 +767,8 @@ class StringStartTokenDef
 			assert x._match(r"'foo[") == r"'foo["
 			# escaped:
 			assert x._match(r"'foo\[ foo[") == r"'foo\[ foo["
+			assert x._match(r"'foo\\[foo]") == r"'foo\\["
+			assert x._match(r"'foo\\\[ foo[") == r"'foo\\\[ foo["
 			# not this token def:
 			assert x._match(r"]foo [bar]") is nil
 			assert x._match(r"]foo[") is nil
@@ -778,14 +780,17 @@ class StringStartTokenDef
 			quote = _quote
 			if input[0] <> quote, return nil
 			sb = StringBuilder(input[0].toString)
+			isEscaped = false
 			for i in 1 : input.length
 				c = input[i]
-				if c == quote, return nil
+				if c == quote and not isEscaped, return nil
 				if c == c'\n', return nil
 				sb.append(c)
-				if c == c'[' and input[i-1] <> c'\\'
-					# successful match
-					return sb.toString
+				if isEscaped
+					isEscaped = false
+				else
+					if c == c'[', return sb.toString
+					if c == c'\\', isEscaped = true
 			return nil
 
 
@@ -808,6 +813,8 @@ class StringPartTokenDef
 			assert x._match(r"]foo[") == r"]foo["
 			# escaped:
 			assert x._match(r"]foo\[ foo[") == r"]foo\[ foo["
+			assert x._match(r"]foo\\[foo]") == r"]foo\\["
+			assert x._match(r"]foo\\\[ foo[") == r"]foo\\\[ foo["
 			# not this token def:
 			assert x._match(r"'foo [bar]") is nil
 			assert x._match(r"'foo[") is nil
@@ -819,14 +826,17 @@ class StringPartTokenDef
 			quote = _quote
 			if input[0] <> ']', return nil
 			sb = StringBuilder(input[0].toString)
+			isEscaped = false
 			for i in 1 : input.length
 				c = input[i]
-				if c == quote, return nil
+				if c == quote and not isEscaped, return nil
 				if c == c'\n', return nil
 				sb.append(c)
-				if c == c'[' and input[i-1] <> c'\\'
-					# successful match
-					return sb.toString
+				if isEscaped
+					isEscaped = false
+				else
+					if c == c'[', return sb.toString
+					if c == c'\\', isEscaped = true
 			return nil
 
 
@@ -850,6 +860,7 @@ class StringStopTokenDef
 			assert x._match(r"]foo ' bah blah") == r"]foo '"
 			# escaped:
 			assert x._match(r"]foo\[ foo'") == r"]foo\[ foo'"
+			assert x._match(r"]foo\\\[ foo'") == r"]foo\\\[ foo'"
 			# not this token def:
 			assert x._match(r"'foo [bar]") is nil
 			assert x._match(r"'foo[") is nil
@@ -857,16 +868,21 @@ class StringStopTokenDef
 			assert x._match(r"]foo[") is nil
 			assert x._match(r"'foo [bar]") is nil
 			assert x._match(r"'foo[") is nil
+			assert x._match(r"]foo\\[foo]") is nil
 		body
 			quote = _quote
 			if input[0] <> ']', return nil
 			sb = StringBuilder(input[0].toString)
+			isEscaped = false
 			for i in 1 : input.length
 				c = input[i]
 				if c == c'\n', return nil
-				if c == c'[' and input[i-1] <> c'\\'
+				if c == c'[' and not isEscaped
 					return nil
 				sb.append(c)
-				if c == quote
-					return sb.toString
+				if isEscaped
+					isEscaped = false
+				else
+					if c == quote, return sb.toString
+					if c == c'\\', isEscaped = true
 			return nil
