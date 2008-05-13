@@ -550,9 +550,11 @@ class CallExpr
 				canBeUndottedMember = .compiler.canNameBeUndottedMember(_name)
 				if canBeUndottedMember
 					# assert .compiler.boxStack.count -- no longer true due to 'assembly; has SomeAttr'
-					definition = .compiler.symbolForName(_name, canBeUndottedMember, false) to passthrough
+					definition = .compiler.symbolForName(_name, canBeUndottedMember, false)
 				else if not .isForAttribute  # otherwise .compiler.codeMemberStack is empty (so no .findLocal), plus Cobra doesn't allow lowercase members anyway
 					definition = .compiler.findLocal(_name)
+					if definition is nil
+						definition  = .compiler.symbolForName(_name, false, false, true)  # 3rd party DLLs have lowercase class names like iConnection
 				if definition is nil
 					definition = .compiler.curBox.symbolForName(_name, true)
 					if definition
@@ -1027,13 +1029,15 @@ class IdentifierExpr
 			canBeUndottedMember = .compiler.canNameBeUndottedMember(_name)
 			if canBeUndottedMember
 				assert .compiler.boxStack.count
-				_definition = .compiler.symbolForName(_name, canBeUndottedMember, false) to passthrough
+				_definition = .compiler.symbolForName(_name, canBeUndottedMember, false)
 			else
 				# local var ref: foo
 				if .compiler.isBindingInt or (.compiler.isBindingImp and .compiler.codeMemberStack.count == 0)
 					# happens for the erroneous code: var _x = y
 					.throwError('Cannot access local variables here ("[_name]").')
 				_definition = .compiler.findLocal(_name)
+				if _definition is nil
+					_definition  = .compiler.symbolForName(_name, false, false, true)  # 3rd party DLLs have lowercase class names like iConnection
 			if _definition is nil and not canBeUndottedMember
 				if _superNode inherits BinaryOpExpr
 					if _superNode.right is this
