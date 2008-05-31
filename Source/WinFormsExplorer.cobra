@@ -1,0 +1,218 @@
+"""
+Cobra Compiler WinForms Explorer
+
+This runs the Cobra compiler as usual, but then follows it up with a GUI window (using WinForms) that enables you to explore all the objects that resulted from compilation including the compiler, modules, namespaces, declarations, statements and expressions.
+
+TODO
+	[ ] In the tree, sort the properties
+		Alpha, or "Logical", like all the primitives together (bools, then ints, etc.) and alpha within,
+		and then object reference properties like .type
+		and then "subnodes" type properties like lists
+	[ ] On the right, show the type, serial number and name
+	[ ] On the right, show the .toString
+	[ ] In the tree, show the elements of
+		[ ] lists
+		[ ] dictionaries
+		[ ] sets
+	[ ] Search for text anywhere in the object graph
+
+"""
+
+use System.Drawing
+use System.Windows.Forms
+
+
+class CobraMain
+	inherits Form
+	
+	shared
+
+		var _commandLine as CommandLine?
+
+		var _willTimeIt as bool
+
+		pro willTimeIt from var
+		
+		def main
+			has STAThread
+			# CobraCore.willCheckAll = false
+			
+			# Run the command line as usual:
+			startTime = DateTime.now
+			try
+				_commandLine = CommandLine()
+				_commandLine.run
+			finally
+				if _willTimeIt
+					print 'timeit = [DateTime.now.subtract(startTime)]'
+			
+			# Now explore the result:
+			Application.enableVisualStyles
+			form = CobraMain()
+			form.show
+			Application.run(form)
+
+	var _propertyGrid as PropertyGrid
+	var _statusStrip as ToolStrip?
+	var _toolStrip as ToolStrip
+	var _treeView as TreeView
+
+	def init
+		.text = 'Cobra Compiler WinForms Explorer'
+		.startPosition = FormStartPosition.Manual
+		_initSize
+		_makeControls
+		
+	def onLoad(e as EventArgs) is override, protected
+		base.onLoad(e)
+		# .printScreenInfo
+		_initSize
+		_populateNav
+
+	def _initSize
+		area = Screen.primaryScreen.workingArea
+		fraction = 0.80
+		x = (area.width  * fraction * 0.5 + area.x) to int
+		y = (area.height * fraction * 0.5 + area.y) to int
+		w = (area.width  * fraction) to int
+		h = (area.height * fraction) to int
+		.location = Point(x, y)
+		.size = Size(w, h)
+
+	def _makeControls
+		splitContainer = SplitContainer()
+		splitContainer.parent = this
+		splitContainer.dock = DockStyle.Fill
+		splitContainer.fixedPanel = FixedPanel.Panel1
+		
+		_treeView = TreeView()
+		_treeView.dock = DockStyle.Fill
+		_treeView.hideSelection = false
+		_treeView.parent = splitContainer.panel1
+		_treeView.pathSeparator = ' / '
+		listen _treeView.afterSelect, ref .treeViewAfterSelect
+		listen _treeView.beforeExpand, ref .treeViewBeforeExpand
+		
+		_propertyGrid = PropertyGrid()
+		_propertyGrid.dock = DockStyle.Fill
+		_propertyGrid.parent = splitContainer.panel2
+		
+		_toolStrip = ToolStrip()
+		_toolStrip.dock = DockStyle.Top
+		_toolStrip.parent = this
+		
+		_makeMenu
+
+	def _makeMenu
+		pass
+
+	def printScreenInfo
+		sw = StringWriter()
+		print to sw
+			for screen in Screen.allScreens
+				print
+				print 'screen:'
+				print '    type =', screen.getType
+				print '    device name =', screen.deviceName
+				print '    primary screen =', screen.primary
+				print '    working area =', screen.workingArea
+				print '    bounds =', screen.bounds
+		TextBoxForm.show(sw.toString)
+
+	def _populateNav
+		tv = _treeView
+		tv.beginUpdate
+		try
+			node = TreeNode()
+			node.text = "Compiler"
+			node.tag = _commandLine.compiler
+			tv.nodes.add(node)
+			
+			dummy = TreeNode("dummy")
+			dummy.tag = .dummyTag
+			node.nodes.add(dummy)
+
+			uiNode = TreeNode("UI")
+			tv.nodes.add(uiNode)
+			
+			node = TreeNode("This Form")
+			node.tag = this
+			uiNode.nodes.add(node)
+
+			node = TreeNode("TreeView")
+			node.tag = _treeView
+			uiNode.nodes.add(node)
+			
+			node = TreeNode("PropertyGrid")
+			node.tag = _propertyGrid
+			uiNode.nodes.add(node)
+			
+			node = TreeNode("PrimaryScreen")
+			node.tag = Screen.primaryScreen
+			uiNode.nodes.add(node)
+		finally
+			tv.endUpdate
+
+	def treeViewAfterSelect(sender as Object, e as TreeViewEventArgs)
+		_propertyGrid.selectedObject = e.node.tag
+
+	def treeViewBeforeExpand(sender as Object, e as TreeViewCancelEventArgs)
+		node = e.node
+		if node.tag and node.nodes.count > 0 and node.nodes[0].tag is .dummyTag
+			# need on-the-fly expanding
+			node.nodes.removeAt(0)
+			for propInfo in node.tag.getType.getProperties
+				if propInfo.name == 'Item'  # used for indexing. technically could be named something else, but this works in practice
+					continue
+				isGood = false
+				try
+					value = propInfo.getValue(node.tag, nil)
+					isGood = true
+				catch exc as Exception
+					value = 'Caught during get: [exc.getType.name]: [exc.message]'
+				child = TreeNode('[.cobraMemberNameFor(propInfo.name)] == [CobraCore.toTechString(value)]')
+				if isGood
+					child.tag = value
+					if value and not .isPrimitive(value to !)
+						dummy = TreeNode("dummy")
+						dummy.tag = .dummyTag
+						child.nodes.add(dummy)
+				node.nodes.add(child)
+
+	def cobraMemberNameFor(name as String) as String
+		return if(name[0]=='_', '', '.') + name[0].toLower.toString + name[1:]
+
+	get dummyTag
+		return '-- dummy tag --'
+
+	def isPrimitive(value as dynamic) as bool
+		if value inherits bool, return true
+		if value inherits char, return true
+		if value inherits decimal, return true
+		if value inherits int, return true
+		if value inherits float, return true
+		if value inherits String, return true
+		return false
+
+
+class TextBoxForm
+	inherits Form
+
+	shared
+	
+		def show(text as String) as TextBoxForm
+			form = TextBoxForm(text)
+			form.show
+			return form
+	
+	def init(text as String)
+		.init(text, 800, 600)
+
+	def init(text as String, width as int, height as int)
+		text = text.replace('\0', '\\0')
+		.size = System.Drawing.Size(width, height)
+		tb = TextBox()
+		tb.multiline = true
+		tb.dock = DockStyle.Fill
+		tb.parent = this
+		tb.text = text
