@@ -6,14 +6,13 @@ This runs the Cobra compiler as usual, but then follows it up with a GUI window 
 TODO
 	[ ] On the right, show the .toString
 	[ ] In the tree, show the elements of
-		[ ] dictionaries
 		[ ] sets
 	[ ] Search for text anywhere in the object graph
 
 IDEAS
-	--	Sort the properties "logically", like all the primitives together (bools, then ints, etc.) and alpha within,
+	--	Sort the properties 'logically', like all the primitives together (bools, then ints, etc.) and alpha within,
 		and then object reference properties like .type
-		and then "subnodes" type properties like lists
+		and then 'subnodes' type properties like lists
 
 """
 
@@ -96,7 +95,7 @@ class CobraMain
 		_treeView.pathSeparator = ' / '
 		listen _treeView.afterSelect, ref .treeViewAfterSelect
 		listen _treeView.beforeExpand, ref .treeViewBeforeExpand
-		
+
 		detailsPanel = Panel()
 		detailsPanel.dock = DockStyle.Fill
 		detailsPanel.parent = splitContainer.panel2
@@ -136,39 +135,38 @@ class CobraMain
 		tv = _treeView
 		tv.beginUpdate
 		try
-			node = TreeNode()
-			node.text = "Compiler"
-			node.tag = _commandLine.compiler
+			node = XTreeNode('CommandLine', '', _commandLine)
+			tv.nodes.add(node)
+
+			dummy = XTreeNode('dummy', '', .dummyTag)
+			node.nodes.add(dummy)
+	
+			node = XTreeNode('Compiler', '', _commandLine.compiler)
 			tv.nodes.add(node)
 			
-			dummy = TreeNode("dummy")
-			dummy.tag = .dummyTag
+			dummy = XTreeNode('dummy', '', .dummyTag)
 			node.nodes.add(dummy)
 
-			uiNode = TreeNode("UI")
+			uiNode = XTreeNode('UI')
 			tv.nodes.add(uiNode)
 			
-			node = TreeNode("This Form")
-			node.tag = this
+			node = XTreeNode('This Form', '', this)
 			uiNode.nodes.add(node)
 
-			node = TreeNode("TreeView")
-			node.tag = _treeView
+			node = XTreeNode('TreeView', '', _treeView)
 			uiNode.nodes.add(node)
 			
-			node = TreeNode("PropertyGrid")
-			node.tag = _propertyGrid
+			node = XTreeNode('PropertyGrid', '', _propertyGrid)
 			uiNode.nodes.add(node)
 			
-			node = TreeNode("PrimaryScreen")
-			node.tag = Screen.primaryScreen
+			node = XTreeNode('PrimaryScreen', '', Screen.primaryScreen)
 			uiNode.nodes.add(node)
 		finally
 			tv.endUpdate
 
 	def treeViewAfterSelect(sender as Object, e as TreeViewEventArgs)
 		# update the details view
-		obj = e.node.tag
+		obj = (e.node to XTreeNode).value
 		if obj
 			_objectIdStrip.items[0].text = .objectIdTextFor(obj)
 		else
@@ -177,7 +175,7 @@ class CobraMain
 
 	def objectIdTextFor(obj as dynamic) as String
 		"""
-		Subclasses can override this method to customize the text that appears in the "object id" strip in the details view.
+		Subclasses can override this method to customize the text that appears in the 'object id' strip in the details view.
 		"""
 		s = CobraCore.typeName(obj.getType)
 		if .isPrimitive(obj)
@@ -199,46 +197,61 @@ class CobraMain
 		return s
 
 	def treeViewBeforeExpand(sender as Object, e as TreeViewCancelEventArgs)
-		node = e.node
-		if node.tag and node.nodes.count > 0 and node.nodes[0].tag is .dummyTag
+		node = e.node to XTreeNode
+		if node.value and node.nodes.count > 0 and (node.nodes[0] to XTreeNode).value is .dummyTag
 			# need on-the-fly expanding
 			node.nodes.removeAt(0)
-			obj = node.tag
+			obj = node.value
+			propInfos = List<of PropertyInfo>((obj to Object).getType.getProperties)
+			propInfos.sort(ref .comparePropInfo)
+			for propInfo in propInfos
+				if propInfo.name == 'Item'  # used for indexing. technically could be named something else, but this works in practice
+					continue
+				value = nil
+				isGood = false
+				try
+					value = propInfo.getValue(obj, nil)
+					isGood = true
+				catch exc as Exception
+					value = 'Caught during get: [exc.getType.name]: [exc.message]'
+				child = XTreeNode('[.cobraMemberNameFor(propInfo.name)] == [CobraCore.toTechString(value)]', propInfo.name, value)
+				if isGood
+					if not .isPrimitive(value)
+						dummy = XTreeNode('dummy', '', .dummyTag)
+						child.nodes.add(dummy)
+				node.nodes.add(child)
 			if obj inherits System.Collections.IList
-				node.nodes.add(TreeNode('.count == [obj.count]'))
 				for i in obj.count
+					value = nil
 					isGood = false
 					try
 						value = obj[i]
 						isGood = true
 					catch exc as Exception
-						value = 'Caught during IList[i]: [exc.getType.name]: [exc.message]'
-					child = TreeNode('[i] == [CobraCore.toTechString(value)]')
+						value = 'Caught during IList[i]: [exc.getType.name]: [exc.message]'  # CC: add brackets
+					lb = c'['
+					child = XTreeNode('[lb][i]] == [CobraCore.toTechString(value)]', '[i]', value)  # CC: add brackets
 					if isGood
-						child.tag = value
-						if value and not .isPrimitive(value)
-							dummy = TreeNode("dummy")
-							dummy.tag = .dummyTag
+						if not .isPrimitive(value)
+							dummy = XTreeNode('dummy', '', .dummyTag)
 							child.nodes.add(dummy)
 					node.nodes.add(child)
-			else
-				propInfos = List<of PropertyInfo>(obj.getType.getProperties)
-				propInfos.sort(ref .comparePropInfo)
-				for propInfo in propInfos
-					if propInfo.name == 'Item'  # used for indexing. technically could be named something else, but this works in practice
-						continue
+			else if obj inherits System.Collections.IDictionary
+				keys = System.Collections.ArrayList(obj.keys)
+				keys.sort
+				for key in keys
+					value = nil
 					isGood = false
 					try
-						value = propInfo.getValue(obj, nil)
+						value = obj[key]
 						isGood = true
 					catch exc as Exception
-						value = 'Caught during get: [exc.getType.name]: [exc.message]'
-					child = TreeNode('[.cobraMemberNameFor(propInfo.name)] == [CobraCore.toTechString(value)]')
+						value = 'Caught during IDictionary[key]: [exc.getType.name]: [exc.message]'  # CC: add brackets
+					lb = c'['
+					child = XTreeNode('[lb][CobraCore.toTechString(key)]] == [CobraCore.toTechString(value)]', '[key]', value)  # CC: add brackets
 					if isGood
-						child.tag = value
-						if value and not .isPrimitive(value to !)
-							dummy = TreeNode("dummy")
-							dummy.tag = .dummyTag
+						if not .isPrimitive(value)
+							dummy = XTreeNode('dummy', '', .dummyTag)
 							child.nodes.add(dummy)
 					node.nodes.add(child)
 
@@ -260,6 +273,25 @@ class CobraMain
 		if value inherits float, return true
 		if value inherits String, return true
 		return false
+
+
+class XTreeNode
+	inherits TreeNode
+	
+	var _propertyName as String
+	var _value as dynamic?
+	
+	def init(text as String)
+		.init(text, '', nil)
+
+	def init(text as String, propertyName as String, value as dynamic?)
+		base.init(text)
+		_propertyName = propertyName
+		_value = value
+
+	pro propertyName from var
+	
+	pro value from var
 
 
 class TextBoxForm
