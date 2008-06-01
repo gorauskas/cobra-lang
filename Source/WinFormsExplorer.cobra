@@ -4,11 +4,6 @@ Cobra Compiler WinForms Explorer
 This runs the Cobra compiler as usual, but then follows it up with a GUI window (using WinForms) that enables you to explore all the objects that resulted from compilation including the compiler, modules, namespaces, declarations, statements and expressions.
 
 TODO
-	[ ] In the tree, sort the properties
-		Alpha, or "Logical", like all the primitives together (bools, then ints, etc.) and alpha within,
-		and then object reference properties like .type
-		and then "subnodes" type properties like lists
-	[ ] On the right, show the type, serial number and name
 	[ ] On the right, show the .toString
 	[ ] In the tree, show the elements of
 		[ ] lists
@@ -16,10 +11,16 @@ TODO
 		[ ] sets
 	[ ] Search for text anywhere in the object graph
 
+IDEAS
+	--	Sort the properties "logically", like all the primitives together (bools, then ints, etc.) and alpha within,
+		and then object reference properties like .type
+		and then "subnodes" type properties like lists
+
 """
 
 use System.Drawing
 use System.Windows.Forms
+use System.Reflection
 
 
 class CobraMain
@@ -56,6 +57,7 @@ class CobraMain
 	var _statusStrip as ToolStrip?
 	var _toolStrip as ToolStrip
 	var _treeView as TreeView
+	var _objectIdStrip as ToolStrip
 
 	def init
 		.text = 'Cobra Compiler WinForms Explorer'
@@ -65,17 +67,20 @@ class CobraMain
 		
 	def onLoad(e as EventArgs) is override, protected
 		base.onLoad(e)
-		# .printScreenInfo
-		_initSize
 		_populateNav
+		_treeView.focus
+
+	def onActivated(e as EventArgs) is override, protected
+		base.onActivated(e)
 
 	def _initSize
 		area = Screen.primaryScreen.workingArea
 		fraction = 0.80
-		x = (area.width  * fraction * 0.5 + area.x) to int
-		y = (area.height * fraction * 0.5 + area.y) to int
+		x = (area.width  * (1.0 - fraction) / 2 + area.x) to int
+		y = (area.height * (1.0 - fraction) / 2 + area.y) to int
 		w = (area.width  * fraction) to int
 		h = (area.height * fraction) to int
+		p = Point(x, y)
 		.location = Point(x, y)
 		.size = Size(w, h)
 
@@ -93,9 +98,18 @@ class CobraMain
 		listen _treeView.afterSelect, ref .treeViewAfterSelect
 		listen _treeView.beforeExpand, ref .treeViewBeforeExpand
 		
+		detailsPanel = Panel()
+		detailsPanel.dock = DockStyle.Fill
+		detailsPanel.parent = splitContainer.panel2
+		
 		_propertyGrid = PropertyGrid()
 		_propertyGrid.dock = DockStyle.Fill
-		_propertyGrid.parent = splitContainer.panel2
+		_propertyGrid.parent = detailsPanel
+		
+		_objectIdStrip = ToolStrip()
+		_objectIdStrip.items.add('')
+		_objectIdStrip.dock = DockStyle.Top
+		_objectIdStrip.parent = detailsPanel
 		
 		_toolStrip = ToolStrip()
 		_toolStrip.dock = DockStyle.Top
@@ -154,14 +168,40 @@ class CobraMain
 			tv.endUpdate
 
 	def treeViewAfterSelect(sender as Object, e as TreeViewEventArgs)
-		_propertyGrid.selectedObject = e.node.tag
+		# update the details view
+		obj = e.node.tag
+		if obj
+			_objectIdStrip.items[0].text = .objectIdTextFor(obj)
+		else
+			_objectIdStrip.items[0].text = ''
+		_propertyGrid.selectedObject = obj
+
+	def objectIdTextFor(obj as dynamic) as String
+		"""
+		Subclasses can override this method to customize the text that appears in the "object id" strip in the details view.
+		"""
+		s = CobraCore.typeName(obj.getType)
+		if .isPrimitive(obj)
+			s += ' ' + CobraCore.toTechString(obj)
+		else
+			propInfo = obj.getType.getProperty('SerialNum') to System.Reflection.PropertyInfo?  # CC: why is this cast needed?
+			if propInfo
+				sn = propInfo.getValue(obj to Object, nil) ? ''
+				s += '.' + sn.toString
+			propInfo = obj.getType.getProperty('Name')
+			if propInfo
+				name = propInfo.getValue(obj, nil)
+				s += ' ' + CobraCore.toTechString(name)
+		return s
 
 	def treeViewBeforeExpand(sender as Object, e as TreeViewCancelEventArgs)
 		node = e.node
 		if node.tag and node.nodes.count > 0 and node.nodes[0].tag is .dummyTag
 			# need on-the-fly expanding
 			node.nodes.removeAt(0)
-			for propInfo in node.tag.getType.getProperties
+			propInfos = List<of PropertyInfo>(node.tag.getType.getProperties)
+			propInfos.sort(ref .comparePropInfo)
+			for propInfo in propInfos
 				if propInfo.name == 'Item'  # used for indexing. technically could be named something else, but this works in practice
 					continue
 				isGood = false
@@ -178,6 +218,9 @@ class CobraMain
 						dummy.tag = .dummyTag
 						child.nodes.add(dummy)
 				node.nodes.add(child)
+
+	def comparePropInfo(a as PropertyInfo, b as PropertyInfo) as int
+		return a.name.toLower.compareTo(b.name.toLower)
 
 	def cobraMemberNameFor(name as String) as String
 		return if(name[0]=='_', '', '.') + name[0].toLower.toString + name[1:]
