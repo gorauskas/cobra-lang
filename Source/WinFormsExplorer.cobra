@@ -50,9 +50,8 @@ class ObjectExplorer
 	all its controls while you're using them. Likewise, with
 	
 	TODO
-		[ ] On the right, show the .toString
-		[ ] In the tree, show the elements of sets
 		[ ] Search for text anywhere in the object graph
+		[ ] In the tree, show the elements of sets
 	
 	IDEAS
 		[ ] Bookmarks
@@ -74,6 +73,7 @@ class ObjectExplorer
 	
 	# right side:
 	var _objectIdStrip as ToolStrip
+	var _textBox as TextBox
 	var _propertyGrid as PropertyGrid
 
 	def init(entries as vari dynamic?)
@@ -127,6 +127,16 @@ class ObjectExplorer
 		_propertyGrid.dock = DockStyle.Fill
 		_propertyGrid.parent = detailsPanel
 		
+		_textBox = TextBox()
+		_textBox.multiline = true
+		_textBox.scrollBars = ScrollBars.Vertical
+		_textBox.wordWrap = true
+		_textBox.font = Font('Courier New', .font.size)  # * 1.25f
+		_textBox.height *= 3
+		_textBox.readOnly = true
+		_textBox.dock = DockStyle.Top
+		_textBox.parent = detailsPanel
+
 		_objectIdStrip = ToolStrip()
 		_objectIdStrip.items.add('')
 		_objectIdStrip.dock = DockStyle.Top
@@ -160,8 +170,6 @@ class ObjectExplorer
 		butt.text = '&Reset'
 		listen butt.click, ref .resetClick
 		_buttonStrip.items.add(butt)
-
-		_makeMenu
 
 	def copyClick(sender as Object, e as EventArgs)
 		sb = StringBuilder()
@@ -203,9 +211,6 @@ class ObjectExplorer
 	def quitClick(sender as Object, e as EventArgs)
 		Application.exit
 		
-	def _makeMenu
-		pass
-
 	def _populateNav
 		tv = _treeView
 		tv.beginUpdate
@@ -248,8 +253,11 @@ class ObjectExplorer
 			_objectIdStrip.items[0].text = .objectIdTextFor(obj)
 		else
 			_objectIdStrip.items[0].text = ''
+		_updatePathStrip
+		_textBox.text = CobraCore.toTechString(obj)
 		_propertyGrid.selectedObject = obj
 		
+	def _updatePathStrip
 		node = _treeView.selectedNode to XTreeNode?
 		nodes = List<of XTreeNode>()
 		while node
@@ -339,7 +347,7 @@ class ObjectExplorer
 					catch exc as Exception
 						value = 'Caught during IDictionary[lb][key]]: [exc.getType.name]: [exc.message]'
 					lb = c'['
-					child = XTreeNode('[lb][CobraCore.toTechString(key)]] == [CobraCore.toTechString(value)]', '[lb][key]]', value)
+					child = XTreeNode('[lb][CobraCore.toTechString(key)]] == [CobraCore.toTechString(value)]', '[lb][CobraCore.toTechString(key)]]', value)
 					if isGood
 						if not .isPrimitive(value)
 							dummy = XTreeNode.newDummyNode
