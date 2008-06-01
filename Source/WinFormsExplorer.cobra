@@ -190,7 +190,7 @@ class ObjectExplorer
 		nodes.reverse
 		sb = StringBuilder()
 		for node in nodes
-			if sb.length and not node.propertyName.startsWith('.')
+			if sb.length and not node.propertyName.startsWith('.') and not node.propertyName.startsWith(r'[')
 				sb.append('.')
 			sb.append(node.propertyName)
 		_pathStrip.items[0].text = sb.toString
@@ -203,7 +203,7 @@ class ObjectExplorer
 		if .isPrimitive(obj)
 			s += ' ' + CobraCore.toTechString(obj)
 		else
-			propInfo = obj.getType.getProperty('SerialNum') to System.Reflection.PropertyInfo?  # CC: why is this cast needed?
+			propInfo = obj.getType.getProperty('SerialNum') to System.Reflection.PropertyInfo?
 			if propInfo
 				sn = propInfo.getValue(obj to Object, nil) ? ''
 				s += '.' + sn.toString
@@ -220,7 +220,7 @@ class ObjectExplorer
 
 	def treeViewBeforeExpand(sender as Object, e as TreeViewCancelEventArgs)
 		node = e.node to XTreeNode
-		if node.value and node.nodes.count > 0 and (node.nodes[0] to XTreeNode).value is XTools.dummyTag
+		if node.value and node.nodes.count > 0 and (node.nodes[0] to XTreeNode).isDummy
 			# need on-the-fly expanding
 			node.nodes.removeAt(0)
 			obj = node.value
@@ -243,6 +243,7 @@ class ObjectExplorer
 						dummy = XTreeNode.newDummyNode
 						child.nodes.add(dummy)
 				node.nodes.add(child)
+			lb = c'['
 			if obj inherits System.Collections.IList
 				for i in obj.count
 					value = nil
@@ -251,9 +252,8 @@ class ObjectExplorer
 						value = obj[i]
 						isGood = true
 					catch exc as Exception
-						value = 'Caught during IList[i]: [exc.getType.name]: [exc.message]'  # CC: add brackets
-					lb = c'['
-					child = XTreeNode('[lb][i]] == [CobraCore.toTechString(value)]', '[i]', value)  # CC: add brackets
+						value = 'Caught during IList[lb][i]]: [exc.getType.name]: [exc.message]'
+					child = XTreeNode('[lb][i]] == [CobraCore.toTechString(value)]', '[lb][i]]', value)
 					if isGood
 						if not .isPrimitive(value)
 							dummy = XTreeNode.newDummyNode
@@ -269,9 +269,9 @@ class ObjectExplorer
 						value = obj[key]
 						isGood = true
 					catch exc as Exception
-						value = 'Caught during IDictionary[key]: [exc.getType.name]: [exc.message]'  # CC: add brackets
+						value = 'Caught during IDictionary[lb][key]]: [exc.getType.name]: [exc.message]'
 					lb = c'['
-					child = XTreeNode('[lb][CobraCore.toTechString(key)]] == [CobraCore.toTechString(value)]', '[key]', value)  # CC: add brackets
+					child = XTreeNode('[lb][CobraCore.toTechString(key)]] == [CobraCore.toTechString(value)]', '[lb][key]]', value)
 					if isGood
 						if not .isPrimitive(value)
 							dummy = XTreeNode.newDummyNode
@@ -295,22 +295,17 @@ class ObjectExplorer
 		return false
 
 
-class XTools
-
-	shared
-
-		get dummyTag
-			return '-- dummy tag --'
-
-
 class XTreeNode
 	inherits TreeNode
 
 	shared
 
 		def newDummyNode as XTreeNode
-			return XTreeNode('dummy', '', XTools.dummyTag)
-	
+			return XTreeNode('dummy', '', .dummyTag)
+
+		get dummyTag is protected
+			return '-- dummy tag --'
+			
 	var _propertyName as String
 	var _value as dynamic?
 	
@@ -321,6 +316,9 @@ class XTreeNode
 		base.init(text)
 		_propertyName = propertyName
 		_value = value
+
+	get isDummy as bool
+		return .value is .dummyTag
 
 	pro propertyName from var
 	
