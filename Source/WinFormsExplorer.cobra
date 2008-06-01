@@ -55,7 +55,10 @@ class ObjectExplorer
 		[ ] Search for text anywhere in the object graph
 	
 	IDEAS
-		--	Sort the properties 'logically', like all the primitives together (bools, then ints, etc.) and alpha within,
+		[ ] Bookmarks
+			- For jumping back and forth
+			- Could even persist (via the path) between sessions
+		[ ]	Sort the properties 'logically', like all the primitives together (bools, then ints, etc.) and alpha within,
 			and then object reference properties like .type
 			and then 'subnodes' type properties like lists
 	"""
@@ -63,6 +66,7 @@ class ObjectExplorer
 	var _initialEntries as List<of dynamic?>?
 
 	# top:
+	var _buttonStrip as ToolStrip
 	var _pathStrip as ToolStrip
 
 	# left side:
@@ -106,7 +110,7 @@ class ObjectExplorer
 		splitContainer.parent = this
 		splitContainer.dock = DockStyle.Fill
 		splitContainer.fixedPanel = FixedPanel.Panel1
-		
+
 		_treeView = TreeView()
 		_treeView.dock = DockStyle.Fill
 		_treeView.hideSelection = false
@@ -132,9 +136,73 @@ class ObjectExplorer
 		_pathStrip.items.add('')
 		_pathStrip.dock = DockStyle.Top
 		_pathStrip.parent = this
+
+		_buttonStrip = ToolStrip()
+		_buttonStrip.dock = DockStyle.Top
+		_buttonStrip.parent = this
+
+		butt = ToolStripButton()
+		butt.text = '&Copy'
+		listen butt.click, ref .copyClick
+		_buttonStrip.items.add(butt)
 		
+		butt = ToolStripButton()
+		butt.text = '&Next'
+		listen butt.click, ref .nextClick
+		_buttonStrip.items.add(butt)
+		
+		butt = ToolStripButton()
+		butt.text = '&Quit'
+		listen butt.click, ref .quitClick
+		_buttonStrip.items.add(butt)
+		
+		butt = ToolStripButton()
+		butt.text = '&Reset'
+		listen butt.click, ref .resetClick
+		_buttonStrip.items.add(butt)
+
 		_makeMenu
 
+	def copyClick(sender as Object, e as EventArgs)
+		sb = StringBuilder()
+		sb.appendLine(_pathStrip.items[0].text)
+		if _treeView.selectedNode
+			sb.appendLine(_treeView.selectedNode.text)
+		s = sb.toString
+		if s.trim <> ''
+			Clipboard.setDataObject(s, true)
+
+	def nextClick(sender as Object, e as EventArgs)
+		curNode = origNode = _treeView.selectedNode
+		if curNode.nodes and curNode.nodes.count
+			if not curNode.isExpanded
+				curNode.expand
+			next = curNode.nodes[0]
+		else
+			next = curNode.nextNode
+			while next is nil and curNode  # may have to go up more than one parent
+				curNode = curNode.parent
+				if curNode, next = curNode.nextNode
+			if next is nil and curNode is nil
+				next = _treeView.nodes[0]  # back to the top
+		if next and next is not origNode
+			_treeView.selectedNode = next
+			_treeView.select
+
+	def resetClick(sender as Object, e as EventArgs)
+		_treeView.beginUpdate
+		try
+			_treeView.nodes.clear
+			_populateNav
+		finally
+			_treeView.endUpdate
+		if _treeView.nodes.count > 0
+			_treeView.selectedNode = _treeView.nodes[0]
+			_treeView.focus
+
+	def quitClick(sender as Object, e as EventArgs)
+		Application.exit
+		
 	def _makeMenu
 		pass
 
