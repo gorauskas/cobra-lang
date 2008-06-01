@@ -6,7 +6,6 @@ This runs the Cobra compiler as usual, but then follows it up with a GUI window 
 TODO
 	[ ] On the right, show the .toString
 	[ ] In the tree, show the elements of
-		[ ] lists
 		[ ] dictionaries
 		[ ] sets
 	[ ] Search for text anywhere in the object graph
@@ -192,6 +191,11 @@ class CobraMain
 			if propInfo
 				name = propInfo.getValue(obj, nil)
 				s += ' ' + CobraCore.toTechString(name)
+			else
+				propInfo = obj.getType.getProperty('FileName')
+				if propInfo
+					fileName = propInfo.getValue(obj, nil)
+					s += ' ' + CobraCore.toTechString(fileName)
 		return s
 
 	def treeViewBeforeExpand(sender as Object, e as TreeViewCancelEventArgs)
@@ -199,25 +203,44 @@ class CobraMain
 		if node.tag and node.nodes.count > 0 and node.nodes[0].tag is .dummyTag
 			# need on-the-fly expanding
 			node.nodes.removeAt(0)
-			propInfos = List<of PropertyInfo>(node.tag.getType.getProperties)
-			propInfos.sort(ref .comparePropInfo)
-			for propInfo in propInfos
-				if propInfo.name == 'Item'  # used for indexing. technically could be named something else, but this works in practice
-					continue
-				isGood = false
-				try
-					value = propInfo.getValue(node.tag, nil)
-					isGood = true
-				catch exc as Exception
-					value = 'Caught during get: [exc.getType.name]: [exc.message]'
-				child = TreeNode('[.cobraMemberNameFor(propInfo.name)] == [CobraCore.toTechString(value)]')
-				if isGood
-					child.tag = value
-					if value and not .isPrimitive(value to !)
-						dummy = TreeNode("dummy")
-						dummy.tag = .dummyTag
-						child.nodes.add(dummy)
-				node.nodes.add(child)
+			obj = node.tag
+			if obj inherits System.Collections.IList
+				node.nodes.add(TreeNode('.count == [obj.count]'))
+				for i in obj.count
+					isGood = false
+					try
+						value = obj[i]
+						isGood = true
+					catch exc as Exception
+						value = 'Caught during IList[i]: [exc.getType.name]: [exc.message]'
+					child = TreeNode('[i] == [CobraCore.toTechString(value)]')
+					if isGood
+						child.tag = value
+						if value and not .isPrimitive(value)
+							dummy = TreeNode("dummy")
+							dummy.tag = .dummyTag
+							child.nodes.add(dummy)
+					node.nodes.add(child)
+			else
+				propInfos = List<of PropertyInfo>(obj.getType.getProperties)
+				propInfos.sort(ref .comparePropInfo)
+				for propInfo in propInfos
+					if propInfo.name == 'Item'  # used for indexing. technically could be named something else, but this works in practice
+						continue
+					isGood = false
+					try
+						value = propInfo.getValue(obj, nil)
+						isGood = true
+					catch exc as Exception
+						value = 'Caught during get: [exc.getType.name]: [exc.message]'
+					child = TreeNode('[.cobraMemberNameFor(propInfo.name)] == [CobraCore.toTechString(value)]')
+					if isGood
+						child.tag = value
+						if value and not .isPrimitive(value to !)
+							dummy = TreeNode("dummy")
+							dummy.tag = .dummyTag
+							child.nodes.add(dummy)
+					node.nodes.add(child)
 
 	def comparePropInfo(a as PropertyInfo, b as PropertyInfo) as int
 		return a.name.toLower.compareTo(b.name.toLower)
@@ -228,7 +251,8 @@ class CobraMain
 	get dummyTag
 		return '-- dummy tag --'
 
-	def isPrimitive(value as dynamic) as bool
+	def isPrimitive(value as dynamic?) as bool
+		if value is nil, return true
 		if value inherits bool, return true
 		if value inherits char, return true
 		if value inherits decimal, return true
