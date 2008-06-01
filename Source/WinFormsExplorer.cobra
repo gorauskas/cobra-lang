@@ -3,17 +3,6 @@ Cobra Compiler WinForms Explorer
 
 This runs the Cobra compiler as usual, but then follows it up with a GUI window (using WinForms) that enables you to explore all the objects that resulted from compilation including the compiler, modules, namespaces, declarations, statements and expressions.
 
-TODO
-	[ ] On the right, show the .toString
-	[ ] In the tree, show the elements of
-		[ ] sets
-	[ ] Search for text anywhere in the object graph
-
-IDEAS
-	--	Sort the properties 'logically', like all the primitives together (bools, then ints, etc.) and alpha within,
-		and then object reference properties like .type
-		and then 'subnodes' type properties like lists
-
 """
 
 use System.Drawing
@@ -22,11 +11,8 @@ use System.Reflection
 
 
 class CobraMain
-	inherits Form
 	
 	shared
-
-		var _commandLine as CommandLine?
 
 		var _willTimeIt as bool
 
@@ -39,23 +25,56 @@ class CobraMain
 			# Run the command line as usual:
 			startTime = DateTime.now
 			try
-				_commandLine = CommandLine()
-				_commandLine.run
+				commandLine = CommandLine()
+				commandLine.run
 			finally
 				if _willTimeIt
 					print 'timeit = [DateTime.now.subtract(startTime)]'
-			
+
 			# Now explore the result:
 			Application.enableVisualStyles
-			form = CobraMain()
+			form = ObjectExplorer('CommandLine', commandLine, 'Compiler', commandLine.compiler)
 			form.show
 			Application.run(form)
 
-	var _propertyGrid as PropertyGrid
-	var _statusStrip as ToolStrip?
-	var _toolStrip as ToolStrip
+
+class ObjectExplorer
+	inherits Form
+	"""
+	Shows a tree view of one or more objects on the right and their properties. By drilling down
+	in the tree view, you can explore an object graph. On the right, the details of the currently
+	selected object are provided.
+
+	Because a PropertyGrid is used on the right, you can actually modify the objects. For example,
+	you can drill down to UI -> Form and increase the font which will immediately affect form and
+	all its controls while you're using them. Likewise, with
+	
+	TODO
+		[ ] On the right, show the .toString
+		[ ] In the tree, show the elements of sets
+		[ ] Search for text anywhere in the object graph
+	
+	IDEAS
+		--	Sort the properties 'logically', like all the primitives together (bools, then ints, etc.) and alpha within,
+			and then object reference properties like .type
+			and then 'subnodes' type properties like lists
+	"""
+
+	var _initialEntries as List<of dynamic?>?
+
+	# top:
+	var _pathStrip as ToolStrip
+
+	# left side:
 	var _treeView as TreeView
+	
+	# right side:
 	var _objectIdStrip as ToolStrip
+	var _propertyGrid as PropertyGrid
+
+	def init(entries as vari dynamic?)
+		.init
+		_initialEntries = List<of dynamic?>(entries)
 
 	def init
 		.text = 'Cobra Compiler WinForms Explorer'
@@ -109,60 +128,50 @@ class CobraMain
 		_objectIdStrip.dock = DockStyle.Top
 		_objectIdStrip.parent = detailsPanel
 		
-		_toolStrip = ToolStrip()
-		_toolStrip.dock = DockStyle.Top
-		_toolStrip.parent = this
+		_pathStrip = ToolStrip()
+		_pathStrip.items.add('')
+		_pathStrip.dock = DockStyle.Top
+		_pathStrip.parent = this
 		
 		_makeMenu
 
 	def _makeMenu
 		pass
 
-	def printScreenInfo
-		sw = StringWriter()
-		print to sw
-			for screen in Screen.allScreens
-				print
-				print 'screen:'
-				print '    type =', screen.getType
-				print '    device name =', screen.deviceName
-				print '    primary screen =', screen.primary
-				print '    working area =', screen.workingArea
-				print '    bounds =', screen.bounds
-		TextBoxForm.show(sw.toString)
-
 	def _populateNav
 		tv = _treeView
 		tv.beginUpdate
 		try
-			node = XTreeNode('CommandLine', '', _commandLine)
-			tv.nodes.add(node)
-
-			dummy = XTreeNode('dummy', '', .dummyTag)
-			node.nodes.add(dummy)
-	
-			node = XTreeNode('Compiler', '', _commandLine.compiler)
-			tv.nodes.add(node)
-			
-			dummy = XTreeNode('dummy', '', .dummyTag)
-			node.nodes.add(dummy)
-
-			uiNode = XTreeNode('UI')
-			tv.nodes.add(uiNode)
-			
-			node = XTreeNode('This Form', '', this)
-			uiNode.nodes.add(node)
-
-			node = XTreeNode('TreeView', '', _treeView)
-			uiNode.nodes.add(node)
-			
-			node = XTreeNode('PropertyGrid', '', _propertyGrid)
-			uiNode.nodes.add(node)
-			
-			node = XTreeNode('PrimaryScreen', '', Screen.primaryScreen)
-			uiNode.nodes.add(node)
+			if _initialEntries
+				for i in _initialEntries.count
+					if i % 2 == 0
+						key = _initialEntries[i]
+						value = _initialEntries[i+1]
+						node = XTreeNode(key to String, key to String, value)
+						tv.nodes.add(node)
+						dummy = XTreeNode.newDummyNode
+						node.nodes.add(dummy)
+			_populateNavUI	
 		finally
 			tv.endUpdate
+
+	def _populateNavUI
+		tv = _treeView
+
+		uiNode = XTreeNode('UI')
+		tv.nodes.add(uiNode)
+		
+		node = XTreeNode('This Form', '', this)
+		uiNode.nodes.add(node)
+
+		node = XTreeNode('TreeView', '', _treeView)
+		uiNode.nodes.add(node)
+		
+		node = XTreeNode('PropertyGrid', '', _propertyGrid)
+		uiNode.nodes.add(node)
+		
+		node = XTreeNode('PrimaryScreen', '', Screen.primaryScreen)
+		uiNode.nodes.add(node)
 
 	def treeViewAfterSelect(sender as Object, e as TreeViewEventArgs)
 		# update the details view
@@ -172,6 +181,19 @@ class CobraMain
 		else
 			_objectIdStrip.items[0].text = ''
 		_propertyGrid.selectedObject = obj
+		
+		node = _treeView.selectedNode to XTreeNode?
+		nodes = List<of XTreeNode>()
+		while node
+			nodes.add(node)
+			node = node.parent to XTreeNode?
+		nodes.reverse
+		sb = StringBuilder()
+		for node in nodes
+			if sb.length and not node.propertyName.startsWith('.')
+				sb.append('.')
+			sb.append(node.propertyName)
+		_pathStrip.items[0].text = sb.toString
 
 	def objectIdTextFor(obj as dynamic) as String
 		"""
@@ -198,7 +220,7 @@ class CobraMain
 
 	def treeViewBeforeExpand(sender as Object, e as TreeViewCancelEventArgs)
 		node = e.node to XTreeNode
-		if node.value and node.nodes.count > 0 and (node.nodes[0] to XTreeNode).value is .dummyTag
+		if node.value and node.nodes.count > 0 and (node.nodes[0] to XTreeNode).value is XTools.dummyTag
 			# need on-the-fly expanding
 			node.nodes.removeAt(0)
 			obj = node.value
@@ -214,10 +236,11 @@ class CobraMain
 					isGood = true
 				catch exc as Exception
 					value = 'Caught during get: [exc.getType.name]: [exc.message]'
-				child = XTreeNode('[.cobraMemberNameFor(propInfo.name)] == [CobraCore.toTechString(value)]', propInfo.name, value)
+				propName = .cobraMemberNameFor(propInfo.name)
+				child = XTreeNode('[propName] == [CobraCore.toTechString(value)]', propName, value)
 				if isGood
 					if not .isPrimitive(value)
-						dummy = XTreeNode('dummy', '', .dummyTag)
+						dummy = XTreeNode.newDummyNode
 						child.nodes.add(dummy)
 				node.nodes.add(child)
 			if obj inherits System.Collections.IList
@@ -233,7 +256,7 @@ class CobraMain
 					child = XTreeNode('[lb][i]] == [CobraCore.toTechString(value)]', '[i]', value)  # CC: add brackets
 					if isGood
 						if not .isPrimitive(value)
-							dummy = XTreeNode('dummy', '', .dummyTag)
+							dummy = XTreeNode.newDummyNode
 							child.nodes.add(dummy)
 					node.nodes.add(child)
 			else if obj inherits System.Collections.IDictionary
@@ -251,7 +274,7 @@ class CobraMain
 					child = XTreeNode('[lb][CobraCore.toTechString(key)]] == [CobraCore.toTechString(value)]', '[key]', value)  # CC: add brackets
 					if isGood
 						if not .isPrimitive(value)
-							dummy = XTreeNode('dummy', '', .dummyTag)
+							dummy = XTreeNode.newDummyNode
 							child.nodes.add(dummy)
 					node.nodes.add(child)
 
@@ -260,9 +283,6 @@ class CobraMain
 
 	def cobraMemberNameFor(name as String) as String
 		return if(name[0]=='_', '', '.') + name[0].toLower.toString + name[1:]
-
-	get dummyTag
-		return '-- dummy tag --'
 
 	def isPrimitive(value as dynamic?) as bool
 		if value is nil, return true
@@ -275,8 +295,21 @@ class CobraMain
 		return false
 
 
+class XTools
+
+	shared
+
+		get dummyTag
+			return '-- dummy tag --'
+
+
 class XTreeNode
 	inherits TreeNode
+
+	shared
+
+		def newDummyNode as XTreeNode
+			return XTreeNode('dummy', '', XTools.dummyTag)
 	
 	var _propertyName as String
 	var _value as dynamic?
@@ -292,26 +325,3 @@ class XTreeNode
 	pro propertyName from var
 	
 	pro value from var
-
-
-class TextBoxForm
-	inherits Form
-
-	shared
-	
-		def show(text as String) as TextBoxForm
-			form = TextBoxForm(text)
-			form.show
-			return form
-	
-	def init(text as String)
-		.init(text, 800, 600)
-
-	def init(text as String, width as int, height as int)
-		text = text.replace('\0', '\\0')
-		.size = System.Drawing.Size(width, height)
-		tb = TextBox()
-		tb.multiline = true
-		tb.dock = DockStyle.Fill
-		tb.parent = this
-		tb.text = text
