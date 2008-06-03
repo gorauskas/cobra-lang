@@ -1,0 +1,368 @@
+use System.Drawing
+use System.Windows.Forms
+use System.Reflection
+
+
+class ObjectExplorer
+	inherits Form
+	"""
+	Shows a tree view of one or more objects on the right and their properties. By drilling down
+	in the tree view, you can explore an object graph. On the right, the details of the currently
+	selected object are provided.
+
+	Because a PropertyGrid is used on the right, you can actually modify the objects. For example,
+	you can drill down to UI -> Form and increase the font which will immediately affect form and
+	all its controls while you're using them. Likewise, with
+	
+	TODO
+		[ ] Search for text anywhere in the object graph
+		[ ] In the tree, show the elements of sets
+	
+	IDEAS
+		[ ] Bookmarks
+			- For jumping back and forth
+			- Could even persist (via the path) between sessions
+		[ ]	Sort the properties 'logically', like all the primitives together (bools, then ints, etc.) and alpha within,
+			and then object reference properties like .type
+			and then 'subnodes' type properties like lists
+	"""
+
+	var _initialEntries as List<of dynamic?>?
+
+	# top:
+	var _buttonStrip as ToolStrip
+	var _pathStrip as ToolStrip
+
+	# left side:
+	var _treeView as TreeView
+	
+	# right side:
+	var _objectIdStrip as ToolStrip
+	var _textBox as TextBox
+	var _propertyGrid as PropertyGrid
+
+	def init(entries as vari dynamic?)
+		.init
+		_initialEntries = List<of dynamic?>(entries)
+
+	def init
+		.text = 'Cobra Compiler WinForms Explorer'
+		.startPosition = FormStartPosition.Manual
+		_initSize
+		_makeControls
+		
+	def onLoad(e as EventArgs) is override, protected
+		base.onLoad(e)
+		_populateNav
+		_treeView.focus
+
+	def onActivated(e as EventArgs) is override, protected
+		base.onActivated(e)
+
+	def _initSize
+		area = Screen.primaryScreen.workingArea
+		fraction = 0.80
+		x = (area.width  * (1.0 - fraction) / 2 + area.x) to int
+		y = (area.height * (1.0 - fraction) / 2 + area.y) to int
+		w = (area.width  * fraction) to int
+		h = (area.height * fraction) to int
+		p = Point(x, y)
+		.location = Point(x, y)
+		.size = Size(w, h)
+
+	def _makeControls
+		splitContainer = SplitContainer()
+		splitContainer.parent = this
+		splitContainer.dock = DockStyle.Fill
+		splitContainer.fixedPanel = FixedPanel.Panel1
+
+		_treeView = TreeView()
+		_treeView.dock = DockStyle.Fill
+		_treeView.hideSelection = false
+		_treeView.parent = splitContainer.panel1
+		_treeView.pathSeparator = ' / '
+		listen _treeView.afterSelect, ref .treeViewAfterSelect
+		listen _treeView.beforeExpand, ref .treeViewBeforeExpand
+
+		detailsPanel = Panel()
+		detailsPanel.dock = DockStyle.Fill
+		detailsPanel.parent = splitContainer.panel2
+		
+		_propertyGrid = PropertyGrid()
+		_propertyGrid.dock = DockStyle.Fill
+		_propertyGrid.parent = detailsPanel
+		
+		_textBox = TextBox()
+		_textBox.multiline = true
+		_textBox.scrollBars = ScrollBars.Vertical
+		_textBox.wordWrap = true
+		_textBox.font = Font('Courier New', .font.size)  # * 1.25f
+		_textBox.height *= 3
+		_textBox.readOnly = true
+		_textBox.dock = DockStyle.Top
+		_textBox.parent = detailsPanel
+
+		_objectIdStrip = ToolStrip()
+		_objectIdStrip.items.add('')
+		_objectIdStrip.dock = DockStyle.Top
+		_objectIdStrip.parent = detailsPanel
+		
+		_pathStrip = ToolStrip()
+		_pathStrip.items.add('')
+		_pathStrip.dock = DockStyle.Top
+		_pathStrip.parent = this
+
+		_buttonStrip = ToolStrip()
+		_buttonStrip.dock = DockStyle.Top
+		_buttonStrip.parent = this
+
+		butt = ToolStripButton()
+		butt.text = '&Copy'
+		listen butt.click, ref .copyClick
+		_buttonStrip.items.add(butt)
+		
+		butt = ToolStripButton()
+		butt.text = '&Next'
+		listen butt.click, ref .nextClick
+		_buttonStrip.items.add(butt)
+		
+		butt = ToolStripButton()
+		butt.text = '&Quit'
+		listen butt.click, ref .quitClick
+		_buttonStrip.items.add(butt)
+		
+		butt = ToolStripButton()
+		butt.text = '&Reset'
+		listen butt.click, ref .resetClick
+		_buttonStrip.items.add(butt)
+
+	def copyClick(sender as Object, e as EventArgs)
+		sb = StringBuilder()
+		sb.appendLine(_pathStrip.items[0].text)
+		if _treeView.selectedNode
+			sb.appendLine(_treeView.selectedNode.text)
+		s = sb.toString
+		if s.trim <> ''
+			Clipboard.setDataObject(s, true)
+
+	def nextClick(sender as Object, e as EventArgs)
+		curNode = origNode = _treeView.selectedNode
+		if curNode.nodes and curNode.nodes.count
+			if not curNode.isExpanded
+				curNode.expand
+			next = curNode.nodes[0]
+		else
+			next = curNode.nextNode
+			while next is nil and curNode  # may have to go up more than one parent
+				curNode = curNode.parent
+				if curNode, next = curNode.nextNode
+			if next is nil and curNode is nil
+				next = _treeView.nodes[0]  # back to the top
+		if next and next is not origNode
+			_treeView.selectedNode = next
+			_treeView.select
+
+	def resetClick(sender as Object, e as EventArgs)
+		_treeView.beginUpdate
+		try
+			_treeView.nodes.clear
+			_populateNav
+		finally
+			_treeView.endUpdate
+		if _treeView.nodes.count > 0
+			_treeView.selectedNode = _treeView.nodes[0]
+			_treeView.focus
+
+	def quitClick(sender as Object, e as EventArgs)
+		Application.exit
+		
+	def _populateNav
+		tv = _treeView
+		tv.beginUpdate
+		try
+			if _initialEntries
+				for i in _initialEntries.count
+					if i % 2 == 0
+						key = _initialEntries[i]
+						value = _initialEntries[i+1]
+						node = XTreeNode(key to String, key to String, value)
+						tv.nodes.add(node)
+						dummy = XTreeNode.newDummyNode
+						node.nodes.add(dummy)
+			_populateNavUI	
+		finally
+			tv.endUpdate
+
+	def _populateNavUI
+		tv = _treeView
+
+		uiNode = XTreeNode('UI')
+		tv.nodes.add(uiNode)
+		
+		node = XTreeNode('This Form', '', this)
+		uiNode.nodes.add(node)
+
+		node = XTreeNode('TreeView', '', _treeView)
+		uiNode.nodes.add(node)
+		
+		node = XTreeNode('PropertyGrid', '', _propertyGrid)
+		uiNode.nodes.add(node)
+		
+		node = XTreeNode('PrimaryScreen', '', Screen.primaryScreen)
+		uiNode.nodes.add(node)
+
+	def treeViewAfterSelect(sender as Object, e as TreeViewEventArgs)
+		# update the details view
+		obj = (e.node to XTreeNode).value
+		if obj
+			_objectIdStrip.items[0].text = .objectIdTextFor(obj)
+		else
+			_objectIdStrip.items[0].text = ''
+		_updatePathStrip
+		_textBox.text = CobraCore.toTechString(obj)
+		_propertyGrid.selectedObject = obj
+		
+	def _updatePathStrip
+		node = _treeView.selectedNode to XTreeNode?
+		nodes = List<of XTreeNode>()
+		while node
+			nodes.add(node)
+			node = node.parent to XTreeNode?
+		nodes.reverse
+		sb = StringBuilder()
+		for node in nodes
+			if sb.length and not node.propertyName.startsWith('.') and not node.propertyName.startsWith(r'[')
+				sb.append('.')
+			sb.append(node.propertyName)
+		_pathStrip.items[0].text = sb.toString
+
+	def objectIdTextFor(obj as dynamic) as String
+		"""
+		Subclasses can override this method to customize the text that appears in the 'object id' strip in the details view.
+		"""
+		s = CobraCore.typeName(obj.getType)
+		if .isPrimitive(obj)
+			s += ' ' + CobraCore.toTechString(obj)
+		else
+			propInfo = obj.getType.getProperty('SerialNum') to System.Reflection.PropertyInfo?
+			if propInfo
+				sn = propInfo.getValue(obj to Object, nil) ? ''
+				s += '.' + sn.toString
+			propInfo = obj.getType.getProperty('Name')
+			if propInfo
+				name = propInfo.getValue(obj, nil)
+				s += ' ' + CobraCore.toTechString(name)
+			else
+				propInfo = obj.getType.getProperty('FileName')
+				if propInfo
+					fileName = propInfo.getValue(obj, nil)
+					s += ' ' + CobraCore.toTechString(fileName)
+		return s
+
+	def treeViewBeforeExpand(sender as Object, e as TreeViewCancelEventArgs)
+		node = e.node to XTreeNode
+		if node.value and node.nodes.count > 0 and (node.nodes[0] to XTreeNode).isDummy
+			# need on-the-fly expanding
+			node.nodes.removeAt(0)
+			obj = node.value
+			propInfos = List<of PropertyInfo>((obj to Object).getType.getProperties)
+			propInfos.sort(ref .comparePropInfo)
+			for propInfo in propInfos
+				if propInfo.name == 'Item'  # used for indexing. technically could be named something else, but this works in practice
+					continue
+				value = nil
+				isGood = false
+				try
+					value = propInfo.getValue(obj, nil)
+					isGood = true
+				catch exc as Exception
+					if exc inherits TargetInvocationException and exc.innerException
+						exc = exc.innerException to !
+					value = 'Caught during get: [exc.getType.name]: [exc.message]'
+				propName = .cobraMemberNameFor(propInfo.name)
+				child = XTreeNode('[propName] == [CobraCore.toTechString(value)]', propName, value)
+				if isGood
+					if not .isPrimitive(value)
+						dummy = XTreeNode.newDummyNode
+						child.nodes.add(dummy)
+				node.nodes.add(child)
+			lb = c'['
+			if obj inherits System.Collections.IList
+				for i in obj.count
+					value = nil
+					isGood = false
+					try
+						value = obj[i]
+						isGood = true
+					catch exc as Exception
+						value = 'Caught during IList[lb][i]]: [exc.getType.name]: [exc.message]'
+					child = XTreeNode('[lb][i]] == [CobraCore.toTechString(value)]', '[lb][i]]', value)
+					if isGood
+						if not .isPrimitive(value)
+							dummy = XTreeNode.newDummyNode
+							child.nodes.add(dummy)
+					node.nodes.add(child)
+			else if obj inherits System.Collections.IDictionary
+				keys = System.Collections.ArrayList(obj.keys)
+				keys.sort
+				for key in keys
+					value = nil
+					isGood = false
+					try
+						value = obj[key]
+						isGood = true
+					catch exc as Exception
+						value = 'Caught during IDictionary[lb][key]]: [exc.getType.name]: [exc.message]'
+					lb = c'['
+					child = XTreeNode('[lb][CobraCore.toTechString(key)]] == [CobraCore.toTechString(value)]', '[lb][CobraCore.toTechString(key)]]', value)
+					if isGood
+						if not .isPrimitive(value)
+							dummy = XTreeNode.newDummyNode
+							child.nodes.add(dummy)
+					node.nodes.add(child)
+
+	def comparePropInfo(a as PropertyInfo, b as PropertyInfo) as int
+		return a.name.toLower.compareTo(b.name.toLower)
+
+	def cobraMemberNameFor(name as String) as String
+		return if(name[0]=='_', '', '.') + name[0].toLower.toString + name[1:]
+
+	def isPrimitive(value as dynamic?) as bool
+		if value is nil, return true
+		if value inherits bool, return true
+		if value inherits char, return true
+		if value inherits decimal, return true
+		if value inherits int, return true
+		if value inherits float, return true
+		if value inherits String, return true
+		return false
+
+
+class XTreeNode
+	inherits TreeNode
+
+	shared
+
+		def newDummyNode as XTreeNode
+			return XTreeNode('dummy', '', .dummyTag)
+
+		get dummyTag is protected
+			return '-- dummy tag --'
+			
+	var _propertyName as String
+	var _value as dynamic?
+	
+	def init(text as String)
+		.init(text, '', nil)
+
+	def init(text as String, propertyName as String, value as dynamic?)
+		base.init(text)
+		_propertyName = propertyName
+		_value = value
+
+	get isDummy as bool
+		return .value is .dummyTag
+
+	pro propertyName from var
+	
+	pro value from var
