@@ -16,8 +16,9 @@ class ObjectExplorer
 	
 	TODO
 		[ ] Search for text anywhere in the object graph
-		[ ] In the tree, show the elements of sets
-	
+			[ ] This technically works now, but is crazy slow. Not to mention the level > 10 hack!
+		[ ] In the tree, show the elements of sets. Maybe that's an ICollection thing...
+
 	IDEAS
 		[ ] Bookmarks
 			- For jumping back and forth
@@ -31,6 +32,9 @@ class ObjectExplorer
 
 	# top:
 	var _buttonStrip as ToolStrip
+	var _findStrip as ToolStrip
+	var _findText as ToolStripTextBox
+	var _infoStrip as ToolStrip
 	var _pathStrip as ToolStrip
 
 	# left side:
@@ -66,7 +70,6 @@ class ObjectExplorer
 		y = (area.height * (1.0 - fraction) / 2 + area.y) to int
 		w = (area.width  * fraction) to int
 		h = (area.height * fraction) to int
-		p = Point(x, y)
 		.location = Point(x, y)
 		.size = Size(w, h)
 
@@ -107,10 +110,35 @@ class ObjectExplorer
 		_objectIdStrip.dock = DockStyle.Top
 		_objectIdStrip.parent = detailsPanel
 		
+		_infoStrip = ToolStrip()
+		_infoStrip.items.add('')
+		_infoStrip.dock = DockStyle.Top
+		_infoStrip.parent = this
+
 		_pathStrip = ToolStrip()
-		_pathStrip.items.add('')
+		_pathStrip.items.add('Path:')
 		_pathStrip.dock = DockStyle.Top
 		_pathStrip.parent = this
+
+		_findStrip = ToolStrip()
+		_findStrip.dock = DockStyle.Top
+		_findStrip.parent = this
+		_findStrip.items.add(ToolStripLabel('&Find: '))
+
+		_findText = ToolStripTextBox()
+		_findText.width *= 2
+		listen _findText.keyPress, ref .findTextKeyPress
+		_findStrip.items.add(_findText)
+
+		butt = ToolStripButton()
+		butt.text = 'Find Next'
+		listen butt.click, ref .findNextClick
+		_findStrip.items.add(butt)
+		
+		#butt = ToolStripButton()
+		#butt.text = 'Find Previous'
+		#listen butt.click, ref .findPreviousClick
+		#_findStrip.items.add(butt)
 
 		_buttonStrip = ToolStrip()
 		_buttonStrip.dock = DockStyle.Top
@@ -175,6 +203,88 @@ class ObjectExplorer
 
 	def quitClick(sender as Object, e as EventArgs)
 		Application.exit
+	
+	def findTextKeyPress(sender as Object, e as KeyPressEventArgs)
+		if e.keyChar == 13 to char
+			.findNextClick(sender, EventArgs())
+
+	def findNextClick(sender as Object, e as EventArgs)
+		# Although this avoids cycles in a single search operation, it does not avoid them in between
+		# search operations. We'll see if that's a problem in practice.
+		if _treeView.nodes.count == 0
+			return
+		start = DateTime.now
+		didFind = false
+		tv = _treeView
+		tv.beginUpdate
+		try
+			root = _treeView.nodes[0] to XTreeNode
+			selected = (_treeView.selectedNode ? root) to XTreeNode
+			text = _findText.text to !
+			for node in _nextNodes(root, selected, selected, Set<of dynamic>(), 0)
+				if node.contains(text)
+					_treeView.selectedNode = node
+					tv.endUpdate
+					node.ensureVisible
+					duration = DateTime.now.subtract(start)
+					_infoStrip.items[0].text = 'Found in [duration.toString]'
+					didFind = true
+					break
+			if not didFind
+				_infoStrip.items[0].text = 'Could not find text.'
+		finally
+			tv.endUpdate
+
+	def _nextNodes(root as XTreeNode, original as XTreeNode, curNode as XTreeNode?, visited as Set<of dynamic>, level as int) as IEnumerable<of XTreeNode>
+		"""
+		A
+		|
+		|--- B
+		|    |
+		|    |--- C
+		|    |
+		|    |--- D
+		|    |
+		|    `--- E
+		|
+		|--- F
+		|
+		|--- G
+		|
+		H
+		|
+		I
+		"""
+		if level > 10, yield break  # OMGHACK
+		if curNode is nil, yield break
+		if curNode.value is not nil
+			if curNode.value in visited, yield break
+			visited.add(curNode.value to !)
+		if curNode.nodes and curNode.nodes.count
+			if (curNode.nodes[0] to XTreeNode).isDummy
+				_populateSubNodes(curNode to !)
+			for subNode as XTreeNode in curNode.nodes
+				if subNode.value is nil or not subNode.value in visited
+					yield subNode
+					for n in _nextNodes(root, original, subNode, visited, level+1)
+						yield n
+		while true
+			next = curNode.nextNode to XTreeNode?
+			while next is nil and curNode  # may have to go up more than one parent
+				curNode = curNode.parent to XTreeNode?
+				if curNode, next = curNode.nextNode to XTreeNode?
+			if next is nil and curNode is nil
+				next = root  # back to the top
+			if next and next is not original
+				if next.value is nil or not next.value in visited
+					yield next to XTreeNode
+					for n in _nextNodes(root, original, next, visited, level+1)
+						yield n
+					curNode = next
+			break
+
+	def findPreviousClick(sender as Object, e as EventArgs)
+		MessageBox.show(this, 'Not implement yet.')
 		
 	def _populateNav
 		tv = _treeView
@@ -262,6 +372,16 @@ class ObjectExplorer
 	def treeViewBeforeExpand(sender as Object, e as TreeViewCancelEventArgs)
 		node = e.node to XTreeNode
 		if node.value and node.nodes.count > 0 and (node.nodes[0] to XTreeNode).isDummy
+			_populateSubNodes(node)
+
+	def _populateSubNodes(node as XTreeNode)
+		require
+			node.value
+			node.nodes.count > 0
+			(node.nodes[0] to XTreeNode).isDummy
+		ensure
+			node.nodes.count == 0 or not (node.nodes[0] to XTreeNode).isDummy
+		body
 			# need on-the-fly expanding
 			node.nodes.removeAt(0)
 			obj = node.value
@@ -340,7 +460,14 @@ class ObjectExplorer
 
 class XTreeNode
 	inherits TreeNode
+	"""
+	The major properties of interest are:
+		.text - the display text seen on screen. usually '.propertyName = value'
+		.propertyName - the name of the property that this node represents for its parent
+		.value - the value of the node. usually the value of a property
 
+	Top level nodes are not based on properties and will have empty strings for their .propertyName.
+	"""
 	shared
 
 		def newDummyNode as XTreeNode
@@ -366,3 +493,6 @@ class XTreeNode
 	pro propertyName from var
 	
 	pro value from var
+
+	def contains(s as String) as bool
+		return .text.toLower.contains(s.toLower)
