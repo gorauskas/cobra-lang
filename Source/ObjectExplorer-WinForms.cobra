@@ -34,8 +34,8 @@ class ObjectExplorer
 	var _buttonStrip as ToolStrip
 	var _findStrip as ToolStrip
 	var _findText as ToolStripTextBox
-	var _infoStrip as ToolStrip
-	var _pathStrip as ToolStrip
+	var _infoStrip as LabelStrip
+	var _pathStrip as LabelStrip
 
 	# left side:
 	var _treeView as TreeView
@@ -110,13 +110,11 @@ class ObjectExplorer
 		_objectIdStrip.dock = DockStyle.Top
 		_objectIdStrip.parent = detailsPanel
 		
-		_infoStrip = ToolStrip()
-		_infoStrip.items.add('')
+		_infoStrip = LabelStrip()
 		_infoStrip.dock = DockStyle.Top
 		_infoStrip.parent = this
 
-		_pathStrip = ToolStrip()
-		_pathStrip.items.add('Path:')
+		_pathStrip = LabelStrip('Path: ')
 		_pathStrip.dock = DockStyle.Top
 		_pathStrip.parent = this
 
@@ -166,7 +164,7 @@ class ObjectExplorer
 
 	def copyClick(sender as Object, e as EventArgs)
 		sb = StringBuilder()
-		sb.appendLine(_pathStrip.items[0].text)
+		sb.appendLine(_pathStrip.text)
 		if _treeView.selectedNode
 			sb.appendLine(_treeView.selectedNode.text)
 		s = sb.toString
@@ -227,11 +225,11 @@ class ObjectExplorer
 					tv.endUpdate
 					node.ensureVisible
 					duration = DateTime.now.subtract(start)
-					_infoStrip.items[0].text = 'Found in [duration.toString]'
+					_infoStrip.text = 'Found in [duration.toString]'
 					didFind = true
 					break
 			if not didFind
-				_infoStrip.items[0].text = 'Could not find text.'
+				_infoStrip.text = 'Could not find text.'
 		finally
 			tv.endUpdate
 
@@ -344,7 +342,7 @@ class ObjectExplorer
 			if sb.length and not node.propertyName.startsWith('.') and not node.propertyName.startsWith(r'[')
 				sb.append('.')
 			sb.append(node.propertyName)
-		_pathStrip.items[0].text = sb.toString
+		_pathStrip.text = sb.toString
 
 	def objectIdTextFor(obj as dynamic) as String
 		"""
@@ -496,3 +494,33 @@ class XTreeNode
 
 	def contains(s as String) as bool
 		return .text.toLower.contains(s.toLower)
+
+
+class LabelStrip
+	inherits ToolStrip
+	"""
+	You can set the contents of a label strip directly:
+		labelStrip.text = 'some message'
+
+	The label strip also maintains a prefix string which is blank by default.
+	"""
+
+	var _label as ToolStripLabel
+	var _prefix as String
+	
+	def init
+		.init('')
+
+	def init(prefix as String)
+		base.init
+		_label = ToolStripLabel(prefix)
+		.items.add(_label)
+		_prefix = prefix
+
+	pro prefix from var
+
+	pro text as String is override
+		get
+			return _label.text to !
+		set
+			_label.text = _prefix + value
