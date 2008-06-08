@@ -69,10 +69,11 @@ public class AssertException : Exception, IHasSourceSite {
 
 	public override string Message {
 		get {
-			StringBuilder sb = new StringBuilder("\n");
-			sb.AppendFormat("sourceSite = {0}\n", _sourceSite);
-			sb.AppendFormat("info       = {0}\n", ToTechString(_info));
-			sb.AppendFormat("this       = {0}\n", ToTechString(_this));
+			string nl = Environment.NewLine;
+			StringBuilder sb = new StringBuilder(nl);
+			sb.AppendFormat("sourceSite = {0}{1}", _sourceSite, nl);
+			sb.AppendFormat("info       = {0}{1}", ToTechString(_info), nl);
+			sb.AppendFormat("this       = {0}{1}", ToTechString(_this), nl);
 			int indentLevel = 1;
 			int i = 1;
 			while (i < _expressions.Length) {
@@ -95,7 +96,7 @@ public class AssertException : Exception, IHasSourceSite {
 					}
 					// for (int x = 0; x < indentLevel*4; x++)
 					sb.Append(new String(' ', indentLevel*4));
-					sb.AppendFormat("{0} = {1}\n", source, valueString);
+					sb.AppendFormat("{0} = {1}{2}", source, valueString, nl);
 					i += 2;
 				}
 			}
@@ -878,7 +879,7 @@ static public class CobraImp {
 
 	static public void TestEnded(string className) {
 		if (ShowTestProgress) {
-			TestProgressWriter.WriteLine("Completed testing of {0}.\n", className);
+			TestProgressWriter.WriteLine("Completed testing of {0}.{1}", className, Environment.NewLine);
 			TestProgressWriter.Flush();
 		}
 	}
