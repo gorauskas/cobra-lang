@@ -784,6 +784,8 @@ class Box
 		require
 			.containsGenericParameters
 			typeArgs.count == .genericParams.count
+		ensure
+			result.genericParams == typeArgs
 		body
 			assert .isGenericDef
 
@@ -816,13 +818,32 @@ class Box
 
 			if genericDef._constructedTypes is nil
 				genericDef._constructedTypes = Dictionary<of String, Box>()
-			key = Utils.join(',', for type in typeArgs get type.name)
+			
+			# old key computation is incorrect: key = Utils.join(',', for type in typeArgs get type.name)
+			# it doesn't distinguish two different types with the same name (such as a generic param T which may be passed in via a subclass or generic method)
+			sb = StringBuilder()
+			for type in typeArgs
+				# note: wrapped types like NilableType are not kept unique by the compiler, so we cannot use their serial number down below
+				suffix = ''
+				if type inherits WrappedType
+					if type inherits ArrayType
+						suffix = r'[]'
+					else if type inherits NilableType
+						suffix = '?'
+					else
+						assert false, type
+					type = type.theWrappedType
+				if sb.length, sb.append(',')
+				sb.append('[type.serialNum]-[type.name][suffix]')  # the serial num is necessary. the name is just a convenience when debugging
+			key = sb.toString
+
 			if genericDef._constructedTypes.containsKey(key)
 				return genericDef._constructedTypes[key]
 			t = .memberwiseClone to Box
 			assert t is not this
 			genericDef._constructedTypes[key] = t
-			t._name = '[.rootName]<of [key]>'
+			argNames = Utils.join(',', for type in typeArgs get type.name)
+			t._name = '[.rootName]<of [argNames]>'
 			t._genericDef = this
 			t._clrType = nil  # The constructed type is really sourced from the generic def. Don't foster confusion with a reference to the original generic def's clr type (if there is one).
 			t.cloneCollections
@@ -1921,7 +1942,7 @@ class GenericParam
 		.init(genArgType.name)
 		_clrType = genArgType
 		# TODO: scan Constraints
-		
+
 	get name as String is override
 		return _name
 
