@@ -18,6 +18,10 @@ class ObjectExplorer
 		[ ] Search for text anywhere in the object graph
 			[ ] This technically works now, but is crazy slow. Not to mention the level > 10 hack!
 		[ ] In the tree, show the elements of sets. Maybe that's an ICollection thing...
+		[ ] Add a context menu to the textbox with commands: &Copy, Select &All, &Toggle String Literals.
+			The last alters _willShowPlainTextInTextBox
+		[ ] Change the path to a text field that can be copied and pasted
+		[ ] Add an "Up" button to back up in the tree view? Maybe. Backspace in the treeview already does this.
 
 	IDEAS
 		[ ] Bookmarks
@@ -28,7 +32,8 @@ class ObjectExplorer
 			and then 'subnodes' type properties like lists
 	"""
 
-	var _initialEntries as List<of dynamic?>?
+	var _initialEntries as List<of dynamic?>
+	var _willShowPlainTextInTextBox = true
 
 	# top:
 	var _buttonStrip as ToolStrip
@@ -39,9 +44,9 @@ class ObjectExplorer
 
 	# left side:
 	var _treeView as TreeView
-	
+
 	# right side:
-	var _objectIdStrip as ToolStrip
+	var _objectIdStrip as LabelStrip
 	var _textBox as TextBox
 	var _propertyGrid as PropertyGrid
 
@@ -50,11 +55,16 @@ class ObjectExplorer
 		_initialEntries = List<of dynamic?>(entries)
 
 	def init
-		.text = 'Cobra Compiler WinForms Explorer'
+		_initialEntries = List<of dynamic?>()
+		.text = 'Object Explorer'
 		.startPosition = FormStartPosition.Manual
 		_initSize
 		_makeControls
-		
+
+	def addKeyValue(key as String, value as dynamic?)
+		_initialEntries.add(key)
+		_initialEntries.add(value)
+
 	def onLoad(e as EventArgs) is override, protected
 		base.onLoad(e)
 		_populateNav
@@ -115,8 +125,7 @@ class ObjectExplorer
 		split.splitterWidth += 2
 		split.splitterDistance = textBoxHeight
 
-		_objectIdStrip = ToolStrip()
-		_objectIdStrip.items.add('')
+		_objectIdStrip = LabelStrip()
 		_objectIdStrip.dock = DockStyle.Top
 		_objectIdStrip.parent = detailsPanel
 		
@@ -333,11 +342,17 @@ class ObjectExplorer
 		# update the details view
 		obj = (e.node to XTreeNode).value
 		if obj
-			_objectIdStrip.items[0].text = .objectIdTextFor(obj)
+			_objectIdStrip.text = .objectIdTextFor(obj)
 		else
-			_objectIdStrip.items[0].text = ''
+			_objectIdStrip.text = ''
 		_updatePathStrip
-		_textBox.text = CobraCore.toTechString(obj)
+		if _willShowPlainTextInTextBox
+			if obj inherits String
+				_textBox.text = obj
+			else
+				_textBox.text = CobraCore.toTechString(obj)
+		else			
+			_textBox.text = CobraCore.toTechString(obj)
 		_propertyGrid.selectedObject = obj
 		
 	def _updatePathStrip
