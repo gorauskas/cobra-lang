@@ -24,17 +24,32 @@ class CobraMain
 			
 			# Run the command line as usual:
 			startTime = DateTime.now
+			exc as Exception?
 			try
-				commandLine = CommandLine()
-				commandLine.run
-			finally
-				if _willTimeIt
-					print 'timeit = [DateTime.now.subtract(startTime)]'
+				try
+					commandLine = CommandLine()
+					commandLine.run
+				finally
+					if _willTimeIt
+						print 'timeit = [DateTime.now.subtract(startTime)]'
+			catch exc as Exception?
+				pass
 
-			# Now explore the result:
+			# Now explore the results:
 			Application.enableVisualStyles
-			form = ObjectExplorer('CommandLine', commandLine, 'Compiler', commandLine.compiler)
+			form = ObjectExplorer()
+			form.text = 'Cobra Compiler WinForms Explorer'
+			if exc, form.addKeyValue('Exception', exc)
+			form.addKeyValue('CommandLine', commandLine)
+			form.addKeyValue('Compiler', commandLine.compiler)
+			form.addKeyValue('Messages', commandLine.compiler.messages)
+
+			topNameSpaces = List<of NameSpace>()
+			for module in commandLine.compiler.modules
+				if module inherits CobraModule
+					if not module.isCobraLibrary
+						topNameSpaces.add(module.topNameSpace)
+			form.addKeyValue('Namespaces', topNameSpaces)
+
 			form.show
 			Application.run(form)
-
-
