@@ -34,6 +34,7 @@ class ObjectExplorer
 
 	var _initialEntries as List<of dynamic?>
 	var _willShowPlainTextInTextBox = true
+	var _maxSearchSeconds = 15.0f
 
 	# top:
 	var _buttonStrip as ToolStrip
@@ -228,6 +229,8 @@ class ObjectExplorer
 	def findNextClick(sender as Object, e as EventArgs)
 		# Although this avoids cycles in a single search operation, it does not avoid them in between
 		# search operations. We'll see if that's a problem in practice.
+		_infoStrip.text = 'Searching...'
+		_infoStrip.update
 		if _treeView.nodes.count == 0
 			return
 		start = DateTime.now
@@ -247,6 +250,9 @@ class ObjectExplorer
 					_infoStrip.text = 'Found in [duration.toString]'
 					didFind = true
 					break
+				if DateTime.now.subtract(start).totalSeconds > _maxSearchSeconds
+					_infoStrip.text = 'Sorry, could not find text after [_maxSearchSeconds] seconds max search time.'
+					return
 			if not didFind
 				_infoStrip.text = 'Could not find text.'
 		finally
@@ -307,15 +313,14 @@ class ObjectExplorer
 		tv = _treeView
 		tv.beginUpdate
 		try
-			if _initialEntries
-				for i in _initialEntries.count
-					if i % 2 == 0
-						key = _initialEntries[i]
-						value = _initialEntries[i+1]
-						node = XTreeNode(key to String, key to String, value)
-						tv.nodes.add(node)
-						dummy = XTreeNode.newDummyNode
-						node.nodes.add(dummy)
+			for i in _initialEntries.count
+				if i % 2 == 0
+					key = _initialEntries[i]
+					value = _initialEntries[i+1]
+					node = XTreeNode(key to String, key to String, value)
+					tv.nodes.add(node)
+					dummy = XTreeNode.newDummyNode
+					node.nodes.add(dummy)
 			_populateNavUI	
 		finally
 			tv.endUpdate
