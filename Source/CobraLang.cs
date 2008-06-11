@@ -132,6 +132,35 @@ public class AssertException : Exception, IHasSourceSite {
 		return s;
 	}
 	
+	public IList<object> Expressions {
+		get {
+			return _expressions;
+		}
+	}
+
+	public void PopulateTreeWithExpressions(ITreeBuilder tree) {
+		// Invoked by the Object Explorer, but any tool could use this by implementing ITreeBuilder.
+		// By adding the expression breakdown as entries in the view,
+		// object values will be clickable which will lead to their own detailed view.
+		int indentLevel = 0;
+		int i = 1;
+		while (i < _expressions.Length) {
+			object item = _expressions[i];
+			if (item.Equals(+1)) {
+				tree.Indent();
+				i++;
+			} else if (item.Equals(-1)) {
+				tree.Outdent();
+				i++;
+			} else {
+				string source = (string)_expressions[i];
+				object value = _expressions[i+1];
+				tree.AddEntry(source, value);
+				i += 2;
+			}
+		}
+	}
+
 	public void ExtendObjectTable(IObjectView view) {
 		// Invoked by the Cobra Exception Report.
 		// By adding the expression breakdown as entries in the view,

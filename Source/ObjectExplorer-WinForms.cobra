@@ -1,3 +1,11 @@
+"""
+On the command line, use the following with your source files appended:
+
+cobra -r:System.Windows.Forms -r:System.Drawing ObjectExplorer-WinForms.cobra
+
+See Cobra's CobraMain-ObjectExplorer-WinForms.cobra for an example of using this Object Explorer.
+"""
+
 use System.Drawing
 use System.Windows.Forms
 use System.Reflection
@@ -5,6 +13,7 @@ use System.Reflection
 
 class ObjectExplorer
 	inherits Form
+	implements ITreeBuilder
 	"""
 	Shows a tree view of one or more objects on the right and their properties. By drilling down
 	in the tree view, you can explore an object graph. On the right, the details of the currently
@@ -319,8 +328,7 @@ class ObjectExplorer
 					value = _initialEntries[i+1]
 					node = XTreeNode(key to String, key to String, value)
 					tv.nodes.add(node)
-					dummy = XTreeNode.newDummyNode
-					node.nodes.add(dummy)
+					node.nodes.add(XTreeNode.newDummyNode)
 			_populateNavUI	
 		finally
 			tv.endUpdate
@@ -333,15 +341,19 @@ class ObjectExplorer
 		
 		node = XTreeNode('This Form', '', this)
 		uiNode.nodes.add(node)
+		node.nodes.add(XTreeNode.newDummyNode)
 
 		node = XTreeNode('TreeView', '', _treeView)
 		uiNode.nodes.add(node)
+		node.nodes.add(XTreeNode.newDummyNode)
 		
 		node = XTreeNode('PropertyGrid', '', _propertyGrid)
 		uiNode.nodes.add(node)
+		node.nodes.add(XTreeNode.newDummyNode)
 		
 		node = XTreeNode('PrimaryScreen', '', Screen.primaryScreen)
 		uiNode.nodes.add(node)
+		node.nodes.add(XTreeNode.newDummyNode)
 
 	def treeViewAfterSelect(sender as Object, e as TreeViewEventArgs)
 		# update the details view
@@ -377,6 +389,7 @@ class ObjectExplorer
 	def objectIdTextFor(obj as dynamic) as String
 		"""
 		Subclasses can override this method to customize the text that appears in the 'object id' strip in the details view.
+		The default implementation gives the type name and--if they exist--the .serialNum and the .name or .fileName of the object.
 		"""
 		s = CobraCore.typeName(obj.getType)
 		if .isPrimitive(obj)
@@ -431,8 +444,7 @@ class ObjectExplorer
 				child = XTreeNode('[propName] == [CobraCore.toTechString(value)]', propName, value)
 				if isGood
 					if not .isPrimitive(value)
-						dummy = XTreeNode.newDummyNode
-						child.nodes.add(dummy)
+						child.nodes.add(XTreeNode.newDummyNode)
 				node.nodes.add(child)
 			lb = c'['
 			if obj inherits System.Collections.IList
@@ -447,8 +459,7 @@ class ObjectExplorer
 					child = XTreeNode('[lb][i]] == [CobraCore.toTechString(value)]', '[lb][i]]', value)
 					if isGood
 						if not .isPrimitive(value)
-							dummy = XTreeNode.newDummyNode
-							child.nodes.add(dummy)
+							child.nodes.add(XTreeNode.newDummyNode)
 					node.nodes.add(child)
 			else if obj inherits System.Collections.IDictionary
 				keys = System.Collections.ArrayList(obj.keys)
@@ -465,9 +476,13 @@ class ObjectExplorer
 					child = XTreeNode('[lb][CobraCore.toTechString(key)]] == [CobraCore.toTechString(value)]', '[lb][CobraCore.toTechString(key)]]', value)
 					if isGood
 						if not .isPrimitive(value)
-							dummy = XTreeNode.newDummyNode
-							child.nodes.add(dummy)
+							child.nodes.add(XTreeNode.newDummyNode)
 					node.nodes.add(child)
+			else if obj inherits AssertException
+				_nodeStack = Stack<of XTreeNode>()
+				_nodeStack.push(node)
+				obj.populateTreeWithExpressions(this)
+				_nodeStack = nil
 
 	def comparePropInfo(a as PropertyInfo, b as PropertyInfo) as int
 		return a.name.toLower.compareTo(b.name.toLower)
@@ -484,6 +499,29 @@ class ObjectExplorer
 		if value inherits float, return true
 		if value inherits String, return true
 		return false
+
+	## ITreeBuilder
+	
+	# These methods are invoked by AssertException to populate the tree nodes for subexpressions of the assert condition.
+	
+	var _nodeStack as Stack<of XTreeNode>?
+		"""
+		A stack of 'parent nodes' produced during ITreeBuilder calls such as .addEntry and .indent.
+		"""
+
+	def indent
+		nodes = _nodeStack.peek.nodes
+		assert nodes.count > 0, 'Cannot indent more than once.'
+		# make the last sibling node the new parent
+		_nodeStack.push(nodes[nodes.count-1] to XTreeNode)
+
+	def outdent
+		_nodeStack.pop
+
+	def addEntry(key as String, value as dynamic?)
+		text = '[key] == [CobraCore.toTechString(value)]'
+		node = XTreeNode(text, key, value)
+		_nodeStack.peek.nodes.add(node)
 
 
 class XTreeNode
