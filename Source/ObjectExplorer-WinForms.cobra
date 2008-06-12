@@ -13,7 +13,7 @@ use System.Reflection
 
 class ObjectExplorer
 	inherits Form
-	implements ITreeBuilder
+	implements ITreeBuilder, IObjectView
 	"""
 	Shows a tree view of one or more objects on the right and their properties. By drilling down
 	in the tree view, you can explore an object graph. On the right, the details of the currently
@@ -31,6 +31,7 @@ class ObjectExplorer
 			The last alters _willShowPlainTextInTextBox
 		[ ] Change the path to a text field that can be copied and pasted
 		[ ] Add an "Up" button to back up in the tree view? Maybe. Backspace in the treeview already does this.
+		[ ] May wish to replace the ListView with a DataGridView to get more comfortable spacing between text and grid lines
 
 	IDEAS
 		[ ] Bookmarks
@@ -58,6 +59,8 @@ class ObjectExplorer
 	# right side:
 	var _objectIdStrip as LabelStrip
 	var _textBox as TextBox
+	var _objectViewsTabControl as TabControl
+	var _objectListView as ListView
 	var _propertyGrid as PropertyGrid
 
 	def init(entries as vari dynamic?)
@@ -128,9 +131,28 @@ class ObjectExplorer
 		_textBox.dock = DockStyle.Fill
 		_textBox.parent = split.panel1
 
+		_objectViewsTabControl = TabControl()
+		_objectViewsTabControl.dock = DockStyle.Fill
+		_objectViewsTabControl.parent = split.panel2
+
+		page = TabPage('Key / Value')
+		_objectListView = ListView()
+		_objectListView.view = View.Details
+		_objectListView.gridLines = true
+		_objectListView.fullRowSelect = true
+		_objectListView.columns.add('Key')
+		_objectListView.columns.add('View')
+		_objectListView.dock = DockStyle.Fill
+		_objectListView.parent = page
+		
+		_objectViewsTabControl.tabPages.add(page)
+		
+		page = TabPage('Property Grid')
 		_propertyGrid = PropertyGrid()
 		_propertyGrid.dock = DockStyle.Fill
-		_propertyGrid.parent = split.panel2
+		_propertyGrid.parent = page
+		
+		_objectViewsTabControl.tabPages.add(page)
 		
 		split.splitterWidth += 2
 		split.splitterDistance = textBoxHeight
@@ -347,6 +369,10 @@ class ObjectExplorer
 		uiNode.nodes.add(node)
 		node.nodes.add(XTreeNode.newDummyNode)
 		
+		node = XTreeNode('Key Value View', '', _objectListView)
+		uiNode.nodes.add(node)
+		node.nodes.add(XTreeNode.newDummyNode)
+		
 		node = XTreeNode('PropertyGrid', '', _propertyGrid)
 		uiNode.nodes.add(node)
 		node.nodes.add(XTreeNode.newDummyNode)
@@ -370,8 +396,34 @@ class ObjectExplorer
 				_textBox.text = CobraCore.toTechString(obj)
 		else			
 			_textBox.text = CobraCore.toTechString(obj)
+		# object views on right hand side
+		_populateObjectListView(obj)
 		_propertyGrid.selectedObject = obj
-		
+
+	def _populateObjectListView(obj as Object?)
+		listView = _objectListView
+		listView.beginUpdate
+		try
+			listView.items.clear
+			for info in _keyValuesOf(obj)
+				key = info[0] to String
+				value = info[1]
+				# isGood = info[2] to bool
+				item = ListViewItem(key)
+				item.subItems.add(CobraCore.toTechString(value))
+				listView.items.add(item)
+
+			if obj inherits AssertException
+				_addEntryMode = 2
+				try
+					obj.extendObjectTable(this)
+				finally
+					_addEntryMode = 0
+
+			for i in 2, _objectListView.autoResizeColumn(i, ColumnHeaderAutoResizeStyle.ColumnContent)
+		finally
+			listView.endUpdate
+
 	def _updatePathStrip
 		node = _treeView.selectedNode to XTreeNode?
 		nodes = List<of XTreeNode>()
@@ -423,66 +475,83 @@ class ObjectExplorer
 		ensure
 			node.nodes.count == 0 or not (node.nodes[0] to XTreeNode).isDummy
 		body
-			# need on-the-fly expanding
-			node.nodes.removeAt(0)
+			node.nodes.removeAt(0)  # the dummy node
 			obj = node.value
-			propInfos = List<of PropertyInfo>((obj to Object).getType.getProperties)
-			propInfos.sort(ref .comparePropInfo)
-			for propInfo in propInfos
-				if propInfo.name == 'Item'  # used for indexing. technically could be named something else, but this works in practice
-					continue
-				value = nil
-				isGood = false
-				try
-					value = propInfo.getValue(obj, nil)
-					isGood = true
-				catch exc as Exception
-					if exc inherits TargetInvocationException and exc.innerException
-						exc = exc.innerException to !
-					value = 'Caught during get: [exc.getType.name]: [exc.message]'
-				propName = .cobraMemberNameFor(propInfo.name)
-				child = XTreeNode('[propName] == [CobraCore.toTechString(value)]', propName, value)
+			for info in _keyValuesOf(obj)
+				key = info[0] to String
+				value = info[1]
+				isGood = info[2] to bool
+				child = XTreeNode('[key] == [CobraCore.toTechString(value)]', key, value)				
 				if isGood
 					if not .isPrimitive(value)
 						child.nodes.add(XTreeNode.newDummyNode)
 				node.nodes.add(child)
-			lb = c'['
-			if obj inherits System.Collections.IList
-				for i in obj.count
-					value = nil
-					isGood = false
-					try
-						value = obj[i]
-						isGood = true
-					catch exc as Exception
-						value = 'Caught during IList[lb][i]]: [exc.getType.name]: [exc.message]'
-					child = XTreeNode('[lb][i]] == [CobraCore.toTechString(value)]', '[lb][i]]', value)
-					if isGood
-						if not .isPrimitive(value)
-							child.nodes.add(XTreeNode.newDummyNode)
-					node.nodes.add(child)
-			else if obj inherits System.Collections.IDictionary
-				keys = System.Collections.ArrayList(obj.keys)
-				keys.sort
-				for key in keys
-					value = nil
-					isGood = false
-					try
-						value = obj[key]
-						isGood = true
-					catch exc as Exception
-						value = 'Caught during IDictionary[lb][key]]: [exc.getType.name]: [exc.message]'
-					lb = c'['
-					child = XTreeNode('[lb][CobraCore.toTechString(key)]] == [CobraCore.toTechString(value)]', '[lb][CobraCore.toTechString(key)]]', value)
-					if isGood
-						if not .isPrimitive(value)
-							child.nodes.add(XTreeNode.newDummyNode)
-					node.nodes.add(child)
-			else if obj inherits AssertException
+			if obj inherits AssertException
 				_nodeStack = Stack<of XTreeNode>()
 				_nodeStack.push(node)
-				obj.populateTreeWithExpressions(this)
+				_addEntryMode = 1
+				try
+					obj.populateTreeWithExpressions(this)
+				finally
+					_addEntryMode = 0
 				_nodeStack = nil
+			
+	def _keyValuesOf(obj as dynamic?) as IEnumerable<of List<of dynamic?>>
+		"""
+		Yields a series of [keyName, value, isGood] for the given object.
+		The series includes properties, indexed elements of IList and keyed elements of IDictionary.
+		The keyName is a string. The value could be anything including nil.
+		When isGood is false, an exception was caught when retrieving the value and consequently the value says 'Caught during...'.
+		
+		This method can be used to populate a detailed view of the object, a list of subnodes in a treeview, etc.
+		
+		Does *not* check for AssertException to invoke any of its special methods for displaying subexpressions.
+		"""
+		if obj is nil, yield break
+		yield ['.getType', obj.getType, true]
+		yield ['.toTechString', obj, true]
+		propInfos = List<of PropertyInfo>((obj to Object).getType.getProperties)
+		propInfos.sort(ref .comparePropInfo)
+		for propInfo in propInfos
+			if propInfo.name == 'Item'  # used for indexing. technically could be named something else, but this works in practice
+				continue
+			value = nil
+			isGood = false
+			try
+				value = propInfo.getValue(obj, nil)
+				isGood = true
+			catch exc as Exception
+				if exc inherits TargetInvocationException and exc.innerException
+					exc = exc.innerException to !
+				value = 'Caught during get: [exc.getType.name]: [exc.message]'
+			propName = .cobraMemberNameFor(propInfo.name)
+			yield [propName, value, isGood]
+		lb = c'['
+		if obj inherits System.Collections.IList
+			for i in obj.count
+				propName = '[lb][i]]'
+				value = nil
+				isGood = false
+				try
+					value = obj[i]
+					isGood = true
+				catch exc as Exception
+					value = 'Caught during IList[propName]: [exc.getType.name]: [exc.message]'
+				yield [propName, value, isGood]
+		else if obj inherits System.Collections.IDictionary
+			keys = System.Collections.ArrayList(obj.keys)
+			keys.sort
+			for dictKey in keys
+				propName = '[lb][CobraCore.toTechString(dictKey)]]'
+				value = nil
+				isGood = false
+				try
+					value = obj[dictKey]
+					isGood = true
+				catch exc as Exception
+					value = 'Caught during IDictionary[propName]: [exc.getType.name]: [exc.message]'
+				lb = c'['
+				yield [propName, value, isGood]
 
 	def comparePropInfo(a as PropertyInfo, b as PropertyInfo) as int
 		return a.name.toLower.compareTo(b.name.toLower)
@@ -509,6 +578,8 @@ class ObjectExplorer
 		A stack of 'parent nodes' produced during ITreeBuilder calls such as .addEntry and .indent.
 		"""
 
+	var _addEntryMode = 0
+
 	def indent
 		nodes = _nodeStack.peek.nodes
 		assert nodes.count > 0, 'Cannot indent more than once.'
@@ -519,9 +590,17 @@ class ObjectExplorer
 		_nodeStack.pop
 
 	def addEntry(key as String, value as dynamic?)
-		text = '[key] == [CobraCore.toTechString(value)]'
-		node = XTreeNode(text, key, value)
-		_nodeStack.peek.nodes.add(node)
+		branch _addEntryMode
+			on 1
+				text = '[key] == [CobraCore.toTechString(value)]'
+				node = XTreeNode(text, key, value)
+				_nodeStack.peek.nodes.add(node)
+			on 2
+				item = ListViewItem(key)
+				item.subItems.add(CobraCore.toTechString(value))
+				_objectListView.items.add(item)
+			else
+				throw FallThroughException(_addEntryMode)
 
 
 class XTreeNode
