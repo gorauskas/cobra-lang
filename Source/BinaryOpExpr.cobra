@@ -899,6 +899,19 @@ class DotExpr
 			if _left inherits ThisOrBaseLit
 				if .curCodeMember and .curCodeMember.isShared and not _dotRightExpr.member.isShared  # .curCodeMember is nil when bind imp'ing on var init exprs like "var _x = someExpr"
 					.throwError('Cannot access instance member "[_dotRightExpr.name]" from the current shared member. Make the member "shared" or create an instance of the type.')
+			# Check for qualified type such as System.Object
+			if .definition implements IType and .type.isDescendantOf(.compiler.libraryType('System.Type'))
+				# A.B where A and B are namespaces or types
+				_transformTo(TypeExpr(.token, .definition to IType).bindImp)
+			else if (right = .right) inherits CallExpr
+				if right.definition implements IType
+					# A.B.C() where C is a type such as a class or struct
+					te = TypeExpr(.token, right.definition to IType)
+					te.bindImp
+					args = right.args
+					pc = PostCallExpr(right.token, te, right.args)
+					pc.bindImp
+					_transformTo(pc)
 
 	def afterStatementBindImp
 		base.afterStatementBindImp

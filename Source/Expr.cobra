@@ -1125,7 +1125,7 @@ class IdentifierExpr
 		if .isTypeReference
 			# C# often requires typeof(Foo) instead of just plain Foo
 			superNode = .superNode
-			if not superNode inherits DotExpr and not superNode inherits InheritsExpr		
+			if not superNode inherits DotExpr and not superNode inherits InheritsExpr
 				return 'typeof(' + defi.sharpName + ')'
 		return defi.sharpName
 
@@ -1699,6 +1699,8 @@ class PostCallExpr
 		.addField('expr', _expr)
 		.addField('args', _args)
 
+	get expr from var
+
 	get args from var
 		has Subnodes
 
@@ -2245,7 +2247,27 @@ class TypeExpr
 		_type = .compiler.typeType
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		sw.write(_containedType.sharpRef)
+		if _requiresTypeOf()
+			sw.write('typeof(')
+			sw.write(_containedType.sharpRef)
+			sw.write(')')
+		else
+			sw.write(_containedType.sharpRef)
+
+	def _requiresTypeOf as bool
+		# Cobra never requires that you wrap a type reference in typeof(Foo).
+		# C# requires typeof() in a variety of circumstances and won't accept it in a variety of others.
+		superNode = .superNode
+		if superNode is nil
+			return false
+		else
+			if superNode inherits DotExpr, return false
+			if superNode inherits PostCallExpr, return false
+			if superNode inherits BinaryOpExpr
+				if this is superNode.right
+					if superNode inherits InheritsExpr or superNode inherits AbstractToExpr
+						return false
+			return true
 
 	def writeSharpDefForBreakdown(sw as SharpWriter) is override
 		sw.write('typeof(')
