@@ -838,6 +838,9 @@ class AbstractMethod
 			if not local.isUsed
 				.compiler.warning(local, 'The value of variable "[local.name]" is never used.')
 
+
+	## Generics
+
 	def constructedFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as BoxMember  # CC: as same
 		newMember = base.constructedFor(box, gpToType) to AbstractMethod  # CC: this = base. ...
 		assert newMember._returnType
@@ -1179,11 +1182,13 @@ class Initializer
 class Method
 	inherits AbstractMethod
 
-	var _genericParams as List<of GenericParam>
 	var _implementsTypeNode as ITypeProxy?
 	var _implementsType as IType?
 
-	def init(token as IToken, box as Box, name as String, genericParams as List<of GenericParam>, paramsList as List<of Param>, returnTypeNode as ITypeProxy, implementsTypeNode as ITypeProxy?, isNames as List<of String>, attribs as AttributeList, docString as String)
+	def init(token as IToken, box as Box, name as String, paramsList as List<of Param>, returnTypeNode as ITypeProxy, implementsTypeNode as ITypeProxy?, isNames as List<of String>, attribs as AttributeList, docString as String)
+		.init(token, box, name, List<of IType>(), paramsList, returnTypeNode, implementsTypeNode, isNames, attribs, docString)
+
+	def init(token as IToken, box as Box, name as String, genericParams as List<of IType>, paramsList as List<of Param>, returnTypeNode as ITypeProxy, implementsTypeNode as ITypeProxy?, isNames as List<of String>, attribs as AttributeList, docString as String)
 		base.init(token, box, name, paramsList, isNames, attribs, docString)
 		_genericParams = genericParams
 		_returnTypeNode = returnTypeNode
@@ -1195,8 +1200,6 @@ class Method
 
 	get englishName as String is override
 		return 'method'
-
-	get genericParams from var
 
 	get hasVariArgs as bool
 		assert false, 'TODO: complete Method.hasVariArgs'
@@ -1233,13 +1236,103 @@ class Method
 		else
 			return ''
 
-	def genericParamForName(name as String) as GenericParam?
-		# idea: return find param in _genericParams where param.name == name
-		for param in _genericParams
-			if param.name == name
-				return param
-		return nil
+
+	## Generics
+
+	var _genericParams as List<of IType>
+	var _genericDef as Method?  # non-nil for a method constructed from a generic method
+	var _constructions as Dictionary<of String, Method>?
+
+	get genericDef from var
+
+	get genericParams from var
+
+	get isConstructed as bool
+		return _genericDef is not nil
+
+	get isGenericDef as bool
+		"""
+		Returns true if this type is a definition of a generic type, and
+		therefore capable of making subsequent generic types via the
+		`constructedTypeFor` method. A generic type will have generic
+		parameters which are all GenericParam (as opposed to other types
+		such as `int` or a given class).
+		"""
+		# TODO: make this more efficient, maybe by computing in the initializer
+		if .genericDef or .genericParams.count == 0
+			return false
+		else if .genericParams.count
+			for param in .genericParams
+				if not param inherits GenericParam
+					return false
+			return true
+		else
+			return false
+
+	get containsGenericParameters as bool
+		for param in .genericParams
+			if param inherits GenericParam
+				return true
+			if param inherits Box  # CC: and <next if condition>
+				if param.containsGenericParameters
+					return true
+		return false
+
+	def constructedMethodWith(typeArgs as List<of IType>) as Method
+		"""
+		This is for methods that are generic themselves due to having their own generic parameters.
+		For methods that simply belong to a generic class, see .constructedFor.
 		
+		TODO: Consider the case of a method that implements a specific interface. Can that have generic parameters?
+		"""
+		require
+			.didBindInt
+			.isGenericDef
+			.containsGenericParameters
+			typeArgs.count == .genericParams.count
+		ensure
+			typeArgs <> .genericParams implies this is not result
+			result.genericParams == typeArgs
+		body
+			if typeArgs == _genericParams
+				return this
+
+			# the cache of constructed types has to come from the root generic type def or you end up with duplicate
+			# constructed types which is not only wasteful, but causes problems with inheritance tests
+			genericDef = this
+			while genericDef.genericDef
+				genericDef = genericDef.genericDef to !
+
+			if genericDef._constructions is nil
+				genericDef._constructions = Dictionary<of String, Method>()
+
+			key = TypeUtil.keyForTypeArgs(typeArgs)
+
+			if genericDef._constructions.containsKey(key)
+				return genericDef._constructions[key]
+
+			c = .memberwiseClone to Method
+			assert c is not this
+			genericDef._constructions[key] = c
+			c._genericDef = this
+			c._constructions = nil  # only the generic def tracks the constructions			
+			c._genericParams = List<of IType>(typeArgs)
+			c._params = List<of Param>()
+			typeForParam = TypeUtil.dictionaryOf(.genericParams, typeArgs)
+			for param in .params
+				c._params.add(param.constructedFor(.box, typeForParam))
+			c._returnType = c._returnType.secondaryConstructedTypeFor(.box, typeForParam)
+			c.bindInt
+			return c
+
+	def genericParamForName(name as String) as IType?
+		# idea: return find param in _genericParams where param.name == name
+		for param in _genericParams, if param.name == name, return param
+		return nil
+
+
+	## Binding
+
 	def _bindInt is override
 		for param in _genericParams
 			param.bindInt
@@ -1641,9 +1734,10 @@ class MemberOverload
 class TestMethod
 	inherits Method
 	"""
+	TODO: Does TestMethod need to be altered in light of generic parameters to methods?
 	"""
 
-	var _forMember as BoxMember?
+	var _forMember as BoxMember?  # TODO: Can this type be narrowed?
 	var _forBox as Box?
 	var _overloadId = -1
 
@@ -1651,14 +1745,14 @@ class TestMethod
 		require
 			member.name.length
 		body
-			base.init(token, member.box, 'test_'+Utils.capped(member.name), List<of GenericParam>(), List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
+			base.init(token, member.box, 'test_'+Utils.capped(member.name), List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
 			_forMember = member
 
 	def init(token as IToken, box as Box)
 		require
 			box.name.length
 		body
-			base.init(token, box, 'test_class_'+Utils.capped(box.name), List<of GenericParam>(), List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
+			base.init(token, box, 'test_class_'+Utils.capped(box.name), List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
 			_forBox = box
 
 	get shouldBeVirtual as bool is override

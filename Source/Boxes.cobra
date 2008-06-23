@@ -591,7 +591,7 @@ class Box
 	def prepSystemObjectClass
 		# Pretend .NET is a bit more OO, consistent and elegant.
 		# C#'s typeof(X) is X.getType in Cobra.
-		meth = Method(TokenFix.empty, this, 'getType', List<of GenericParam>(), List<of Param>(), ClrTypeProxy(Type), nil, ['shared'], AttributeList(), 'Returns the System.Type instance that defines this type.')
+		meth = Method(TokenFix.empty, this, 'getType', List<of Param>(), ClrTypeProxy(Type), nil, ['shared'], AttributeList(), 'Returns the System.Type instance that defines this type.')
 		meth.sharedMethodBacking = 'typeof'
 		existing = .declForName('getType') to BoxMember
 		overload = MemberOverload(existing)
@@ -819,23 +819,7 @@ class Box
 			if genericDef._constructedTypes is nil
 				genericDef._constructedTypes = Dictionary<of String, Box>()
 			
-			# old key computation is incorrect: key = Utils.join(',', for type in typeArgs get type.name)
-			# it doesn't distinguish two different types with the same name (such as a generic param T which may be passed in via a subclass or generic method)
-			sb = StringBuilder()
-			for type in typeArgs
-				# note: wrapped types like NilableType are not kept unique by the compiler, so we cannot use their serial number down below
-				suffix = ''
-				if type inherits WrappedType
-					if type inherits ArrayType
-						suffix = r'[]'
-					else if type inherits NilableType
-						suffix = '?'
-					else
-						assert false, type
-					type = type.theWrappedType
-				if sb.length, sb.append(',')
-				sb.append('[type.serialNum]-[type.name][suffix]')  # the serial num is necessary. the name is just a convenience when debugging
-			key = sb.toString
+			key = TypeUtil.keyForTypeArgs(typeArgs)
 
 			if genericDef._constructedTypes.containsKey(key)
 				return genericDef._constructedTypes[key]
@@ -896,14 +880,8 @@ class Box
 			.genericDef.didBindInt or .genericDef.isBindingInt
 		body
 			_genericDef.unNilReturnTypes(_genericDef to !)
-			# create a dictionary from the generic params to their effective type
-			gpToType = Dictionary<of GenericParam, IType>()
-			for i = 0 .. typeArgs.count
-				if (p = _genericDef.genericParams[i]) inherits GenericParam
-					gpToType[p] = typeArgs[i]
-				else
-					throw FallThroughException(p)
-				
+			gpToType = TypeUtil.dictionaryOf(_genericDef.genericParams, typeArgs)
+
 			_baseClass = _baseClass.secondaryConstructedTypeFor(this, gpToType) to Class
 			assert _baseInterfaceProxies.count == 0 or _baseInterfaceProxies.count == _baseInterfaces.count
 			for i = 0 .. _baseInterfaces.count
@@ -1184,7 +1162,7 @@ class Box
 				# TODO: What to do? Change 'def init' to 'def .init' or 'def .ctor'? No quadruple underscores.
 				# or allow it in DLLs and use a different underlying name in the decl dict for initializers like the CLR name .ctor
 				continue
-			genericParams = List<of GenericParam>()
+			genericParams = List<of IType>()
 			params = _scanParams(methInfo.getParameters)
 			isNames = _isNamesForMethodInfo(methInfo)
 			attribs = _attribsForMethodInfo(methInfo)
@@ -1881,7 +1859,7 @@ class MethodSig
 		assert .parentBox or .parentNameSpace
 
 	def _bindInt
-		m = Method(.token, this, 'invoke', List<of GenericParam>(), List<of Param>(.params), .returnType ? .returnTypeProxy, nil, List<of String>(.isNames), AttributeList(), '')
+		m = Method(.token, this, 'invoke', List<of Param>(.params), .returnType ? .returnTypeProxy, nil, List<of String>(.isNames), AttributeList(), '')
 		m.statements.add(ThrowStmt(.token, CallExpr(.token, 'Exception', List<of Expr>()))) # just to avoid a Cobra warning during .bindImp
 		.addDecl(m)
 		base._bindInt

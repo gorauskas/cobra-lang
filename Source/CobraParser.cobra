@@ -1134,9 +1134,9 @@ class Parser
 		if opener.which not in ['ID', 'OPEN_CALL', 'OPEN_GENERIC'] and not opener.isKeyword
 			.throwError('Encountered [opener.which] when expecting an identifier.')
 		if opener.which == 'OPEN_GENERIC'
-			genericParams = .declGenericParams(opener)
+			genericParams = .makeList(List<of IType>(), .declGenericParams(opener)) to List<of IType>
 		else
-			genericParams = List<of GenericParam>()
+			genericParams = List<of IType>()
 		name = opener.value to String
 		curBox = .curBox
 		if name == curBox.name or Utils.capped(name) == curBox.name
@@ -2557,11 +2557,28 @@ class Parser
 		Syntax:
 			foo(args)
 		"""
-		token = .expect('OPEN_CALL', 'OPEN_GENERIC') 
+		token = .expect('OPEN_CALL', 'OPEN_GENERIC')
 		callName = token.value to String
-		assert not callName.endsWith('(')
-		exprs = .commaSepExprs(['RPAREN'], false, true)
-		return CallExpr(token, callName, exprs)
+		branch token.which
+			on 'OPEN_CALL'
+				assert not callName.endsWith('(')
+				args = .commaSepExprs(['RPAREN'], false, true)
+				return CallExpr(token, callName, args)
+			on 'OPEN_GENERIC'
+				assert not callName.endsWith('<of') and not callName.endsWith('<')
+				typeArgs = List<of ITypeProxy>()
+				isDone = false
+				post while not isDone
+					typeArgs.add(.typeId)
+					branch .grab.which
+						on 'COMMA', pass
+						on 'GT', isDone = true
+						else, .throwError('Unexpected token [.last] in type arguments.')
+				.expect('LPAREN')
+				args = .commaSepExprs(['RPAREN'], false, true)
+				return CallExpr(token, callName, typeArgs, args)
+			else
+				throw FallThroughException(token)				
 
 	def argument as Expr
 		"""

@@ -1177,7 +1177,7 @@ class CharType
 				# should be a member of char instances
 				if params.length == 1
 					# TODO: scan parameters and deal with overloads
-					meth = Method(Token.empty, _box, Utils.cobraNameForSharpMemberName(methInfo.name), List<of GenericParam>(), List<of Param>(), ClrTypeProxy(methInfo.returnType), nil, List<of String>(), AttributeList(), '')
+					meth = Method(Token.empty, _box, Utils.cobraNameForSharpMemberName(methInfo.name), List<of Param>(), ClrTypeProxy(methInfo.returnType), nil, List<of String>(), AttributeList(), '')
 					meth.sharedMethodBacking = 'char.' + methInfo.name
 					_box.addDecl(meth)
 					# print '[.name].[meth.name]'
@@ -2214,3 +2214,51 @@ class TypeUtil
 
 		def isNilableAndDescendantOf(t1 as IType, t2 as IType) as bool
 			return t1 inherits NilableType and ((t1 to NilableType).theWrappedType).isDescendantOf(t2)
+
+		def dictionaryOf(genericParams as List<of IType>, typeArgs as IList<of IType>) as Dictionary<of GenericParam, IType>
+			"""
+			Create a dictionary from the generic params to their effective type.
+			Each type arg must be a GenericParam.
+			Used by generic boxes and generic methods.
+			"""
+			require
+				typeArgs.count > 0
+			ensure
+				result.count == typeArgs.count
+			body
+				gpToType = Dictionary<of GenericParam, IType>()
+				for i in typeArgs.count
+					if (p = genericParams[i]) inherits GenericParam
+						gpToType[p] = typeArgs[i]
+					else
+						throw FallThroughException(p)
+				return gpToType
+
+		def keyForTypeArgs(typeArgs as IList<of IType>) as String
+			"""
+			Returns a string that uniquely names the given type arguments.
+			Can be used as key in a dictionary-based cache.
+			Typically used in generics for caching the constructions of the generic (whether box or method).
+			"""
+			require
+				typeArgs.count > 0
+			ensure
+				result <> ''
+			body
+				# old key computation is incorrect: key = Utils.join(',', for type in typeArgs get type.name)
+				# it doesn't distinguish two different types with the same name (such as a generic param T which may be passed in via a subclass or generic method)
+				sb = StringBuilder()
+				for type in typeArgs
+					# note: wrapped types like NilableType are not kept unique by the compiler, so we cannot use their serial number down below
+					suffix = ''
+					if type inherits WrappedType
+						if type inherits ArrayType
+							suffix = r'[]'
+						else if type inherits NilableType
+							suffix = '?'
+						else
+							assert false, type
+						type = type.theWrappedType
+					if sb.length, sb.append(',')
+					sb.append('[type.serialNum]-[type.name][suffix]')  # the serial num is necessary. the name is just a convenience when debugging
+				return sb.toString

@@ -411,6 +411,8 @@ class CallExpr
 	"""
 
 	var _name as String
+	var _genericArgProxies as List<of ITypeProxy>?
+	var _genericArgTypes as List<of IType>?
 	var _args as List<of Expr>
 	var _definition as INamedNode?
 	var _isNew as bool  # "Exception('foo')" would be a CallExpr that isNew
@@ -420,8 +422,12 @@ class CallExpr
 	var _isForAttribute as bool
 
 	def init(token as IToken, name as String, args as List<of Expr>)
+		.init(token, name, nil, args)
+
+	def init(token as IToken, name as String, genericArgProxies as List<of ITypeProxy>?, args as List<of Expr>)
 		base.init(token)
 		_name = name
+		_genericArgProxies = genericArgProxies
 		_args = args
 		_definition = nil
 		_assignments = List<of AssignExpr>()
@@ -442,6 +448,10 @@ class CallExpr
 
 	get assignments from var
 		# has Subnodes  # TODO: Node.replaceChild uses dynamic binding, but the specific type arg (AssignExpr) is causing problems. But you'd think IList.IndexOf(Object) would get picked up... See also: CobraImp.InvokeMember
+
+	get genericArgProxies from var
+	
+	get genericArgTypes from var
 
 	get hasError as bool is override
 		if base.hasError, return true
@@ -492,6 +502,18 @@ class CallExpr
 			_type = enumCall.type
 			_transformTo(enumCall)
 			return					
+
+		if _genericArgProxies
+			_genericArgTypes = List<of IType>()
+			num = 1
+			for typeProxy in _genericArgProxies
+				try
+					_genericArgTypes.add(typeProxy.realType)
+				catch ne as NodeException
+					ne.prefixMessage('For "[_name]" type arg [num]: ')
+					.compiler.recordError(ne)
+				num += 1
+			# TODO: Check types are compatible with call
 
 		num = 1
 		for arg in _args
@@ -666,6 +688,11 @@ class CallExpr
 								# TODO handle variable number of args (4)
 								pass
 							else
+								if .genericArgTypes and .genericArgTypes.count
+									if definition inherits Method
+										definition = definition.constructedMethodWith(.genericArgTypes to !)
+									else
+										.throwError('Cannot pass type arguments to "[definition.name]" because it is a [definition.getType.name].') # @@ _definition.englishName; also might need this error in other locations
 								check = true
 								if not definition.hasParams
 									if .name == 'toString'
@@ -718,15 +745,15 @@ class CallExpr
 				definition.isUsed = true
 			_type = type
 		_isNew = _definition inherits Box or _definition inherits GenericParam
-		if not _isNew
-			for arg in _args
-				if arg inherits AssignExpr
-					.recordError('Cannot make assignments in arguments. This syntax is reserved in the future for keyword arguments.')
-		else if _isNew
+		if _isNew
 			for arg in _args
 				if arg inherits AssignExpr
 					_assignments.add(arg)
-		assert _type, 'this=[this], def=[_definition]'
+		else
+			for arg in _args
+				if arg inherits AssignExpr
+					.recordError('Cannot make assignments in arguments. This syntax is reserved in the future for keyword arguments.')
+		assert _type, 'def=[_definition]'
 		if .args.count == 0 and .superNode inherits DotExpr and (.definition inherits Method or .definition inherits MemberOverload)
 			.compiler.warning(this, 'Unnecessary parentheses. You can remove them.')
 
@@ -767,7 +794,15 @@ class CallExpr
 				name = (_definition to BoxMember).binaryName to !
 			else if .superNode inherits DotExpr  # otherwise, code could be: _underscoredDoesNotRequireDot()
 				name = Utils.capped(name)
-		sw.write('[name](')
+		sw.write('[name]')
+		if _genericArgTypes and _genericArgTypes.count
+			sw.write('<')
+			sep = ''
+			for genericArgType in _genericArgTypes
+				sw.write(sep + genericArgType.sharpRef)
+				sep = ', '
+			sw.write('>')
+		sw.write('(')
 		sep = ''
 		for arg in _args
 			sw.write(sep)
