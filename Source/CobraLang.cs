@@ -72,8 +72,8 @@ public class AssertException : Exception, IHasSourceSite {
 			string nl = Environment.NewLine;
 			StringBuilder sb = new StringBuilder(nl);
 			sb.AppendFormat("sourceSite = {0}{1}", _sourceSite, nl);
-			sb.AppendFormat("info       = {0}{1}", ToTechString(_info), nl);
-			sb.AppendFormat("this       = {0}{1}", ToTechString(_this), nl);
+			sb.AppendFormat("info       = {0}{1}", MakeString(_info), nl);
+			sb.AppendFormat("this       = {0}{1}", MakeString(_this), nl);
 			int indentLevel = 1;
 			int i = 1;
 			while (i < _expressions.Length) {
@@ -92,7 +92,7 @@ public class AssertException : Exception, IHasSourceSite {
 					if (dirStr!=null) {
 						valueString = dirStr.String;
 					} else {
-						valueString = ToTechString(value);
+						valueString = MakeString(value);
 					}
 					// for (int x = 0; x < indentLevel*4; x++)
 					sb.Append(new String(' ', indentLevel*4));
@@ -122,12 +122,12 @@ public class AssertException : Exception, IHasSourceSite {
 		}
 	}
 
-	string ToTechString(object obj) {
+	string MakeString(object obj) {
 		string s = null;
 		try {
-			s = CobraCore.ToTechString(obj);
+			s = CobraImp._techStringMaker.MakeString(obj);
 		} catch (Exception e) {
-			s = "toTechString exception: " + e.Message;
+			s = "CobraCore.techStringMaker.makeString exception: " + e.Message;
 		}
 		return s;
 	}
@@ -317,9 +317,14 @@ static public class CobraImp {
 
 	// Supports Cobra language features.
 
+	static public StringMaker _printStringMaker;
+	static public StringMaker _techStringMaker;
+
 	static CobraImp() {
 		_printToStack = new Stack<TextWriter>();
 		PushPrintTo(Console.Out);
+		_printStringMaker = new PrintStringMaker();
+		_techStringMaker = new TechStringMaker();
 	}
 
 	static public T CheckNonNil<T>(Object obj, string sourceCode, T value, SourceSite site) {

@@ -1,0 +1,66 @@
+class Test
+
+	def main is shared
+		t = [1, 2, 3]
+		assert t.toString == r'System.Collections.Generic.List`1[System.Int32]'
+		assert CobraCore.printStringMaker.makeString(t) == r'[1, 2, 3]'
+		assert CobraCore.techStringMaker.makeString(t) == r'List<of int>[1, 2, 3]'
+
+		# test default print behavior
+		n = nil
+		nl = Environment.newLine
+		sw = StringWriter()
+		print to sw, n, t
+		assert sw.toString == r'nil [1, 2, 3]' + nl
+
+		# test default substitution behavior
+		assert '[n] [t]' == r'nil [1, 2, 3]'
+
+		# test print and string substitution
+		save = CobraCore.printStringMaker
+		CobraCore.printStringMaker = MyStringMaker('a')
+		try
+			# test print
+			sw = StringWriter()
+			print to sw, t
+			assert sw.toString == 'a' + nl
+			# test substitution
+			s = '[t] [t]'
+			assert s == 'a a'
+		finally
+			CobraCore.printStringMaker = save
+
+		# test assert and trace
+		save = CobraCore.techStringMaker
+		CobraCore.techStringMaker = MyStringMaker('-- special --')
+		try
+			# test assert
+			try
+				s = 'aoeu'
+				assert s == 'asdf'
+			catch ae as AssertException
+				if false, print ae.message
+				assert '= -- special --'+nl in ae.message
+			# test trace
+			sw = StringWriter()
+			CobraCore.tracer.destination = sw
+			trace s
+			assert sw.toString.startsWith('trace: s=-- special --; at')
+		finally
+			CobraCore.techStringMaker = save
+
+
+class MyStringMaker
+	inherits StringMaker
+	
+	var _s as String
+	
+	def init(s as String)
+		base.init
+		_s = s
+
+	def makeString(obj as Object?) as String is override
+		return _s
+
+	def collectionTypeToString(type as Type) as String is override
+		return ''
