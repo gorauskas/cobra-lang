@@ -846,24 +846,6 @@ static public class CobraImp {
 		return sb.ToString();
 	}
 
-	static public string ToString(object x) {
-		if (x==null)
-			return "nil";
-		if (x is bool)
-			return (bool)x ? "true" : "false";
-		return x.ToString();
-	}
-
-	static public string ToString(object x, string format) {
-		if (x==null)
-			return "nil";
-		if (x is bool)
-			return (bool)x ? "true" : "false";
-		// there's probably a better way to do this:
-		format = "{0:" + format + "}";
-		return string.Format(format, x);
-	}
-
 	static public List<innerType> MakeList<innerType>(Type listType, params innerType[] args) {
 		return new List<innerType>(args);
 	}
