@@ -797,12 +797,15 @@ class AbstractMethod
 		finally
 			.compiler.codeMemberStack.pop
 
+	var _didComputeMatchingBaseMember = true
+	
+	get didComputeMatchingBaseMember from var
+
 	def computeMatchingBaseMember
 		ensure .matchingBaseMember is not this
-		if _matchingBaseMember
-			return
-		if not .canHaveMatchingBaseMember
-			return
+		_didComputeMatchingBaseMember = true
+		if _matchingBaseMember, return
+		if not .canHaveMatchingBaseMember, return
 		if _box inherits Class
 			if _box.baseClass
 				baseMember = _box.baseClass.memberForName(_name)
@@ -829,8 +832,8 @@ class AbstractMethod
 					_matchingBaseMember = nil
 
 	def checkForUnmarkedOverrideOrNew
-		# require called computeMatchingBaseMember  # CC:? TODO?
-		if 'new' not in .isNames and 'override' not in .isNames and _matchingBaseMember
+		require .didComputeMatchingBaseMember
+		if 'new' not in .isNames and 'override' not in .isNames and _matchingBaseMember and not _matchingBaseMember.isExtensionMember
 			.throwError('Member "[_name]" also exists in the base class. You must specify "is override" or "is new", or change the name.')
 
 	def checkForUnusedVariables
