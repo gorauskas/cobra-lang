@@ -63,6 +63,7 @@ class CobraTokenizer
 		sb.append('_indentCount=[_indentCount], ')
 		sb.append('_substLBracketCount=[_substLBracketCount], ')
 		sb.append('_inSubstStringSingle=[_inSubstStringSingle], ')
+		sb.append('_inSubstStringDouble=[_inSubstStringDouble], ')
 		sb.append('_inDocString=[_inDocString]')
 
 	# Note: The Tokenizer class handles it's input one line at a time,
@@ -140,7 +141,7 @@ class CobraTokenizer
 
 	get unorderedTokenSpecs as List<of String> is override
 		return [
-			r'SHARP_OPEN		\$sharp\(',   # deprecated. $ is reserved for future language level regex support
+			r'SHARP_OPEN		\$sharp\(',  # deprecated. $ is reserved for future language level regex support
 			r"SINGLE_QUOTE		'",
 			r'DOUBLE_QUOTE		"',
 			r'DOT				\.',
@@ -744,6 +745,25 @@ class StringTokenDef
 	def _match(input as String) as String?
 		is abstract
 
+	def _matchBetween(input as String, startch as char, stopch as char, breakch as char) as String?
+		"""
+		Matches between a range of characters.
+		"""
+		if input[0] <> startch, return nil
+		sb = StringBuilder(input[0].toString)
+		isEscaped = false
+		for i in 1 : input.length
+			c = input[i]
+			if c == breakch and not isEscaped, return nil
+			if c == c'\n', return nil
+			sb.append(c)
+			if isEscaped
+				isEscaped = false
+			else
+				if c == stopch, return sb.toString
+				if c == c'\\', isEscaped = true
+		return nil
+		
 	def toString as String is override
 		return '[.getType.name]([CobraCore.toTechString(_quote)])'
 
@@ -777,21 +797,7 @@ class StringStartTokenDef
 			assert x._match(r"]foo ' bah blah") is nil
 			assert x._match(r"]foo\[ foo'") is nil
 		body
-			quote = _quote
-			if input[0] <> quote, return nil
-			sb = StringBuilder(input[0].toString)
-			isEscaped = false
-			for i in 1 : input.length
-				c = input[i]
-				if c == quote and not isEscaped, return nil
-				if c == c'\n', return nil
-				sb.append(c)
-				if isEscaped
-					isEscaped = false
-				else
-					if c == c'[', return sb.toString
-					if c == c'\\', isEscaped = true
-			return nil
+			return _matchBetween(input, _quote, c'[', _quote)
 
 
 class StringPartTokenDef
@@ -823,21 +829,7 @@ class StringPartTokenDef
 			assert x._match(r"]foo ' bah blah") is nil
 			assert x._match(r"]foo\[ foo'") is nil
 		body
-			quote = _quote
-			if input[0] <> ']', return nil
-			sb = StringBuilder(input[0].toString)
-			isEscaped = false
-			for i in 1 : input.length
-				c = input[i]
-				if c == quote and not isEscaped, return nil
-				if c == c'\n', return nil
-				sb.append(c)
-				if isEscaped
-					isEscaped = false
-				else
-					if c == c'[', return sb.toString
-					if c == c'\\', isEscaped = true
-			return nil
+			return _matchBetween(input, c']', c'[', _quote)
 
 
 class StringStopTokenDef
@@ -870,19 +862,4 @@ class StringStopTokenDef
 			assert x._match(r"'foo[") is nil
 			assert x._match(r"]foo\\[foo]") is nil
 		body
-			quote = _quote
-			if input[0] <> ']', return nil
-			sb = StringBuilder(input[0].toString)
-			isEscaped = false
-			for i in 1 : input.length
-				c = input[i]
-				if c == c'\n', return nil
-				if c == c'[' and not isEscaped
-					return nil
-				sb.append(c)
-				if isEscaped
-					isEscaped = false
-				else
-					if c == quote, return sb.toString
-					if c == c'\\', isEscaped = true
-			return nil
+			return _matchBetween(input, c']', _quote, c'[' )
