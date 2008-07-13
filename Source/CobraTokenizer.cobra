@@ -90,6 +90,10 @@ class CobraTokenizer
 			r'OPEN_IF				if\(',
 			r'OPEN_CALL				[A-Za-z_][A-Za-z0-9_]*\(',
 
+			r'HEX_LIT_UNSIGN		0x[\dA-Fa-f][\dA-Fa-f]*(u|_u)(8|16|32|64)?',
+			r'HEX_LIT_EXPLICIT		0x[\dA-Fa-f][\dA-Fa-f]*_(8|16|32|64)?',
+			r'HEX_LIT				0x[\dA-Fa-f][\dA-Fa-f]*',
+
 			r'FLOAT_LIT_1			\d[\d_]*\.\d+_?f(32|64)?',
 			r'FLOAT_LIT_2			\d[\d_]*(f|_f)(32|64)?',
 			r'DECIMAL_LIT			\d[\d_]*\.\d+(d|_d)',
@@ -498,6 +502,56 @@ class CobraTokenizer
 				assert false, 'TODO'
 			tok.which = 'INTEGER_LIT'
 			tok.info = if(signed, -1, +1) * size
+			
+	def onHEX_LIT_UNSIGN(tok as IToken) as IToken? 
+		require
+			'u' in tok.text
+		body
+			return .onHEX_LIT_EXPLICIT(tok)
+	
+	def onHEX_LIT_EXPLICIT(tok as IToken) as IToken? 
+		ensure
+			tok.which == 'INTEGER_LIT'
+			(tok.info to int) in [8, 16, 32, 64]  # CC: axe cast
+		body
+			size = 32
+			h = tok.text
+			s = tok.text
+			if s.endsWith('32')
+				size = 32
+				s = s[:-2]
+			else if s.endsWith('64')
+				size = 64
+				s = s[:-2]
+			else if s.endsWith('16')
+				size = 16
+				s = s[:-2]
+			else if s.endsWith('8')
+				size = 8
+				s = s[:-1]
+			if s.endsWith('u')
+				s = s[:-1] 
+			s = s.replace('_', '')
+			tok.text = s
+			tok = .onHEX_LIT(tok) to !
+			tok.info = size    #unsigned
+			tok.text = h
+			return tok
+
+	def onHEX_LIT(tok as IToken) as IToken? 
+		ensure
+			tok.which == 'INTEGER_LIT'
+			tok.info == 32
+		body
+			try
+				tok.value = int.parse(tok.text[2:], System.Globalization.NumberStyles.HexNumber)
+			catch FormatException
+				assert false, 'not expecting to get here given regex'
+			catch OverflowException
+				assert false, 'TODO: HEX_LIT Overflow (int)'
+			tok.which = 'INTEGER_LIT'
+			tok.info = 32    #unsigned
+			return tok
 			
 	def onINT_SIZE(tok as IToken) as IToken?
 		size = int.parse(tok.text[3:]) to int
