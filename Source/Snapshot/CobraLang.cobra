@@ -1,4 +1,5 @@
 use System.Reflection
+use System.Runtime.CompilerServices
 
 
 namespace Cobra.Lang
@@ -85,12 +86,103 @@ namespace Cobra.Lang
 				i = 0
 				while i < nameValues.length-1
 					name = nameValues[i] to String
-					value = CobraCore.toTechString(nameValues[i+1])
+					value = CobraImp._techStringMaker.makeString(nameValues[i+1])
 					_dest.write('[name]=[value][sep]')
 					i += 2
 				_dest.writeLine(source.oneLiner(.separator, .willOutputDirectoryNames))
 				if .willAutoFlush
 					_dest.flush
+
+	class Visitor
+		is abstract
+		"""
+		The visitor design pattern is a way of separating an algorithm from an object structure upon
+		which it operates. This enables the addition of new operations to existing object structures
+		without modifying those structures. [1]
+	
+		This class implements the visitor pattern, but via reflection so as to not require that the
+		classes being visited implement any additional methods for "double dispatch". This approach
+		enables less coding and an even greater degree of modularity. It also enables visitation
+		directly on final classes, structs, library classes, etc. with no wrapper classes. [2]
+	
+		In order to leverage this class, you must create a concrete subclass.
+	
+		Subclasses must override .methodName and then simply implement visitation methods with that
+		name and the appropriate parameter types.
+	
+		When enumerating through subobjects, invoke .dispatch to get type specific dispatch.
+	
+		If you add a subclass to the class hierarchy that is being visited then you must either
+			(1) remember to implement a method in your visitor class for that specific type, or
+			(2) be content when a visitation method for one of its ancestor classes is invoked for it.
+	
+		If you look at the example much further below, you will get a better idea of what to do.
+		Another read of the notes after examining the example could be useful.
+	
+		Alternatives to the visitor pattern:
+	
+			* Class extensions. You could put multiple, related class extensions in the same file.
+			  A pro is that this can make the additional functionality feel like a natural part of the
+			  classes. A con is that state must be passed from method to method. Also, method signatures
+			  will have to be updated if additional state is added (unless state is grouped into a
+			  single context/container object). With the visitor pattern, the state can be stored in the
+			  instance of the visitor.
+	
+			* Partial classes. These have the same advantages of class extensions, but without the
+			  disadvantage of having to pass state around. However, the con is that this is not
+			  available if the classes are external to your project. For example, if the classes come
+			  from a library or you are writing a plugin for an application, then partial classes are
+			  not available. (Also, as of 2008-07-07, Cobra has not yet implemented partial classes.)
+	
+		References:
+	
+			[1] http://en.wikipedia.org/wiki/Visitor_pattern
+			[2] http://www.javaworld.com/javaworld/javatips/jw-javatip98.html
+	
+		Future:
+	
+			* Could add a 'strict' mode where if the argument type is not an exact match for the found
+			  method, an exception is raised. This would help when you don't desire that subclasses are
+			  silently handled as described above.
+		"""
+	
+		var _willCache = true
+		var _methods = Dictionary<of Type, MethodInfo>()
+		var _methodName as String
+		
+		def init
+			_methodName = .methodName
+			if _methodName[0].isLower
+				_methodName = _methodName[0].toUpper.toString + _methodName[1:]
+	
+		get methodName as String is abstract
+			"""
+			Returns the method name looked up in .dispatch.
+			"""
+			# ensure result.length > 0
+	
+		def dispatch(obj as Object?)
+			"""
+			Performs type specific dispatch on the given object.
+			A subclass can override this method to change the dispatch logic.
+			"""
+			if obj is nil, return
+			objType = obj.getType
+			methInfo as MethodInfo?
+			if _willCache, _methods.tryGetValue(objType, out methInfo)
+			if methInfo is nil
+				methInfo = .getType.getMethod(_methodName, @[objType])
+				if methInfo is nil
+					throw InvalidOperationException('Cannot find a method "[_methodName]" with arg type "[objType]"')
+				_methods[objType] = methInfo to !
+			methInfo.invoke(this, @[obj])  # would be nice to speed this up
+	
+		def dispatch(objects as System.Collections.IEnumerable)
+			"""
+			Performs type specific dispatch on each object in order.
+			"""
+			for obj in objects, .dispatch(obj)
+
 
 	class CobraCore
 
@@ -113,6 +205,27 @@ namespace Cobra.Lang
 
 			get releaseNum as int
 				return 25
+
+
+			## String Makers
+			
+			pro printStringMaker as StringMaker
+				"""
+				Used by `print` statements, string substitutions and .toPrintString methods.
+				"""
+				get
+					return CobraImp._printStringMaker
+				set
+					CobraImp._printStringMaker = value
+			
+			pro techStringMaker as StringMaker
+				"""
+				Used by `assert` failures, `trace` statements and .toTechString methods.
+				"""
+				get
+					return CobraImp._techStringMaker
+				set
+					CobraImp._techStringMaker = value
 
 
 			## Program stuff
@@ -1099,7 +1212,7 @@ namespace Cobra.Lang
 		def dumpHtml(tw as TextWriter, i as int, objects as ObjectCatalog, willDumpHtmlFor as WillDumpHtmlForMethod)
 			# record objects
 			for localValue in _locals.values
-				if localValue and willDumpHtmlFor(localValue)
+				if localValue is not nil and willDumpHtmlFor(localValue)
 					objects.record(localValue to !)
 			# write frame html
 			tw.writeLine
@@ -1587,9 +1700,454 @@ namespace Cobra.Lang
 			r = Set<of int>([1, 2]).symmetricDifference(Set<of int>([2, 3]))
 			assert r.toList == [1, 3] or r.toList == [3, 1]
 
+	extend System.Object
+
+		def toTechString as String
+			return CobraImp._techStringMaker.makeString(this)
+
+		def toPrintString as String
+			return CobraImp._printStringMaker.makeString(this)
+
 	extend System.Collections.IList
 
 		def swap(i as int, j as int)
 			temp = this[i]
 			this[i] = this[j]
 			this[j] = temp
+
+	class StringMaker
+		is abstract
+		"""
+		StringMaker provides the base capability to create strings from objects.
+		Well known subclasses are PrintStringMaker and TechStringMaker.
+		
+		The main public method is .makeString(x as Object?) as String
+		
+		Subclasses should set _methodName in .init and override abstract methods like .collectionTypeToString.
+		"""
+	
+		var _level as int
+		var _methodName as String
+		var _memo = Set<of dynamic>()
+
+		def init
+			_methodName = ''  # ideally this wouldn't have to be set here
+	
+		get level from var
+			"""
+			Returns the recursion level of .makeString which starts at 1 and increases.
+			Some string makers use this information to alter their output.
+			"""
+
+		def makeString(x as Object?, format as String) as String
+			"""
+			Returns the formatted version of the object.
+			This is was created in support of string substitution which can specify format codes such as 'x = [x:N2]'
+			Example: sm.makeString(5.0, 'N2')
+			"""
+			if format.length == 0
+				return .makeString(x)
+			else
+				# Is there a faster way to do this? Some types already have .toString(format as String) overload.
+				return String.format('{0:' + format + '}', x) to !
+
+		def makeString(x as Object?) as String
+			has MethodImpl(MethodImplOptions.Synchronized)
+			if x
+				if .isMemoable(x)
+					if x in _memo
+						return '(Repeated [CobraCore.typeName(x.getType)])'
+					_memo.add(x)
+			try
+				_level += 1
+				try
+					return _makeString(x)
+				finally
+					_level -= 1
+			finally
+				if _level < 1, _memo.clear
+	
+		def _makeString(x as Object?) as String
+			if x is nil
+				return .nilToString
+	
+			if x inherits bool
+				return .boolToString(x)
+
+			if x inherits char
+				return .charToString(x)
+
+			if x inherits String
+				return .stringToString(x)
+	
+			if _methodName.length
+				s = ''
+				if .customMethodToString(x to !, inout s)
+					return s
+	
+			if x inherits System.Collections.IList
+				return .listToString(x)
+	
+			if x inherits System.Collections.IDictionary
+				return .dictToString(x)
+	
+			if x inherits ISet
+				return .setToString(x)
+	
+			if x inherits System.Collections.IEnumerable
+				# This must come after the above types like IDictionary and ISet.
+				return .enumerableToString(x)
+	
+			if x inherits System.Enum
+				return .enumToString(x)
+	
+			if x inherits StringMaker
+				return .stringMakerToString(x)
+	
+			return .objectToString(x to !)
+	
+		def isMemoable(x as Object) as bool
+			if x inherits String, return false
+			if x inherits IEnumerable, return true
+			return false
+
+		def boolToString(b as bool) as String
+			return if(b, 'true', 'false')
+
+		def charToString(c as char) as String
+			return c.toString
+
+		def collectionTypeToString(t as Type) as String is abstract
+	
+		var _customMethodsCache = Dictionary<of Type, MethodInfo?>()
+	
+		def customMethodToString(x as Object, s as inout String) as bool
+			# There's a nice article on speeding up dynamic dispatch at http://www.codeproject.com/KB/cs/fast_dynamic_properties.aspx
+			# The technique below is likely slower than what's in that article.
+			type = x.getType
+			methodInfo as MethodInfo?
+			if not _customMethodsCache.tryGetValue(type, out methodInfo)
+				methodInfo = type.getMethod(_methodName)
+				_customMethodsCache[type] = methodInfo
+			if methodInfo
+				try
+					s = (methodInfo.invoke(x, nil) to String?) ? ''
+				catch exc as TargetInvocationException
+					# target invocation exceptions are themselves, not very interesting
+					# their inner exception describes the problem
+					throw exc.innerException
+				return true
+			else
+				return false
+
+		def dictToString(dict as System.Collections.IDictionary) as String
+			sb = StringBuilder()
+			sb.append(.collectionTypeToString(dict.getType) + '{')
+			sep = ''
+			hasKeys = false
+			for key in dict.keys
+				sb.append(sep)
+				sb.append(.makeString(key))
+				sb.append(': ')
+				sb.append(.makeString(dict[key]))
+				sep = ', '
+				hasKeys = true
+			if not hasKeys, sb.append(':')
+			sb.append('}')
+			return sb.toString
+	
+		def enumToString(en as Enum) as String
+			return en.toString
+	
+		def enumerableToString(en as System.Collections.IEnumerable) as String
+			sb = StringBuilder()
+			sb.append(.collectionTypeToString(en.getType) + r'[')
+			sep = ''
+			for item in en
+				sb.append(sep)
+				sb.append(.makeString(item))
+				sep = ', '
+			sb.append(']')
+			return sb.toString
+	
+		def listToString(list as System.Collections.IList) as String
+			sb = StringBuilder()
+			sb.append(.collectionTypeToString(list.getType) + r'[')
+			sep = ''
+			for item in list
+				sb.append(sep)
+				sb.append(.makeString(item))
+				sep = ', '
+			sb.append(']')
+			return sb.toString
+	
+		def nilToString as String
+			return 'nil'
+	
+		def objectToString(obj as Object) as String
+			return obj.toString
+			
+		def setToString(s as ISet) as String
+			sb = StringBuilder()
+			sb.append(.collectionTypeToString(s.getType) + '{')
+			sep = ''
+			hasItems = false
+			for item in s
+				sb.append(sep)
+				sb.append(.makeString(item))
+				sep = ', '
+				hasItems = true
+			if not hasItems, sb.append(',')
+			sb.append('}')
+			return sb.toString
+	
+		def stringToString(s as String) as String
+			return s
+	
+		def charToCobraLiteral(c as char) as String
+			return 'c' + .stringToCobraLiteral(c.toString)
+
+		def stringToCobraLiteral(s as String) as String
+			# TODO: not complete. and upon completing a single pass would be better
+			s = s.replace('\n', '\\n')
+			s = s.replace('\r', '\\r')
+			s = s.replace('\t', '\\t')
+			s = "'" + s + "'"  # TODO: could be more sophisticated with respect to ' and "
+			return s
+	
+		def stringMakerToString(sb as StringMaker) as String
+			return '[sb.getType.name]([.stringToCobraLiteral(sb.toString)])'
+	
+		def testCases(cases as IList) is protected
+			verbose = false
+			if verbose
+				print
+				print .getType.name
+			for case as IList in cases
+				if verbose
+					print case[0], '==> ' stop
+					if case[1] inherits IList
+						sep = ''
+						for item in case[1] to IList
+							print sep + item.toString stop
+							sep = ' OR '
+						print
+					else
+						print case[1]
+				input = case[0]
+				answer = .makeString(input)
+				if verbose
+					print '        ' + answer
+				if case[1] inherits IList
+					# when there is more than one expected, the test is that one of them is given
+					for expected in case[1] to IList
+						if answer == expected
+							found = true
+							break
+					assert found, {'input': input, 'answer': answer, 'expected': case[1]}
+				else
+					expected = case[1]
+					assert answer == expected
+			# test formatting
+			assert .makeString(6.0, 'N2') == '6.00'
+
+
+	class PrintStringMaker
+		inherits StringMaker
+		"""
+		.toPrintString only quotes strings if they are inside collections such as a list or dictionary.
+		This is like Python's str() behavior which has worked well in practice.
+		"""
+	
+		def makePrintString(x as Object?) as String
+			test
+				cases = [
+					[nil, 'nil'],
+					[true, 'true'],
+					[false, 'false'],
+					[c'x', 'x'],
+					[5, '5'],
+					['aoeu', 'aoeu'],
+					[[], ns'[]'],
+					[[1, 2], ns'[1, 2]'],
+					[[[1, 2], [3, 4]], ns'[[1, 2], [3, 4]]'],
+					[['x', 'x'], ns"['x', 'x']"],
+					[['x', 'x', 'x'], ns"['x', 'x', 'x']"],
+					[{:}, '{:}'],
+					[{'a': 1, 'b': 2}, ["{'a': 1, 'b': 2}", "{'b': 2, 'a': 1}"]],
+					[{'x': [1, 2]}, ns"{'x': [1, 2]}"],
+					[{,}, '{,}'],
+					[{1, 2}, ['{1, 2}', '{2, 1}']],
+					[{'aoeu', 'asdf'}, ["{'aoeu', 'asdf'}", "{'asdf', 'aoeu'}"]],
+					[FB.Foo, 'Foo'],
+					[FB.Bar, 'Bar'],
+					[Object(), 'System.Object'],
+					[TestDefaultToString(), 'Test Default To String'],
+					[CustomToString(), '-- to print string --'],
+					[CustomToString(), '-- to print string --'],
+					[EnumerableToString(), ns'[1, 2, 3]'],
+					[@[1, 2, 3], ns'[1, 2, 3]'],
+				]
+				list = []
+				list.add(list)
+				cases.add([list, ns'[(Repeated List<of Object>)]'])
+				innerList = [1]
+				outerList = [innerList, innerList, innerList]
+				cases.add([outerList, ns'[[1], (Repeated List<of int>), (Repeated List<of int>)]'])
+				PrintStringMaker().testCases(cases)
+			body
+				return .makeString(x)
+	
+		def init
+			base.init
+			_methodName = 'ToPrintString'
+	
+		def collectionTypeToString(t as Type) as String is override
+			return ''
+	
+		def stringToString(s as String) as String is override
+			if .level == 1
+				return s
+			else
+				return .stringToCobraLiteral(s)
+	
+	
+	class TechStringMaker
+		inherits StringMaker
+		"""
+		TechStringMaker stands for "technical string maker" and is used for inspection and debugging.
+		
+		It's the default string maker for the AssertException (and its subclasses such as RequireException)
+		and the trace statement.
+		
+		It provides more information about collections and enumerations.
+
+		It recovers from exceptions when making strings so that debugging can proceed.
+		
+		Idea: Could use a flag to control if _makeString recovers from exceptions.
+		"""
+	
+		def makeTechString(x as Object?) as String
+			test
+				cases = [
+					[nil, 'nil'],
+					[true, 'true'],
+					[false, 'false'],
+					[c'x', "c'x'"],
+					[5, '5'],
+					['aoeu', "'aoeu'"],
+					[[], ns'List<of Object>[]'],
+					[[1, 2], ns'List<of int>[1, 2]'],
+					[[[1, 2], [3, 4]], ns'List<of List<of int>>[List<of int>[1, 2], List<of int>[3, 4]]'],
+					[['x', 'x'], ns"List<of String>['x', 'x']"],
+					[['x', 'x', 'x'], ns"List<of String>['x', 'x', 'x']"],
+					[{:}, 'Dictionary<of Object, Object>{:}'],
+					[{'a': 1, 'b': 2}, ["Dictionary<of String, int>{'a': 1, 'b': 2}", "{'b': 2, 'a': 1}"]],
+					[{'x': [1, 2]}, ns"Dictionary<of String, List<of int>>{'x': List<of int>[1, 2]}"],
+					[{,}, 'Set<of Object>{,}'],
+					[{1, 2}, ['Set<of int>{1, 2}', 'Set<of int>{2, 1}']],
+					[{'aoeu', 'asdf'}, ["Set<of int>{'aoeu', 'asdf'}", "Set<of int>{'asdf', 'aoeu'}"]],
+					[FB.Foo, 'FB.Foo enum'],
+					[FB.Bar, 'FB.Bar enum'],
+					[Object(), 'System.Object'],
+					[TestDefaultToString(), 'Test Default To String (TestDefaultToString)'],
+					[CustomToString(), '-- to tech string --'],
+					[CustomToString(), '-- to tech string --'],
+					[EnumerableToString(), ns'EnumerableToString[1, 2, 3]'],
+					[@[1, 2, 3], ns'Int32[][1, 2, 3]'],
+				]
+				list = []
+				list.add(list)
+				cases.add([list, ns'List<of Object>[(Repeated List<of Object>)]'])
+				innerList = [1]
+				outerList = [innerList, innerList, innerList]
+				cases.add([outerList, ns'List<of List<of int>>[List<of int>[1], (Repeated List<of int>), (Repeated List<of int>)]'])
+				TechStringMaker().testCases(cases)			
+			body
+				return .makeString(x)
+	
+		def init
+			base.init
+			_methodName = 'ToTechString'
+	
+		def _makeString(x as Object?) as String
+			test
+				s = TechStringMaker().makeString(BadToTechString())
+				assert s == '(Exception on a BadToTechString: InvalidOperationException: foo)'
+			body
+				try
+					return base._makeString(x)
+				catch exc as Exception
+					return '(Exception' + if(x, ' on a [x.getType.name]', '') + ': [exc.getType.name]: [exc.message])'
+
+		def enumToString(en as Enum) as String is override
+			# Example: 'Color.Red enum'
+			# as opposed to just 'Red'
+			return en.getType.name + '.' + en.toString + ' enum'
+	
+		def collectionTypeToString(t as Type) as String is override
+			return CobraCore.typeName(t)
+	
+		def objectToString(obj as Object) as String is override
+			# Examples: '5 (Int64)'  'System.Object'  'Void Compute (MethodInfo)'
+			s = obj.toString
+			if .isInterestingType(obj.getType)
+				typeName = obj.getType.name
+				if not typeName in s and not obj inherits CobraDirectString
+					s = '[s] ([typeName])'
+			return s
+	
+		def charToString(c as char) as String is override
+			return .charToCobraLiteral(c)
+
+		def stringToString(s as String) as String is override
+			return .stringToCobraLiteral(s)
+	
+		def isInterestingType(t as Type) as bool
+			test
+				b = TechStringMaker()
+				assert not b.isInterestingType(5.getType)
+				assert not b.isInterestingType(c'a'.getType)
+				assert not b.isInterestingType(true.getType)
+				assert b.isInterestingType(IDisposable)
+			body
+				if t is Int32, return false
+				if t is Char, return false
+				if t is Boolean, return false
+				return true
+	
+	
+	## For testing
+	
+	enum FB
+		Foo
+		Bar
+
+	
+	class TestDefaultToString
+	
+		def toString as String is override
+			# return something different than the class name to tease out the different behavior that toTechString exhibits in this case (which is to add the class name to the .toString output)
+			return 'Test Default To String'
+	
+	
+	class CustomToString
+	
+		def toPrintString as String
+			return '-- to print string --'
+	
+		def toTechString as String
+			return '-- to tech string --'
+
+	
+	class EnumerableToString
+		implements System.Collections.IEnumerable
+		
+		def getEnumerator as System.Collections.IEnumerator
+			return [1, 2, 3].getEnumerator
+
+
+	class BadToTechString
+
+		def toTechString as String
+			throw InvalidOperationException('foo')
