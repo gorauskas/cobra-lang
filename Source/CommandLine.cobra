@@ -117,6 +117,12 @@ class CommandLine
 			'args': 'editor_spec_with_FILE_LINE',
 		},
 		{
+			'name': 'document',
+			'synonyms': ['doc'],
+			'type': 'main',
+			'description': 'Generate HTML docs for the Cobra source.',
+		},
+		{
 			'name': 'help',
 			'synonyms': ['h'],
 			'type': 'main',
@@ -366,6 +372,8 @@ class CommandLine
 				.doTest(paths)
 			else if options.boolValue('compile')
 				.doCompile(paths)
+			else if options.boolValue('document')
+				.doDocument(paths)
 			else if options.boolValue('help')
 				.doHelp
 			else if options.boolValue('version')
@@ -622,9 +630,9 @@ class CommandLine
 		return r
 
 	def doCompile(paths as List<of String>) as Compiler
-		return .doCompile(paths, true, false)
+		return .doCompile(paths, true, false, false)
 
-	def doCompile(paths as List<of String>, willPrintSuccessMsg as bool, writeTestInvocation as bool) as Compiler
+	def doCompile(paths as List<of String>, willPrintSuccessMsg as bool, writeTestInvocation as bool, stopAfterBindInt as bool) as Compiler
 		oldPaths = List<of String>(paths)
 		paths.clear
 		for path in oldPaths
@@ -641,7 +649,7 @@ class CommandLine
 		c.willPrintSuccessMsg = willPrintSuccessMsg
 		c.htmlWriter = _htmlWriter
 		try
-			c.compileFilesNamed(paths, writeTestInvocation)
+			c.compileFilesNamed(paths, writeTestInvocation, stopAfterBindInt)
 		catch StopCompilation
 			# Each phase of the compiler may throw an exception to stop compilation.
 			# Before doing so, it prints its errors.
@@ -682,12 +690,19 @@ class CommandLine
 								print '    Command: [p.startInfo.fileName] [p.startInfo.arguments]'
 								print '    Exception: [exc]'
 							break
+
+		return c
+
+	def doDocument(paths as List<of String>) as Compiler
+		c = .doCompile(paths, false, false, true)
+		if c.errors.count == 0
+			GenerateHtmlDocVisitor().gen(c)
 		return c
 
 	def doTest(paths as List<of String>)
 		if paths.count == 0
 			.error('You must specify one or more Cobra files to run unit tests for.')
-		c = .doCompile(paths, false, true)
+		c = .doCompile(paths, false, true, false)
 		if c.errors.count
 			print 'Not running tests due to errors above.'
 			return
@@ -710,7 +725,7 @@ class CommandLine
 			File.delete(c.fullExeFileName)
 
 	def doRun(paths as List<of String>)
-		c = .doCompile(paths, false, false)
+		c = .doCompile(paths, false, false, false)
 		if c.errors.count
 			print 'Not running due to errors above.'
 		else
@@ -735,9 +750,10 @@ class CommandLine
 		print ''
 		print '  cobra <options> <command> <path(s)>'
 		print '    * commands that operate on path(s) are:'
-		print '      -compile ... Compile only.'
+		print '      -compile ... Compile only. Also, -c'
 		print '      -run ....... Run the program (compile if necessary).'
 		print '      -test ...... Run the unit tests of a library.'
+		print '      -document .. Document the program (partial compilation). Also, -doc'
 		print ''
 		print '  cobra <options> <command>'
 		print '    * standalone commands are:'
@@ -873,7 +889,7 @@ class CommandLine
 		_options['target'] = 'lib'
 		_options['include-tests'] = false  # TODO: including tests in a DLL tends to cause problems. it might be because tests are triggered by type initializers. this needs investigation
 		_options['embed-run-time'] = true  # because the runtime is what we're building!
-		.doCompile(List<of String>(), true, false)
+		.doCompile(List<of String>(), true, false, false)
 
 
 	## Testify
