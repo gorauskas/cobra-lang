@@ -21,6 +21,9 @@ class Expr
 	is abstract
 	inherits Stmt
 	implements IExpr
+	"""
+	TODO: Add a .subexpressions iterator which can then be used by .hasError, .willChangeVar and possibly others.
+	"""
 
 	var _type as IType?
 	var _receiverType as IType?
@@ -56,6 +59,14 @@ class Expr
 		"""
 		Indicates the label for an argument such as 'out' or 'inout'.
 		"""
+
+	get willChangeVar as bool
+		"""
+		Return true if this expression will change a variable.
+		Used by `assert` and others that won't accept expressions with such side effects from assignment, `out` parameters, etc.
+		Subclasses that contain subexpressions must override to check their subexpressions.
+		"""
+		return false
 
 	pro type from var
 
@@ -451,10 +462,14 @@ class CallExpr
 	
 	get genericArgTypes from var
 
-	get hasError as bool is override
+	get hasError as bool
 		if base.hasError, return true
-		for arg in _args
-			if arg.hasError, return true
+		for arg in _args, if arg.hasError, return true
+		return false
+
+	get willChangeVar as bool is override
+		for arg in _args, if arg.willChangeVar, return true
+		for arg in _args, if arg.argumentLabel <> ArgumentLabel.None, return true
 		return false
 
 	get isCalling as bool is override
@@ -939,6 +954,13 @@ class ForExpr
 		.addField('whereExpr', _whereExpr)
 		.addField('getExpr', _getExpr)
 
+	get willChangeVar as bool is override
+		# TODO: ack. kind of weird. if the variable is a new one and its not read afterwards (without first being set) then no side effects.
+		if _what.willChangeVar, return true
+		if _whereExpr and _whereExpr.willChangeVar, return true
+		if _getExpr.willChangeVar, return true
+		return false
+
 	def _bindImp
 		base._bindImp
 		_what.bindImp  # bind first because it may be needed for type inference
@@ -1204,14 +1226,16 @@ class IfExpr
 		.addField('fpart', _fpart)
 
 	get hasError as bool is override
-		if base.hasError
-			return true
-		if _cond.hasError
-			return true
-		if _tpart.hasError
-			return true
-		if _fpart.hasError
-			return true
+		if base.hasError, return true
+		if _cond.hasError, return true
+		if _tpart.hasError, return true
+		if _fpart.hasError, return true
+		return false
+
+	get willChangeVar as bool is override
+		if _cond.willChangeVar, return true
+		if _tpart.willChangeVar, return true
+		if _fpart.willChangeVar, return true
 		return false
 
 	def _bindImp is override
@@ -1323,6 +1347,11 @@ class IndexExpr
 		for arg in _args
 			if arg.hasError
 				return true
+		return false
+
+	get willChangeVar as bool is override
+		if _target.willChangeVar, return true
+		for arg in _args, if arg.willChangeVar, return true
 		return false
 
 	def _bindImp is override
@@ -1450,10 +1479,12 @@ class IsNilExpr
 		_expr = expr
 
 	get hasError as bool is override
-		if base.hasError
-			return true
-		if _expr.hasError
-			return true
+		if base.hasError, return true
+		if _expr.hasError, return true
+		return false
+
+	get willChangeVar as bool is override
+		if _expr.willChangeVar, return true
 		return false
 
 	def _bindImp is override
@@ -1486,10 +1517,12 @@ class IsNotNilExpr
 		_expr = expr
 
 	get hasError as bool is override
-		if base.hasError
-			return true
-		if _expr.hasError
-			return true
+		if base.hasError, return true
+		if _expr.hasError, return true
+		return false
+
+	get willChangeVar as bool is override
+		if _expr.willChangeVar, return true
 		return false
 
 	def _bindImp is override
@@ -1665,10 +1698,12 @@ class OldExpr
 		return 'old'
 
 	get hasError as bool is override
-		if base.hasError
-			return true
-		if _expr.hasError
-			return true
+		if base.hasError, return true
+		if _expr.hasError, return true
+		return false
+
+	get willChangeVar as bool is override
+		if _expr.willChangeVar, return true
 		return false
 
 	def addSubFields is override
@@ -1738,13 +1773,14 @@ class PostCallExpr
 		has Subnodes
 
 	get hasError as bool is override
-		if base.hasError
-			return true
-		if _expr.hasError
-			return true
-		for arg in _args
-			if arg.hasError
-				return true
+		if base.hasError, return true
+		if _expr.hasError, return true
+		for arg in _args, if arg.hasError, return true
+		return false
+
+	get willChangeVar as bool is override
+		if _expr.willChangeVar, return true
+		for arg in _args, if arg.willChangeVar, return true
 		return false
 
 	def _bindImp is override
@@ -1850,10 +1886,12 @@ class RefExpr
 	get expr from var
 
 	get hasError as bool is override
-		if base.hasError
-			return true
-		if _expr.hasError
-			return true
+		if base.hasError, return true
+		if _expr.hasError, return true
+		return false
+
+	get willChangeVar as bool is override
+		if _expr.willChangeVar, return true
 		return false
 
 	def _bindImp is override
@@ -1973,16 +2011,18 @@ class SliceExpr
 		.addField('step', _step)
 
 	get hasError as bool is override
-		if base.hasError
-			return true
-		if _target.hasError
-			return true
-		if _start and _start.hasError
-			return true
-		if _stop and _stop.hasError
-			return true
-		if _step and _step.hasError
-			return true
+		if base.hasError, return true
+		if _target.hasError, return true
+		if _start and _start.hasError, return true
+		if _stop and _stop.hasError, return true
+		if _step and _step.hasError, return true
+		return false
+
+	get willChangeVar as bool is override
+		if _target.willChangeVar, return true
+		if _start and _start.willChangeVar, return true
+		if _stop and _stop.willChangeVar, return true
+		if _step and _step.willChangeVar, return true
 		return false
 
 	def _bindImp
@@ -2130,10 +2170,15 @@ class TruthExpr
 	get expr from var
 
 	get hasError as bool is override
-		if base.hasError
-			return true
-		if _expr.hasError
-			return true
+		if base.hasError, return true
+		if _expr.hasError, return true
+		return false
+
+	get willChangeVar as bool is override
+		if _expr.willChangeVar, return true
+		if _origExpr.willChangeVar, return true
+		# Don't check _notExpr which owns *this* expr:
+		# if _notExpr and _notExpr.willChangeVar, return true
 		return false
 
 	get notExpr from var
@@ -2329,10 +2374,12 @@ class UnaryOpExpr
 		.addField('expr', _expr)
 
 	get hasError as bool is override
-		if base.hasError
-			return true
-		if _expr.hasError
-			return true
+		if base.hasError, return true
+		if _expr.hasError, return true
+		return false
+
+	get willChangeVar as bool is override
+		if _expr.willChangeVar, return true
 		return false
 
 	get op from var
@@ -2872,11 +2919,12 @@ class SequenceLit
 		has Subnodes
 
 	get hasError as bool is override
-		if base.hasError
-			return true
-		for expr in _exprs
-			if expr.hasError
-				return true
+		if base.hasError, return true
+		for expr in _exprs, if expr.hasError, return true
+		return false
+
+	get willChangeVar as bool is override
+		for expr in _exprs, if expr.willChangeVar, return true
 		return false
 
 	def _bindImp is override
@@ -3040,6 +3088,13 @@ class DictLit
 					return true
 		return false
 
+	get willChangeVar as bool is override
+		for entry in _entries
+			for expr in entry
+				if expr.willChangeVar
+					return true
+		return false
+
 	def replaceChild(find as INode, replace as INode) as bool
 		didReplace = base.replaceChild(find, replace)
 		if replace inherits Expr
@@ -3132,6 +3187,15 @@ class ToNilableOrNotExpr
 	def _bindImp
 		base._bindImp
 		_expr.bindImp
+
+	get hasError as bool is override
+		if base.hasError, return true
+		if _expr.hasError, return true
+		return false
+
+	get willChangeVar as bool is override
+		if _expr.willChangeVar, return true
+		return false
 
 	def toCobraSource as String is override
 		sb = StringBuilder()

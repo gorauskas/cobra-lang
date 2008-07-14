@@ -188,12 +188,15 @@ class AssertStmt
 	def _bindImp
 		base._bindImp
 		_expr.bindImp
-		# TODO: should also cover any assignment expressions anywhere inside the expression
 		e = _expr
-		if e inherits TruthExpr
-			e = e.expr
-		if e inherits AbstractAssignExpr
-			.throwError('Assert condition is an assignment. Since asserts may be suppressed these conditions should not have side effects. Perhaps you meant to do a comparison "==" instead of assignment "=".')
+		if e.willChangeVar
+			if e inherits TruthExpr
+				e = e.expr
+			if e inherits AbstractAssignExpr
+				# TODO: should also cover any assignment expressions anywhere inside the expression
+				.throwError('Assert condition is an assignment. Since asserts may be suppressed these conditions should not have side effects. Perhaps you meant to do a comparison "==" instead of assignment "=".')
+			else
+				.throwError('Condition has a side effect. Since asserts may be suppressed at compile-time or run-time, their conditions cannot have side effects.')
 		# Augment any warning about non nilable expr evaluate to true
 		.compiler.augmentWarning(this, 'always evaluate to true because it is not nilable', _
 			'You can remove the expression', _
