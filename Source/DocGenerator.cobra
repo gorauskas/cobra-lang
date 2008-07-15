@@ -39,19 +39,26 @@ class GenerateHtmlDocVisitor
 
 	TODO:
 
-	* In output,	
-		[ ] why are member doc strings followed by a blank line?
+	* In output,
+		[ ] fix sort order of members regarding underscored members. _foo vs. foo vs. bar
 		[ ] wrap box members in a div so they have padding, etc.
 		[ ] write member contracts
 		[ ] write member tests. note this would require handling all expressions and statements!
 		[ ] on members, write is names. 'protected' only on non-underscored members. no 'shared'. include everything else
-		[ ] provide some kind of table of contents
+		[ ] in index
+			[ ] alpha list of types (including nested types)
+			[ ] inheritance outline of types
+		[ ] cross reference member names with types that declare them
 		[ ] provide some fancy JavaScript options like hiding doc strings, tests, etc.
+		[ ] highlight as keyword
+		[ ] Link types.
+		[ ] Link "override" to the base method.
 	[ ] What if you want a doc gen for something specific like:
 		System.String
 		System.Collections.Generic
-	[ ] Link types.
-	[ ] Link "override" to the base method.
+	[ ] How should options be provided to the -doc command?
+	
+	Also, see TODO comments in the code.	
 	"""
 
 	var _tw as TextWriter?
@@ -225,10 +232,13 @@ class GenerateHtmlDocVisitor
 		.writeBoxMembers(struc)
 
 	def writeIsNames(box as Box)
-		if box.isNames.count
+		.writeIsNames(box.isNames)
+	
+	def writeIsNames(isNames as List<of String>)
+		if isNames.count
 			.write('is ')
 			sep = ''
-			for name in box.isNames
+			for name in isNames
 				.write('[sep][name]')
 				sep = ', '
 			.writeLine
@@ -237,21 +247,37 @@ class GenerateHtmlDocVisitor
 		.writeLine
 		.indent
 		didWriteMembers = false
-		sharedDecls = .sorted(for decl in box.declsInOrder where decl.isShared)
-		if sharedDecls.count
+
+		# this:
+		# typeDecls = .sorted(for decl in box.declsInOrder where decl inherits IType)
+		# gives:
+		# DocGenerator.cobra(241): warning: The expression (of type "IBoxMember") is never of type "IType".
+		# but since a class X that implements IFoo could also implement some other IBar, this seems wrong.
+		typeDecls = .sorted(for decl in box.declsInOrder where (decl to Object) inherits IType)
+		if typeDecls.count
 			didWriteMembers = true
-			.writeLine('<span class="kwsh">shared</span>')
+			.writeBoxMembers(typeDecls)
+
+		sharedDecls = .sorted(for decl in box.declsInOrder where decl.isShared and not (decl to Object) inherits IType)
+		if sharedDecls.count
+			if didWriteMembers, .writeLine
+			else, didWriteMembers = true
+			.writeLine('<span class="kwsh">shared</span>')  # TODO: write this only if shared decls get written. See class Parser output for an example.
 			.writeLine
 			.indent
 			.writeBoxMembers(sharedDecls)
 			.outdent
 			.writeLine
+
 		nonsharedDecls = .sorted(for decl in box.declsInOrder where not decl.isShared)
 		if nonsharedDecls.count
-			didWriteMembers = true
+			if didWriteMembers, .writeLine
+			else, didWriteMembers = true
 			.writeBoxMembers(nonsharedDecls)
+
 		if not didWriteMembers
 			.writeLine('<span class="wkpa">pass</span>')
+
 		.outdent
 		.write('</div>')
 
@@ -260,12 +286,17 @@ class GenerateHtmlDocVisitor
 			decl = decls[i]
 			writeCount = _writeCount
 			.dispatch(decl)
-			if decl.docString and decl.docString.length
-				.indent
-				.writeDocString(decl.docString to !)
-				.outdent
-			if _writeCount > writeCount and i < decls.count-1 and decls[i+1].getType is not decl.getType
-				.writeLine
+			if _writeCount > writeCount  # if wrote anything ...
+				# Write the doc string
+				if decl.docString and decl.docString.length
+					.indent
+					.writeDocString(decl.docString to !)
+					.outdent				
+				else
+					_tw.writeLine('<div class="ds"> </div>')
+				# Put a blank line when switching to a different type of member declaration (say from properties to methods)
+				if i < decls.count-1 and decls[i+1].getType is not decl.getType
+					.writeLine
 
 	def gen(bv as BoxVar)
 		if bv.isPublic
@@ -273,7 +304,7 @@ class GenerateHtmlDocVisitor
 			# TODO: is names, attributes, etc.
 
 	def gen(method as AbstractMethod)
-		.write('<span class="kwmd">def</span> <span class="methodName">[method.name]')
+		.write('<span class="kwmd">def</span> <span class="methodName">[method.name]</span>')
 		if method.params.count
 			.write('(')
 			sep = ''
@@ -297,6 +328,15 @@ class GenerateHtmlDocVisitor
 		else
 			.write('<span class="kwmd">pro</span>')
 		.writeLine(' [prop.name] as [.ref(prop.resultType)]')
+
+	def gen(ed as EnumDecl)
+		.writeLine('<div class="typeDecl"><span class="kwtd">enum</span> <span class="bdn">[ed.name]</span>')
+		.writeIsNames(ed.isNames)
+		.indent
+		for decl in ed.declsInOrder
+			.writeLine(decl.name)
+		.outdent
+		.write('</div>')
 
 
 	## Sorting members
