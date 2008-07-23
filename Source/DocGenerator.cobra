@@ -40,8 +40,7 @@ class GenerateHtmlDocVisitor
 	TODO:
 
 	* In output,
-		[ ] fix sort order of members regarding underscored members. _foo vs. foo vs. bar
-		[ ] wrap box members in a div so they have padding, etc.
+		[ ] wrap box members in a div so they have padding, etc.  note: div's inside <pre> seem to be problematic
 		[ ] write member contracts
 		[ ] write member tests. note this would require handling all expressions and statements!
 		[ ] on members, write is names. 'protected' only on non-underscored members. no 'shared'. include everything else
@@ -51,14 +50,16 @@ class GenerateHtmlDocVisitor
 		[ ] cross reference member names with types that declare them
 		[ ] provide some fancy JavaScript options like hiding doc strings, tests, etc.
 		[ ] highlight as keyword
-		[ ] Link types.
-		[ ] Link "override" to the base method.
+		[ ] need anchor names for types and members so they can be linked to
+		[ ] link types
+		[ ] link "override" to the base method
+	[ ] Copy the stylesheet into the html directory. Locate the style sheet in the current directory or next to the cobra.exe file.
 	[ ] What if you want a doc gen for something specific like:
 		System.String
 		System.Collections.Generic
 	[ ] How should options be provided to the -doc command?
 	
-	Also, see TODO comments in the code.	
+	Also, see TODO comments in the code.
 	"""
 
 	var _tw as TextWriter?
@@ -115,7 +116,7 @@ class GenerateHtmlDocVisitor
 		_writeCount += 1
 
 	def writeDocString(s as String)
-		_tw.write('<div class="ds">')
+		_tw.write('<span class="ds">')
 		for i in _indent, _tw.write('    ')
 		_tw.writeLine('"""')
 		_isBOL = true
@@ -128,7 +129,8 @@ class GenerateHtmlDocVisitor
 		for line in s.split(c'\n')
 			# print '([line])'
 			.writeLine(line.trim)  # TODO: HACK: The .strip is wrong. It's to fix the parser problem of leaving indentation in doc string contents.
-		.writeLine('"""</div>')
+		.writeLine('"""</span>')
+		.writeLine
 
 	def encode(s as String) as String
 		"""
@@ -293,7 +295,7 @@ class GenerateHtmlDocVisitor
 					.writeDocString(decl.docString to !)
 					.outdent				
 				else
-					_tw.writeLine('<div class="ds"> </div>')
+					_tw.writeLine('<span class="ds"> </span>')
 				# Put a blank line when switching to a different type of member declaration (say from properties to methods)
 				if i < decls.count-1 and decls[i+1].getType is not decl.getType
 					.writeLine
@@ -354,16 +356,30 @@ class GenerateHtmlDocVisitor
 
 	def compareMembers(a as IBoxMember, b as IBoxMember) as int is shared
 		if a.getType is b.getType
-			diff = a.name.compareTo(b.name)
+			diff = a.name.compareTo(b.name)  # note that Cobra disallows member names that differ only by case
 			if diff == 0
 				if a inherits AbstractMethod
 					diff = a.params.count.compareTo((b to AbstractMethod).params.count)
 				else if a inherits Indexer
+					# b must also be an indexer since their names were the same
 					diff = a.params.count.compareTo((b to Indexer).params.count)
+			else if a.name.startsWith('_') and not b.name.startsWith('_')
+				diff = .compareNamesWithFirstUnderscored(a.name, b.name)
+			else if not a.name.startsWith('_') and b.name.startsWith('_')
+				diff = -1 * .compareNamesWithFirstUnderscored(b.name, a.name)
 		else
 			diff = .rank(a).compareTo(.rank(b))
 		return diff
 
+	def compareNamesWithFirstUnderscored(a as String, b as String) as int is shared
+		require
+			a.startsWith('_')
+			not b.startsWith('_')
+		body
+			a = a[1:]
+			if a == b, return 1  # underscored/protected member comes last
+			else, return a.compareTo(b)
+			
 	def rank(obj as IBoxMember) as int is shared
 		if obj inherits EnumDecl, return 0
 		if obj inherits MethodSig, return 10
