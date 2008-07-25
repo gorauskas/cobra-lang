@@ -157,7 +157,7 @@ class Expr
 		base.bindImp
 		assert .didBindImp, this
 		.postBindImpAssertType
-		return this
+		return _transformedTo ? this
 
 	def postBindImpAssertType
 		"""
@@ -403,7 +403,7 @@ class AsExpr
 				# case: x = y as int = 5
 				# recall that assign is right-to-left associative
 				_definition.isUsed = true
-		return this
+		return _transformedTo ? this
 
 	def afterStatementBindImp is override
 		base.afterStatementBindImp
@@ -1031,7 +1031,7 @@ class IdentifierExpr
 		base.bindImp
 		if _definition and not (.superNode inherits AbstractAssignExpr and .binarySuperNode.left is this)
 			_definition.isUsed = true
-		return this
+		return _transformedTo ? this
 
 	def throwUnknownIdError
 		require .name.length
@@ -1258,13 +1258,9 @@ class IndexExpr
 		has Subnodes
 
 	get hasError as bool is override
-		if base.hasError
-			return true
-		if _target.hasError
-			return true
-		for arg in _args
-			if arg.hasError
-				return true
+		if base.hasError, return true
+		if _target.hasError, return true
+		for arg in _args, if arg.hasError, return true
 		return false
 
 	get willChangeVar as bool is override
@@ -1734,7 +1730,7 @@ class PostCallExpr
 				_transformTo(dotted)
 				return
 
-		expr.bindImp
+		expr = expr.bindImp
 
 		if expr inherits IdentifierExpr
 			if expr.definition inherits EnumDecl
@@ -1757,12 +1753,7 @@ class PostCallExpr
 			assert expr.containedType
 			_type = expr.containedType
 		else if expr inherits IndexExpr
-			# TODO: this needs to handle stuff[i] which could be System.Type, a delegate or what-have-you
-			if (target = expr.target) inherits IPotentialTypeExpr
-				_type = target.potentialType
-				assert _type, target
-			else
-				assert false, _expr
+			pass
 		else if expr inherits IdentifierExpr
 			pass
 		else
@@ -1772,9 +1763,10 @@ class PostCallExpr
 			assert false, _expr
 
 		if _type is nil
+			assert expr.type is not nil
 			if expr.type inherits MethodSig  # TODO: probably still need to handle case of a method sig coming from a DLL
 				_type = (expr.type to MethodSig).returnType
-			else if expr.receiverType.isSystemTypeClass
+			else if expr.receiverType and expr.receiverType.isSystemTypeClass
 				_type = .compiler.dynamicType
 			else if expr.type inherits Box
 				_type = expr.receiverType  # for example, an IdentifierExpr of 'SomeClass' has a .receiverType of that class
@@ -1797,51 +1789,64 @@ class PostCallExpr
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		if parens, sw.write('(')
-		# TODO: IndexExpr is handled in .bindImp, but not here. Need a test case. Like a list of delegates.
-		if _expr inherits TypeExpr
-			if _expr.containedType inherits ArrayType
+		expr = _expr
+		isMethodSig = false
+		isDynamic = false
+		if expr inherits TypeExpr
+			if expr.containedType inherits ArrayType
 				# arrays
 				sw.write('new ')
-				sw.write((_expr.containedType to ArrayType).theWrappedType.sharpRef)
+				sw.write((expr.containedType to ArrayType).theWrappedType.sharpRef)
 				sw.write(r'[')
 				.writeSharpArgs(sw)
 				sw.write(r']')
 			else
 				sw.write('new ')
-				_expr.writeSharpDef(sw)
+				expr.writeSharpDef(sw)
 				sw.write('(')
 				.writeSharpArgs(sw)
 				sw.write(')')
-		else if _expr inherits IdentifierExpr
-			if _expr.isTypeReference
+		else if expr inherits IdentifierExpr
+			if expr.isTypeReference
 				sw.write('new ')
-				_expr.writeSharpDef(sw)
+				expr.writeSharpDef(sw)
 				sw.write('(')
 				.writeSharpArgs(sw)
 				sw.write(')')
-			else if _expr.type inherits MethodSig
-				_expr.writeSharpDef(sw)
-				sw.write('(')
+			else if expr.receiverType inherits GenericParam # TODO: shouldn't expr.isTypeReference above have caught this?
+				sw.write('new [expr.receiverType.sharpRef](')
 				.writeSharpArgs(sw)
 				sw.write(')')
-			else if _expr.receiverType inherits GenericParam # TODO: shouldn't _expr.isTypeReference above have caught this?
-				sw.write('new [_expr.receiverType.sharpRef](')
-				.writeSharpArgs(sw)
-				sw.write(')')
-			else if _expr.type.isSystemTypeClass or _type.isDynamic
-				defi = _expr.definition
-				assert not defi inherits Box, _expr  # TODO: just curious
-				what = if(defi inherits IType, 'typeof([defi.sharpName])', defi.sharpName)
-				if defi inherits IVar
-					if defi.type.isDynamic
-						what = '(System.Type)' + what
-				sw.write('Activator.CreateInstance([what]')
-				.writeSharpArgs(sw, ', ')
-				sw.write(')')
+			else if expr.type inherits MethodSig
+				isMethodSig = true
+			else if expr.type.isSystemTypeClass or _type.isDynamic
+				isDynamic = true
 			else
-				assert false, _expr  # TODO: .throwError
+				assert false, expr  # TODO: .throwError
+		else if expr inherits IndexExpr
+			if expr.type inherits MethodSig
+				isMethodSig = true
+			else if expr.type.isSystemTypeClass or _type.isDynamic
+				isDynamic = true
+			else
+				assert false, expr  # TODO: .throwError
 		else
-			assert false, _expr  # TODO: .throwError
+			assert false, expr  # TODO: .throwError
+		if isMethodSig
+			expr.writeSharpDef(sw)
+			sw.write('(')
+			.writeSharpArgs(sw)
+			sw.write(')')
+		else if isDynamic
+			defi = (expr to dynamic).definition
+			assert not defi inherits Box, expr  # TODO: just curious
+			what = if(defi inherits IType, 'typeof([defi.sharpName])', defi.sharpName to String)
+			if defi inherits IVar
+				if defi.type.isDynamic
+					what = '(System.Type)' + what
+			sw.write('Activator.CreateInstance([what]')
+			.writeSharpArgs(sw, ', ')
+			sw.write(')')
 		if parens, sw.write(')')
 
 	def writeSharpArgs(sw as SharpWriter)
@@ -2484,7 +2489,7 @@ class AtomicLiteral
 	def bindImp as dynamic is override
 		base.bindImp
 		.checkType
-		return this
+		return _transformedTo ? this
 
 	def checkType
 		assert _type, this
