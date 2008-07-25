@@ -1338,45 +1338,49 @@ class Box
 
 	def writeSharpDef(sw as SharpWriter)
 		base.writeSharpDef(sw)
-		if .isFake
-			return
-		assert not .isConstructed
-		.writeSharpAttribs(sw)
-		.writeSharpIsNames(sw)
-		sw.write('[.sharpKeyWord] ')
-		.writeSharpDefName(sw)
-		.writeSharpInheritance(sw)
-
-		sep = ''
-		for inter in _baseInterfaces
-			sw.write(sep)
-			sw.write(inter.sharpRef)
-			sep = ', '
-
-		if _genericParams.count
-			sw.indent
-			for param in _genericParams
-				if param inherits GenericParam
-					param.writeSharpConstraint(sw)
-			sw.dedent
-
-		sw.writeAndIndent('{\n')
-		.writeSharpInvariantMethod(sw)
-		if _testMethod
-			_testMethod.writeSharpDef(sw)
-		for decl in _declsInOrder
-			.compiler.boxMemberStack.push(decl)
-			try
-				if decl inherits BoxMember
-					if decl.box is not this  # skip extension methods that were not declared in this box
-						continue
-				decl.writeSharpDef(sw)
-			finally
-				.compiler.boxMemberStack.pop
-		if .compiler.includeTests
-			.writeSharpTest(sw)
-		sw.dedentAndWrite('} // [.sharpKeyWord] [.name]\n')
-		sw.write('\n')
+		.compiler.boxStack.push(this)
+		try
+			if .isFake
+				return
+			assert not .isConstructed
+			.writeSharpAttribs(sw)
+			.writeSharpIsNames(sw)
+			sw.write('[.sharpKeyWord] ')
+			.writeSharpDefName(sw)
+			.writeSharpInheritance(sw)
+	
+			sep = ''
+			for inter in _baseInterfaces
+				sw.write(sep)
+				sw.write(inter.sharpRef)
+				sep = ', '
+	
+			if _genericParams.count
+				sw.indent
+				for param in _genericParams
+					if param inherits GenericParam
+						param.writeSharpConstraint(sw)
+				sw.dedent
+	
+			sw.writeAndIndent('{\n')
+			.writeSharpInvariantMethod(sw)
+			if _testMethod
+				_testMethod.writeSharpDef(sw)
+			for decl in _declsInOrder
+				.compiler.boxMemberStack.push(decl)
+				try
+					if decl inherits BoxMember
+						if decl.box is not this  # skip extension methods that were not declared in this box
+							continue
+					decl.writeSharpDef(sw)
+				finally
+					.compiler.boxMemberStack.pop
+			if .compiler.includeTests
+				.writeSharpTest(sw)
+			sw.dedentAndWrite('} // [.sharpKeyWord] [.name]\n')
+			sw.write('\n')
+		finally
+			.compiler.boxStack.pop
 
 	def writeSharpAttribs(sw as SharpWriter)
 		for attrib in _attribs
@@ -1860,7 +1864,7 @@ class MethodSig
 
 	def _bindInt
 		m = Method(.token, this, 'invoke', List<of Param>(.params), .returnType ? .returnTypeProxy, nil, List<of String>(.isNames), AttributeList(), '')
-		m.statements.add(ThrowStmt(.token, CallExpr(.token, 'Exception', List<of Expr>()))) # just to avoid a Cobra warning during .bindImp
+		m.statements.add(ThrowStmt(.token, PostCallExpr(.token, IdentifierExpr(.token, 'Exception'), List<of Expr>()))) # just to avoid a Cobra warning during .bindImp
 		.addDecl(m)
 		base._bindInt
 		for param in .params

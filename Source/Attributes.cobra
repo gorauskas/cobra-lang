@@ -8,16 +8,15 @@ class AttributeList
 class AttributeDecl
 	inherits NamedNode
 
-	var _expr as CallExpr
+	var _expr as PostCallExpr
 
 	def init(expr as Expr)
-		require expr inherits IdentifierExpr or expr inherits CallExpr
+		require expr inherits IdentifierExpr or expr inherits PostCallExpr
 		base.init(expr.token)
-		# normalizing to CallExpr makes the rest of the implementation easier
+		# normalizing to PostCallExpr makes the rest of the implementation easier
 		if expr inherits IdentifierExpr
-			expr = CallExpr(expr.token, expr.name, List<of Expr>())
-		_expr = expr to CallExpr
-		_expr.isForAttribute = true
+			expr = PostCallExpr(expr.token, IdentifierExpr(expr.token, expr.name), List<of Expr>())
+		_expr = expr to PostCallExpr
 
 	get expr from var
 
@@ -34,8 +33,7 @@ class AttributeDecl
 		name = _expr.name
 		if not name.endsWith('Attribute') and .compiler.canNameBeUndottedMember(name) and not .compiler.symbolForName(name, true, false)
 			if .compiler.symbolForName(name+'Attribute', true, false)
-				_expr = CallExpr(_expr.token, name+'Attribute', _expr.args)
-				_expr.isForAttribute = true
+				_expr = PostCallExpr(_expr.token, IdentifierExpr(_expr.token, name+'Attribute'), _expr.args)
 		_expr.bindImp
 		# TODO: check that the properties exist when using x=...
 
@@ -44,6 +42,13 @@ class AttributeDecl
 
 	get typeForReceiver as IType is override
 		throw ShouldNotCallException(.getType)
+
+	def replaceChild(find as INode, replace as INode) as bool is override
+		if _expr is find
+			_expr = replace to PostCallExpr
+			return true
+		else
+			return false
 
 	def writeSharpDef(sw as SharpWriter) is override
 		.writeSharpDef(sw, '')

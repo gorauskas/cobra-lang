@@ -2467,17 +2467,21 @@ class Parser
 		else if peek=='DOT'
 			# leading dot
 			token = .grab
-			peekToken = .peek
-			peek = peekToken.which
-			if peek=='ID' or peekToken.isKeyword
-				memberToken = .idOrKeyword
-				expr = MemberExpr(memberToken) to Expr
-			else if peek=='OPEN_CALL'
-				expr = .callExpr
-			else if peek=='OPEN_GENERIC'
-				expr = .callExpr
-			else
-				.throwError('Syntax error after "."')
+			.opStack.push('DOT')
+			try
+				peekToken = .peek
+				peek = peekToken.which
+				if peek=='ID' or peekToken.isKeyword
+					memberToken = .idOrKeyword
+					expr = MemberExpr(memberToken) to Expr
+				else if peek=='OPEN_CALL'
+					expr = .callExpr
+				else if peek=='OPEN_GENERIC'
+					expr = .callExpr
+				else
+					.throwError('Syntax error after "."')
+			finally
+				.opStack.pop
 			return BinaryOpExpr.make(token to !, 'DOT', ThisLit(token, .curBox), expr)
 		else if peek=='NIL'
 			return NilLiteral(.grab)
@@ -2552,7 +2556,7 @@ class Parser
 				else
 					throw
 
-	def callExpr as CallExpr
+	def callExpr as Expr
 		"""
 		Syntax:
 			foo(args)
@@ -2563,7 +2567,10 @@ class Parser
 			on 'OPEN_CALL'
 				assert not callName.endsWith('(')
 				args = .commaSepExprs(['RPAREN'], false, true)
-				return CallExpr(token, callName, args)
+				if .opStack.count and .opStack.peek == 'DOT'
+					return CallExpr(token, callName, args)
+				else
+					return PostCallExpr(token, IdentifierExpr(token, callName), args)
 			on 'OPEN_GENERIC'
 				assert not callName.endsWith('<of') and not callName.endsWith('<')
 				typeArgs = List<of ITypeProxy>()

@@ -49,7 +49,7 @@ class BinaryOpExpr
 				on 'ASSIGN'
 					return AssignExpr(opToken, op, left, right)
 				on 'DOT'
-					return DotExpr(opToken, op, left, right)
+					return DotExpr(opToken, op, left, right, false)
 				on 'INHERITS' or 'IMPLEMENTS'
 					return InheritsExpr(opToken, op, left, right)
 				on 'IN' or 'NOTIN'
@@ -899,14 +899,29 @@ class DotExpr
 	implements IPotentialTypeExpr
 
 	var _dotRightExpr as IDotRightExpr
-	
+	var _isImplicit as bool
+
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
+		require
+			op == 'DOT'
+			right inherits IDotRightExpr 
+		body
+			.init(opToken, op, left, right, false)
+
+	def init(opToken as IToken, op as String, left as Expr, right as Expr, isImplicit as bool)
 		require
 			op == 'DOT'
 			right inherits IDotRightExpr 
 		body
 			base.init(opToken, op, left, right)
 			_dotRightExpr = right to IDotRightExpr
+			_isImplicit = isImplicit
+
+	pro isImplicit from var
+		"""
+		True if the original expression did not actually contain a dot (.), but only implied it.
+		For example: `_foo()`
+		"""
 
 	def _bindImp
 		base._bindImp
@@ -926,7 +941,7 @@ class DotExpr
 		else if not _left.hasError and not _right.hasError
 			if _left inherits IdentifierExpr  # TODO: seems flawed. The error below should take place if left is a DotExpr
 				if _left.definition inherits Box # CC: combine with above if statement
-					if not _dotRightExpr.member.isShared
+					if _dotRightExpr.member is not nil and not _dotRightExpr.member.isShared  # when _dotRightExpr.member is nil, it's a nested type
 						if _dotRightExpr.name == 'init'
 							# hack to support Application.init in ../HowTo/390-GTK.cobra
 							# a better hack would be to de the correct binding to the shared init method
@@ -1013,11 +1028,6 @@ class DotExpr
 		else
 			# Given Cobra "A.B.C()" where C is a class/type/struct, then the C# needs to be "new A.B.C()"
 			# (But stuff like this makes me wonder if the ASTs should be doing some transformations, like collapsing qualified types.)
-			if _right inherits CallExpr
-				if _right.isNew
-					if _left inherits DotExpr or _left inherits IdentifierExpr  # might also need to check for TypeExpr of the Generic persuasion if accessing a nested class in a generic type
-						sw.write('new ')
-						_right.willWriteSharpNew = false
 			if _dotRightExpr.member inherits BoxMember
 				backing = (_dotRightExpr.member to BoxMember).sharedMethodBacking
 				if backing

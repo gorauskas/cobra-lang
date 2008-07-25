@@ -4,6 +4,7 @@ Rules:
 """
 
 interface IExpr
+	inherits ISyntaxNode
 	"""
 	This is mainly used for categorization.
 	To see what really makes an expression, see the Expr class.
@@ -86,6 +87,12 @@ class Expr
 		assigning a dynamic-typed expression to a static-typed variable, the type of the variable
 		becomes the context type.
 		"""
+
+	get curBox as Box? is protected
+		"""
+		Returns the current code member during "bind imp" and "write sharp".
+		"""
+		return if(.compiler.boxStack.count, .compiler.boxStack.peek, nil)
 
 	get curCodeMember as AbstractMethod? is protected
 		"""
@@ -413,10 +420,14 @@ class CallExpr
 	inherits Expr
 	implements IDotRightExpr
 	"""
-	A CallExpr may be on the right side of a dot expression as in `obj.foo(x, y)` but it could also be `SomeType()` or `_someMember(x, y)`.
+	A CallExpr may be on the right side of a dot expression as in `obj.foo(x, y)`.
+
+	This expression will transform into PostCallExpr for the case where in Foo.Bar() the Bar is a type, not a method.
 	
-	It might be a nice clean up in the future to treat `_someMember(x, y)` as `._someMember(x, y)` and transform `SomeType()` to
-	something like an InstantiateExpr.
+	The parser can't always know the exact context and semantics of a call. So transformations include:
+		EnumCallExpr
+		DotExpr -- for _foo(args) --> ._foo(args)
+		PostCallExpr
 	"""
 
 	var _name as String
@@ -424,11 +435,6 @@ class CallExpr
 	var _genericArgTypes as List<of IType>?
 	var _args as List<of Expr>
 	var _definition as INamedNode?
-	var _isNew as bool  # "Exception('foo')" would be a CallExpr that isNew
-	var _willWriteSharpNew = true
-	var _isCallOnSystemType as bool  # "t()" where t is of System.Type would be a CallExpr that isCallOnSystemType
-	var _assignments as List<of AssignExpr> # for calls that are _isNew, this contains the assignments which are interpreted as property assignments
-	var _isForAttribute as bool
 
 	def init(token as IToken, name as String, args as List<of Expr>)
 		.init(token, name, nil, args)
@@ -439,7 +445,6 @@ class CallExpr
 		_genericArgProxies = genericArgProxies
 		_args = args
 		_definition = nil
-		_assignments = List<of AssignExpr>()
 
 	def addMinFields is override
 		base.addMinFields
@@ -451,12 +456,7 @@ class CallExpr
 
 	def addSubFields is override
 		base.addSubFields
-		.addField('isNew', _isNew)
-		.addField('isCallOnSystemType', _isCallOnSystemType)
 		.addField('args', _args)
-
-	get assignments from var
-		# has Subnodes  # TODO: Node.replaceChild uses dynamic binding, but the specific type arg (AssignExpr) is causing problems. But you'd think IList.IndexOf(Object) would get picked up... See also: CobraImp.InvokeMember
 
 	get genericArgProxies from var
 	
@@ -475,14 +475,6 @@ class CallExpr
 	get isCalling as bool is override
 		return true
 
-	pro isForAttribute from var
-		"""
-		Returns true when the call expr is being used for the purpose of an attribute as opposed to
-		normal expression in normal code.
-		"""
-		
-	get isNew from var
-	
 	get name from var
 
 	get args from var
@@ -493,30 +485,11 @@ class CallExpr
 	get member as IMember?
 		return _definition to? IMember
 
-	pro willWriteSharpNew from var
-		"""
-		Only checked when .isNew. Conditionally set to false in DotExpr._writeSharpDef.
-		"""
-
 	def _bindImp is override
 		base._bindImp
 
-		# check for EnumName(MemberA, MemberB) or Foo.Bar.EnumName(MemberA, MemberB)
-		defin as IMember?
-		if _definition is nil and Utils.isCapped(.name)
-			if _superNode inherits DotExpr
-				if this is not _superNode.left
-					defin = _superNode.left.memberForName(_name)
-			else
-				defin = .compiler.symbolForName(.name, true, false)
-		if defin inherits EnumDecl
-			enumCall = EnumCallExpr(.token, _name, _args, defin)
-			enumCall.bindImp  # CC: combine this line into above
-			_type = enumCall.type
-			_transformTo(enumCall)
-			return					
-
 		if _genericArgProxies
+			assert _superNode inherits DotExpr  # otherwise, for something like List<of int>(), the parser creates a PostCallExpr
 			_genericArgTypes = List<of IType>()
 			num = 1
 			for typeProxy in _genericArgProxies
@@ -527,6 +500,10 @@ class CallExpr
 					.compiler.recordError(ne)
 				num += 1
 			# TODO: Check types are compatible with call
+
+		assert _superNode inherits DotExpr
+		dotNode = _superNode to DotExpr
+		assert this is dotNode.right
 
 		num = 1
 		for arg in _args
@@ -544,93 +521,55 @@ class CallExpr
 		type as IType?
 
 		if _definition is nil  or  _type is nil
-			handled = false
-			if _superNode inherits DotExpr
-				if this is _superNode.right
-					checkName = _name
-					while checkName.startsWith('_')
-						checkName = checkName.substring(1)
-					# handle foo.bar() where this is the `bar()` part
-					if not _superNode.left.didBindImp
-						assert _superNode.left.hasError, _superNode.left
-						# we get here for Cobra code like "obj.foo.bar(x)" where "foo" is not found
-						_type = .compiler.passThroughType
-						return
-					possibleDefinition = _superNode.left.memberForName(_name)
-					if possibleDefinition is nil
-						lrt = _superNode.left.receiverType
-						if lrt.isDynamic
-							type = .compiler.dynamicType  # TODO: should be nilable dynamic, right?
-						else if lrt is .compiler.passThroughType or lrt inherits PrimitiveType  # TODO: lame: bailing out on PrimitiveType so float.parse() will work. See Tests\150-basics-two\510-number-parse.cobra
-							if _name=='toString'
-								type = .compiler.libraryType('System.String')
-							else
-								type = .compiler.passThroughType
-						else
-							suggs = .binarySuperNode.left.suggestionsForBadMemberName(_name)
-							left = _superNode.left
-							isBoxAccess = left inherits IdentifierExpr and (left to IdentifierExpr).definition inherits Box  # like "Console.writeLine" where the receiver is a literal class or struct reference
-							whoseTypeIs = if(isBoxAccess, '', ' whose type is "[left.receiverType.name]"')
-							.throwError('Cannot find a definition for "[_name]" in "[left.toCobraSource]"[whoseTypeIs].[_suggestionsMessage(suggs)]')
+			checkName = _name
+			while checkName.startsWith('_')
+				checkName = checkName.substring(1)
+			# handle foo.bar() where this is the `bar()` part
+			if not dotNode.left.didBindImp
+				assert dotNode.left.hasError, dotNode.left
+				# we get here for Cobra code like "obj.foo.bar(x)" where "foo" is not found
+				_type = .compiler.passThroughType
+				return  # TODO: I don't think I want a return here
+			possibleDefinition = dotNode.left.memberForName(_name)
+			if possibleDefinition is nil
+				lrt = dotNode.left.receiverType
+				if lrt.isDynamic
+					type = .compiler.dynamicType  # TODO: should be nilable dynamic, right?
+				else if lrt is .compiler.passThroughType or lrt inherits PrimitiveType  # TODO: lame: bailing out on PrimitiveType so float.parse() will work. See Tests\150-basics-two\510-number-parse.cobra
+					if _name == 'toString'
+						type = .compiler.libraryType('System.String')
 					else
-						if not possibleDefinition.isCallable
-							.throwError('Cannot call "[_name]" because it is a "[possibleDefinition.englishName]".')
-						definition = possibleDefinition
-						type = possibleDefinition.resultType
-					handled = true
-			if handled
-				assert type
+						type = .compiler.passThroughType
+				else
+					left = dotNode.left
+					suggs = left.suggestionsForBadMemberName(_name)
+					isBoxAccess = left inherits IdentifierExpr and (left to IdentifierExpr).definition inherits Box  # like "Console.writeLine" where the receiver is a literal class or struct reference
+					whoseTypeIs = if(isBoxAccess, '', ' whose type is "[left.receiverType.name]"')
+					.throwError('Cannot find a definition for "[_name]" in "[left.toCobraSource]"[whoseTypeIs].[_suggestionsMessage(suggs)]')
 			else
-				# handle instantiation such Car() or t() (where t is a System.Type)
-				canBeUndottedMember = .compiler.canNameBeUndottedMember(_name)
-				if canBeUndottedMember
-					# assert .compiler.boxStack.count -- no longer true due to 'assembly; has SomeAttr'
-					definition = .compiler.symbolForName(_name, canBeUndottedMember, false)
-				else if not .isForAttribute  # otherwise .compiler.codeMemberStack is empty (so no .findLocal), plus Cobra doesn't allow lowercase members anyway
-					definition = .compiler.findLocal(_name)
-					if definition is nil
-						definition  = .compiler.symbolForName(_name, false, false, true)  # 3rd party DLLs have lowercase class names like iConnection
-				if definition is nil
-					definition = .compiler.curBox.symbolForName(_name, true)
-					if definition
-						.throwError('You must refer to non-underscored members with a leading dot (.). Member name is "[_name]".')
-					msg = 'Cannot find "[_name]".'
-					suggs = .compiler.curBox.suggestionsForBadMemberName(_name)
-					if suggs.count
-						msg += _suggestionsMessage(suggs)
-						assert msg.endsWith('.')
-						msg = msg[:-1] + ' if you were thinking of member access, but you will need a leading dot (.).'
-					.throwError(msg)
-				_isCallOnSystemType = not definition inherits Box and not definition inherits GenericParam and not definition inherits Method and not definition inherits MemberOverload
+				if not possibleDefinition.isCallable
+					.throwError('Cannot call "[_name]" because it is a "[possibleDefinition.englishName]".')
+				definition = possibleDefinition
+				type = possibleDefinition.resultType
+			assert type
+			# assert definition
+			if definition inherits IType
+				# Foo.Bar() where Bar is a box/type
+				# Change to a PostCallExpr on the type 'Foo.Bar'
+				
+				# Roll up Foo.Bar.Baz() into one PostCallExpr
+				transformTarget = dotNode
+				while transformTarget.superNode inherits DotExpr
+					transformTarget = transformTarget.superNode to DotExpr
+				
+				postCall = PostCallExpr(.token, TypeExpr(.token, definition), .args).bindImp
+				_type = postCall.type to IType
+				transformTarget._transformTo(postCall)
+				return
 			if definition
-				if definition inherits IVar
-					# if you're calling on a variable such as:
-					#     someVar()
-					# then it must be:
-					#     * a System.Type
-					#     * a dynamic variable
-					#     * a delegate / method sig
-					if definition.type.isDynamic or definition.type.isDescendantOf(.compiler.typeType)
-						type = .compiler.dynamicType
-					else if definition.type.isDescendantOf(.compiler.libraryType('System.Delegate'))
-						invokeMethod = definition.type.memberForName('invoke') to Method
-						type = invokeMethod.resultType
-						_isCallOnSystemType = false
-					else
-						.throwError('Cannot call a variable of type [definition.type.name].')
-				else if definition inherits Box
-					if definition inherits Interface
-						.throwError('Cannot instantiate an interface.')
-					else if definition inherits Class or definition inherits Struct
-						# constructing an instance of a class or struct
-						type = definition
-					else
-						# not ever expected since the three Box types are covered above
-						throw FallThroughException(definition)
-				else if definition inherits GenericParam
-					# TODO: check that the GenericParam is callable (has the callable constraint)
-					type = definition
-				else if definition inherits BoxMember
+				# definition should never be a Box, IVar or GenericParam as those cases would be handled by the transformation to PostCallExpr above
+				# there is a FallThroughException down below that would report this if it happened
+				if definition inherits BoxMember
 					if not .hasError
 						args = _args
 						if definition inherits MemberOverload
@@ -757,18 +696,14 @@ class CallExpr
 			if _definition
 				definition.isUsed = true
 			_type = type
-		_isNew = _definition inherits Box or _definition inherits GenericParam
-		if _isNew
-			for arg in _args
-				if arg inherits AssignExpr
-					_assignments.add(arg)
+		assert _type, _definition
+		if .args.count == 0
+			if (.definition inherits Method or .definition inherits MemberOverload) and not dotNode.isImplicit
+				.compiler.warning(this, 'Unnecessary parentheses. You can remove them.')
 		else
 			for arg in _args
 				if arg inherits AssignExpr
 					.recordError('Cannot make assignments in arguments. This syntax is reserved in the future for keyword arguments.')
-		assert _type, 'def=[_definition]'
-		if .args.count == 0 and .superNode inherits DotExpr and (.definition inherits Method or .definition inherits MemberOverload)
-			.compiler.warning(this, 'Unnecessary parentheses. You can remove them.')
 
 	def toCobraSource as String is override
 		sb = StringBuilder()
@@ -783,30 +718,12 @@ class CallExpr
 		return sb.toString
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		assert .superNode inherits DotExpr
 		name = .name
-		if _isCallOnSystemType
-			defi = _definition
-			what = if(defi inherits Class, 'typeof([_definition.sharpName])', defi.sharpName)
-			if defi inherits IVar
-				if defi.type.isDynamic
-					what = '(System.Type)' + what
-			sw.write('Activator.CreateInstance([what]')
-			sep = ', '
-			for arg in _args
-				sw.write(sep)
-				arg.writeSharpDefInContext(sw)
-			sw.write(')')
-			return
-		if _isNew
-			if parens
-				sw.write('(')
-			if _willWriteSharpNew
-				sw.write('new ')
+		if _definition inherits BoxMember and (_definition to BoxMember).binaryName
+			name = (_definition to BoxMember).binaryName to !
 		else
-			if _definition inherits BoxMember and (_definition to BoxMember).binaryName
-				name = (_definition to BoxMember).binaryName to !
-			else if .superNode inherits DotExpr  # otherwise, code could be: _underscoredDoesNotRequireDot()
-				name = Utils.capped(name)
+			name = Utils.capped(name)
 		sw.write('[name]')
 		if _genericArgTypes and _genericArgTypes.count
 			sw.write('<')
@@ -822,8 +739,6 @@ class CallExpr
 			arg.writeSharpDefInContext(sw)
 			sep = ', '
 		sw.write(')')
-		if _isNew and parens
-			sw.write(')')
 
 	def writeSharpBreakdownItems(sw as SharpWriter) is override
 		# leaving out the base call is intentional:
@@ -1059,7 +974,7 @@ class IdentifierExpr
 		Returns true if this identifier directly names a type.
 		"""
 		require .didBindImp
-		r = .definition inherits Box and _type.isDescendantOf(.compiler.typeType)
+		r = .definition inherits Box and .type.isDescendantOf(.compiler.typeType)
 		assert not r or not .definition.sharpName.startsWith('_lh')
 		return r
 		
@@ -1083,14 +998,12 @@ class IdentifierExpr
 		if _definition is nil
 			canBeUndottedMember = .compiler.canNameBeUndottedMember(_name)
 			if canBeUndottedMember
-				assert .compiler.boxStack.count
+				# assert .compiler.boxStack.count TODO: identifier expr is being used by PostCallExpr which is used for attribute calls
 				_definition = .compiler.symbolForName(_name, canBeUndottedMember, false)
 			else
 				# local var ref: foo
-				if .compiler.isBindingInt or (.compiler.isBindingImp and .compiler.codeMemberStack.count == 0)
-					# happens for the erroneous code: var _x = y
-					.throwError('Cannot access local variables here ("[_name]").')
-				_definition = .compiler.findLocal(_name)
+				if .compiler.codeMemberStack.count  # could be: var _x = y   or: has foo
+					_definition = .compiler.findLocal(_name)
 				if _definition is nil
 					_definition  = .compiler.symbolForName(_name, false, false, true)  # 3rd party DLLs have lowercase class names like iConnection
 			if _definition is nil and not canBeUndottedMember
@@ -1123,7 +1036,7 @@ class IdentifierExpr
 	def throwUnknownIdError
 		require .name.length
 		name = .name
-		msg = 'Unknown identifier: "[name]".'
+		msg = 'Cannot find "[name]".'
 		if .compiler.unknownSuggestions.containsKey(name)
 			sug = .compiler.unknownSuggestions[name] to ?
 		if sug and sug.length
@@ -1162,13 +1075,18 @@ class IdentifierExpr
 		# recall that this cannot be the right side of "foo.bar" since that is a MemberExpr
 		sharpName = .sharpName
 		if not .definition inherits IVar
-			# the only definition that has not parentNameSpace in practice is IVar
+			# the only definition that has no parentNameSpace in practice is IVar
 			if not sharpName.startsWith('typeof')
 				# maybe parentNameSpace could be moved up in the interface definitions
 				pn = (.definition to dynamic).parentNameSpace
-				if pn, sw.write(pn.sharpQualifier)
+				if pn, sharpName = pn.sharpQualifier + sharpName
 
-		sw.write(.sharpName)
+				# handle the case of "X.X" where namespace and class are both called "X".
+				# C# chokes on it because the first "X" is considered to be the type
+				if .curBox.name + '.' in sharpName
+					sharpName = 'global::' + sharpName
+
+		sw.write(sharpName)
 
 	get sharpName as String
 		assert .didBindImp
@@ -1180,7 +1098,7 @@ class IdentifierExpr
 		if .isTypeReference
 			# C# often requires typeof(Foo) instead of just plain Foo
 			superNode = .superNode
-			if not superNode inherits DotExpr and not superNode inherits InheritsExpr
+			if not superNode inherits DotExpr and not superNode inherits InheritsExpr and not superNode inherits PostCallExpr
 				return 'typeof(' + defi.sharpName + ')'
 		return defi.sharpName
 
@@ -1552,7 +1470,7 @@ class MemberExpr
 	inherits Expr
 	implements IDotRightExpr
 	"""
-	Example members are fields and properties and methods without arguments.
+	Example members are fields, properties and methods without arguments.
 	"""
 
 	var _name as String
@@ -1597,7 +1515,7 @@ class MemberExpr
 
 	def _bindImp is override
 		base._bindImp
-		assert .superNode inherits BinaryOpExpr
+		assert .superNode inherits DotExpr
 		assert .binarySuperNode.op == 'DOT'
 		assert .binarySuperNode.right is this
 		left = .binarySuperNode.left
@@ -1684,6 +1602,10 @@ class MemberExpr
 
 class OldExpr
 	inherits Expr
+	"""
+	The `old` expression used in contracts such as:
+		ensure .count == old .count + 1
+	"""
 
 	var _expr as Expr
 	var _sharpVarName as String?
@@ -1737,11 +1659,17 @@ class PostCallExpr
 	inherits Expr
 	"""
 	Covers cases like:
+		Car()
+		someDelegate()
 		obj[i]('x')
 		String[](10)
 		Foo.Bar.Baz[](0)
+
 	For "bar.foo('x')" that's a binary dot expression with a CallExpr on the right hand side.
-	For "Car()" or "someType()" that's also a CallExpr.
+	
+	Some transformations are required. For example, the parser creates a PostCallExpr for these:
+		EnumType(EnumMember1, EnumMember2) -- should be: EnumCallExpr
+		_method(arg1, arg2) -- should be: DotExpr containing a CallExpr
 	"""
 
 	shared
@@ -1749,15 +1677,16 @@ class PostCallExpr
 		def isTargetAcceptable(expr as Expr) as bool
 			"""
 			Returns true if the given expression can be called.
+			That currently includes TypeExpr, IndexExpr and IdentifierExpr.
 			Do not pass expressions that fail this test to the PostCallExpr init.
 			"""
-			return expr inherits TypeExpr or expr inherits IndexExpr
+			return expr inherits TypeExpr or expr inherits IndexExpr or expr inherits IdentifierExpr
 
 	var _expr as Expr
 	var _args as List<of Expr>
 
 	def init(token as IToken, expr as Expr, args as List<of Expr>)
-		require expr inherits TypeExpr or expr inherits IndexExpr
+		require .isTargetAcceptable(expr)
 		base.init(token)
 		_expr = expr
 		_args = args
@@ -1778,6 +1707,14 @@ class PostCallExpr
 		for arg in _args, if arg.hasError, return true
 		return false
 
+	get name as String
+		e = .expr
+		if e inherits IdentifierExpr, return e.name
+		assert .didBindImp
+		if e inherits TypeExpr, return e.realType.name
+		if e inherits IndexExpr, return e.toCobraSource
+		throw FallThroughException(e)
+
 	get willChangeVar as bool is override
 		if _expr.willChangeVar, return true
 		for arg in _args, if arg.willChangeVar, return true
@@ -1785,28 +1722,66 @@ class PostCallExpr
 
 	def _bindImp is override
 		base._bindImp
+		expr = .expr
+
+		if expr inherits IdentifierExpr
+			if expr.name.startsWith('_') and not .compiler.symbolForName(expr.name, true, false) inherits BoxVar
+				# method invocation
+				# _foo(x) --> ._foo(x)
+				newCall = CallExpr(.token, .name, .args)
+				dotted = DotExpr(.token, 'DOT', ThisLit(.token, .curCodeMember.box), newCall, true).bindImp
+				_type = dotted.type to IType
+				_transformTo(dotted)
+				return
+
+		expr.bindImp
+
+		if expr inherits IdentifierExpr
+			if expr.definition inherits EnumDecl
+				enumCall = EnumCallExpr(.token, expr.name, .args, expr.definition to EnumDecl).bindImp
+				_type = enumCall.type to IType
+				_transformTo(enumCall)
+				return					
+
 		for arg in _args
 			try
-				arg.bindImp
+				if arg inherits AssignExpr
+					arg.right.bindImp  # 'x=y' has special treatment in arguments
+				else
+					arg.bindImp
 			catch ne as NodeException
 				.compiler.recordError(ne)
-		_expr.bindImp
-		if _expr inherits TypeExpr
+
+		if expr inherits TypeExpr
 			# instantiation
-			assert _expr.containedType
-			_type = _expr.containedType
-		else if _expr inherits IndexExpr
+			assert expr.containedType
+			_type = expr.containedType
+		else if expr inherits IndexExpr
 			# TODO: this needs to handle stuff[i] which could be System.Type, a delegate or what-have-you
-			if (target = _expr.target) inherits IPotentialTypeExpr
+			if (target = expr.target) inherits IPotentialTypeExpr
 				_type = target.potentialType
 				assert _type, target
 			else
-				assert false, 'what is this? _expr=[_expr]'
+				assert false, _expr
+		else if expr inherits IdentifierExpr
+			pass
 		else
 			# one example where this happened: x to SomeType()
 			# which yielded: PostCallExpr(expr=ToExpr(...))
 			# TODO: can probably make this an error now
-			assert false, 'what is this? _expr=[_expr]'
+			assert false, _expr
+
+		if _type is nil
+			if expr.type inherits MethodSig  # TODO: probably still need to handle case of a method sig coming from a DLL
+				_type = (expr.type to MethodSig).returnType
+			else if expr.receiverType.isSystemTypeClass
+				_type = .compiler.dynamicType
+			else if expr.type inherits Box
+				_type = expr.receiverType  # for example, an IdentifierExpr of 'SomeClass' has a .receiverType of that class
+			else if expr.type.isDynamic
+				_type = .compiler.dynamicType  # TODO: should be nilable, right?
+			else
+				assert false, expr
 
 	def toCobraSource as String is override
 		sb = StringBuilder()
@@ -1821,41 +1796,63 @@ class PostCallExpr
 		return sb.toString
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		if parens
-			sw.write('(')
-		isArrayCreation = false
+		if parens, sw.write('(')
+		# TODO: IndexExpr is handled in .bindImp, but not here. Need a test case. Like a list of delegates.
 		if _expr inherits TypeExpr
-			sw.write('new ')  # TODO: move down?
-			at = _expr.containedType
-			if at inherits ArrayType
-				# arrays are a very different case
-				# example: int[](10)
-				sw.write(at.theWrappedType.sharpRef)
-				isArrayCreation = true
-		if not isArrayCreation  # CC: combine next if when if-inherits gets smarter
-			if _expr inherits IndexExpr
-				subExpr = _expr.target
-				if subExpr.isKindOf(.compiler.typeType)
-					# example: String[](10)
-					sw.write('new ')
-					if subExpr inherits IdentifierExpr
-						# special case to avoid IdentifierExpr from generating: typeof(Foo)
-						sw.write(subExpr.name)
-					else
-						subExpr.writeSharpDef(sw, false)
-					isArrayCreation = true
-		if not isArrayCreation
-			_expr.writeSharpDef(sw)
-		sw.write(if(isArrayCreation, r'[', '('))
-		sep = ''
+			if _expr.containedType inherits ArrayType
+				# arrays
+				sw.write('new ')
+				sw.write((_expr.containedType to ArrayType).theWrappedType.sharpRef)
+				sw.write(r'[')
+				.writeSharpArgs(sw)
+				sw.write(r']')
+			else
+				sw.write('new ')
+				_expr.writeSharpDef(sw)
+				sw.write('(')
+				.writeSharpArgs(sw)
+				sw.write(')')
+		else if _expr inherits IdentifierExpr
+			if _expr.isTypeReference
+				sw.write('new ')
+				_expr.writeSharpDef(sw)
+				sw.write('(')
+				.writeSharpArgs(sw)
+				sw.write(')')
+			else if _expr.type inherits MethodSig
+				_expr.writeSharpDef(sw)
+				sw.write('(')
+				.writeSharpArgs(sw)
+				sw.write(')')
+			else if _expr.receiverType inherits GenericParam # TODO: shouldn't _expr.isTypeReference above have caught this?
+				sw.write('new [_expr.receiverType.sharpRef](')
+				.writeSharpArgs(sw)
+				sw.write(')')
+			else if _expr.type.isSystemTypeClass or _type.isDynamic
+				defi = _expr.definition
+				assert not defi inherits Box, _expr  # TODO: just curious
+				what = if(defi inherits IType, 'typeof([defi.sharpName])', defi.sharpName)
+				if defi inherits IVar
+					if defi.type.isDynamic
+						what = '(System.Type)' + what
+				sw.write('Activator.CreateInstance([what]')
+				.writeSharpArgs(sw, ', ')
+				sw.write(')')
+			else
+				assert false, _expr  # TODO: .throwError
+		else
+			assert false, _expr  # TODO: .throwError
+		if parens, sw.write(')')
+
+	def writeSharpArgs(sw as SharpWriter)
+		.writeSharpArgs(sw, '')
+
+	def writeSharpArgs(sw as SharpWriter, sep as String)
 		for arg in _args
 			sw.write(sep)
-			arg.writeSharpDef(sw, false)
+			arg.writeSharpDefInContext(sw, false)
 			sep = ','
-		sw.write(if(isArrayCreation, r']', ')'))
-		if parens
-			sw.write(')')
-
+		
 	def writeSharpBreakdownItems(sw as SharpWriter)
 		base.writeSharpBreakdownItems(sw)
 		sw.write(', +1')
@@ -2325,6 +2322,11 @@ class TypeExpr
 		_type = .compiler.typeType
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		sharpRef = _containedType.sharpRef
+		# handle the case of "X.X" where namespace and class are both called "X".
+		# C# chokes on it because the first "X" is considered to be the type
+		if .curBox.name + '.' in sharpRef
+			sharpRef = 'global::' + sharpRef
 		if _requiresTypeOf()
 			sw.write('typeof(')
 			sw.write(_containedType.sharpRef)
