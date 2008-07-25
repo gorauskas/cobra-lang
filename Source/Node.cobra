@@ -487,8 +487,14 @@ class Node
 
 	def bindImp as dynamic  # CC: as same
 		"""
-		Invoke this method; do not override it.
+		Invoke this method to bind implemenation.
+		Subclasses typically override _bindImp, not this method.
+		However, if they do override this method, they should invoke base and return .bindImpResult.
 		Maintains .compiler.nodeStack.
+		
+		Supports node transformations. Consequently, if you cache an object var in a local (example: `expr = .expr`),
+		be sure to do so *after* invoking .bindImp on it, or to reassign the result of .bindImp to the local
+		(example: `expr = .expr.bindImp`).
 		"""
 		require
 			.compiler
@@ -514,8 +520,14 @@ class Node
 					_finishChildReplacements
 					.compiler.nodeStack.pop
 					_isBindingImp = false
-			return _transformedTo ? this
+			return .bindImpResult
 
+	def bindImpResult as dynamic is nonvirtual  # CC: as same
+		"""
+		Returned by .bindImp. In support of node transformations.
+		"""
+		return _transformedTo ? this
+	
 	def _bindImp
 		"""
 		Bind implementation elements such as statements and expressions.
