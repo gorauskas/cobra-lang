@@ -118,7 +118,7 @@ class BoxMember
 		"""
 		Returns true if the class member has one or more parameters defined.
 		"""
-		return false
+		return .params.count > 0
 
 	get params as List<of Param>
 		"""
@@ -390,6 +390,25 @@ class BoxEvent
 	
 	get handlerTypeProxy from var
 
+	get isCallable as bool is override
+		return true
+
+	get params as List<of Param> is override
+		assert .didBindInt
+		if _handlerType inherits MethodSig
+			return _handlerType.params
+		else if _handlerType inherits Class
+			method = _handlerType.memberForName('invoke')
+			if method inherits AbstractMethod
+				return method.params
+			else
+				.compiler.warning(this, 'Cannot locate a single invoke method of "[_handlerType.name]".')
+				return List<of Param>()			
+		else
+			if not .hasError
+				.compiler.warning(this, 'Cannot determine parameters of event "[.name]".')
+			return List<of Param>()			
+
 	get resultType as IType is override
 		return .handlerType to !
 
@@ -404,6 +423,17 @@ class BoxEvent
 			_handlerType = _handlerTypeProxy.realType
 		# TODO: error check that _handlerType is a delegate
 		# _handlerType.isDescendantOf(.compiler.libraryType('System.Delegate'))
+
+	get sharpName as String is override
+		return Utils.capped(.name)
+
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		.writeSharpAttribs(sw)
+		.writeSharpIsNames(sw)
+		sw.write(.handlerType.sharpRef)
+		sw.write(' [.sharpName]')
+		sw.write(';\n')
 
 
 class BoxVar
@@ -598,9 +628,6 @@ class AbstractMethod
 		_oldExprs = List<of OldExpr>()
 		_locals = List<of LocalVar>()
 		_stmts = List<of Stmt>()
-
-	get hasParams as bool is override
-		return _params.count > 0
 
 	get params as List<of Param> is override
 		return _params

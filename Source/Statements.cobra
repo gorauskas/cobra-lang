@@ -1160,6 +1160,70 @@ class PrintRedirectStmt
 		sw.write('}\n')
 
 
+class RaiseStmt
+	inherits Stmt
+	"""
+	Raise an event.
+	
+	TODO: give a good error message for the case where the user is trying to raise an exception
+	TODO: test raising an inherited event, either from source or from binary
+	TODO: support missing arguments such as 'this' and 'EventArgs()'
+	"""
+
+	var _name = ''
+	var _exprs as List<of Expr>
+	var _definition as BoxEvent?
+
+	def init(token as IToken, exprs as List<of Expr>)
+		require exprs.count > 0
+		base.init(token)
+		_exprs = exprs
+
+	def addSubFields
+		base.addSubFields
+		.addField('exprs', _exprs)
+
+	get name from var
+
+	get exprs from var
+
+	def _bindImp
+		base._bindImp
+		hasError = false
+		for expr in _exprs
+			try
+				expr.bindImp
+			catch ne as NodeException
+				.compiler.recordError(ne)
+				hasError = true
+		if not hasError
+			expr = _exprs[0]
+			if expr inherits DotExpr
+				right = expr.right
+				if right inherits IDotRightExpr
+					defi = (right to dynamic).definition
+					if defi inherits BoxEvent
+						_definition = defi
+						_name = defi.name
+					else
+						.throwError('Expecting an event to raise.')
+				else
+					assert false # should be impossible to get here since it was a dotexpr
+			else
+				.throwError('Invalid expression for raising events. Try "raise .someEvent, args" or "throw SomeException(args)".')
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		name = Utils.capped(.name)
+		sw.write('if (this.[name]!=null) this.[name](')
+		sep = ''
+		for expr in _exprs[1:]
+			sw.write(sep)
+			expr.writeSharpDef(sw, false)
+			sep = ', '
+		sw.write(');\n')
+
+
 class ReturnStmt
 	inherits Stmt
 
@@ -1173,6 +1237,8 @@ class ReturnStmt
 	def addSubFields
 		base.addSubFields
 		.addField('expr', _expr)
+
+	get expr from var
 
 	pro sharpResultVarName from var
 

@@ -850,6 +850,31 @@ class Parser
 
 		return theStruct
 
+	def eventDecl as BoxEvent
+		token = .expect('EVENT')
+		name = .expect('ID').value to String
+		.expect('AS')
+		handlerType = .typeId
+		# ahem, duplicated from .boxVarDecl
+		docString = '' to ?
+		isNames = List<of String>(_isNamesStack)
+		if .peek.which=='IS'
+			isNames = .isDeclNames
+			attribs = .hasAttribs
+			assert .last.which=='EOL'
+			.undo  # need the EOL
+			if .optionalIndent
+				docString = .docString
+				.dedent
+		else if .optionalIndent
+			isNames = .isDeclNames
+			attribs = .hasAttribs
+			docString = .docString
+			.dedent
+		else
+			attribs = AttributeList()
+		return BoxEvent(token, .curBox, name, isNames, attribs, docString, handlerType)
+
 	def enumDecl as EnumDecl
 		token = .expect('ENUM')
 		name = .expect('ID').value to String
@@ -1022,6 +1047,7 @@ class Parser
 					on 'INVARIANT', .declareInvariant
 					on 'EOL', .endOfLine
 					on 'ENUM', .addDecl(box, .enumDecl)
+					on 'EVENT', .addDecl(box, .eventDecl)
 					on 'SIG', .addDecl(box, .declareMethodSig)
 					on 'SHARED', .bodiedBoxMemberDeclsShared(box)
 					on 'TEST', .testSection(box)
@@ -1093,12 +1119,11 @@ class Parser
 			if .optionalIndent
 				docString = .docString
 				.dedent
-		else
-			if .optionalIndent
-				isNames = .isDeclNames
-				attribs = .hasAttribs
-				docString = .docString
-				.dedent
+		else if .optionalIndent
+			isNames = .isDeclNames
+			attribs = .hasAttribs
+			docString = .docString
+			.dedent
 		return BoxVar(tok, .curBox, identifier, type, isNames, initExpr, docString)
 
 	def declareInvariant
@@ -2035,9 +2060,11 @@ class Parser
 			return PrintStmt(token, destination, args, stopp)
 
 	def raiseStmt as Stmt
-		.expect('RAISE')
-		.throwError('The "raise" keyword may be used in the future to raise events. If you are trying to throw an exception, use the "throw" keyword.')
-		return nil to passthrough # CC: throw FallThroughException()
+		token = .expect('RAISE')
+		exprs = .commaSepExprs('EOL')
+		if exprs.count == 0
+			.throwError('Expecting one or more expressions after "raise", starting with the event. If you meant to throw the currently caught exception, use "throw" instead.')
+		return RaiseStmt(token, exprs)
 
 	def returnStmt as Stmt
 		token = .expect('RETURN')
