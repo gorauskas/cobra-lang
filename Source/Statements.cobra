@@ -1171,6 +1171,7 @@ class RaiseStmt
 	"""
 
 	var _name = ''
+	var _eventType as IType?
 	var _exprs as List<of Expr>
 	var _definition as BoxEvent?
 
@@ -1199,30 +1200,38 @@ class RaiseStmt
 		if not hasError
 			expr = _exprs[0]
 			if expr inherits DotExpr
-				right = expr.right
-				if right inherits IDotRightExpr
-					defi = (right to dynamic).definition
-					if defi inherits BoxEvent
-						_definition = defi
-						_name = defi.name
-					else
-						.throwError('Expecting an event to raise.')
+				right = expr.dotRight
+				defi = (right to dynamic).definition
+				if defi inherits BoxEvent
+					_definition = defi
+					_name = defi.name
+					_eventType = defi.handlerType		
 				else
-					assert false # should be impossible to get here since it was a dotexpr
+					.throwError('Expecting an event to raise.')
+			else if expr inherits IdentifierExpr  # ex: raise _eventName
+				_name = expr.name
+				assert expr.potentialType
+				_eventType = expr.potentialType
 			else
 				.throwError('Invalid expression for raising events. Try "raise .someEvent, args" or "throw SomeException(args)".')
 
 	def writeSharpDef(sw as SharpWriter)
 		base.writeSharpDef(sw)
 		name = Utils.capped(.name)
-		sw.write('if (this.[name]!=null) this.[name](')
+		localName = '_lh_event_[.serialNum]'
+		sw.write('{ [_eventType.sharpRef] [localName] = this.[name]; if ([localName]!=null) [localName](')
 		sep = ''
+		# Assuming usual argsList case is 2 args (sender, eventArgs). If have fewer than this
+		# presume the first arg - sender ('this') -  is elided
+		# TODO: need to compare to the actual count of the parameter list instead of assuming this
+		if _exprs.count == 2 
+			sep = 'this, '
 		for expr in _exprs[1:]
 			sw.write(sep)
 			expr.writeSharpDef(sw, false)
 			sep = ', '
-		sw.write(');\n')
-
+		sw.write('); }\n')
+		
 
 class ReturnStmt
 	inherits Stmt
