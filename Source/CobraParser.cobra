@@ -2379,6 +2379,8 @@ class Parser
 			'PLUS':  _binaryOpPrec['PLUS']+1,
 			'TILDE': _binaryOpPrec['PLUS']+1,
 			'NOT':   _binaryOpPrec['AND']+1,
+			'ALL':   _binaryOpPrec['AND']+1,  # have to admit I'm just guessing at the precendence level for 'any' and 'all'. experience will tell. TODO: fix or not, then retire this comment (2008-07-31)
+			'ANY':   _binaryOpPrec['AND']+1,
 			'REF':   _binaryOpPrec['STARSTAR']+1,
 			'OLD':   _binaryOpPrec['STARSTAR']+1,
 		}
@@ -2478,14 +2480,13 @@ class Parser
 		if _unaryOpPrec.containsKey(peek)
 			token = .grab
 			prec = _unaryOpPrec[peek]
+			unaryExpr = .expression(prec)
 			branch token.which
-				on 'OLD'
-					return OldExpr(token, .expression(prec))
-				on 'REF'
-					refTo = .expression(prec)
-					return RefExpr(token, refTo)
-				else
-					return UnaryOpExpr(token, peek, .expression(prec))
+				on 'ALL', return AllExpr(token, unaryExpr)
+				on 'ANY', return AnyExpr(token, unaryExpr)
+				on 'OLD', return OldExpr(token, unaryExpr)
+				on 'REF', return RefExpr(token, unaryExpr)
+				else, return UnaryOpExpr(token, peek, unaryExpr)
 		# TODO: make a branch statement
 		else if peek=='LPAREN'
 			.grab

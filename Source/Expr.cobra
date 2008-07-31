@@ -2377,6 +2377,92 @@ class TypeExpr
 		sw.write(')')
 
 
+class AllOrAnyExpr
+	is abstract
+	inherits Expr
+	"""
+	The base class for AllExpr and AnyExpr which have much in common.
+	
+	They are unary prefix operators taking something enumerable and returning a bool.
+	"""
+
+	var _expr as Expr
+
+	def init(token as IToken, expr as Expr)
+		base.init(token)
+		_expr = expr
+
+	get opName as String is abstract
+
+	get expr from var
+
+	get hasError as bool
+		if base.hasError, return true
+		if .expr.hasError, return true
+		return false
+
+	get willChangeVar as bool is override
+		if base.willChangeVar, return true
+		if .expr.willChangeVar, return true
+		return false
+
+	def addSubFields is override
+		base.addSubFields
+		.addField('expr', _expr)
+
+	def toCobraSource as String is override
+		return '[.opName] [.expr.toCobraSource]'
+
+	def _bindImp
+		base._bindImp
+		_type = .compiler.boolType
+		_expr.bindImp
+		enumerable = .compiler.libraryBox('System.Collections.IEnumerable')
+		if _expr.type.isDescendantOf(enumerable)
+			pass
+		else if _expr.type.isDynamic
+			_expr.contextType = enumerable
+		else
+			.throwError('Expecting an enumerable expression after "[.opName]", but got an expression of type "[.expr.type.name]".')
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		sw.write('CobraImp.[Utils.capped(.opName)](')
+		.expr.writeSharpDefInContext(sw)
+		sw.write(')')
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		sw.write(', +1')
+		.expr.writeSharpBreakdownItems(sw)
+		sw.write(', -1')
+
+
+class AllExpr
+	inherits AllOrAnyExpr
+	"""
+	all <enumerable> --> true if all elements are true
+	"""
+	
+	def init(token as IToken, expr as Expr)
+		base.init(token, expr)
+
+	get opName as String is override
+		return 'all'
+	
+
+class AnyExpr
+	inherits AllOrAnyExpr
+	"""
+	any <enumerable> --> true if any element is true
+	"""
+	
+	def init(token as IToken, expr as Expr)
+		base.init(token, expr)
+
+	get opName as String is override
+		return 'any'
+
+
 class UnaryOpExpr
 	inherits Expr
 

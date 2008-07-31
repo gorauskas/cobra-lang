@@ -520,6 +520,34 @@ static public class CobraImp {
 		return !Equals(a, b);
 	}
 
+	static public bool All<T>(IEnumerable<T> items) {
+		foreach (T item in items)
+			if (!IsTrue(item))
+				return false;
+		return true;
+	}
+
+	static public bool All(IEnumerable items) {
+		foreach (object item in items)
+			if (!IsTrue(item))
+				return false;
+		return true;
+	}
+
+	static public bool Any<T>(IEnumerable<T> items) {
+		foreach (T item in items)
+			if (IsTrue(item))
+				return true;
+		return false;
+	}
+
+	static public bool Any(IEnumerable items) {
+		foreach (object item in items)
+			if (IsTrue(item))
+				return true;
+		return false;
+	}
+ 
 	static public bool In(string a, string b) {
 		return b.Contains(a);
 	}
