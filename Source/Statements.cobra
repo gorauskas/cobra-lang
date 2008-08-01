@@ -1171,9 +1171,13 @@ class RaiseStmt
 	"""
 
 	var _name = ''
-	var _eventType as IType?
 	var _exprs as List<of Expr>
+
+	# computed in _bindImp
 	var _definition as BoxEvent?
+	var _eventType as IType?
+	var _params as List<of Param>?
+	var _args as List<of Expr>?
 
 	def init(token as IToken, exprs as List<of Expr>)
 		require exprs.count > 0
@@ -1205,7 +1209,7 @@ class RaiseStmt
 				if defi inherits BoxEvent
 					_definition = defi
 					_name = defi.name
-					_eventType = defi.handlerType		
+					_eventType = defi.handlerType
 				else
 					.throwError('Expecting an event to raise.')
 			else if expr inherits IdentifierExpr  # ex: raise _eventName
@@ -1214,24 +1218,63 @@ class RaiseStmt
 				_eventType = expr.potentialType
 			else
 				.throwError('Invalid expression for raising events. Try "raise .someEvent, args" or "throw SomeException(args)".')
+			if _eventType inherits MethodSig
+				_params = _eventType.params
+			else
+				member = _eventType.memberForName('invoke')
+				if member inherits Method
+					_params = member.params
+				else
+					.throwError('Cannot find a single "invoke" method for "_eventType.name".')
+			# TODO: check type compatibility of exprs with params
+			args = _exprs[1:]
+			params = _params
+			unThis = 'Unnecessary "this" which is already implied by raising an event. You can remove it.'
+			if args.count == params.count
+				if args.count > 0 and args[0] inherits ThisLit
+					.compiler.warning(this, unThis)
+			else if args.count == params.count - 1
+				# off by one.
+				if args[0] inherits ThisLit
+					.compiler.warning(this, unThis)
+					# since we have 'this', try appending the args object
+					args.add(_postCallForType(params[params.count-1].type))
+				else
+					# since we don't have 'this', try prepending 'this'
+					args.insert(0, ThisLit(.token, .compiler.boxStack.peek).bindImp)
+			else if args.count == 0 and params.count == 2
+				# missing both 'this' and event args
+				args.add(ThisLit(.token, .compiler.boxStack.peek).bindImp)
+				args.add(_postCallForType(params[params.count-1].type))
+			else
+				.throwError('Event expects [params.count] arguments, but the "raise" statement is providing [args.count].')
+			_args = args
+
+	def _postCallForType(type as IType) as PostCallExpr		
+		inits = type.memberForName('init')
+		if inits inherits Initializer
+			if inits.params.count <> 0
+				.throwError('Missing argument for "raise" of type "[type.name]".')
+			else
+				token = .token.copy('ID', type.name)
+				return PostCallExpr(token, TypeExpr(token, type), List<of Expr>()).bindImp
+		else
+			.throwError('Missing argument for "raise" of type "[type.name]".')
+		throw FallThroughException() # suppress an error
 
 	def writeSharpDef(sw as SharpWriter)
 		base.writeSharpDef(sw)
 		name = Utils.capped(.name)
 		localName = '_lh_event_[.serialNum]'
+		sw.writeLine('// raise [.name] ...')
 		sw.write('{ [_eventType.sharpRef] [localName] = this.[name]; if ([localName]!=null) [localName](')
 		sep = ''
-		# Assuming usual argsList case is 2 args (sender, eventArgs). If have fewer than this
-		# presume the first arg - sender ('this') -  is elided
-		# TODO: need to compare to the actual count of the parameter list instead of assuming this
-		if _exprs.count == 2 
-			sep = 'this, '
-		for expr in _exprs[1:]
+		for expr in _args
 			sw.write(sep)
 			expr.writeSharpDef(sw, false)
 			sep = ', '
 		sw.write('); }\n')
-		
+
 
 class ReturnStmt
 	inherits Stmt
