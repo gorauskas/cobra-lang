@@ -521,7 +521,7 @@ class Parser
 					else
 						isGood = false
 				if not isGood
-					sugg = Compiler.suggestionFor(tok.text)
+					sugg = if(tok.text.length, Compiler.suggestionFor(tok.text), nil)
 					sugg = if(sugg, ' Try "[sugg]".', '')
 					.throwError('Expecting use, assembly, namespace, class, interface or enum, but got [tok].[sugg]')
 				if what
@@ -542,6 +542,14 @@ class Parser
 				.expect('EOL')
 				# TODO: throw AssertException(SourceSite sourceSite, object[] expressions, object thiss, object info)
 				assert false, IdentifierExpr(token, 'throw')
+			on 'number'
+				# number 'decimal' | 'float' | 'float32' | 'float64'
+				typeName = .grab
+				if typeName.text not in ['decimal', 'float', 'float32', 'float64']
+					.throwError('Compiler directive "number": unrecognized type "[typeName.text]". Must be one of "decimal", "float", "float32" or "float64".')
+				.expect('EOL')
+				comp = .typeProvider to Compiler?
+				if comp, comp.numberTypeName = typeName.text
 			else
 				.throwError('Unknown compiler directive.')
 
