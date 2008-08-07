@@ -50,6 +50,7 @@ class CobraTokenizer
 	var _inSubstStringSingle = false
 	var _inSubstStringDouble = false
 	var _inDocString = false
+	var _inCommentBlock = false
 
 	def init
 		base.init
@@ -65,6 +66,7 @@ class CobraTokenizer
 		sb.append('_inSubstStringSingle=[_inSubstStringSingle], ')
 		sb.append('_inSubstStringDouble=[_inSubstStringDouble], ')
 		sb.append('_inDocString=[_inDocString]')
+		sb.append('_inCommentBlock=[_inCommentBlock]')
 
 	# Note: The Tokenizer class handles it's input one line at a time,
 	#       and retains the \n at the end of the line. This affects
@@ -81,8 +83,9 @@ class CobraTokenizer
 			r'INDENT_MIXED_ST		^[ ]+[\t]+',
 			r'INDENT_ALL_TABS		^[\t]+',
 			r'INDENT_ALL_SPACES		^[ ]+',
-			r'NO_INDENT				^(?=[^\t\n#])',
+			r'NO_INDENT				^(?=[^\t\n#\/])',
 			r'EOL					\n',
+			r'COMMENT_BLOCK_START	^\/\#.*$',  
 			r'SINGLE_LINE_COMMENT	\#.*',
 			r'SPACE					[ \t]+',
 
@@ -378,6 +381,39 @@ class CobraTokenizer
 
 	def onWHITESPACE_COMMENT_2(tok as IToken) as IToken?
 		#print '<> onWHITESPACE_COMMENT_2'
+		return nil
+
+	##
+	## Comment out block
+	##
+	
+	var _commentBlockStop as TokenRegexDef?
+	var _commentBlockLine as TokenRegexDef?
+
+	def onCOMMENT_BLOCK_START(tok as IToken) as IToken?
+		#print '<> onCOMMENT_BLOCK_START', tok
+		assert not _inCommentBlock
+		# narrow the tokenizer's token defs to a new shorter set
+		if _commentBlockStop is nil
+			_commentBlockStop = TokenRegexDef('COMMENT_BLOCK_STOP', r'[^# \t]?\#\/.*$')
+			_commentBlockLine = TokenRegexDef('COMMENT_BLOCK_LINE', '.*\n')
+		t = List<of TokenDef>()
+		t.add(_commentBlockStop)
+		t.add(_commentBlockLine)
+		.pushTokenDefs(t)
+		_inCommentBlock = true
+		return nil
+		
+	def onCOMMENT_BLOCK_LINE(tok as IToken) as IToken?
+		#print '<> onCOMMENT_BLOCK_LINE', tok.lineNum 
+		assert _inCommentBlock, tok
+		return nil
+		
+	def onCOMMENT_BLOCK_STOP(tok as IToken) as IToken?
+		#print '<> onCOMMENT_BLOCK_STOP', tok.lineNum
+		assert _inCommentBlock, tok
+		_inCommentBlock = false
+		.popTokenDefs
 		return nil
 
 	def onINDENT_MIXED_TSNS(tok as IToken) as IToken?
