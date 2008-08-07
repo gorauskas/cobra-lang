@@ -50,7 +50,7 @@ class CobraTokenizer
 	var _inSubstStringSingle = false
 	var _inSubstStringDouble = false
 	var _inDocString = false
-	var _inCommentBlock = false
+	var _inCommentBlock = 0
 
 	def init
 		base.init
@@ -340,13 +340,20 @@ class CobraTokenizer
 		# CC:
 		# _tokenDefsByWhich['STRING_PART_SINGLE'].isActiveCall = def(tokenizer)=tokenizer.inSubstStringSingle
 		# _tokenDefsByWhich['STRING_STOP_SINGLE'].isActiveCall = def(tokenizer)=tokenizer.inSubstStringSingle
-		for which in @[
-				'RBRACKET_SPECIAL' ,
-				'STRING_PART_SINGLE', 'STRING_STOP_SINGLE',
-				'STRING_PART_DOUBLE', 'STRING_STOP_DOUBLE',
-				'STRING_PART_FORMAT',
-				]
-					_tokenDefsByWhich[which].isActive = false
+
+		# recover from multiline comments
+		while _tokenDefsByWhich.containsKey('COMMENT_BLOCK_LINE')
+			.popTokenDefs
+		_inCommentBlock = 0
+
+		inactivate = [
+			'RBRACKET_SPECIAL' ,
+			'STRING_PART_SINGLE', 'STRING_STOP_SINGLE',
+			'STRING_PART_DOUBLE', 'STRING_STOP_DOUBLE',
+			'STRING_PART_FORMAT',
+		]
+		for which in inactivate
+			_tokenDefsByWhich[which].isActive = false
 
 	def isActiveCall(tok as TokenDef) as bool is override
 		if tok.which=='STRING_PART_SINGLE' or tok.which=='STRING_STOP_SINGLE'
@@ -386,34 +393,36 @@ class CobraTokenizer
 	##
 	## Comment out block
 	##
-	
-	var _commentBlockStop as TokenRegexDef?
-	var _commentBlockLine as TokenRegexDef?
+
+	var _commentBlockDefs as List<of TokenDef>?	
 
 	def onCOMMENT_BLOCK_START(tok as IToken) as IToken?
 		#print '<> onCOMMENT_BLOCK_START', tok
-		assert not _inCommentBlock
+		assert _inCommentBlock >= 0, tok
 		# narrow the tokenizer's token defs to a new shorter set
-		if _commentBlockStop is nil
-			_commentBlockStop = TokenRegexDef('COMMENT_BLOCK_STOP', r'[^# \t]?\#\/.*$')
-			_commentBlockLine = TokenRegexDef('COMMENT_BLOCK_LINE', '.*\n')
-		t = List<of TokenDef>()
-		t.add(_commentBlockStop)
-		t.add(_commentBlockLine)
-		.pushTokenDefs(t)
-		_inCommentBlock = true
+		if _inCommentBlock == 0
+			if _commentBlockDefs is nil
+				# CC: _commentBlockDefs = List<of TokenDef>[_commentBlockStop, _commentBlockLine] # instead of the next 5 lines
+				defs = List<of TokenDef>()
+				defs.add(.tokenDefsByWhich['COMMENT_BLOCK_START'])
+				defs.add(TokenRegexDef('COMMENT_BLOCK_STOP', r'[^# \t]?\#\/.*$'))
+				defs.add(TokenRegexDef('COMMENT_BLOCK_LINE', '.*\n'))
+				_commentBlockDefs = defs
+			.pushTokenDefs(_commentBlockDefs to !)
+		_inCommentBlock += 1
 		return nil
 		
 	def onCOMMENT_BLOCK_LINE(tok as IToken) as IToken?
 		#print '<> onCOMMENT_BLOCK_LINE', tok.lineNum 
-		assert _inCommentBlock, tok
+		assert _inCommentBlock > 0, tok
 		return nil
 		
 	def onCOMMENT_BLOCK_STOP(tok as IToken) as IToken?
 		#print '<> onCOMMENT_BLOCK_STOP', tok.lineNum
-		assert _inCommentBlock, tok
-		_inCommentBlock = false
-		.popTokenDefs
+		assert _inCommentBlock > 0, tok
+		_inCommentBlock -= 1
+		if _inCommentBlock == 0
+			.popTokenDefs
 		return nil
 
 	def onINDENT_MIXED_TSNS(tok as IToken) as IToken?
