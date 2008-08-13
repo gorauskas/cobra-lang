@@ -525,9 +525,9 @@ class Parser
 					sugg = if(sugg, ' Try "[sugg]".', '')
 					.throwError('Expecting use, assembly, namespace, class, interface or enum, but got [tok].[sugg]')
 				if what
-					_nameSpaceAddDecl(_module.topNameSpace, what)
-				if what inherits Box
-					assert what.parentNameSpace
+					what = _nameSpaceAddDecl(_module.topNameSpace, what)
+					if what inherits Box
+						assert what.parentNameSpace
 		finally
 			_nameSpaceStack.pop
 		return _module to !
@@ -690,7 +690,7 @@ class Parser
 		Used by: classDecl, interfaceDecl, enumDecl, indentIsDeclNames
 		"""
 		if _validIsNames is nil
-			_validIsNames = ['fake', 'shared', 'virtual', 'nonvirtual', 'override', 'new', 'public', 'protected', 'private', 'internal', 'abstract']
+			_validIsNames = ['fake', 'shared', 'virtual', 'nonvirtual', 'override', 'new', 'public', 'protected', 'private', 'internal', 'abstract', 'partial']
 		names = List<of String>(_isNamesStack)
 		if .optional('IS') is nil
 			return names
@@ -1027,12 +1027,43 @@ class Parser
 				_nameSpaceStack.pop
 		return firstNameSpace to !
 
-	def _nameSpaceAddDecl(ns as NameSpace, decl as INameSpaceMember)
-		if ns.declForName(decl.name)
-			.throwError((decl to dynamic).token to IToken, 'The namespace "[ns.fullName]" already contains a declaration named "[decl.name]".')  # TODO: give an "error" for the location 
-		if ns.unifiedNameSpace.declForName(decl.name)
-			.throwError((decl to dynamic).token to IToken, 'The namespace "[ns.fullName]" already contains a declaration named "[decl.name]" in another file.')  # TODO: give an "error" for the location 
+	def _nameSpaceAddDecl(ns as NameSpace, decl as INameSpaceMember) as INameSpaceMember
+		"""
+		Adds the decl to the given namespace or throws an error for duplicate declarations.
+		Also, handles `partial` classes and structs.
+		Returns the same declaration, or in the case of `partial`, the original declaration.
+		"""
+		# TODO: complain if inheritance or is-names are different. at least for inheritance, that needs to be done post-parsing
+		checkForDups = true
+		if 'partial' in decl.isNames
+			if decl inherits Box
+				if not (decl inherits Class or decl inherits Struct)
+					.throwError(decl.token, '[Utils.capped(decl.englishName)] cannot be "partial".')
+				checkForDups = false
+				otherDecl = ns.unifiedNameSpace.declForName(decl.name)
+				if otherDecl
+					if otherDecl.getType is not decl.getType
+						.throwError(decl.token, 'The other partial declaration is a "[otherDecl.englishName]", not a "[decl.englishName]".')
+					if 'partial' not in otherDecl.isNames
+						.throwError(decl.token, 'The other declaration is not marked "partial".')
+					otherBox = otherDecl to Box  # will always work because of above checks
+					for memberDecl in decl.declsInOrder
+						overload = _overloadIfNeeded(otherBox, memberDecl.name)
+						if overload
+							overload.addMember(memberDecl to BoxMember)
+						else
+							otherBox.addDecl(memberDecl)
+						memberDecl.mergedIntoPartialBox(otherBox)
+					return otherDecl
+			else
+				.throwError(decl.token, '[Utils.capped(decl.englishName)] cannot be "partial".')
+		if checkForDups
+			if ns.declForName(decl.name)
+				.throwError((decl to dynamic).token to IToken, 'The namespace "[ns.fullName]" already contains a declaration named "[decl.name]".')  # TODO: give an "error" for the location 
+			if ns.unifiedNameSpace.declForName(decl.name)
+				.throwError((decl to dynamic).token to IToken, 'The namespace "[ns.fullName]" already contains a declaration named "[decl.name]" in another file.')  # TODO: give an "error" for the location 
 		ns.addDecl(decl)
+		return decl
 
 	def bodiedBoxMemberDecls(box as Box)
 # TODO: remove this when SystemInterfaces.cobra and "is fake" goes away. 2007-12-30: "is fake" might be around for a long time.
@@ -1174,22 +1205,7 @@ class Parser
 		curBox = .curBox
 		if name == curBox.name or Utils.capped(name) == curBox.name
 			.throwError('Method names cannot be the same as their enclosing [curBox.englishName]. Use `def init` for creating an initializer/constructor or choose another name.')  # TODO list the enclosing types location
-		overload as MemberOverload?
-		other = curBox.declForName(name)
-		if other
-			if other inherits MemberOverload
-				overload = other
-			else if other inherits AbstractMethod
-				overload = MemberOverload(other)
-				curBox.registerOverload(overload to !)
-			else
-				.throwError('There is already another class member with the name "[name]".')  # TODO list its location and possibly what it is
-		else
-			other = curBox.declForName(name)  # TODO: should be a CI there for case-insensitive
-			if other
-				.throwError('There is already another class member with the name "[other.name]". You must differentiate member names by more than just case.')
-			if name[0] in _uppercaseLetters
-				.recordError('Method names must start with lowercase letters. ([name])')
+		overload = _overloadIfNeeded(curBox, name)  # also checks for various errors
 
 		if opener.which in ['OPEN_CALL', 'OPEN_GENERIC']
 			if opener.which == 'OPEN_GENERIC'
@@ -1350,13 +1366,7 @@ class Parser
 		if .optional('LBRACKET')
 			params = .paramDecls(true, 'RBRACKET')
 			name = r'[]'
-			other = curBox.declForName(name)
-			if other
-				if other inherits MemberOverload
-					overload = other
-				else if other inherits ProperDexer
-					overload = MemberOverload(other)
-					curBox.registerOverload(overload to !)
+			overload = _overloadIfNeeded(curBox, name)
 		else
 			name = .idOrKeyword.text
 			.checkProperty(name)
@@ -1482,17 +1492,11 @@ class Parser
 		curBox = .curBox
 		prop as ProperDexer?
 		token = .expect(if(getOrSet, 'SET', 'GET'))
-		overload as MemberOverload? = nil
+		overload as MemberOverload?
 		if .optional('LBRACKET')
 			params = .paramDecls(true, 'RBRACKET')
 			name = r'[]'
-			other = curBox.declForName(name)
-			if other
-				if other inherits MemberOverload
-					overload = other
-				else if other inherits ProperDexer
-					overload = MemberOverload(other)
-					curBox.registerOverload(overload to !)
+			overload = _overloadIfNeeded(curBox, name)
 		else
 			name = .idOrKeyword.text
 			.checkProperty(name)
@@ -3186,6 +3190,29 @@ class Parser
 
 	def throwError(token as IToken?, msg as String)
 		throw _makeError(token, msg)  # will get recorded in .parseSource if the exception actually "makes it out" (some parser logic catches errors)
+
+	def _overloadIfNeeded(box as Box, name as String) as MemberOverload?
+		"""
+		Creates an overload for a new member going into box--if needed.
+		May throw various appropriate errors.
+		"""
+		overload as MemberOverload?
+		other = box.declForName(name)
+		if other
+			if other inherits MemberOverload
+				overload = other
+			else if other inherits AbstractMethod or other inherits ProperDexer # CC: make this method generic on this type
+				overload = MemberOverload(other to BoxMember)
+				box.registerOverload(overload to !)
+			else
+				.throwError('There is already another class member with the name "[name]".')  # TODO list its location and possibly what it is
+		else
+			other = box.declForName(name)  # TODO: should be a CI there for case-insensitive
+			if other
+				.throwError('There is already another class member with the name "[other.name]". You must differentiate member names by more than just case.')
+			if name[0] in _uppercaseLetters
+				.recordError('Method names must start with lowercase letters. ([name])')
+		return overload
 
 	def _makeError(token as IToken?, msg as String) as ParserException
 		if token
