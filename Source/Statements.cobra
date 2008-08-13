@@ -1250,13 +1250,19 @@ class RaiseStmt
 			_args = args
 
 	def _postCallForType(type as IType) as PostCallExpr		
-		inits = type.memberForName('init')
-		if inits inherits Initializer
-			if inits.params.count <> 0
-				.throwError('Missing argument for "raise" of type "[type.name]".')
-			else
-				token = .token.copy('ID', type.name)
-				return PostCallExpr(token, TypeExpr(token, type), List<of Expr>()).bindImp
+		init = type.memberForName('init')
+		good = false
+		if init inherits Initializer
+			if init.params.count == 0
+				good = true
+		else if init inherits MemberOverload
+			for member in init.members
+				if member.params.count == 0
+					good = true
+					break
+		if good
+			token = .token.copy('ID', type.name)
+			return PostCallExpr(token, TypeExpr(token, type), List<of Expr>()).bindImp
 		else
 			.throwError('Missing argument for "raise" of type "[type.name]".')
 		throw FallThroughException() # suppress an error

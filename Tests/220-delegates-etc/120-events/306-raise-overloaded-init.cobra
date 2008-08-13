@@ -1,0 +1,63 @@
+# test a subclass of EventArgs and also with an overloaded `init`
+
+class MyEventArgs
+	inherits EventArgs
+	
+	def init
+		base.init
+	
+	def init(i as int)
+		base.init
+
+
+class Button
+
+	sig ClickHandler(sender as Object, args as MyEventArgs)
+
+	event click as ClickHandler
+
+	def receiveMouseClick1
+		# pretend it's always in our bounds and we're enabled
+		raise .click, this, MyEventArgs()  # .warning. unnecessary "this"
+	
+	def receiveMouseClick2
+		raise .click, MyEventArgs()
+
+	def receiveMouseClick3
+		raise .click, this  # .warning. unnecessary "this"
+
+	def receiveMouseClick4
+		raise .click
+
+
+class Program
+
+	shared
+
+		var _butt as Button
+		var _clickCount = 0
+		
+		def main
+			butt = _butt = Button()
+
+			listen butt.click, ref .handleClick
+			assert .clickCount == 0
+
+			butt.receiveMouseClick1
+			assert .clickCount == 1
+
+			butt.receiveMouseClick2
+			assert .clickCount == 2
+
+			butt.receiveMouseClick3
+			assert .clickCount == 3
+
+			butt.receiveMouseClick4
+			assert .clickCount == 4
+
+		get clickCount from var
+
+		def handleClick(sender as Object, args as EventArgs)
+			assert sender is _butt
+			assert (args to dynamic?) inherits MyEventArgs
+			_clickCount += 1
