@@ -74,6 +74,7 @@ class Compiler
 	var _warnings as List<of SourceException>
 	var _messages as List<of SourceException>  # all errors and warnings
 	var _messagesPerSourceLine as IDictionary<of String, List<of SourceException>>  # key is 'filename:lineNum'
+	var _noWarningLines as ISet<of String>  	# key is 'filename:lineNum'
 
 	var _intermediateFileNames as List<of String>
 	var _baseExeFileName as String = ''
@@ -104,6 +105,7 @@ class Compiler
 		_codeMemberStack = Stack<of AbstractMethod>()
 		_messages = List<of SourceException>()
 		_messagesPerSourceLine = Dictionary<of String, List<of SourceException>>()
+		_noWarningLines = Set<of String>()
 		_errors = List<of SourceException>()
 		_warnings = List<of SourceException>()
 		_intermediateFileNames = List<of String>()
@@ -181,6 +183,8 @@ class Compiler
 	get warnings from var
 
 	get messages from var
+
+	pro noWarningLines from var
 
 	pro htmlWriter from var
 		"""
@@ -1153,8 +1157,15 @@ class Compiler
 
 	def warning(cw as CobraWarning)
 		require not cw.isError
+		if _suppressWarning(cw), return
 		_addMessage(cw)
-		
+	
+	def _suppressWarning(cw as CobraWarning) as bool
+		# TODO: add suppress all warnings (cmdline sw) - maybe?
+		# TODO: add suppress by error tag - maybe?
+		entry = if(cw.hasSourceSite, '[cw.fileName]:[cw.lineNum]', '')
+		return _noWarningLines.contains(entry)
+			
 	def augmentWarning(node as ISyntaxNode, lookFor as String, search as String, augment as String) as bool
 		require 
 			lookFor.length

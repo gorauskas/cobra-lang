@@ -300,6 +300,7 @@ class Tokenizer
 	var _tokenDefs as List<of TokenDef>?
 	var _tokenDefsByFirstChar as Dictionary<of char, List<of TokenDef>>?
 	var _tokenDefsByWhich as Dictionary<of String, TokenDef>?
+	var _noWarningLines as ISet<of String>
 	var _curTokenDef as TokenDef?
 	var _lastTokenDef as TokenDef?
 	var _avgCount = 0
@@ -314,6 +315,7 @@ class Tokenizer
 	var _charNum as int
 
 	def init
+		# before adding code here, consider if it should go in _reset or _reuse instead
 		_didReset = false
 		_reset()
 
@@ -368,6 +370,7 @@ class Tokenizer
 
 	get tokenDefsByWhich from var
 	
+	get noWarningLines from var
 
 	## Other
 
@@ -384,6 +387,7 @@ class Tokenizer
 		Resets class vars unrelated to token defs, file name or stream.
 		"""
 		_errors = List<of TokenizerError>()
+		_noWarningLines = Set<of String>()
 		_curToken = nil
 		_lastToken = nil
 
@@ -436,12 +440,22 @@ class Tokenizer
 		Returns all remaining tokens as a list.
 		"""
 		tokens = List<of IToken>()
+		start = DateTime.now
 		while true
 			t = .nextToken
-			if t
-				tokens.add(t)
-			else
-				break
+			if t, tokens.add(t)
+			else, break
+		# determine timings for various Tokenizer lexing changes
+		if false  # CC: can use /# ... #/ in the future
+			duration = DateTime.now.subtract(start)
+			if  tokens.count > 100 and duration > TimeSpan(0)
+				ticksPerToken = (duration.ticks to int) / tokens.count
+				ticksPerTokenMS = ticksPerToken / 10_000
+				fileName = _fileName
+				if fileName.startsWith('('), fileName = '(None)'
+				else, fileName = Path.getFileName(fileName)
+				print '[fileName.padRight(20)]\t[duration]\t[tokens.count]\t' stop
+				print ' [ticksPerTokenMS:N3] ms/Token av ([ticksPerTokenMS/1000:N3]sec)'
 		return tokens
 
 	def restart
@@ -591,26 +605,10 @@ class Tokenizer
 					return nil
 			try
 				assert _tokenDefs
-				if _narrowTokenDefs and _tokenDefs.count >= _minNumTokenDefsToNarrow
-					assert _tokenDefsByFirstChar
-					assert _sourceLine.length
-					if _tokenDefsByFirstChar.containsKey(_sourceLine[0])
-						# print 'Using short list for char: [_sourceLine[0]], [_sourceLine[0] to int]'
-						tokenDefs = _tokenDefsByFirstChar[_sourceLine[0]]
-					else
-						tokenDefs = _tokenDefs to !
-				else
-					tokenDefs = _tokenDefs to !
+				tokenDefs = _getCandidateTokenDefs(_sourceLine)
 				for tokenDef in tokenDefs
 					count += 1
-					if tokenDef.ignoreCount
-						tokenDef.ignoreCount -= 1
-						continue
-					if not tokenDef.isActive
-						continue
-					if _sourceLineIndex>0 and tokenDef.requiresBOL
-						continue
-					if not .isActiveCall(tokenDef)
+					if _skipMatchAttempt(tokenDef, _sourceLineIndex)
 						continue
 					#print '<> Trying to match [tokenDef]'
 					sourceLine = _sourceLine to !
@@ -634,29 +632,12 @@ class Tokenizer
 
 					# enable methods to customize handling of tokens
 					reinvoke = false
-
-					which = tok.which
-					if _onTokenTypeCache.containsKey(which)
-						meth = _onTokenTypeCache[which]
-					else
-						methName = 'On' + which
-						meth = .getType.getMethod(methName)
-						_onTokenTypeCache[which] = meth
-						
+					meth = _getTokenMethod(tok.which)
 					if meth
-						try
-							tok = meth.invoke(this, @[tok]) to IToken?
-						catch tie as TargetInvocationException
-							throw tie.innerException
-						if tok is nil
-							# skip token, so go to the next one
-							reinvoke = true
-						else
-							# TODO: could probably make this more efficient by axing the queue and just checking for nextToken in this method
-							while tok
-								_tokenQueue.enqueue(tok)
-								tok = tok.nextToken
-							reinvoke = true  # to pick up the queue
+						tok = _tokenPostProcess(meth, tok)
+						# nil indicates skipped token - will re call this method
+						if not tok 
+							reinvoke = true  # to pick up next token after skipped
 
 					# finished with current line?
 					if _sourceLine.length==0
@@ -688,6 +669,60 @@ class Tokenizer
 		finally
 			_avgCount += count
 			_avgCountNum += 1
+
+	def _getCandidateTokenDefs(sourceLine as String?) as List<of TokenDef>
+		if _narrowTokenDefs and _tokenDefs.count >= _minNumTokenDefsToNarrow
+			assert _tokenDefsByFirstChar
+			assert _sourceLine.length
+			if _tokenDefsByFirstChar.containsKey(_sourceLine[0])
+				# print 'Using short list for char: [_sourceLine[0]], [_sourceLine[0] to int]'
+				return _tokenDefsByFirstChar[_sourceLine[0]]
+		return _tokenDefs to !
+
+	def _skipMatchAttempt(tokenDef as TokenDef, sourceLineIndex as int) as bool
+		if tokenDef.ignoreCount
+			tokenDef.ignoreCount -= 1
+			return true
+		if not tokenDef.isActive
+			return true
+		if sourceLineIndex>0 and tokenDef.requiresBOL
+			return true
+		if not .isActiveCall(tokenDef)
+			return true
+		return false	
+
+	def _getTokenMethod(which as String) as MethodInfo?
+		"""
+		Get method for token (On<WHICH>) using reflection.
+		Caching is used to boost performance.
+		"""
+		if not _onTokenTypeCache.containsKey(which) # not already in methods cache
+			methName = 'On' + which				 	
+			meth = .getType.getMethod(methName)  	
+			_onTokenTypeCache[which] = meth		 	
+		else
+			meth = _onTokenTypeCache[which]
+		return meth
+		
+	def _tokenPostProcess(meth as MethodInfo, tok as IToken?) as IToken?
+		"""
+		Invoke any tokenMethod and return the result which could the same token, a replacement
+		token or nil to skip the token. Any token returned could be the start of a token chain
+		via token.nextToken.
+		"""
+		try
+			tok = meth.invoke(this, @[tok]) to IToken?
+		catch tie as TargetInvocationException
+			throw tie.innerException
+		if not tok
+			return nil	# token is to be skipped
+		retTok = tok
+		tok = tok.nextToken
+		while tok
+			# TODO: could probably make this more efficient by axing the queue and just checking for nextToken in this method
+			_tokenQueue.enqueue(tok)  # store any token chain returned by method call
+			tok = tok.nextToken
+		return retTok	
 
 	def pushTokenDefs(defs as List<of TokenDef>)
 		ensure
@@ -762,6 +797,9 @@ class Tokenizer
 		# TODO: like parser, this should probably not be recorded unless it "makes it out". see comment in CobraParser.throwError
 		throw .recordError(msg)
 
+	def addNoWarning(token as IToken)
+		_noWarningLines.add('[token.fileName]:[token.lineNum]')
+		
 	def checkTokens(tokens as List<of IToken>, expected as String)
 		is shared
 		"""

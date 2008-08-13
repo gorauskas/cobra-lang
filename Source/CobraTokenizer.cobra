@@ -1,3 +1,6 @@
+use System.Text.RegularExpressions
+
+
 class CobraTokenizer
 	inherits Tokenizer
 
@@ -391,7 +394,7 @@ class CobraTokenizer
 	def onWHITESPACE_COMMENT_2(tok as IToken) as IToken?
 		#print '<> onWHITESPACE_COMMENT_2'
 		return nil
-
+	
 	##
 	## Comment out block
 	##
@@ -506,8 +509,27 @@ class CobraTokenizer
 		_didLineContinuation = .lastToken and .lastToken.text == '_' and .lastToken.which == 'ID'
 		return tok
 
+	var _directiveRE = Regex(r'#\s*\.([\w\-]+)\.', RegexOptions.Compiled)
+
 	def onSINGLE_LINE_COMMENT(tok as IToken) as IToken?
 		# eat these
+		
+		# check for .no-warnings.
+		reMatch = _directiveRE.match(tok.text)
+		if reMatch.success
+			name = reMatch.groups[1].value
+			branch name
+				on 'no-warnings', .addNoWarning(tok)
+				# for testify
+				on 'args', pass  # TODO: actually this could be worth implementing outside of testify
+				on 'compile-only', pass
+				on 'error', pass
+				on 'multi', pass
+				on 'multipart', pass
+				on 'skip', pass
+				on 'warning', pass
+				else, .throwError('Unrecognized compiler directive "[name]".')
+
 		return nil
 
 	def onINLINE_COMMENT(tok as IToken) as IToken?
