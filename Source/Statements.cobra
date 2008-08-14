@@ -292,27 +292,54 @@ class BranchStmt
 
 	def writeSharpDef(sw as SharpWriter)
 		base.writeSharpDef(sw)
-		sw.write('switch(')
-		_expr.writeSharpDef(sw)
-		sw.write(') {\n')
-		sw.indent
-		for onPart in _onParts
-			sep = ''
-			for e in onPart.exprs
-				sw.write(sep)
-				sw.write('case ')
-				e.writeSharpDef(sw)
-				sw.write(': ')
-				sep = '\n'
-			onPart.block.writeSharpDef(sw)
-			if not onPart.block.stmts.count or not onPart.block.stmts[onPart.block.stmts.count-1] inherits ReturnStmt  # CC: use .last
+		if _expr.type.isDynamic
+			# if the expression is dynamic, then use an if-else ladder with CobraImp.Equals(
+			sw.writeLine('// branch [_expr.toCobraSource]')
+			
+			varName = '_lh_branch_[.serialNum]'
+			sw.write('[_expr.type.sharpRef] [varName] = ')
+			_expr.writeSharpDef(sw)
+			sw.writeLine(';')
+						
+			elseWord = ''
+			for onPart in _onParts
+				sw.write('[elseWord]if (')
+				sep = ''
+				for e in onPart.exprs
+					sw.write(sep)
+					sw.write('CobraImp.Equals([varName], ')
+					e.writeSharpDef(sw, false)
+					sw.write(')')
+					sep = ' || '
+				sw.write(')')
+				onPart.block.writeSharpDef(sw)
+				elseWord = 'else '
+			if _elsePart
+				sw.write('else ')
+				_elsePart.writeSharpDef(sw)
+		else
+			# for any other kind of expression, use a C# switch
+			sw.write('switch(')
+			_expr.writeSharpDef(sw)
+			sw.write(') {\n')
+			sw.indent
+			for onPart in _onParts
+				sep = ''
+				for e in onPart.exprs
+					sw.write(sep)
+					sw.write('case ')
+					e.writeSharpDef(sw)
+					sw.write(': ')
+					sep = '\n'
+				onPart.block.writeSharpDef(sw)
+				if not onPart.block.stmts.count or not onPart.block.stmts[onPart.block.stmts.count-1] inherits ReturnStmt  # CC: use .last
+					sw.write('break;\n')
+			if _elsePart
+				sw.write('default: ')
+				_elsePart.writeSharpDef(sw)
 				sw.write('break;\n')
-		if _elsePart
-			sw.write('default: ')
-			_elsePart.writeSharpDef(sw)
-			sw.write('break;\n')
-		sw.dedent
-		sw.write('}\n')
+			sw.dedent
+			sw.write('}\n')
 
 
 class BranchOnPart
