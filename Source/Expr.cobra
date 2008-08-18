@@ -1747,7 +1747,7 @@ class PostCallExpr
 				# method invocation
 				# _foo(x) --> ._foo(x)
 				newCall = CallExpr(.token, .name, .args)
-				dotted = DotExpr(.token, 'DOT', ThisLit(.token, .curCodeMember.box), newCall, true).bindImp
+				dotted = DotExpr(.token, 'DOT', ThisLit(.token), newCall, true).bindImp
 				_type = dotted.type to IType
 				_transformTo(dotted)
 				return
@@ -2941,14 +2941,19 @@ class FormattedExpr
 
 
 class ThisOrBaseLit
+	is abstract
 	inherits AtomicLiteral
+	"""
+	The "current box" used to be passed to .init rather than referenced in _bindImp, but that
+	didn't work well with partial classes. Also, it's not necessary to creating a ThisOrBaseLit.
+	"""
 
-	def init(token as IToken, box as Box)
+	def init(token as IToken)
 		base.init(token)
-		_type = box
 
 	def _bindImp
 		base._bindImp
+		_type = .compiler.curBox
 		if _type inherits Extension
 			_type = _type.extendedBox
 
@@ -2956,8 +2961,8 @@ class ThisOrBaseLit
 class BaseLit
 	inherits ThisOrBaseLit
 
-	def init(token as IToken, box as Box)
-		base.init(token, box)
+	def init(token as IToken)
+		base.init(token)
 
 	def checkType is override
 		pass
@@ -2983,8 +2988,8 @@ class ThisLit
 	# TODO: somewhere it has to be error checked that you're not assigning to
 	# "this" (unless C# allows that which I doubt)
 
-	def init(token as IToken, box as Box)
-		base.init(token, box)
+	def init(token as IToken)
+		base.init(token)
 
 	get isExplicit as bool
 		"""
