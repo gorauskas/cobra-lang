@@ -241,7 +241,12 @@ class Expr
 		This method should be invoked instead of `writeSharpDef` in any situation where .contextType was set.
 		"""
 		type = .type
-		cast = _contextType and type.isDynamic
+		cast = false
+		if _contextType
+			if type.isDynamic
+				cast = true
+			else if type inherits IntType
+				if type.size < 32, cast = true
 		if cast
 			if parens, sw.write('(')
 			sw.write('([_contextType.sharpRef])(')
@@ -2761,7 +2766,22 @@ class IntegerLit
 			_type = .compiler.intType
 
 	get asSharp as String is override
-		return _value.toString
+		s = ''
+		if (info = .token.info) inherits int
+			branch info
+				on - 8, s = 'System.SByte'
+				on + 8, s = 'System.Byte'
+				on -16, s = 'System.Int16'
+				on +16, s = 'System.UInt16'
+				on -32, s = ''
+				on +32, s = 'U'
+				on -64, s = 'L'
+				on +64, s = 'UL'
+				else, throw FallThroughException(info)
+		if s.length <= 2
+			return _value.toString + s
+		else
+			return '([s])[_value.toString]'
 
 
 class NilLiteral
