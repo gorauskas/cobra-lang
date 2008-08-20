@@ -96,6 +96,7 @@ class Parser
 	var _curCodePart as AbstractMethod?
 
 	var _spaceAgnosticIndentLevel as int
+	var _spaceAgnosticExprLevel as int
 	var _isContractOnSameLine as bool
 
 	var _isTraceOn as bool
@@ -1238,8 +1239,9 @@ class Parser
 			hasIsNames = true
 		else
 			.endOfLine
-		if not .optional('INDENT')
-			# with no indent there can be no additional specs like attributes, contracts or body
+
+		if _noMoreSpecs()  
+			# No additional specs like attributes, contracts or body
 			nothingMore = true
 			if not hasIsNames
 				isNames = List<of String>(_isNamesStack)
@@ -1288,6 +1290,24 @@ class Parser
 		else
 			return method
 
+	def _noMoreSpecs as bool
+		"""
+		Return a bool indicating that there is no (correctly indented) additional specs 
+		like attributes, contracts or body following.
+		"""
+		if _spaceAgnosticIndentLevel == 0          # param decls all on same line 
+			noMoreSpecs = not .optional('INDENT')  # anything else must be indented
+		else
+			sail = _spaceAgnosticIndentLevel
+			if sail > 0
+				_spaceAgnosticIndentLevel -= 1  # for missing indent
+			_finishSpaceAgnostic
+			if sail >= 1
+				noMoreSpecs = .optional('DEDENT') is not nil 
+			else
+				noMoreSpecs = not .optional('INDENT')
+		return noMoreSpecs	
+				
 	def declareMethodSig as MethodSig
 		require _typeProvider
 		token = .expect('SIG')
@@ -1567,19 +1587,26 @@ class Parser
 	##
 
 	def paramDecls(skipParen as bool) as List<of Param>
-		return .paramDecls(skipParen, 'RPAREN')
+		return .paramDecls(skipParen, 'RPAREN', true)
 
 	def paramDecls(skipParen as bool, rightParen as String) as List<of Param>
+		return .paramDecls(skipParen, rightParen, false) 
+		
+	def paramDecls(skipParen as bool, rightParen as String, isSpaceAgnostic as bool) as List<of Param>
 		if not skipParen
 			.expect('LPAREN')
 		params = List<of Param>()
 		expectComma = false
 		while true
+			if isSpaceAgnostic
+				_spaceAgnostic
 			if .peek.which==rightParen
 				.grab
 				break
 			if expectComma
 				.expect('COMMA')
+			if isSpaceAgnostic
+				_spaceAgnostic
 			param = .paramDecl
 			params.add(param)
 			if params.count==1 and param.name=='self' and param.isMissingType
@@ -2407,7 +2434,7 @@ class Parser
 			_inExpression += 1
 			try
 				expr = .expression(0, nil)
-				if expr.isParened
+				if expr.isParened and expr.token.lineNum == .last.lineNum
 					_warning(expr.token, 'Unnecessary parentheses around expression. You can remove them.')
 				return expr
 			finally
@@ -2488,6 +2515,8 @@ class Parser
 		return left to !
 
 	def expression2 as Expr
+		if _spaceAgnosticExprLevel > 0
+			_spaceAgnostic
 		peekToken = .peek
 		peek = peekToken.which
 		if _unaryOpPrec.containsKey(peek)
@@ -2503,8 +2532,10 @@ class Parser
 		# TODO: make a branch statement
 		else if peek=='LPAREN'
 			.grab
+			_spaceAgnosticExprLevel += 1
 			node = .expression(0, nil)
 			.expect('RPAREN')
+			_spaceAgnosticExprLevel -= 1
 			node.isParened = true
 			return node
 		else if peek=='DOT'
@@ -2609,7 +2640,7 @@ class Parser
 		branch token.which
 			on 'OPEN_CALL'
 				assert not callName.endsWith('(')
-				args = .commaSepExprs(['RPAREN'], false, true)
+				args = .commaSepExprs(['RPAREN'], true, true)
 				if .opStack.count and .opStack.peek == 'DOT'
 					return CallExpr(token, callName, args)
 				else
@@ -2625,7 +2656,7 @@ class Parser
 						on 'GT', isDone = true
 						else, .throwError('Unexpected token [.last] in type arguments.')
 				.expect('LPAREN')
-				args = .commaSepExprs(['RPAREN'], false, true)
+				args = .commaSepExprs(['RPAREN'], true, true)
 				return CallExpr(token, callName, typeArgs, args)
 			else
 				throw FallThroughException(token)				
@@ -3271,18 +3302,20 @@ class Parser
 					_spaceAgnosticIndentLevel -= 1
 					continue
 			break
+		if _verbosity >= 5
+			print '<> spaceAgnostic level=[_spaceAgnosticIndentLevel]'
 
 	def _finishSpaceAgnostic
 		"""
 		Eats up the DEDENTs and INDENTs that balance out the ones encountered in spaceAgnostic.
 		"""
-		if _verbosity>=5
+		if _verbosity >= 5
 			print '<> finishSpaceAgnostic level=[_spaceAgnosticIndentLevel]'
 		if _spaceAgnosticIndentLevel
-			while _spaceAgnosticIndentLevel>0
+			while _spaceAgnosticIndentLevel > 0
 				.dedent
 				_spaceAgnosticIndentLevel -= 1
-			while _spaceAgnosticIndentLevel<0
+			while _spaceAgnosticIndentLevel < 0
 				.expect('INDENT')
 				_spaceAgnosticIndentLevel += 1
 		assert _spaceAgnosticIndentLevel==0  # cobra: make this an ensure
