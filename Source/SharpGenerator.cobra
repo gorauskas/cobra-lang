@@ -1,0 +1,978 @@
+"""
+Eventually this file will contain all C# code generation.
+In the future, you can expect (or contribute!) alternate code generators such as IL, JVM and Objective-C.
+"""
+
+
+##
+## Expressions
+##
+
+
+class Expr
+	is abstract, partial
+
+	def writeSharpDefInContext(sw as SharpWriter)
+		.writeSharpDefInContext(sw, true)
+
+	def writeSharpDefInContext(sw as SharpWriter, parens as bool)
+		"""
+		When an expression is used where a particular type is expected, such as:
+			# assignment
+			x = y
+			# argument passing
+			obj.foo(x, y)
+			obj[x, y]
+		it may need C# typecasting--particularly if it is dynamic typed expression.
+		This method relies on having had its .contextType set beforehand.
+		This method should be invoked instead of `writeSharpDef` in any situation where .contextType was set.
+		"""
+		type = .type
+		cast = false
+		if _contextType
+			if type.isDynamic
+				cast = true
+			else if type inherits IntType
+				if type.size < 32, cast = true
+		if cast
+			if parens, sw.write('(')
+			sw.write('([_contextType.sharpRef])(')
+		.writeSharpDef(sw)
+		if cast
+			sw.write(')')
+			if parens, sw.write(')')
+
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		branch .argumentLabel
+			on ArgumentLabel.None,  pass
+			on ArgumentLabel.Out,   sw.write('out ')
+			on ArgumentLabel.InOut, sw.write('ref ')
+		.writeSharpDef(sw, true)
+
+	def writeSharpDef(sw as SharpWriter, parens as bool)
+		pass
+
+	def writeSharpStmt(sw as SharpWriter) is override
+		assert .didBindImp
+		sw.node(this)
+		.writeSharpSetLine(sw)
+		.writeSharpDef(sw, false)
+		sw.write(';\n')
+
+	def writeSharpBreakdown(sw as SharpWriter)
+		sw.write(r'new object[] { 0')
+		.writeSharpBreakdownItems(sw)
+		sw.write('}, ')
+
+	get willWriteSharpBreakdownItems as bool
+		return _argumentLabel <> ArgumentLabel.Out
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		if .willWriteSharpBreakdownItems
+			src = Utils.sharpStringLiteralFor(.toCobraSource)
+			sw.write(', [src], ')
+			.writeSharpDefForBreakdown(sw)
+
+	def writeSharpDefForBreakdown(sw as SharpWriter)
+		.writeSharpDef(sw)
+
+
+class NameExpr
+	is abstract, partial
+
+	get asSharp as String
+		return _definition.sharpName
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		sw.write(.asSharp)
+
+
+class AsExpr
+	is partial
+
+	def writeSharpStmt(sw as SharpWriter) is override
+		# this happens for declarations like "i as int"
+		sw.write('// [_name] as [_type.name]\n')
+
+
+class CallExpr
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		assert .superNode inherits DotExpr
+		name = .name
+		if _definition inherits BoxMember and (_definition to BoxMember).binaryName
+			name = (_definition to BoxMember).binaryName to !
+		else
+			name = name.capped
+		sw.write('[name]')
+		if _genericArgTypes and _genericArgTypes.count
+			sw.write('<')
+			sep = ''
+			for genericArgType in _genericArgTypes
+				sw.write(sep + genericArgType.sharpRef)
+				sep = ', '
+			sw.write('>')
+		sw.write('(')
+		sep = ''
+		for arg in _args
+			sw.write(sep)
+			arg.writeSharpDefInContext(sw)
+			sep = ', '
+		sw.write(')')
+
+	def writeSharpBreakdownItems(sw as SharpWriter) is override
+		# leaving out the base call is intentional:
+		# base.writeSharpBreakdownItems(sw)
+		sw.write(', +1')
+		for expr in _args
+			expr.writeSharpBreakdownItems(sw)
+		sw.write(', -1')
+
+
+class EnumCallExpr
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if parens
+			sw.write('(')
+		if _args.count == 0
+			sw.write('default([_definition.sharpRef])')
+		else
+			sep = ''
+			for member in _members
+				sw.write(sep)
+				sw.write(member.sharpRef)
+				sep = '|'
+		if parens
+			sw.write(')')
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		sw.write(', +1')
+		for member in _members
+			sw.write(', ')
+			sw.write(member.sharpRef)
+		sw.write(', -1')
+
+
+class ForExpr
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		# C#:  CobraImp.For(stuff, delegate(x as int) { return x*x })
+		# C#:  CobraImp.For(stuff, delegate(x as int) { if (x<0) return x*x; })
+		inType = _what.type.innerType
+		outType = _getExpr.type
+		sw.write('CobraImp.For<[inType.sharpRef],[outType.sharpRef]>(')
+		_what.writeSharpDef(sw, false)
+		sw.write(', ')
+		helperName = '_lh_for_[_var.name]_[_varNumber]'
+		if _whereExpr is nil
+			sw.write('delegate([inType.sharpRef] [helperName]) {\n')
+			sw.indent
+			sw.write('[_var.sharpName] = [helperName];\n')
+			sw.write('return ')
+			_getExpr.writeSharpDef(sw, false)
+			sw.write(';\n')
+			sw.dedent
+			sw.write('})')
+		else
+			outHelperName = helperName + '_out'
+			sw.write('delegate([inType.sharpRef] [helperName], out [outType.sharpRef] [outHelperName]) {\n')
+			sw.indent
+			sw.write('[_var.sharpName] = [helperName];\n')
+			sw.write('if (')
+			_whereExpr.writeSharpDef(sw, false)
+			sw.write(') {\n')
+			sw.indent
+			sw.write('[outHelperName] = ')
+			_getExpr.writeSharpDef(sw, false)
+			sw.write(';\n')
+			sw.write('return true;\n')
+			sw.dedent
+			sw.write('} else {\n')
+			sw.indent
+			sw.write('[outHelperName] = [outType.sharpInit];\n')
+			sw.write('return false;\n')
+			sw.dedent
+			sw.write('}\n')
+			sw.dedent
+			sw.write('})')
+
+
+class IdentifierExpr
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		# weird stuff motivated by ../Tests/110-basics-two/500-namespaces/400-type-property-name-collision-1.cobra and 402-type-property-name-collision-2.cobra
+
+		# recall that this cannot be the right side of "foo.bar" since that is a MemberExpr
+		sharpName = .sharpName
+		if not .definition inherits IVar
+			# the only definition that has no parentNameSpace in practice is IVar
+			if not sharpName.startsWith('typeof')
+				# maybe parentNameSpace could be moved up in the interface definitions
+				pn = (.definition to dynamic).parentNameSpace
+				if pn, sharpName = pn.sharpQualifier + sharpName
+
+				# handle the case of "X.X" where namespace and class are both called "X".
+				# C# chokes on it because the first "X" is considered to be the type
+				if .curBox.name + '.' in sharpName
+					sharpName = 'global::' + sharpName
+
+		sw.write(sharpName)
+
+	get sharpName as String
+		assert .didBindImp
+		assert .definition
+		assert not .type inherits UnspecifiedType
+		if .superNode inherits DotExpr
+			assert this is not (.superNode to DotExpr).right  # should be a CallExpr or MemberExpr instead
+		defi = .definition
+		if .isTypeReference
+			# C# often requires typeof(Foo) instead of just plain Foo
+			superNode = .superNode
+			if not superNode inherits DotExpr and not superNode inherits InheritsExpr and (not superNode inherits PostCallExpr or (superNode to PostCallExpr).expr is not this)
+				return 'typeof(' + defi.sharpName + ')'
+		return defi.sharpName
+
+	def writeSharpStmt(sw as SharpWriter) is override
+		assert .isCalling
+		sw.write('[_name]();')
+
+	get sharpAssignmentNames as List<of String>?
+		require
+			.didBindImp
+			.definition
+		body
+			if _definition inherits IVar
+				return _definition.sharpAssignmentNames
+			else
+				return nil
+
+	def writeSharpDefForBreakdown(sw as SharpWriter)
+		sharpName = .sharpName
+		if .isKindOf(.compiler.typeType) and .definition inherits IType and 'typeof(' not in sharpName
+			sw.write('typeof([.sharpName])')
+		else
+			base.writeSharpDefForBreakdown(sw)
+
+
+class IfExpr
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		cast = _tpart.type <> _fpart.type
+		# C# doesn't do the "greatest common denominator" thing like Cobra does, so some casting is in order
+		sw.write('(')
+		_cond.writeSharpDef(sw)
+		sw.write('?')
+		if cast, sw.write('([.type.sharpRef])(')
+		_tpart.writeSharpDef(sw)
+		if cast, sw.write(')')
+		sw.write(':')
+		if cast, sw.write('([.type.sharpRef])(')
+		_fpart.writeSharpDef(sw)
+		if cast, sw.write(')')
+		sw.write(')')
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+
+		sw.write(', +1') # indent
+
+		_cond.writeSharpBreakdownItems(sw)
+		# only one of the target expressions is actually evaluated
+
+		# tpart:
+		src = Utils.sharpStringLiteralFor(_tpart.toCobraSource)
+		sw.write(', [src], new CobraDirectString(')
+		_cond.writeSharpDefForBreakdown(sw)
+		sw.write(' ? CobraCore.ToTechString(')
+		_tpart.writeSharpDefForBreakdown(sw)
+		sw.write(') : "(not-evaluated)")')
+
+		# fpart:
+		src = Utils.sharpStringLiteralFor(_fpart.toCobraSource)
+		sw.write(', [src], new CobraDirectString(')
+		_cond.writeSharpDefForBreakdown(sw)
+		sw.write(' ? "(not-evaluated)" : CobraCore.ToTechString(')
+		_fpart.writeSharpDefForBreakdown(sw)
+		sw.write('))')
+
+		sw.write(', -1') # dedent
+
+
+class IndexExpr
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if _target.type.isDynamic
+			sw.write('CobraImp.GetIndexerValue(')
+			_target.writeSharpDef(sw, false)
+			for expr in _args
+				sw.write(', ')
+				expr.writeSharpDef(sw, false)
+			sw.write(')')
+			return
+		if parens
+			sw.write('(')
+		if _target inherits IdentifierExpr
+			if _target.isKindOf(.compiler.typeType)
+				# here we're favoring "Foo[]" being an array type rather than a shared indexer
+				sw.write(_target.name)
+				handled = true
+		if not handled
+			_target.writeSharpDef(sw)
+		sw.write(r'[')
+		sep = ''
+		for expr in _args
+			sw.write(sep)
+			expr.writeSharpDefInContext(sw)
+			sep = ', '
+		sw.write(']')
+		if parens
+			sw.write(')')
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		sw.write(', +1')
+		_target.writeSharpBreakdownItems(sw)
+		for expr in _args
+			expr.writeSharpBreakdownItems(sw)
+		sw.write(', -1')
+
+
+class IsNilExpr
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if parens
+			sw.write('(')
+		sw.write('(')
+		_expr.writeSharpDef(sw)
+		sw.write(')')
+		sw.write('==null')
+		if parens
+			sw.write(')')
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		_expr.writeSharpBreakdownItems(sw)
+
+
+class IsNotNilExpr
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if parens
+			sw.write('(')
+		sw.write('(')
+		_expr.writeSharpDef(sw)
+		sw.write(')')
+		sw.write('!=null')
+		if parens
+			sw.write(')')
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		_expr.writeSharpBreakdownItems(sw)
+
+
+class MemberExpr
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		assert .superNode inherits DotExpr
+		if _definition inherits BoxMember
+			name = _definition.binaryName
+		if name is nil
+			name = _name.capped
+		sw.write(name)
+		if _definition and (_definition.isMethod or _name=='toString') and not _isReference  # TODO: axe the 'toString' check
+			sw.write('()')
+
+	def writeSharpBreakdownItems(sw as SharpWriter) is override
+		pass
+
+
+class OldExpr
+	is partial
+
+	var _sharpVarName as String?
+
+	pro sharpVarName from var
+
+	def writeSharpAssignment(sw as SharpWriter)
+		require
+			.didBindImp
+			.sharpVarName
+			.type
+		body
+			sw.write('[.type.sharpRef] [_sharpVarName] = ')
+			_expr.writeSharpDef(sw)
+			sw.write(';\n')
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		assert _sharpVarName
+		# this gets called when generating the `ensure` code
+		sw.write(_sharpVarName)
+
+
+class PostCallExpr
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if parens, sw.write('(')
+		expr = _expr
+		isMethodSig = false
+		isDynamic = false
+		if expr inherits TypeExpr
+			if expr.containedType inherits ArrayType
+				# arrays
+				sw.write('new ')
+				sw.write((expr.containedType to ArrayType).theWrappedType.sharpRef)
+				sw.write(r'[')
+				.writeSharpArgs(sw)
+				sw.write(r']')
+			else
+				sw.write('new ')
+				expr.writeSharpDef(sw)
+				sw.write('(')
+				.writeSharpArgs(sw)
+				sw.write(')')
+		else if expr inherits IdentifierExpr
+			if expr.isTypeReference
+				sw.write('new ')
+				expr.writeSharpDef(sw)
+				sw.write('(')
+				.writeSharpArgs(sw)
+				sw.write(')')
+			else if expr.receiverType inherits GenericParam # TODO: shouldn't expr.isTypeReference above have caught this?
+				sw.write('new [expr.receiverType.sharpRef](')
+				.writeSharpArgs(sw)
+				sw.write(')')
+			else if expr.type inherits MethodSig
+				isMethodSig = true
+			else if expr.type.isSystemTypeClass or _type.isDynamic
+				isDynamic = true
+			else
+				assert false, expr  # TODO: .throwError
+		else if expr inherits IndexExpr
+			if expr.type inherits MethodSig
+				isMethodSig = true
+			else if expr.type.isSystemTypeClass or _type.isDynamic
+				isDynamic = true
+			else
+				assert false, expr  # TODO: .throwError
+		else
+			assert false, expr  # TODO: .throwError
+		if isMethodSig
+			expr.writeSharpDef(sw)
+			sw.write('(')
+			.writeSharpArgs(sw)
+			sw.write(')')
+		else if isDynamic
+			defi = (expr to dynamic).definition
+			assert not defi inherits Box, expr  # TODO: just curious
+			what = if(defi inherits IType, 'typeof([defi.sharpName])', defi.sharpName to String)
+			if defi inherits IVar
+				if defi.type.isDynamic
+					what = '(System.Type)' + what
+			sw.write('Activator.CreateInstance([what]')
+			.writeSharpArgs(sw, ', ')
+			sw.write(')')
+		if parens, sw.write(')')
+
+	def writeSharpArgs(sw as SharpWriter)
+		.writeSharpArgs(sw, '')
+
+	def writeSharpArgs(sw as SharpWriter, sep as String)
+		for arg in _args
+			sw.write(sep)
+			arg.writeSharpDefInContext(sw, false)
+			sep = ','
+		
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		sw.write(', +1')
+		_expr.writeSharpBreakdownItems(sw)
+		for expr in _args
+			expr.writeSharpBreakdownItems(sw)
+		sw.write(', -1')
+
+
+class RefExpr
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if parens
+			sw.write('(')
+		_expr.writeSharpDef(sw, false)
+		if parens
+			sw.write(')')
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		# TODO
+
+
+class SharpExpr
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if parens
+			sw.write('(')
+		if _sharpSource
+			sw.write(_sharpSource)
+		else
+			sw.write(_expr.token.value)
+		if parens
+			sw.write(')')
+
+
+class SliceExpr
+	is partial
+
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		sw.write('CobraImp.GetSlice(')
+		isArray = _target.type inherits ArrayType
+		if isArray
+			sw.write('(System.Array)(')  # or C# can't disambiguate the GetSlice() overloads
+		_target.writeSharpDef(sw, false)
+		if isArray
+			sw.write(')')
+		sw.write(',')
+		if _start is nil
+			sw.write('null')
+		else
+			_start.writeSharpDefInContext(sw, false)
+		sw.write(',')
+		if _stop is nil
+			sw.write('null')
+		else
+			_stop.writeSharpDefInContext(sw, false)
+		sw.write(',')
+		if _step is nil
+			sw.write('null')
+		else
+			_step.writeSharpDefInContext(sw, false)
+		sw.write(')')
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		sw.write(', +1')
+		_target.writeSharpBreakdownItems(sw)
+		if _start
+			_start.writeSharpBreakdownItems(sw)
+		if _stop
+			_stop.writeSharpBreakdownItems(sw)
+		if _step
+			_step.writeSharpBreakdownItems(sw)
+		sw.write(', -1')
+
+
+class TruthExpr
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		lparen = if(parens, '(', '')
+		rparen = if(parens, ')', '')
+		branch _treatment
+			on Treatment.AsIs
+				_expr.writeSharpDef(sw, parens)
+			on Treatment.InvokeRuntime
+				sw.write('CobraImp.IsTrue(')
+				_expr.writeSharpDef(sw, false)
+				sw.write(')')				
+			on Treatment.CompareToZero
+				sw.write('[lparen]0!=')
+				_expr.writeSharpDef(sw, true)
+				sw.write(rparen)
+			on Treatment.CompareToZeroChar
+				sw.write("[lparen]'\\0'!=")
+				_expr.writeSharpDef(sw, true)
+				sw.write(rparen)
+			on Treatment.CompareToNull
+				sw.write('[lparen]null!=')
+				_expr.writeSharpDef(sw, true)
+				sw.write(rparen)
+
+	def writeSharpBreakdownItems(sw as SharpWriter) is override
+		# leaving out the base class is intentional:
+		# base.writeSharpBreakdownItems(sw, isFirstExpr)
+		_expr.writeSharpBreakdownItems(sw)
+
+
+class TypeExpr
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		sharpRef = _containedType.sharpRef
+		# handle the case of "X.X" where namespace and class are both called "X".
+		# C# chokes on it because the first "X" is considered to be the type
+		if .curBox.name + '.' in sharpRef
+			sharpRef = 'global::' + sharpRef
+		if _requiresTypeOf()
+			sw.write('typeof(')
+			sw.write(_containedType.sharpRef)
+			sw.write(')')
+		else
+			sw.write(_containedType.sharpRef)
+
+	def _requiresTypeOf as bool
+		# Cobra never requires that you wrap a type reference in typeof(Foo).
+		# C# requires typeof() in a variety of circumstances and won't accept it in a variety of others.
+		superNode = .superNode
+		if superNode is nil
+			return false
+		else
+			if superNode inherits DotExpr, return false
+			if superNode inherits PostCallExpr, return false
+			if superNode inherits BinaryOpExpr
+				if this is superNode.right
+					if superNode inherits InheritsExpr or superNode inherits AbstractToExpr
+						return false
+			return true
+
+	def writeSharpDefForBreakdown(sw as SharpWriter) is override
+		sw.write('typeof(')
+		.writeSharpDef(sw)
+		sw.write(')')
+
+
+class AllOrAnyExpr
+	is abstract, partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		sw.write('CobraImp.[.opName.capped](')
+		.expr.writeSharpDefInContext(sw)
+		sw.write(')')
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		sw.write(', +1')
+		.expr.writeSharpBreakdownItems(sw)
+		sw.write(', -1')
+
+
+class UnaryOpExpr
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if _op == 'PLUS'
+			if parens
+				sw.write('(')
+			_expr.writeSharpDef(sw, false)
+			if parens
+				sw.write(')')
+			return
+		if _expr.type.isDynamic
+			specs = OperatorSpecs.unaryOpSpecsByCobraText
+			assert specs.containsKey(.token.text)
+			spec = specs[.token.text]
+			opText = Utils.sharpStringLiteralFor(spec.opMethodName)
+			sw.write('CobraImp.DynamicOp([opText], ')
+			_expr.writeSharpDef(sw, false)
+			sw.write(')')
+			return
+		if parens
+			sw.write('(')
+		branch _op
+			on 'MINUS'
+				sw.write('-')
+			on 'TILDE'
+				sw.write('~')
+			on 'NOT'
+				sw.write('!')
+			else
+				throw FallThroughException(_op)
+		_expr.writeSharpDef(sw)
+		if parens
+			sw.write(')')
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		sw.write(', +1')
+		_expr.writeSharpBreakdownItems(sw)
+		sw.write(', -1')
+
+
+class Literal
+	is partial
+
+	get asSharp as String
+		return ''
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		sw.write(.asSharp)
+
+
+class AtomicLiteral
+	is partial
+
+	get willWriteSharpBreakdownItems as bool is override
+		return false
+
+
+class BoolLit
+	is partial
+
+	get asSharp as String is override
+		return if(_value, 'true', 'false')
+
+
+class CharLit
+	is partial
+
+	get asSharp as String is override
+		return "'" + _value.toString + "'"
+
+
+class DecimalLit
+	is partial
+
+	get asSharp as String is override
+		return _value.toString(Utils.cultureInfoForNumbers) + 'm'
+
+
+class FractionalLit
+	is partial
+
+	get asSharp as String is override
+		if _type == .compiler.floatType(32), suffix = 'f'
+		else if _type == .compiler.floatType(64), suffix = ''
+		else if _type == .compiler.decimalType, suffix = 'm'
+		else, throw FallThroughException(_type)
+		return _value.toString(Utils.cultureInfoForNumbers) + suffix
+
+
+class FloatLit
+	is partial
+
+	get asSharp as String is override
+		s = _value.toString(Utils.cultureInfoForNumbers)
+		if s.indexOf('.')==-1
+			s += '.0'
+		if .token.info == 32
+			s += 'f'
+		return s
+
+
+class IntegerLit
+	is partial
+
+	get asSharp as String is override
+		s = ''
+		if (info = .token.info) inherits int
+			branch info
+				on - 8, s = 'System.SByte'
+				on + 8, s = 'System.Byte'
+				on -16, s = 'System.Int16'
+				on +16, s = 'System.UInt16'
+				on -32, s = ''
+				on +32, s = 'U'
+				on -64, s = 'L'
+				on +64, s = 'UL'
+				else, throw FallThroughException(info)
+		if s.length <= 2
+			return _value.toString + s
+		else
+			return '([s])[_value.toString]'
+
+
+class NilLiteral
+	is partial
+
+	get asSharp as String is override
+		return 'null'
+
+
+class StringLit
+	is partial
+
+	get asSharp as String is override
+		return Utils.sharpStringLiteralFor(_string)
+
+
+class StringSubstLit
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if _items.count>1
+			sw.write('CobraImp.MakeString(')
+		sep = ''
+		for item in _items
+			sw.write(sep)
+			if item inherits StringLit
+				item.writeSharpDef(sw, true)  # CC: axe the "true" when the bug about overload groups crossing inheritance is fixed
+			else if item inherits FormattedExpr
+				sw.write('CobraImp._printStringMaker.MakeString(')
+				item.expr.writeSharpDef(sw)
+				sw.write(',')
+				sw.write(Utils.sharpStringLiteralFor(item.format))
+				sw.write(')')
+			else
+				sw.write('CobraImp._printStringMaker.MakeString(')
+				item.writeSharpDef(sw, false)
+				sw.write(')')
+			sep = ','
+		if _items.count>1
+			sw.write(')')
+
+
+class BaseLit
+	is partial
+
+	get asSharp as String is override
+		return 'base'
+
+
+class ThisLit
+	is partial
+
+	get asSharp as String is override
+		return .compiler.curBox.sharpThis
+
+
+class VarLit
+	is partial
+
+	get asSharp as String is override
+		return _name
+
+
+class SequenceLit
+	is abstract, partial
+
+	def writeSharpBreakdownItems(sw as SharpWriter) is override  # CC: axe is override
+		base.writeSharpBreakdownItems(sw)
+		sw.write(', +1')
+		for expr in _exprs
+			expr.writeSharpBreakdownItems(sw)
+		sw.write(', -1')
+
+
+class ListLit
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		innerType = (_type to Box).genericParams[0]
+		sw.write('CobraImp.MakeList<[innerType.sharpRef]>(typeof([_type.sharpRef])')
+		if _exprs.count
+			sw.write(', ')
+			sep = ''
+			for expr in _exprs
+				sw.write(sep)
+				expr.writeSharpDef(sw, false)
+				sep = ', '
+		sw.write(')')
+
+
+class ArrayLit
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		sw.write('new [_type.sharpRef] { ')
+		if _exprs.count
+			sep = ''
+			for expr in _exprs
+				sw.write(sep)
+				expr.writeSharpDef(sw, false)
+				sep = ', '
+		sw.write(' }')
+
+
+class SetLit
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		innerType = (_type to Box).genericParams[0]
+		sw.write('CobraImp.MakeSet<[innerType.sharpRef]>(typeof([_type.sharpRef])')
+		if _exprs.count
+			sw.write(', ')
+			sep = ''
+			for expr in _exprs
+				sw.write(sep)
+				expr.writeSharpDef(sw, false)
+				sep = ', '
+		sw.write(')')
+
+
+class DictLit
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		assert (_type to Box).genericParams.count==2
+		keyType   = (_type to Box).genericParams[0]
+		valueType = (_type to Box).genericParams[1]
+		sw.write('CobraImp.MakeDict<[keyType.sharpRef],[valueType.sharpRef]>(typeof([_type.sharpRef])')
+		if _entries.count
+			sw.write(', ')
+			sep = ''
+			for entry in _entries
+				sw.write(sep)
+				entry[0].writeSharpDef(sw)
+				sw.write(',')
+				entry[1].writeSharpDef(sw)
+				sep = ', '
+		sw.write(')')
+
+	def writeSharpBreakdownItems(sw as SharpWriter) is override  # CC: axe is override
+		base.writeSharpBreakdownItems(sw)
+		sw.write(', +1')
+		for entry in _entries
+			# CC: keyExpr, valueExpr = entry
+			keyExpr = entry[0]
+			valueExpr = entry[1]
+			keyExpr.writeSharpBreakdownItems(sw)
+			valueExpr.writeSharpBreakdownItems(sw)
+		sw.write(', -1')
+
+
+class ToNilableOrNotExpr
+	is abstract, partial
+
+	def writeSharpBreakdownItems(sw as SharpWriter)
+		base.writeSharpBreakdownItems(sw)
+		_expr.writeSharpBreakdownItems(sw)
+
+
+class ToNilableExpr
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		if _expr.type.isReference
+			# In C#/.NET, reference types are always "nilable"
+			_expr.writeSharpDef(sw)
+		else
+			# ex: ((int?)x)
+			# ex: ((Color?)Color.Black)
+			sw.write('(([_expr.type.sharpRef]?)')
+			_expr.writeSharpDef(sw, false)
+			sw.write(')')
+
+
+class ToNonNilableExpr
+	is partial
+
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		type = _expr.type
+		if type inherits NilableType and not (type to NilableType).theWrappedType.isReference
+			# ex: (x).Value
+			# ex: (obj.foo).Value
+			sw.write('(')
+			_expr.writeSharpDef(sw, false)
+			sw.write(').Value')
+		else if .compiler.options.boolValue('include-nil-checks')
+			sw.write('(CobraCore._willCheckNil?CobraImp.CheckNonNil<[type.sharpRef]>([.sharpThis], [Utils.sharpStringLiteralFor(_expr.toCobraSource)], ')
+			_expr.writeSharpDef(sw, false)
+			sw.write(', [.sharpSourceSite]):')
+			_expr.writeSharpDef(sw, false)
+			sw.write(')')
+		else
+			_expr.writeSharpDef(sw, parens)
