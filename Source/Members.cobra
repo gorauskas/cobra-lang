@@ -228,20 +228,15 @@ class BoxMember
 			_testMethod.bindInt
 
 	def bindImp as dynamic
-		if not .parentBox.isConstructed
-			return base.bindImp
-		else
-			# TODO: shouldn't even get this message in the first place. investigate.
-			return .bindImpResult
+		assert not .parentBox.isConstructed
+		return base.bindImp
 			
 	def _bindImp is override
 		base._bindImp
 		assert .didBindInt  # class members should have always received a bindInt first
-# TODO:		assert not .parentBox.isConstructed  # not expecting to bindImp on a constructed type
-		for attrib in _attribs
-			attrib.bindImp
-		if _testMethod
-			_testMethod.bindImp
+		assert not .parentBox.isConstructed  # not expecting to bindImp on a constructed type
+		for attrib in _attribs, attrib.bindImp
+		if _testMethod, _testMethod.bindImp
 
 	def usesBase
 		# Needed by AbstractMethod and ProperDexer
@@ -249,8 +244,7 @@ class BoxMember
 			return
 		# using base implies override, but only if the method sig in the base class is the same
 		# (otherwise it's just an overload)
-		parentBox = _parentBox
-		if parentBox inherits Class
+		if (parentBox = .parentBox) inherits Class
 			assert parentBox.baseClass
 			# Why not use .matchingBaseMember? Because currently that's only method-to-method. Does not work for properties.
 			baseMember = parentBox.baseClass.memberForName(_name)
@@ -547,13 +541,11 @@ class BoxVar
 		The result type of the var, method or property.
 		"""
 		t = .type
-		if t
-			return t
-		else
-			throw FallThroughException('_type is nil. this=[this]')
+		if t, return t
+		else, throw FallThroughException('_type is nil. this=[this]')
 
 	def constructedFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as BoxMember  # CC: as same
-		# TODO: require .type (or assert)
+		assert .type
 		newMember = base.constructedFor(box, gpToType) to BoxVar  # CC: this = base. ...
 		assert newMember._type
 		newMember._type = newMember._type.secondaryConstructedTypeFor(box, gpToType)
@@ -686,23 +678,15 @@ class AbstractMethod
 
 	def findLocal(name as String) as AbstractLocalVar?
 		# TODO: should this use a dictionary lookup?
-		for local in _locals
-			if local.name==name
-				return local
-		for param in _params
-			if param.name==name
-				return param
+		for local in _locals, if local.name==name, return local
+		for param in _params, if param.name==name, return param
 		return nil
 
 	def findLocalCI(name as String) as AbstractLocalVar?
 		name = name.toLower
 		# TODO: should this use a dictionary lookup?
-		for local in _locals
-			if local.name.toLower==name
-				return local
-		for param in _params
-			if param.name.toLower==name
-				return param
+		for local in _locals, if local.name.toLower==name, return local
+		for param in _params, if param.name.toLower==name, 	return param
 		return nil
 
 	def addLocal(local as LocalVar)
@@ -850,8 +834,7 @@ class AbstractMethod
 		_didComputeMatchingBaseMember = true
 		if _matchingBaseMember, return
 		if not .canHaveMatchingBaseMember, return
-		parentBox = .parentBox
-		if parentBox inherits Class
+		if (parentBox = .parentBox) inherits Class
 			if parentBox.baseClass
 				baseMember = parentBox.baseClass.memberForName(_name)
 				if baseMember is nil
@@ -1242,7 +1225,6 @@ class Method
 		_genericParams = genericParams
 		_returnTypeNode = returnTypeNode
 		_implementsTypeNode = implementsTypeNode
-		# TODO: feels kind of hacky:
 		if 'virtual' in _isNames and _implementsTypeNode
 			_isNames.remove('virtual')
 		_stmts = List<of Stmt>()
