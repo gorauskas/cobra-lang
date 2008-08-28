@@ -1352,6 +1352,9 @@ class PostCallExpr
 
 	var _expr as Expr
 	var _args as List<of Expr>
+	var _hasKeywordArg as bool  # such as Foo(1, a=2)
+	var _isForAttribute as bool  # see Attributes.cobra
+	var _helperMethod as Method?
 
 	def init(token as IToken, expr as Expr, args as List<of Expr>)
 		require .isTargetAcceptable(expr)
@@ -1363,11 +1366,17 @@ class PostCallExpr
 		base.addSubFields
 		.addField('expr', _expr)
 		.addField('args', _args)
+		.addField('hasKeywordArg', .hasKeywordArg)
+		.addField('isForAttribute', .isForAttribute)
 
 	get expr from var
 
 	get args from var
 		has Subnodes
+
+	get hasKeywordArg from var
+
+	pro isForAttribute from var
 
 	get hasError as bool is override
 		if base.hasError, return true
@@ -1411,11 +1420,16 @@ class PostCallExpr
 				_transformTo(enumCall)
 				return					
 
-		for arg in _args
+		for arg in .args
 			try
 				if arg inherits AssignExpr
+					_hasKeywordArg = true # uu
+					# TODO: check that left side is an IdentfierExpr
+					# TODO: check property name
 					arg.right.bindImp  # 'x=y' has special treatment in arguments
 				else
+					if _hasKeywordArg
+						.throwError('Cannot have a non-keyword argument ("[arg.toCobraSource]") after a keyword argument. All positional arguments must come before all keyword arguments.')
 					arg.bindImp
 			catch ne as NodeException
 				.compiler.recordError(ne)
@@ -1447,12 +1461,68 @@ class PostCallExpr
 			else
 				assert false, expr
 
+		if .hasKeywordArg and not .isForAttribute  # uu
+			_makeHelperMethod
+			
+	def _makeHelperMethod
+		"""
+		Add a private helper method to the current box to support extended initializer.
+
+		Foo(expr0, expr1, bar=expr2) -->
+			call:
+				_ch_ext_init_1207(expr0, expr1, expr2)
+			def:
+				def _ch_ext_init_1207(arg0 as int, arg1 as int, /#bar=#/arg2 as int)
+					obj = Foo(arg0, arg1)
+					obj.bar = arg2
+					return obj
+		"""
+		box = .compiler.curBox
+		paramsForDecl = List<of Param>()
+		argsForInitCall = List<of Expr>()  # args to pass to `Foo(arg0, arg1)`
+		propsToSet = List<of AssignExpr>()  # props to set as `obj.bar = arg2` etc.
+		firstPropArg = -1
+		i = 0
+		for arg in .args
+			if arg inherits AssignExpr
+				propsToSet.add(arg)
+				if firstPropArg == -1, firstPropArg = i
+				arg = arg.right
+			else
+				argsForInitCall.add(arg)
+			paramsForDecl.add(Param(box.token.copy('ID', 'arg[i]'), arg.type))
+			i += 1
+		name = '_ch_ext_init_[.serialNum]'  # ch = class helper, ext = extended, init = initializer
+		token = box.token.copy
+		m = Method(token.copy('ID', name), box, name, paramsForDecl, _type, nil, ['shared'], AttributeList(), '')
+		m.locals.add(LocalVar(token.copy('ID', 'obj'), .type))
+
+		objId = IdentifierExpr(token.copy('ID', 'obj'), 'obj')
+		callExpr = PostCallExpr(token.copy('ID', .type.name), IdentifierExpr(token.copy('ID', .type.name), .type), argsForInitCall)
+		assign = AssignExpr(token.copy('ASSIGN', '='), 'ASSIGN', objId, callExpr)
+		m.addStmt(assign)
+
+		i = firstPropArg
+		for propSetExpr in propsToSet
+			propName = (propSetExpr.left to IdentifierExpr).name
+			memberExpr = DotExpr(token.copy('DOT', '.'), 'DOT', IdentifierExpr(token.copy('ID', 'obj')), MemberExpr(token.copy('ID', propName)))
+			assign = AssignExpr(token.copy('ASSIGN', '='), 'ASSIGN', memberExpr, IdentifierExpr(token.copy('ID', 'arg[i]')))
+			m.addStmt(assign)
+			i += 1
+
+		retStmt = ReturnStmt(token.copy('RETURN', 'return'), IdentifierExpr(token.copy('ID', 'obj'), 'obj'))
+		m.addStmt(retStmt)
+
+		m.bindAll
+		box.addDecl(m)
+		_helperMethod = m
+
 	def toCobraSource as String is override
 		sb = StringBuilder()
 		sb.append(_expr.toCobraSource)
 		sb.append('(')
 		sep = ''
-		for arg in _args
+		for arg in .args
 			sb.append(sep)
 			sb.append(arg.toCobraSource)
 			sep = ', '

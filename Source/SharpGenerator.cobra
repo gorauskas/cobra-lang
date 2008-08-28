@@ -426,64 +426,75 @@ class PostCallExpr
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		if parens, sw.write('(')
-		expr = _expr
-		isMethodSig = false
-		isDynamic = false
-		if expr inherits TypeExpr
-			if expr.containedType inherits ArrayType
-				# arrays
-				sw.write('new ')
-				sw.write((expr.containedType to ArrayType).theWrappedType.sharpRef)
-				sw.write(r'[')
-				.writeSharpArgs(sw)
-				sw.write(r']')
-			else
-				sw.write('new ')
-				expr.writeSharpDef(sw)
-				sw.write('(')
-				.writeSharpArgs(sw)
-				sw.write(')')
-		else if expr inherits IdentifierExpr
-			if expr.isTypeReference
-				sw.write('new ')
-				expr.writeSharpDef(sw)
-				sw.write('(')
-				.writeSharpArgs(sw)
-				sw.write(')')
-			else if expr.receiverType inherits GenericParam # TODO: shouldn't expr.isTypeReference above have caught this?
-				sw.write('new [expr.receiverType.sharpRef](')
-				.writeSharpArgs(sw)
-				sw.write(')')
-			else if expr.type inherits MethodSig
-				isMethodSig = true
-			else if expr.type.isSystemTypeClass or _type.isDynamic
-				isDynamic = true
-			else
-				assert false, expr  # TODO: .throwError
-		else if expr inherits IndexExpr
-			if expr.type inherits MethodSig
-				isMethodSig = true
-			else if expr.type.isSystemTypeClass or _type.isDynamic
-				isDynamic = true
-			else
-				assert false, expr  # TODO: .throwError
+		if _helperMethod
+			sw.write(_helperMethod.name + '(')
+			sep = ''
+			for arg in _args
+				sw.write(sep)
+				if arg inherits AssignExpr
+					arg = arg.right
+				arg.writeSharpDefInContext(sw, false)
+				sep = ','
+			sw.write(')')
 		else
-			assert false, expr  # TODO: .throwError
-		if isMethodSig
-			expr.writeSharpDef(sw)
-			sw.write('(')
-			.writeSharpArgs(sw)
-			sw.write(')')
-		else if isDynamic
-			defi = (expr to dynamic).definition
-			assert not defi inherits Box, expr  # TODO: just curious
-			what = if(defi inherits IType, 'typeof([defi.sharpName])', defi.sharpName to String)
-			if defi inherits IVar
-				if defi.type.isDynamic
-					what = '(System.Type)' + what
-			sw.write('Activator.CreateInstance([what]')
-			.writeSharpArgs(sw, ', ')
-			sw.write(')')
+			expr = _expr
+			isMethodSig = false
+			isDynamic = false
+			if expr inherits TypeExpr
+				if expr.containedType inherits ArrayType
+					# arrays
+					sw.write('new ')
+					sw.write((expr.containedType to ArrayType).theWrappedType.sharpRef)
+					sw.write(r'[')
+					.writeSharpArgs(sw)
+					sw.write(r']')
+				else
+					sw.write('new ')
+					expr.writeSharpDef(sw)
+					sw.write('(')
+					.writeSharpArgs(sw)
+					sw.write(')')
+			else if expr inherits IdentifierExpr
+				if expr.isTypeReference
+					sw.write('new ')
+					expr.writeSharpDef(sw)
+					sw.write('(')
+					.writeSharpArgs(sw)
+					sw.write(')')
+				else if expr.receiverType inherits GenericParam # TODO: shouldn't expr.isTypeReference above have caught this?
+					sw.write('new [expr.receiverType.sharpRef](')
+					.writeSharpArgs(sw)
+					sw.write(')')
+				else if expr.type inherits MethodSig
+					isMethodSig = true
+				else if expr.type.isSystemTypeClass or _type.isDynamic
+					isDynamic = true
+				else
+					assert false, expr  # TODO: .throwError
+			else if expr inherits IndexExpr
+				if expr.type inherits MethodSig
+					isMethodSig = true
+				else if expr.type.isSystemTypeClass or _type.isDynamic
+					isDynamic = true
+				else
+					assert false, expr  # TODO: .throwError
+			else
+				assert false, expr  # TODO: .throwError
+			if isMethodSig
+				expr.writeSharpDef(sw)
+				sw.write('(')
+				.writeSharpArgs(sw)
+				sw.write(')')
+			else if isDynamic
+				defi = (expr to dynamic).definition
+				assert not defi inherits Box, expr  # TODO: just curious
+				what = if(defi inherits IType, 'typeof([defi.sharpName])', defi.sharpName to String)
+				if defi inherits IVar
+					if defi.type.isDynamic
+						what = '(System.Type)' + what
+				sw.write('Activator.CreateInstance([what]')
+				.writeSharpArgs(sw, ', ')
+				sw.write(')')
 		if parens, sw.write(')')
 
 	def writeSharpArgs(sw as SharpWriter)
