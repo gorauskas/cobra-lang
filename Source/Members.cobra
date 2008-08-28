@@ -28,7 +28,7 @@ class BoxMember
 			The access level names are the same in both Cobra and C#.
 			"""
 
-	var _box as Box
+	var _parentBox as Box
 	var _docString as String?
 	var _isNames as List<of String>?
 	var _attribs as AttributeList
@@ -39,23 +39,21 @@ class BoxMember
 	var _sharpExtraIsNames as Set<of String>?
 	var _binaryName as String?
 
-	def init(token as IToken, box as Box, name as String, isNames as List<of String>, attribs as AttributeList)
-		.init(token, box, name, isNames, attribs, nil)
+	def init(token as IToken, parentBox as Box, name as String, isNames as List<of String>, attribs as AttributeList)
+		.init(token, parentBox, name, isNames, attribs, nil)
 
-	def init(token as IToken, box as Box, name as String, isNames as List<of String>, attribs as AttributeList, docString as String?)
+	def init(token as IToken, parentBox as Box, name as String, isNames as List<of String>, attribs as AttributeList, docString as String?)
 		base.init(token, name)
 		_isNames = isNames
 		_attribs = attribs
-		_box = box
+		_parentBox = parentBox
 		_docString = docString
 
 	## Properties
 
 	get attributes from _attribs
 
-	get box from var  # CC: axe in favor of using .parentBox
-
-	get parentBox from _box
+	get parentBox from var
 
 	get canHaveMatchingBaseMember as bool
 		"""
@@ -135,16 +133,16 @@ class BoxMember
 		return List<of Param>()
 
 	get isClassMember as bool
-		return _box inherits Class or (_box inherits Extension and (_box to Extension).extendedBox inherits Class)
+		return _parentBox inherits Class or (_parentBox inherits Extension and (_parentBox to Extension).extendedBox inherits Class)
 
 	get isInterfaceMember as bool
-		return _box inherits Interface or (_box inherits Extension and (_box to Extension).extendedBox inherits Interface)
+		return _parentBox inherits Interface or (_parentBox inherits Extension and (_parentBox to Extension).extendedBox inherits Interface)
 
 	get isStructMember as bool
-		return _box inherits Struct or (_box inherits Extension and (_box to Extension).extendedBox inherits Struct)
+		return _parentBox inherits Struct or (_parentBox inherits Extension and (_parentBox to Extension).extendedBox inherits Struct)
 
 	get isExtensionMember as bool
-		return _box inherits Extension
+		return _parentBox inherits Extension
 
 	pro matchingBaseMember as BoxMember?
 		get
@@ -183,10 +181,10 @@ class BoxMember
 
 	def mergedIntoPartialBox(newBox as Box)
 		require
-			newBox is not .box
-			newBox.name == .box.name
+			newBox is not .parentBox
+			newBox.name == .parentBox.name
 		body
-			_box = newBox
+			_parentBox = newBox
 
 
 	## INamedNode
@@ -230,7 +228,7 @@ class BoxMember
 			_testMethod.bindInt
 
 	def bindImp as dynamic
-		if not _box.isConstructed
+		if not .parentBox.isConstructed
 			return base.bindImp
 		else
 			# TODO: shouldn't even get this message in the first place. investigate.
@@ -239,7 +237,7 @@ class BoxMember
 	def _bindImp is override
 		base._bindImp
 		assert .didBindInt  # class members should have always received a bindInt first
-# TODO:		assert not _box.isConstructed  # not expecting to bindImp on a constructed type
+# TODO:		assert not .parentBox.isConstructed  # not expecting to bindImp on a constructed type
 		for attrib in _attribs
 			attrib.bindImp
 		if _testMethod
@@ -251,10 +249,11 @@ class BoxMember
 			return
 		# using base implies override, but only if the method sig in the base class is the same
 		# (otherwise it's just an overload)
-		if _box inherits Class
-			assert _box.baseClass
+		parentBox = _parentBox
+		if parentBox inherits Class
+			assert parentBox.baseClass
 			# Why not use .matchingBaseMember? Because currently that's only method-to-method. Does not work for properties.
-			baseMember = _box.baseClass.memberForName(_name)
+			baseMember = parentBox.baseClass.memberForName(_name)
 			if baseMember inherits BoxMember
 				if baseMember inherits MemberOverload
 					for member in baseMember.members
@@ -290,7 +289,7 @@ class BoxMember
 
 	def addRefFields is override
 		base.addRefFields
-		.addField('box', _box)
+		.addField('parentBox', .parentBox)
 
 	def addSubFields is override
 		base.addSubFields
@@ -304,7 +303,7 @@ class BoxMember
 	def constructedFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as BoxMember  # CC: as same
 		require .didBindInt
 		newMember = .memberwiseClone to BoxMember
-		newMember._box = box
+		newMember._parentBox = box
 		newMember._overloadGroup = nil
 		return newMember
 
@@ -315,7 +314,7 @@ class BoxMember
 	
 	get sharpThis as String
 		# sigh. I wish .NET had metaclasses instead of this instance vs. static crap
-		return if(.isShared, 'typeof([.box.sharpName])', .box.sharpThis)
+		return if(.isShared, 'typeof([.parentBox.sharpName])', .parentBox.sharpThis)
 
 	def writeSharpNotNull(sw as SharpWriter)
 		if .resultType.isReference and not .resultType inherits NilableType
@@ -764,7 +763,7 @@ class AbstractMethod
 		.addField('stmts', _stmts)
 
 	get canHaveDetailedStackTrace as bool
-		return .box.canHaveDetailedStackTrace and not .hasYieldStmt
+		return .parentBox.canHaveDetailedStackTrace and not .hasYieldStmt
 
 	get willRequire as bool
 		# in the future, this will also depend on a command line option to include/exclude preconditions
@@ -786,7 +785,7 @@ class AbstractMethod
 		base._bindInt
 		.compiler.codeMemberStack.push(this)
 		try
-			assert .box.didUnNilReturnTypes
+			assert .parentBox.didUnNilReturnTypes
 			for param in _params
 				param.bindInt
 			if _returnType is nil
@@ -851,9 +850,10 @@ class AbstractMethod
 		_didComputeMatchingBaseMember = true
 		if _matchingBaseMember, return
 		if not .canHaveMatchingBaseMember, return
-		if _box inherits Class
-			if _box.baseClass
-				baseMember = _box.baseClass.memberForName(_name)
+		parentBox = .parentBox
+		if parentBox inherits Class
+			if parentBox.baseClass
+				baseMember = parentBox.baseClass.memberForName(_name)
 				if baseMember is nil
 					pass
 				else if baseMember inherits AbstractMethod
@@ -871,7 +871,7 @@ class AbstractMethod
 				if cannotRedeclare
 					# TODO: FIXME: the message uses .englishName twice. one of them needs to change
 					.recordError('Cannot declare a [.englishName] named "[.name]" because the base member "[.name]" is a [.englishName]. this=[.getType.name], baseMember=[baseMember.getType.name]')
-				if _matchingBaseMember and _matchingBaseMember.box inherits Interface
+				if _matchingBaseMember and _matchingBaseMember.parentBox inherits Interface
 					# not really a base member in the "base class" sense of the word.
 					# would not require marking as "is override" for example
 					_matchingBaseMember = nil
@@ -1081,8 +1081,8 @@ class AbstractMethod
 		if not .canHaveDetailedStackTrace
 			return
 		# could be a neat option, -trace-methods, but maybe done with events:
-		# sw.writeLine('Console.WriteLine(">> [.box.name].[.name]");')
-		sw.write('CobraImp.PushFrame("[.box.name]", "[.name]", [Utils.sharpStringLiteralFor(.token.fullPathName)], [.token.lineNum]')
+		# sw.writeLine('Console.WriteLine(">> [.parentBox.name].[.name]");')
+		sw.write('CobraImp.PushFrame("[.parentBox.name]", "[.name]", [Utils.sharpStringLiteralFor(.token.fullPathName)], [.token.lineNum]')
 		if not .isShared
 			sw.write(', "this", [.compiler.curBox.sharpThis]')
 		for param in .params
@@ -1094,7 +1094,7 @@ class AbstractMethod
 	def writeDSTTail(sw as SharpWriter)
 		if not .canHaveDetailedStackTrace
 			return
-		# sw.writeLine('Console.WriteLine("<< [.box.name].[.name]");')
+		# sw.writeLine('Console.WriteLine("<< [.parentBox.name].[.name]");')
 		# this catch all clashes with yield statements. which is why .canHaveDetailedStackTrace returns false if a method has a yield statement.
 		sw.dedentAndWrite('} catch {\n')
 		sw.indent
@@ -1148,7 +1148,7 @@ class Initializer
 				token = .lastToken.copy
 				token.incLineNum
 				stmts = List<of Stmt>()
-				for decl in _box.declsInOrder
+				for decl in .parentBox.declsInOrder
 					if decl inherits BoxVar
 						assert decl.type
 						if not decl.type inherits NilableType and decl.type.isReference and not decl.isShared
@@ -1199,7 +1199,7 @@ class Initializer
 						Stmt.inInitCall = true
 						didSetInInitCall = true
 		.writeSharpIsNames(sw)
-		sw.write(' [.box.rootName]')
+		sw.write(' [.parentBox.rootName]')
 		.writeSharpParams(sw)
 		if callInitializer
 			sw.writeAndIndent('\n')
@@ -1369,8 +1369,8 @@ class Method
 			c._params = List<of Param>()
 			typeForParam = TypeUtil.dictionaryOf(.genericParams, typeArgs)
 			for param in .params
-				c._params.add(param.constructedFor(.box, typeForParam))
-			c._returnType = c._returnType.secondaryConstructedTypeFor(.box, typeForParam)
+				c._params.add(param.constructedFor(.parentBox, typeForParam))
+			c._returnType = c._returnType.secondaryConstructedTypeFor(.parentBox, typeForParam)
 			c.bindInt
 			return c
 
@@ -1397,7 +1397,7 @@ class Method
 		if _implementsTypeNode
 			_implementsType = _implementsTypeNode.realType
 			# TODO: make sure the type is among the interfaces of the box
-		if .compiler.errors.count==numErrors and _returnType is not .compiler.voidType and not .hasReturnStmt and not .hasYieldStmt and not .hasThrowStmt and not .isAbstract and not .box.isFake and not .box inherits Interface
+		if .compiler.errors.count==numErrors and _returnType is not .compiler.voidType and not .hasReturnStmt and not .hasYieldStmt and not .hasThrowStmt and not .isAbstract and not .parentBox.isFake and not .parentBox inherits Interface
 			.throwError('Missing return statement for method "[_name]" which returns [_returnType.name].')
 		# check for `return` and `yield` in the same method
 		if .resultType is not .compiler.voidType
@@ -1640,7 +1640,7 @@ class ProperDexerXetter
 	var _parent as ProperDexer
 
 	def init(token as IToken, parent as ProperDexer, isNames as List<of String>)
-		base.init(token, parent.box, parent.name, List<of Param>(), isNames, AttributeList(), '')  # TODO: should be docString, right?
+		base.init(token, parent.parentBox, parent.name, List<of Param>(), isNames, AttributeList(), '')  # TODO: should be docString, right?
 		_name = parent.name + '.' + .xetPartName  # CC: somewhat awkward. belongs in the base.init() call
 		_parent = parent
 
@@ -1688,7 +1688,7 @@ class MemberOverload
 			.members.count
 			.members[0] == member
 		body
-			base.init(member.token, member.box, member.name, member.isNames, AttributeList())
+			base.init(member.token, member.parentBox, member.name, member.isNames, AttributeList())
 			member.overloadGroup = this
 			_members = [member]
 			_isNames = member.isNames  # pick up 'shared' for example
@@ -1728,14 +1728,14 @@ class MemberOverload
 		body
 			member.overloadGroup = this
 			_members.add(member)
-			.box.addDeclFromOverload(member, this)
+			.parentBox.addDeclFromOverload(member, this)
 
 	def addInheritedMember(member as BoxMember)
 		require
 			member is not this
 			not member inherits MemberOverload
 			member.name==.name
-			member.box is not .box
+			member.parentBox is not .parentBox
 			member not in .members
 			member.getType is .members[0].getType
 		body
@@ -1799,7 +1799,7 @@ class TestMethod
 		require
 			member.name.length
 		body
-			base.init(token, member.box, 'test_'+member.name.capped, List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
+			base.init(token, member.parentBox, 'test_'+member.name.capped, List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
 			_forMember = member
 
 	def init(token as IToken, box as Box)
@@ -1923,7 +1923,7 @@ class ContractPart
 		if _sharpMethodNameCache is nil
 			# TODO: having the serial number in the name avoids problem with overloads, but it's ugly and it can change from run-to-run.
 			# 		would be nice if each member of an overload had an overload number.
-			name = '[prefix]_[_codeMember.sharpName][_codeMember.sharpGenericParams]_[_codeMember.serialNum]_[_codeMember.box.name]'
+			name = '[prefix]_[_codeMember.sharpName][_codeMember.sharpGenericParams]_[_codeMember.serialNum]_[_codeMember.parentBox.name]'
 			name = name.replace(r'[]', 'Item') # indexer # TODO: maybe Indexer should return 'Item' in the first place
 			# properindexers like "name.get" have a '.'
 			# generics have < > and ,
@@ -1983,7 +1983,7 @@ class RequirePart
 			count = 0
 			n = 1
 			post while curCodeMember
-				if not curCodeMember.box.isFake and curCodeMember.requirePart and (not curCodeMember.requirePart.isImplicit or curCodeMember.matchingBaseMember is nil)
+				if not curCodeMember.parentBox.isFake and curCodeMember.requirePart and (not curCodeMember.requirePart.isImplicit or curCodeMember.matchingBaseMember is nil)
 					count += 1
 					sw.write('try {\n')
 					sw.indent
@@ -2041,7 +2041,7 @@ class RequirePart
 		if not .willWriteSharp
 			return
 		static = if(_codeMember.isShared, 'static ', '')
-		access = if(_codeMember.box inherits Struct, 'private', 'protected')
+		access = if(_codeMember.parentBox inherits Struct, 'private', 'protected')
 		sw.write('[static][access] void [.sharpMethodName][_codeMember.sharpGenericParams](')
 		_codeMember.writeSharpRequireParamDecls(sw)
 		sw.write(') {\n')
@@ -2076,7 +2076,7 @@ class EnsurePart
 		return 'and'
 
 	get haveConditions as bool is override
-		if _codeMember.box.hasInvariants
+		if _codeMember.parentBox.hasInvariants
 			return true
 		have = false
 		curCodeMember = _codeMember to ?
@@ -2116,7 +2116,7 @@ class EnsurePart
 		if _codeMember.isOverride
 			curCodeMember = _codeMember to ?
 			post while curCodeMember
-				if not curCodeMember.box.isFake and curCodeMember.ensurePart # TODO: axe: and (not codeMember.ensurePart.isImplicit or codeMember.matchingBaseMember is nil)
+				if not curCodeMember.parentBox.isFake and curCodeMember.ensurePart
 					if willInline
 						curCodeMember.ensurePart.writeSharpChecks(sw)
 					else
@@ -2145,7 +2145,7 @@ class EnsurePart
 		if not .willWriteSharp
 			return
 		static = if(_codeMember.isShared, 'static ', '')
-		access = if(_codeMember.box inherits Struct, 'private', 'protected')
+		access = if(_codeMember.parentBox inherits Struct, 'private', 'protected')
 		sw.write('[static][access] void [.sharpMethodName][_codeMember.sharpGenericParams](')
 		_codeMember.writeSharpEnsureParamDecls(sw)
 		sw.write(') {\n')
@@ -2171,9 +2171,9 @@ class EnsurePart
 			sw.write('try {\n')
 			sw.indent
 			if .willInlineSharp
-				.codeMember.box.writeAllSharpInvariantChecks(sw)
+				.codeMember.parentBox.writeAllSharpInvariantChecks(sw)
 			else
-				sw.write('invariant_[_codeMember.box.rootName]();')
+				sw.write('invariant_[_codeMember.parentBox.rootName]();')
 			sw.dedent
 			sw.write('} finally { _ih_invariantGuard -= 1; }\n')
 			sw.dedent
