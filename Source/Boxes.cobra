@@ -354,12 +354,19 @@ class Box
 		return nil
 
 	def symbolForName(name as String, haveThis as bool) as IMember?
-		return _symbolForName(name, haveThis, true)
+		return .symbolForName(name, haveThis, true)
 
-	def _symbolForName(name as String, haveThis as bool, firstCall as bool) as IMember?
+	def symbolForName(name as String, haveThis as bool, firstCall as bool) as IMember?
 		"""
 		Unlike the inherited .declForName, this method follows the
 		inheritance chain and provides options for haveThis.
+		
+		TODO:
+		This method should be protected, but then this expression in the override in Extension: 
+			.extendedBox._symbolForName(name, haveThis, firstCall)
+		Gives this error message in C#:
+			Cannot access protected member "Box._symbolForName(string, bool, bool)" via a qualifier of type "Box"; the qualifier must be of type "Extension" (or derived from it)
+		Is this a limitation of C# or CLR? Do Java, C++ and D have the same restruction?
 		"""
 		if firstCall and name == _name
 			return this
@@ -372,7 +379,7 @@ class Box
 		x = .declForName(name) to IMember?
 		if x is nil and _baseClass
 			# try base class to look for nested types
-			x = _baseClass._symbolForName(name, haveThis, false)
+			x = _baseClass.symbolForName(name, haveThis, false)
 		if x is nil
 			x = .interfaceMemberForName(name)  # TODO: can this be guarded by haveThis? can interfaces have enum decls and sigs?
 		if x and not haveThis
@@ -385,7 +392,7 @@ class Box
 				# happens for nested boxes which currently means sig/delegate inside a class
 				# when classes can really be nested, or generic sigs are supported, we'll need some more work here
 				if .parentBox
-					x = .parentBox._symbolForName(name, haveThis, firstCall)
+					x = .parentBox.symbolForName(name, haveThis, firstCall)
 			else
 				if not .name.startsWith('ArrayType_')  # TODO: axe this guard when ArrayType.memberForName's TODO to read System.Array is done
 					if .didBindInt
@@ -2186,10 +2193,10 @@ class Extension
 			result = .extendedBox.memberForName(name)
 		return result
 
-	def _symbolForName(name as String, haveThis as bool, firstCall as bool) as IMember?
-		result = base._symbolForName(name, haveThis, firstCall)
+	def symbolForName(name as String, haveThis as bool, firstCall as bool) as IMember?
+		result = base.symbolForName(name, haveThis, firstCall)
 		if result is nil
-			result = .extendedBox._symbolForName(name, haveThis, firstCall)
+			result = .extendedBox.symbolForName(name, haveThis, firstCall)
 		return result
 
 	def _bindInh
