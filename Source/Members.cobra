@@ -111,7 +111,14 @@ class BoxMember
 
 	get englishName as String is abstract
 
-	get defaultAccessLevel as String is abstract
+	get defaultAccessLevel as String
+		if .isInterfaceMember
+			return ''
+		if .name.startsWith('__')
+			return 'private'
+		if .name.startsWith('_')
+			return if(.isStructMember, 'private', 'protected')
+		return 'public'
 
 	get hasVariParams as bool
 		"""
@@ -384,9 +391,6 @@ class BoxEvent
 		base.init(token, box, name, isNames, attribs, docString)
 		_handlerTypeProxy = handlerType
 
-	get defaultAccessLevel as String is override
-		return if(.name.startsWith('_'), 'protected', 'public')
-
 	get englishName as String is override
 		return 'event'
 
@@ -481,12 +485,6 @@ class BoxVar
 	def addSubFields is override
 		base.addSubFields
 		.addField('initExpr', _initExpr)
-
-	get defaultAccessLevel as String is override
-		if .name.startsWith('_')
-			return if(.isStructMember, 'private', 'protected')
-		else
-			return 'public'
 
 	get englishName as String is override
 		return 'variable member'
@@ -642,14 +640,6 @@ class AbstractMethod
 
 	get locals from var
 
-	get defaultAccessLevel as String is override
-		if .isExtensionMember or .isClassMember or .isStructMember
-			return 'public'
-		else if .isInterfaceMember
-			return ''
-		else
-			throw FallThroughException(this)
-
 	get isCallable as bool is override
 		return true
 
@@ -795,6 +785,8 @@ class AbstractMethod
 		.compiler.codeMemberStack.push(this)
 		try
 			.computeMatchingBaseMember  # cannot currently go in .bindInt because it uses .memberForName which triggers other things like generic construction completion
+			if .matchingBaseMember and 'override' in .isNames and 'private' in .matchingBaseMember.isNames
+				.recordError('Cannot override the base member which is declared "private".')
 			for param in _params
 				param.bindImp
 			for local in _locals
@@ -1536,12 +1528,6 @@ class ProperDexer
 	get shouldBeVirtual as bool is override
 		return .isClassMember # TODO: and not _implementsTypeNode and not _implementsType
 
-	get defaultAccessLevel as String is override
-		if .isClassMember or .isStructMember
-			return 'public'
-		else
-			return ''
-
 	def mergedIntoPartialBox(newBox as Box)
 		base.mergedIntoPartialBox(newBox)
 		if .getPart, .getPart.mergedIntoPartialBox(newBox)
@@ -1683,9 +1669,6 @@ class MemberOverload
 	def addSubFields is override
 		base.addSubFields
 		.addField('members', _members)
-
-	get defaultAccessLevel as String is override
-		return ''
 
 	get members from var
 
