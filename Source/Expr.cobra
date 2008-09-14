@@ -434,6 +434,19 @@ class CallExpr
 		dotNode = _superNode to DotExpr
 		assert this is dotNode.right
 
+		enumDefi = dotNode.left.memberForName(_name)
+		if enumDefi inherits EnumDecl
+			# Foo.EnumType(MemberA, MemberB)
+			# Change to an EnumCallExpr
+			# Roll up Foo.Bar.Baz() into one EnumCallExpr
+			transformTarget = dotNode
+			while transformTarget.superNode inherits DotExpr
+				transformTarget = transformTarget.superNode to DotExpr
+			enumCall = EnumCallExpr(.token, _name, _args, enumDefi).bindImp
+			_type = enumCall.type to IType
+			transformTarget._transformTo(enumCall)
+			return
+
 		num = 1
 		for arg in _args
 			try
