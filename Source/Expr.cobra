@@ -477,7 +477,7 @@ class CallExpr
 			if possibleDefinition is nil
 				lrt = dotNode.left.receiverType
 				if lrt.isDynamic
-					type = .compiler.dynamicType  # TODO: should be nilable dynamic, right?
+					type = .compiler.nilableDynamicType
 				else if lrt is .compiler.passThroughType or lrt inherits PrimitiveType  # TODO: lame: bailing out on PrimitiveType so float.parse() will work. See Tests\150-basics-two\510-number-parse.cobra
 					if _name == 'toString'
 						type = .compiler.libraryType('System.String')
@@ -1059,7 +1059,7 @@ class IndexExpr
 					_type = .compiler.passThroughType
 					return
 				if target.receiverType.isDynamic
-					_type = .compiler.dynamicType
+					_type = .compiler.nilableDynamicType
 					return
 				.throwError('Cannot find an indexer in "[target.toCobraSource]" whose type is "[target.receiverType.name]".')
 			assert _definition
@@ -1244,7 +1244,7 @@ class MemberExpr
 					_type = .compiler.passThroughType
 					return
 				if .binarySuperNode.left.receiverType.isDynamic
-					_type = .compiler.dynamicType  # TODO: should be nilable dynamic, right?
+					_type = .compiler.nilableDynamicType
 					return
 				suggs = .binarySuperNode.left.suggestionsForBadMemberName(_name)
 				isBoxAccess = left inherits IdentifierExpr and (left to IdentifierExpr).definition inherits Box  # like "Console.writeLine" where the receiver is a literal class or struct reference
@@ -1472,7 +1472,7 @@ class PostCallExpr
 			else if expr.type inherits Box
 				_type = expr.receiverType  # for example, an IdentifierExpr of 'SomeClass' has a .receiverType of that class
 			else if expr.type.isDynamic
-				_type = .compiler.dynamicType  # TODO: should be nilable, right?
+				_type = .compiler.nilableDynamicType
 			else
 				assert false, expr
 
@@ -2491,12 +2491,12 @@ class SequenceLit
 			throw NodeMultiException(exceptions)
 		if _type is nil
 			exprs = _exprs
-			if exprs.count==0
-				type = .compiler.dynamicType to IType
+			if exprs.count == 0
+				type = .compiler.nilableDynamicType to IType
 			else
 				type = exprs[0].type to !
 				i = 1
-				while i<exprs.count
+				while i < exprs.count
 					exprs[i].bindImp
 					type = exprs[i].type.greatestCommonDenominatorWith(type)
 					i += 1
@@ -2640,8 +2640,8 @@ class DictLit
 			return
 		if .type is nil
 			entries = _entries
-			if _entries.count==0
-				keyType = valueType = .compiler.dynamicType to IType
+			if _entries.count == 0
+				keyType = valueType = .compiler.nilableDynamicType to IType
 			else
 				keyType   = entries[0][0].type to !
 				valueType = entries[0][1].type to !

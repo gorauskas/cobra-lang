@@ -194,6 +194,17 @@ class Expr
 	def writeSharpDefInContext(sw as SharpWriter)
 		.writeSharpDefInContext(sw, true)
 
+	def needsContextCast as bool
+		"""
+		Returns true if this expression needs to be cast within its context.
+		One example, is that a dynamically typed expression requires such casting.
+		"""
+		type = .type
+		if type.isDynamic, return true
+		if type inherits IntType
+			if type.size < 32, return true
+		return false
+
 	def writeSharpDefInContext(sw as SharpWriter, parens as bool)
 		"""
 		When an expression is used where a particular type is expected, such as:
@@ -206,13 +217,7 @@ class Expr
 		This method relies on having had its .contextType set beforehand.
 		This method should be invoked instead of `writeSharpDef` in any situation where .contextType was set.
 		"""
-		type = .type
-		cast = false
-		if _contextType
-			if type.isDynamic
-				cast = true
-			else if type inherits IntType
-				if type.size < 32, cast = true
+		cast = _contextType and .needsContextCast
 		if cast
 			if parens, sw.write('(')
 			sw.write('([_contextType.sharpRef])(')

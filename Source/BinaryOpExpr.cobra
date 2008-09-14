@@ -277,7 +277,7 @@ class AssignExpr
 						.throwError('Cannot infer type for "[left.name]" because the type of the right hand expression is unknown.')
 				if left.name.startsWith('_')
 					.throwError('No class variable named "[left.name]" exists and local variable declarations cannot start with an underscore (_).')
-				inferredType = if(right.type inherits NilType, NilableType(.compiler.dynamicType), right.type)  # `x = nil` for a new local var `x` is inferred as `dynamic?`
+				inferredType = if(right.type inherits NilType, .compiler.nilableDynamicType, right.type)  # `x = nil` for a new local var `x` is inferred as `dynamic?`
 				definition = LocalVar(left.token, inferredType).bindAll to LocalVar  # CC: axe cast when supporting 'as this'
 				.compiler.codeMemberStack.peek.addLocal(definition)
 				left.setDefinition(definition)
@@ -339,7 +339,7 @@ class AssignExpr
 			sharpNames = _left.sharpAssignmentNames
 			if sharpNames and sharpNames.count
 				sharpNames.reverse
-				for i = 0 .. sharpNames.count
+				for i in sharpNames.count
 					sw.write(if(i==0, '', '='))
 					assert sharpNames[i].length
 					sw.write(sharpNames[i])
@@ -943,7 +943,11 @@ class DotExpr
 			assert _right.type
 			_type = _right.type
 		if _left.type.isDynamic
-			_type = .compiler.dynamicType
+			_type = _right.type
+			if not _type.isDynamic
+				# interesting example: d.getType
+				# where `d` is dynamic. The resulting type, however, is System.Type because `getType` is recognized as a method of System.Object
+				_contextType = _type
 		else if not _left.hasError and not _right.hasError
 			if _left inherits IdentifierExpr  # TODO: seems flawed. The error below should take place if left is a DotExpr
 				if _left.definition inherits Box # CC: combine with above if statement
@@ -1004,6 +1008,16 @@ class DotExpr
 			return '.[_right.toCobraSource]'
 		else
 			return '[_left.toCobraSource].[_right.toCobraSource]'
+
+	def needsContextCast as bool
+		r = base.needsContextCast
+		if not r
+			r = .left.type.isDynamic
+			# Why isn't the base implementation sufficient?
+			# Because for `d.getType` where `d` is dynamic, the type of `d.getType` is *not*.
+			# It`s System.Type because `getType` is recognized as an Object method.
+			# This would confuse the code generation into thinking that `d.getType` is a statically typed expression.
+		return r
 
 	def _writeSharpDef(sw as SharpWriter) is override
 		if _right inherits EnumCallExpr
@@ -1066,7 +1080,10 @@ class DotExpr
 				Stmt.inInitCall = true
 				didSetInInitCall = true
 			if writeThis
-				_left.writeSharpDef(sw, not _left inherits DotExpr)
+				if _left.needsContextCast
+					_left.writeSharpDefInContext(sw)
+				else
+					_left.writeSharpDef(sw, not _left inherits DotExpr)
 				sw.write('.')
 			_right.writeSharpDef(sw, false)
 			if didSetInInitCall
