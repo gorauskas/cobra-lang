@@ -1735,7 +1735,7 @@ namespace Cobra.Lang
 
 		def init
 			_methodName = ''  # ideally this wouldn't have to be set here
-	
+
 		get level from var
 			"""
 			Returns the recursion level of .makeString which starts at 1 and increases.
@@ -1762,14 +1762,15 @@ namespace Cobra.Lang
 						return '(Repeated [CobraCore.typeName(x.getType)])'
 					_memo.add(x)
 			try
-				_level += 1
+				isEnumerable = x inherits System.Collections.IEnumerable
+				if isEnumerable, _level += 1
 				try
 					return _makeString(x)
 				finally
-					_level -= 1
+					if isEnumerable, _level -= 1
 			finally
 				if _level < 1, _memo.clear
-	
+
 		def _makeString(x as Object?) as String
 			if x is nil
 				return .nilToString
@@ -1918,8 +1919,8 @@ namespace Cobra.Lang
 			s = "'" + s + "'"  # TODO: could be more sophisticated with respect to ' and "
 			return s
 	
-		def stringMakerToString(sb as StringMaker) as String
-			return '[sb.getType.name]([.stringToCobraLiteral(sb.toString)])'
+		def stringMakerToString(sm as StringMaker) as String
+			return '[sm.getType.name]([.stringToCobraLiteral(sm.toString)])'
 	
 		def testCases(cases as IList) is protected
 			verbose = false
@@ -1939,8 +1940,7 @@ namespace Cobra.Lang
 						print case[1]
 				input = case[0]
 				answer = .makeString(input)
-				if verbose
-					print '        ' + answer
+				if verbose, print '        ' + answer
 				if case[1] inherits IList
 					# when there is more than one expected, the test is that one of them is given
 					for expected in case[1] to IList
@@ -1998,6 +1998,12 @@ namespace Cobra.Lang
 				outerList = [innerList, innerList, innerList]
 				cases.add([outerList, ns'[[1], (Repeated List<of int>), (Repeated List<of int>)]'])
 				PrintStringMaker().testCases(cases)
+
+				n = NestedToString()
+				answer = r'[[1, 2, 3], [1, 2, 3]]'
+				assert PrintStringMaker().makeString(n) == answer
+				assert Cobra.Lang.CobraCore.printStringMaker.makeString(n) == answer
+				assert '[n]' == answer
 			body
 				return .makeString(x)
 	
@@ -2028,6 +2034,8 @@ namespace Cobra.Lang
 		It recovers from exceptions when making strings so that debugging can proceed.
 		
 		Idea: Could use a flag to control if _makeString recovers from exceptions.
+		
+		Idea: TechStringMaker should look for .toPrintString after looking for .toTechString.
 		"""
 	
 		def makeTechString(x as Object?) as String
@@ -2065,7 +2073,7 @@ namespace Cobra.Lang
 				innerList = [1]
 				outerList = [innerList, innerList, innerList]
 				cases.add([outerList, ns'List<of List<of int>>[List<of int>[1], (Repeated List<of int>), (Repeated List<of int>)]'])
-				TechStringMaker().testCases(cases)			
+				TechStringMaker().testCases(cases)
 			body
 				return .makeString(x)
 	
@@ -2132,17 +2140,29 @@ namespace Cobra.Lang
 		def toString as String is override
 			# return something different than the class name to tease out the different behavior that toTechString exhibits in this case (which is to add the class name to the .toString output)
 			return 'Test Default To String'
-	
-	
+
+
+	class NestedToString
+
+		def toPrintString as String
+			sb = StringBuilder(r'[')
+			sep = ''
+			for row in [[1, 2, 3], [1, 2, 3]]
+				sb.append('[sep][row]')
+				sep = ', '
+			sb.append(']')
+			return sb.toString
+
+
 	class CustomToString
-	
+
 		def toPrintString as String
 			return '-- to print string --'
 	
 		def toTechString as String
 			return '-- to tech string --'
 
-	
+
 	class EnumerableToString
 		implements System.Collections.IEnumerable
 		
