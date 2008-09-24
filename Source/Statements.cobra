@@ -1634,7 +1634,44 @@ class ThrowStmt
 
 	def _bindImp
 		base._bindImp
-		if _expr, _expr.bindImp
+		if _expr
+			_expr.bindImp
+			if not _expr.hasError
+				exceptionType = .compiler.libraryClass('System.Exception')
+				typeType = .compiler.libraryClass('System.Type')
+				if _expr.canBeAssignedTo(exceptionType)
+					pass
+				else if _expr.canBeAssignedTo(typeType)
+					augment = ''
+/#
+					CC:
+					if _expr responds to (get definition)
+						defin = _expr.definition
+						if defin responds to (def isDescendantOf(t as IType))
+							augment = 'Try instantiating it with parethesees such as "[_expr.toCobraSource]()".'
+#/
+					try
+						defin = (_expr to dynamic).definition to ?
+					catch UnknownMemberException
+						defin = nil
+					try
+						if defin.isDescendantOf(exceptionType)
+							augment = 'Try instantiating it with parethesees such as "[_expr.toCobraSource]()".'
+					catch UnknownMemberException
+						pass
+					if augment == ''
+						augment = 'Also, this type does not inherit from Exception.'
+					.throwError('Cannot throw a type. [augment]')
+				else
+					try
+						defin = (_expr to dynamic).definition to ?
+					catch UnknownMemberException
+						defin = nil
+					if defin inherits BoxEvent
+						reason = 'it is an event, not an exception. Either throw an exception or use "raise" on the event instead of "throw"'
+					else
+						reason = 'it does not inherit from Exception'
+					.throwError('Cannot throw "[_expr.type.name]" because [reason].')
 		.compiler.curCodeMember.hasThrowStmt = true
 
 	def writeSharpDef(sw as SharpWriter)
