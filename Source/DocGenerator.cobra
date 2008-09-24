@@ -1,3 +1,11 @@
+"""
+The main test case for the doc generator is the Cobra compiler itself:
+
+cd Source
+cobra -doc -files:files-to-compile.text
+"""
+
+
 use System.Reflection
 
 
@@ -115,22 +123,25 @@ class GenerateHtmlDocVisitor
 		_isBOL = true
 		_writeCount += 1
 
-	def writeDocString(s as String)
-		_tw.write('<span class="ds">')
-		for i in _indent, _tw.write('    ')
-		_tw.writeLine('"""')
-		_isBOL = true
-		s = s.replace('\r', '')
-		while s.endsWith('\n')
-			s = s[:-1]
-		# s = s.replace('\t','xxx.')  # for debugging
-		s = .encode(s)
-		# print
-		for line in s.split(c'\n')
-			# print '([line])'
-			.writeLine(line.trim)  # TODO: HACK: The .strip is wrong. It's to fix the parser problem of leaving indentation in doc string contents.
-		.writeLine('"""</span>')
-		.writeLine
+	def writeDocString(s as String?)
+		if s
+			if s.trim == ''
+				return
+			_tw.write('<span class="ds">')
+			for i in _indent, _tw.write('    ')
+			_tw.writeLine('"""')
+			_isBOL = true
+			s = s.replace('\r', '')
+			while s.endsWith('\n')
+				s = s[:-1]
+			# s = s.replace('\t','xxx.')  # for debugging
+			s = .encode(s)
+			# print
+			for line in s.split(c'\n')
+				# print '([line])'
+				.writeLine(line.trim)  # TODO: HACK: The .strip is wrong. It's to fix the parser problem of leaving indentation in doc string contents.
+			.writeLine('"""</span>')
+			.writeLine
 
 	def encode(s as String) as String
 		"""
@@ -196,8 +207,7 @@ class GenerateHtmlDocVisitor
 		.writeLine('<pre>')
 		_moduleList.add([mod.fileName, fileName])
 		try
-			if mod.docString and mod.docString.trim <> ''
-				.writeDocString(mod.docString to !)
+			.writeDocString(mod.docString to !)
 			for decl in mod.topNameSpace.declsInOrder
 				.dispatch(decl)
 		finally
@@ -219,18 +229,21 @@ class GenerateHtmlDocVisitor
 		.writeLine('<div class="typeDecl"><span class="kwtd">class</span> <span class="bdn">[cl.name]</span>')
 		.writeIsNames(cl)
 		# TODO: inherits, implements, generic constraints
+		.writeDocString(cl.docString)
 		.writeBoxMembers(cl)
 
 	def gen(inter as Interface)
 		.writeLine('<div class="typeDecl"><span class="kwtd">class</span> <span class="bdn">[inter.name]</span>')
 		.writeIsNames(inter)
 		# TODO: inherits, generic constraints
+		.writeDocString(inter.docString)
 		.writeBoxMembers(inter)
 
 	def gen(struc as Struct)
 		.writeLine('<div class="typeDecl"><span class="kwtd">class</span> <span class="bdn">[struc.name]</span>')
 		.writeIsNames(struc)
 		# TODO: implements, generic constraints
+		.writeDocString(struc.docString)
 		.writeBoxMembers(struc)
 
 	def writeIsNames(box as Box)
