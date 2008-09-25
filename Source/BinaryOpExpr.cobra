@@ -25,7 +25,7 @@ BinaryOpExpr
 
 
 class BinaryOpExpr
-	is abstract
+	is abstract, partial
 	inherits Expr
 
 	shared
@@ -173,31 +173,9 @@ class BinaryOpExpr
 	def toCobraSource as String is override
 		return '([_left.toCobraSource] [.token.text] [_right.toCobraSource])'
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		if parens
-			sw.write('(')
-		_writeSharpDef(sw)
-		if parens
-			sw.write(')')
-
-	def _writeSharpDef(sw as SharpWriter)
-		pass
-
-	def writeSharpBreakdownItems(sw as SharpWriter)
-		base.writeSharpBreakdownItems(sw)
-		sw.write(', +1')
-		_writeSharpBreakdownItemsLeft(sw)
-		_writeSharpBreakdownItemsRight(sw)
-		sw.write(', -1')
-
-	def _writeSharpBreakdownItemsLeft(sw as SharpWriter)
-		_left.writeSharpBreakdownItems(sw)
-
-	def _writeSharpBreakdownItemsRight(sw as SharpWriter)
-		_right.writeSharpBreakdownItems(sw)
-
 
 class AbstractAssignExpr
+	is partial
 	inherits BinaryOpExpr
 	"""
 	The abstract base class for AssignExpr, AugAssignExpr, CoalesceAssignExpr and InverseCoalesceAssignExpr.
@@ -222,17 +200,9 @@ class AbstractAssignExpr
 				if _trackLocal
 					_trackName  = _left.definition.name
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		if _trackLocal
-			sw.write('CobraImp.SetLocal("[_trackName]", ')
-		else if parens
-			sw.write('(')
-		_writeSharpDef(sw)
-		if _trackLocal or parens
-			sw.write(')')
-
 
 class AssignExpr
+	is partial
 	inherits AbstractAssignExpr
 
 	var _backUpIfInheritsStack as List<of IType>?
@@ -318,61 +288,9 @@ class AssignExpr
 							rightName = (_right.definition to BoxVar).name
 							.compiler.warning(this, 'Setting a parameter ("[leftName]") to a class variable ("[rightName]") is often a mistake. You may want to reverse the assignment.')
 
-	def _writeSharpDef(sw as SharpWriter) is override
-		# TODO:
-		# if trackLocal:
-		#	out.write('CobraImp.SetLocal("%s", ' % .left.name)
-		if _left inherits IndexExpr
-			if _left.target.type.isDynamic
-				# assigning to an indexer of a dynamically typed target requires special code gen
-				sw.write('CobraImp.SetIndexerValue(')
-				_left.target.writeSharpDef(sw, false)
-				sw.write(', ')
-				_right.writeSharpDef(sw, false)
-				for expr in _left.args
-					sw.write(', ')
-					expr.writeSharpDef(sw, false)
-				sw.write(')')
-				return
-		handled = false
-		if _left inherits IdentifierExpr
-			sharpNames = _left.sharpAssignmentNames
-			if sharpNames and sharpNames.count
-				sharpNames.reverse
-				for i in sharpNames.count
-					sw.write(if(i==0, '', '='))
-					assert sharpNames[i].length
-					sw.write(sharpNames[i])
-			else
-				assert _left.sharpName <> ''
-				sw.write(_left.sharpName)
-			handled = true
-		if not handled
-			# `obj.foo = bar` where `obj` is dynamic, requires special handling
-			if _left inherits DotExpr
-				if _left.left.type.isDynamic
-					assert _left.right inherits MemberExpr
-					sw.write('CobraImp.SetPropertyValue(')
-					_left.left.writeSharpDef(sw, false)
-					sw.write(', ')
-					sw.write(Utils.sharpStringLiteralFor((_left.right to MemberExpr).name.capped))
-					sw.write(', ')
-					_right.writeSharpDef(sw)
-					sw.write(')')
-					return
-		if not handled
-			# for something like "p.total = 0", cannot generate "(p.Total)=0" because then C# sees
-			# the left hand side as an r-value instead an l-value/target. hence the false below.
-			_left.writeSharpDef(sw, false)
-		sw.write('=')
-		_right.writeSharpDefInContext(sw)
-		# handle the case where a type got backed up because of assignment inside of an if-inherits
-		if _backUpIfInheritsStack
-			assert (_left to dynamic).definition inherits IVar
-			(_left to dynamic).definition.ifInheritsStack = Stack<of IType>(_backUpIfInheritsStack)
-
 
 class NumericPromoExpr
+	is partial
 	inherits BinaryOpExpr
 
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
@@ -448,19 +366,9 @@ class NumericPromoExpr
 			else
 				.throwError('Cannot apply [_op] to [leftType.name] and [rightType.name]. [sugg]')
 
-	def _writeSharpDefDynamic(sw as SharpWriter)
-		specs = OperatorSpecs.binaryOpSpecsByCobraText
-		assert specs.containsKey(.token.text)
-		spec = specs[.token.text]
-		opText = Utils.sharpStringLiteralFor(spec.opMethodName)
-		sw.write('CobraImp.DynamicOp([opText], ')
-		_left.writeSharpDef(sw)
-		sw.write(', ')
-		_right.writeSharpDef(sw)
-		sw.write(')')
-
 
 class AugAssignMathExpr
+	is partial
 	inherits NumericPromoExpr
 	"""
 	How should:
@@ -483,53 +391,9 @@ class AugAssignMathExpr
 		base._bindImp
 		# TODO: does NumericPromoExpr cover everything we need?
 
-	def _writeSharpDef(sw as SharpWriter) is override
-		if _left.type.isDynamic
-			_left.writeSharpDef(sw)
-			sw.write(' = ')
-			specs = OperatorSpecs.binaryOpSpecsByCobraText
-			assert specs.containsKey(.token.text)
-			spec = specs[.token.text]
-			opText = Utils.sharpStringLiteralFor(spec.opMethodName)
-			sw.write('CobraImp.DynamicOp([opText], ')
-			_left.writeSharpDef(sw)  # TODO: add , false
-			sw.write(', ')
-			_right.writeSharpDef(sw)  # TODO: add , false
-			sw.write(')')
-			return
-		op = ''
-		sep = ','  # for the method call case
-		branch _op
-			on 'PLUS_EQUALS'
-				op = '+='
-			on 'MINUS_EQUALS'
-				op = '-='
-			on 'STAR_EQUALS'
-				op = '*='
-			on 'STARSTAR_EQUALS'
-				op = 'CobraImp.PowerToEquals('
-			on 'SLASH_EQUALS'
-				op = '/='  # TODO: finish this
-			on 'SLASHSLASH_EQUALS'
-				op = '/='  # TODO: finish this
-			on 'PERCENT_EQUALS'
-				op = '%='
-			else
-				throw FallThroughException(_op)
-		assert op.length
-		if op.length==2
-			_left.writeSharpDef(sw)
-			sw.write(op)
-			_right.writeSharpDef(sw)
-		else
-			sw.write(op)  # ex: 'CobraImp.Foo('
-			_left.writeSharpDef(sw)
-			sw.write(sep)
-			_right.writeSharpDef(sw)
-			sw.write(')')
-
 
 class AugAssignBitwiseExpr
+	is partial
 	inherits NumericPromoExpr
 	"""
 	"""
@@ -547,41 +411,9 @@ class AugAssignBitwiseExpr
 		base._bindImp
 		# TODO: does NumericPromoExpr cover everything we need?
 
-	def _writeSharpDef(sw as SharpWriter) is override
-		if _left.type.isDynamic
-			_left.writeSharpDef(sw)
-			sw.write(' = ')
-			specs = OperatorSpecs.binaryOpSpecsByCobraText
-			assert specs.containsKey(.token.text)
-			spec = specs[.token.text]
-			opText = Utils.sharpStringLiteralFor(spec.opMethodName)
-			sw.write('CobraImp.DynamicOp([opText], ')
-			_left.writeSharpDef(sw)  # TODO: add , false
-			sw.write(', ')
-			_right.writeSharpDef(sw)  # TODO: add , false
-			sw.write(')')
-			return
-		op = ''
-		branch _op
-			on 'AMPERSAND_EQUALS'
-				op = '&='
-			on 'VERTICAL_BAR_EQUALS'
-				op = '|='
-			on 'CARET_EQUALS'
-				op = '^='
-			on 'DOUBLE_LT_EQUALS'
-				op = '<<='
-			on 'DOUBLE_GT_EQUALS'
-				op = '>>='
-			else
-				throw FallThroughException(_op)
-		assert op.length
-		_left.writeSharpDef(sw)
-		sw.write(op)
-		_right.writeSharpDef(sw)
-
 
 class BinaryBoolExpr
+	is partial
 	inherits BinaryOpExpr
 
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
@@ -596,37 +428,9 @@ class BinaryBoolExpr
 		if _right.type is not .compiler.boolType
 			_right = TruthExpr(_right).bindImp to TruthExpr # CC: axe cast after "as this"
 
-	def _writeSharpDef(sw as SharpWriter) is override
-		if _op=='IMPLIES'
-			sw.write('!')
-		_left.writeSharpDef(sw)
-		branch _op
-			on 'AND'
-				sw.write('&&')
-			on 'OR' or 'IMPLIES'
-				sw.write('||')
-		_right.writeSharpDef(sw)
-
-	def _writeSharpBreakdownItemsRight(sw as SharpWriter) is override
-		# have to respect the short circuit otherwise something like "s and s.length" will give
-		# NullReference exception for "s.length"
-		# solution is: given L and R,
-		# write:   "R", (!(L) ? "short-circuted" : (R).ToString())
-		# that's for 'AND'. for, 'OR', remove the !, for 'IMPLIES' it's like AND
-
-		# so rather than:
-		# _right.writeSharpBreakdownItems(sw)
-		# do this:
-		src = Utils.sharpStringLiteralFor(_right.toCobraSource)
-		sharpNot = if(_op=='OR', '', '!')
-		sw.write(', [src], new CobraDirectString([sharpNot]')
-		_left.writeSharpDefForBreakdown(sw)
-		sw.write(' ? "(short-circuited)" : CobraCore.ToTechString(')
-		_right.writeSharpDefForBreakdown(sw)
-		sw.write('))')
-
 
 class BinaryBitwiseExpr
+	is partial
 	inherits NumericPromoExpr
 
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
@@ -636,31 +440,9 @@ class BinaryBitwiseExpr
 	def _bindImp
 		base._bindImp
 
-	def _writeSharpDef(sw as SharpWriter) is override
-		if _type.isDynamic
-			_writeSharpDefDynamic(sw)
-			return
-		op = ''
-		branch _op
-			on 'AMPERSAND'
-				op = '&'
-			on 'VERTICAL_BAR'
-				op = '|'
-			on 'CARET'
-				op = '^'
-			on 'DOUBLE_LT'
-				op = '<<'
-			on 'DOUBLE_GT'
-				op = '>>'
-			else
-				throw FallThroughException(_op)
-		assert op.length
-		_left.writeSharpDef(sw)
-		sw.write(op)
-		_right.writeSharpDef(sw)
-
 
 class BinaryMathExpr
+	is partial
 	inherits NumericPromoExpr
 
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
@@ -704,59 +486,9 @@ class BinaryMathExpr
 			else
 				throw FallThroughException({'this': this, '_left': _left, 'op': _op, 'lt': lt, 'rt': rt})
 
-	def _writeSharpDef(sw as SharpWriter) is override
-		if _type.isDynamic
-			_writeSharpDefDynamic(sw)
-			return
-		intType = .compiler.anyIntType
-		left = _left
-		right = _right
-		op = ''
-		pre = ''
-		sep = ','  # for the method call case
-		branch _op
-			on 'PLUS'
-				op = '+'
-			on 'MINUS'
-				op = '-'
-			on 'STAR'
-				op = '*'
-			on 'STARSTAR'
-				op = 'CobraImp.PowerTo('
-			on 'SLASH'
-				op = '/'
-				if _left.isKindOf(intType) and _right.isKindOf(intType)
-					pre = '(decimal)'
-			on 'SLASHSLASH'
-				if left.isKindOf(intType) and right.isKindOf(intType)
-					op = '/'
-				else if left.isKindOf(.compiler.decimalType) or right.isKindOf(.compiler.decimalType)
-					op = 'Decimal.Floor('
-					sep = '/'
-				else if left.isKindOf(.compiler.anyFloatType) or right.isKindOf(.compiler.anyFloatType)
-					op = 'Math.Floor('
-					sep = '/'
-				else
-					throw FallThroughException([left.type, right.type])
-			on 'PERCENT'
-				op = '%'
-			else
-				throw FallThroughException(_op)
-		assert op.length
-		sw.write(pre)
-		if op.length==1
-			_left.writeSharpDef(sw)
-			sw.write(op)
-			_right.writeSharpDef(sw)
-		else
-			sw.write(op)  # ex: 'CobraImp.Foo('
-			_left.writeSharpDef(sw)
-			sw.write(sep)
-			_right.writeSharpDef(sw)
-			sw.write(')')
-
 
 class CompareExpr
+	is partial
 	inherits BinaryOpExpr
 
 	# TODO: handle the real equals and does not equal
@@ -812,76 +544,6 @@ class CompareExpr
 				msg += ' Maybe you should try "inherits" instead of "is".'
 			.throwError(msg)
 
-	def _writeSharpDef(sw as SharpWriter) is override
-		left = _left
-		right = _right
-		op = _op
-		# Compute the C# operation which will be an operator or method call
-		if op=='EQ' or op=='NE'
-			if not left.type.isReference and not right.type.isReference
-				op = _cobraToSharp[_op]
-			else
-				done = false
-				stringType = .compiler.libraryType('System.String')
-				if left.isKindOf(stringType) and right.isKindOf(stringType)  # TODO: check for static comparison operations instead
-					op = _cobraToSharp[_op]
-					done = true
-				else if left.type inherits Box  # TODO: try skipping on requiring that the type is a Box
-					leftBox = left.type to Box
-					compareTo = leftBox.memberForName('compareTo')
-					if compareTo and compareTo.isMethod and compareTo.resultType.isDescendantOf(.compiler.anyIntType) and right.type.isDescendantOf(leftBox)  # need last condition to prevent someString.CompareTo(someChar)
-						op = '.CompareTo('
-						done = true
-				if not done
-					assert op in ['EQ', 'NE']
-					assert op == .token.which
-					op = if(op=='EQ', 'CobraImp.Equals(', 'CobraImp.NotEquals(')
-		else if op=='IS' or op=='ISNOT'
-			if left.type inherits PrimitiveType and right.type inherits PrimitiveType
-				op = _cobraToSharp[_op]
-			else if left.type.isReference and right.type.isReference
-				# skip the CobraImp.Is call for faster performance
-				op = if(op=='IS', 'System.Object.ReferenceEquals(', '!System.Object.ReferenceEquals(')
-			else
-				# non-trivial situation.. fall back to runtime support
-				op = if(op=='IS', 'CobraImp.Is(', 'CobraImp.IsNot(')
-		else
-			if left.type.isDynamic or right.type.isDynamic
-				sw.write('CobraImp.DynamicCompare(')
-				left.writeSharpDef(sw, false)
-				sw.write(', ')
-				right.writeSharpDef(sw, false)
-				sw.write(')[_cobraToSharp[_op]]0')
-				return
-			else
-				done = false
-				if left.type inherits Box  # TODO: try skipping on requiring that the type is a Box
-					leftBox = left.type to Box
-					compareTo = leftBox.memberForName('compareTo')
-					if compareTo and compareTo.isMethod and compareTo.resultType.isDescendantOf(.compiler.anyIntType) and left.type == right.type  # need last condition to prevent someString.CompareTo(someChar)
-						op = '.CompareTo('
-						done = true
-				if not done
-					op = _cobraToSharp[_op]
-		# Write the C# code
-		if op.length<=2
-			left.writeSharpDef(sw)
-			sw.write(op)
-			right.writeSharpDef(sw)
-		else if op == '.CompareTo('
-			left.writeSharpDef(sw)
-			sw.write(op)
-			right.writeSharpDef(sw, false)
-			sw.write(') [_cobraToSharp[_op]] 0')
-		else if op.endsWith('(')
-			sw.write(op)
-			left.writeSharpDef(sw)
-			sw.write(',')
-			right.writeSharpDef(sw)
-			sw.write(')')
-		else
-			throw FallThroughException(op)
-
 
 interface IDotRightExpr
 	inherits IExpr
@@ -895,6 +557,7 @@ interface IDotRightExpr
 
 
 class DotExpr
+	is partial
 	inherits BinaryOpExpr
 	implements IPotentialTypeExpr
 
@@ -1019,76 +682,9 @@ class DotExpr
 			# This would confuse the code generation into thinking that `d.getType` is a statically typed expression.
 		return r
 
-	def _writeSharpDef(sw as SharpWriter) is override
-		if _left.receiverType.isDynamic
-			# handle dynamic typing
-			if _right inherits MemberExpr
-				sw.write('CobraImp.GetPropertyValue(')
-				_left.writeSharpDef(sw, not _left inherits DotExpr)
-				sw.write(', ')
-				sw.write(Utils.sharpStringLiteralFor(_right.name.capped))
-				sw.write(')')
-			else if _right inherits CallExpr
-				sw.write('CobraImp.InvokeMethod(')
-				_left.writeSharpDef(sw, not _left inherits DotExpr)
-				sw.write(', ')
-				sw.write(Utils.sharpStringLiteralFor(_right.name.capped))
-				for arg in _right.args
-					sw.write(', ')
-					arg.writeSharpDef(sw, false)
-				sw.write(')')
-			else
-				throw FallThroughException(_right)
-		else
-			# Given Cobra "A.B.C()" where C is a class/type/struct, then the C# needs to be "new A.B.C()"
-			# (But stuff like this makes me wonder if the ASTs should be doing some transformations, like collapsing qualified types.)
-			if _dotRightExpr.member inherits BoxMember
-				backing = (_dotRightExpr.member to BoxMember).sharedMethodBacking
-				if backing
-					# example:  Cobra: c.isUpper   C#: char.IsUpper(c)
-					# also used for extension methods under .NET 2.0
-					sw.write(backing+'(')
-					_left.writeSharpDef(sw, false)
-					if _right inherits CallExpr
-						for arg in _right.args
-							sw.write(', ')
-							arg.writeSharpDefInContext(sw)
-					sw.write(')')
-					return
-			# handle static typing
-			# don't write 'this' for shared members
-			writeThis = true
-			if _left inherits ThisLit
-				if _right inherits CallExpr
-					defi = _right.definition
-					if defi inherits IMember
-						writeThis = not defi.isShared
-					else
-						# TODO: compiler bug stimulated by following line:
-						# throw FallThroughException({'right': _right, 'defi': defi})
-						throw FallThroughException(defi)
-				else if _right inherits MemberExpr
-					writeThis = not _right.definition.isShared
-			else if .curCodeMember inherits Initializer and _right inherits IDotRightExpr and (_right to IDotRightExpr).name == 'init' and _left inherits ThisOrBaseLit
-				# Well, in practice this doesn't really happen because Constructer.innerWriteSharpDef usurps the code gen for base calls
-				Stmt.inInitCall = true
-				didSetInInitCall = true
-			if writeThis
-				if _left.needsContextCast
-					_left.writeSharpDefInContext(sw)
-				else
-					_left.writeSharpDef(sw, not _left inherits DotExpr)
-				sw.write('.')
-			_right.writeSharpDef(sw, false)
-			if didSetInInitCall
-				Stmt.inInitCall = false
-
-	def _writeSharpBreakdownItemsLeft(sw as SharpWriter) is override
-		if not _left.type.isDescendantOf(.compiler.typeType) # feels like a cheap escape...  # TODO: still needed? what is this?
-			_left.writeSharpBreakdownItems(sw)
-
 
 class InExpr
+	is partial
 	inherits BinaryOpExpr
 	"""
 	Syntax:
@@ -1119,20 +715,6 @@ class InExpr
 				# error: "System.Collections.Generic.Dictionary<string,int>.ValueCollection" does not contain a definition for "Contains" (C#)
 				if contains.type is .compiler.boolType and not _right.type.name.startsWith('KeyCollection<') and not _right.type.name.startsWith('ValueCollection<')
 					_containsExpr = contains
-
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		branch _op
-			on 'NOTIN', sw.write('!')
-			on 'IN', pass
-			else, throw FallThroughException(_op)
-		if _containsExpr
-			_containsExpr.writeSharpDef(sw, parens)
-		else
-			sw.write('CobraImp.In(')
-			_left.writeSharpDef(sw, false)
-			sw.write(',')
-			_right.writeSharpDef(sw, false)
-			sw.write(')')
 
 
 class InheritsExpr
