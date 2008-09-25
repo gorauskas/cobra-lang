@@ -32,6 +32,7 @@ interface IContainer
 
 
 interface IParentSpace
+	is partial
 	inherits IContainer
 	"""
 	Basically namespaces and boxes are "parent spaces" meaning they can contain others.
@@ -40,11 +41,11 @@ interface IParentSpace
 	But this is not a perfect model of how things work since a NameSpace cannot have a Box as a parent.
 	"""
 	
-	get sharpRef as String
+	pass
 
 
 class Container<of TMember>
-	is abstract
+	is abstract, partial
 	where TMember must be class, IMember
 	inherits NamedNode
 	implements IContainer, IType
@@ -326,8 +327,6 @@ class Container<of TMember>
 		suggs.sort
 		return suggs
 
-	get sharpInit as String is abstract
-
 	# TODO: _isNames, .writeSharpIsNames and defaultAccessLevel should be moved out to a mixin since NameSpace, a subclass of Container, has no isNames. Box and Enum do. So does ClassMember which duplicates this.
 
 	get defaultAccessLevel as String is abstract
@@ -337,70 +336,6 @@ class Container<of TMember>
 
 	def unNilReturnType
 		# TODO: can this be axed when IMember gets broken up?
-		pass
-
-	get sharpNameComponent as String
-		"""
-		Returns a string that can be used in a C# identifier. That means it cannot have special symbols such as period or left bracket.
-		"""
-		ensure result.length > 0  # TODO? Move to interface
-		return .sharpRef
-
-	var _sharpRef as String?
-
-	get sharpRef as String is override
-		if _sharpRef is nil and .didBindImp
-			_sharpRef = _computeSharpRef
-			return _sharpRef to !
-		else
-			return _computeSharpRef
-
-	get sharpParamRef as String
-		return .sharpRef
-
-	get _computeSharpRef as String
-		if .parent
-			s = .parent.sharpRef
-			if s.length and not s.endsWith('::')  # C# has weird "global::" name
-				s += '.'
-			s += .sharpName
-		else
-			s = .sharpName
-		return s
-
-	def writeSharpIsNames(sw as SharpWriter)
-		# TODO: cache this somewhere
-		accessLevels = ['public', 'protected', 'internal', 'protected internal', 'private']
-		# CC: accessLevels = 'public,protected,internal,protected internal,private'.split(c',')
-			# same names in both Cobra and C#
-
-		# TODO:
-		# if isNames is nil
-		#	isNames = _isNames
-		isNames = List<of String>()
-		isNames.addRange(_isNames)
-		if .defaultAccessLevel.length
-			found = false
-			for level as String in accessLevels  # CC: axe as
-				if level in isNames
-					found = true
-			if not found
-				isNames.insert(0, .defaultAccessLevel)
-		isNameCS = {
-			# only have to specify the ones that are different
-			'shared': 'static',
-			'nonvirtual': '',
-		}
-		sep = ''
-		for name in isNames
-			name = Utils.getSS(isNameCS to passthrough, name, name) to !
-			sw.write(sep)
-			sw.write(name)
-			sep = ' '
-		if sep.length
-			sw.write(' ')
-
-	def writeSharpTestInvocation(sw as SharpWriter)
 		pass
 
 
@@ -413,6 +348,7 @@ class Container<of TMember>
 
 
 interface IMember
+	is partial
 	inherits INamedNode
 	"""
 	TODO: this really needs to be split up into INameSpaceMember and IBoxMember. *Maybe* there is a logical IMember parent interface to both of those.
@@ -480,15 +416,4 @@ interface IMember
 	def unNilReturnType
 		"""
 		This is invoked to fix up the CLR library which does not indicate, for example, that StringBuilder.toString returns String not String?
-		"""
-
-	def writeSharpDef(sw as SharpWriter)
-		"""
-		Write the C# code for this member declaration to the given
-		SharpWriter.
-		"""
-
-	def writeSharpTestInvocation(sw as SharpWriter)
-		"""
-		Write the C# call to the test method for this member.
 		"""

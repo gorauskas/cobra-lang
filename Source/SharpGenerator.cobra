@@ -1,7 +1,455 @@
 """
 Eventually this file will contain all C# code generation.
 In the future, you can expect (or contribute!) alternate code generators such as IL, JVM and Objective-C.
+
+gco 'def writesharp' | grep -vi sharpgen | grep -vi save
 """
+
+
+##
+## Compiler
+##
+
+class Compiler
+	is partial
+
+	var _baseExeFileName as String = ''
+	var _fullExeFileName as String = ''
+	var _moduleFileName_to_sharpToCobraLineNum as Dictionary<of String, Dictionary<of int, int>?>?
+
+	def writeSharp
+		Node.setCompiler(this)
+		try
+			_moduleFileName_to_sharpToCobraLineNum = Dictionary<of String, Dictionary<of int, int>>()
+			for _curModule in _modules
+				if not _curModule.fileName.endsWith('SystemInterfaces.cobra')
+					sharpToCobraLineNum = _curModule.writeSharpDef
+					_moduleFileName_to_sharpToCobraLineNum[_curModule.fileName] = sharpToCobraLineNum
+					_moduleFileName_to_sharpToCobraLineNum[Path.getFullPath(_curModule.fileName)] = sharpToCobraLineNum
+		finally
+			Node.setCompiler(nil)
+
+	def writeSharpTestInvocation
+		dt = DateTime.now
+		fileName = 'test-[dt.year][dt.month][dt.day][dt.hour][dt.minute].cs'  # TODO: format the numbers to have leading zeros
+		using f = SharpWriter(File.createText(fileName))
+			print to f
+				print 'using System;'
+				print 'using Cobra.Lang;'
+				print ''
+				print 'class RunTests {'
+				print ''
+				print '	public static void Main() {'
+				print '		CobraImp.ShowTestProgress = true;'
+				if .hasExceptionReportOption
+					print '		bool success = false;'
+					print '		try {'
+				for module in _modules
+					module.writeSharpTestInvocation(f)
+				if .hasExceptionReportOption
+					print '		success = true;'
+					print '		} catch (Exception e) {'
+					print '			CobraCore.HandleUnhandledException(e);'
+					print '		}'
+					print '		if (success)'
+				print '		CobraImp.TestProgressWriter.WriteLine("\\nSuccess!  All tests pass.\\n");'
+				print '	}'
+				print '}'
+		_modules.add(SharpModule(fileName, _verbosity))
+
+	var _didWriteSharpInfoClass as bool
+
+	def writeSharpInfoClass
+		"""
+		The Cobra.Lang.Info class is compiled into the program and contains, at least, the path to the cobra.exe.
+		This is used for, at least, the implementation of CobraCore.findCobra.
+		"""
+		if _didWriteSharpInfoClass
+			return
+		cobraExePath = CobraCore.exePath
+		assert File.exists(cobraExePath)
+		infoPath = Path.combine(Path.getDirectoryName(cobraExePath), 'CobraInfo.cs')
+		using sw = File.createText(infoPath)
+			print to sw
+				print 'using System;'
+				print 'namespace Cobra.Lang {'
+				print '    class CobraInfo {'
+				print '        static public String CobraPath {'
+				print '            get { return @"[cobraExePath]"; }'
+				print '        }'
+				print '    }'
+				print '}'
+		_didWriteSharpInfoClass = true
+
+	get baseExeFileName from var
+		"""
+		Returns the exe file name sans extension.
+		"""
+
+	get fullExeFileName from var
+		"""
+		Returns the exe file name with extension.
+		"""
+
+	var _platform as PlatformEnum
+
+	get platform from var
+
+	def compileSharp
+		.compileSharp('')
+
+	def compileSharp(extraCscOptions as String)
+		require
+			.modules.count
+			# CC: why does the folowing expression generate C# errors? 2007-11-21 Novell Mono 1.2.4. Could be code gen problem
+			# 'SystemInterfaces' in (for mod in .modules get mod.fileName)  # TODO: food for thought: this is inefficent because all fileNames are collected when we could just get out upon hitting the first SystemInterfaces
+#			.modules[0].fileName.endsWith('SystemInterfaces.cobra')  # no longer the first module
+		body
+			if .verbosity >= 2
+				print 'Compiling generated code'
+			options = .options
+
+			# locate the C# compiler
+			cscPath = options.getDefault('sharp-compiler', '') to String
+			if cscPath <> ''
+				if File.exists(cscPath)
+					platform = if('Microsoft' in cscPath, 'ms', 'novell')
+				else if File.exists(cscPath+'.exe')
+					cscPath += '.exe'
+					platform = if('Microsoft' in cscPath, 'ms', 'novell')
+				else
+					print 'Cannot find compiler specified by -sharp-compiler argument: [cscPath]'
+					throw StopCompilation(this)
+			else
+				# will use CSharpCodeProvider
+				pass
+
+			platform = if(CobraCore.isRunningOnMono, 'novell', 'ms')
+			_platform = if(platform=='ms', PlatformEnum.Microsoft, PlatformEnum.Novell)
+			optChar = if(platform=='ms', '/', '-')  # option prefix character
+
+			# exe names
+			outName = if(options.boolValue('test'), _modules[_modules.count-1].sharpFileName, _firstFileName to !)
+			if outName.endsWith('.cs') or outName.endsWith('.CS'), outName = outName[:-3]
+			if outName.endsWith('.cobra') or outName.endsWith('.COBRA'), outName = outName[:-6]
+			_baseExeFileName = outName
+
+			# compute backEndOptions
+			backEndOptions = ''
+
+			target = options.getDefault('target', '') to String
+			if target.length
+				if target=='lib'
+					target = 'library'
+				backEndOptions += ' [optChar]target:[target]'
+				# TODO: what is the output for a module?
+				branch target
+					on 'exe' or 'winexe', outName = Utils.forceExtension(outName, '.exe')
+					on 'library', outName = Utils.forceExtension(outName, '.dll')
+					on 'module', outName = Utils.forceExtension(outName, '.netmodule')  # http://msdn2.microsoft.com/en-us/library/58scf68s(VS.80).aspx
+					else: throw FallThroughException(target)
+			else
+				outName += '.exe'
+			_fullExeFileName = outName
+
+			delaySign = options.boolValue('delay-sign')
+			if delaySign
+				backEndOptions += ' [optChar]delaysign+'
+
+			keyContainer = options.getDefault('key-container', nil)
+			if keyContainer
+				backEndOptions += ' "[optChar]keycontainer:[keyContainer]"'
+
+			keyFile = options.getDefault('key-file', nil)
+			if keyFile
+				backEndOptions += ' "[optChar]keyfile:[keyFile]"'
+
+			optimize = options.boolValue('optimize')
+			if optimize
+				backEndOptions += ' [optChar]optimize+'
+
+			thing = options.getDefault('reference', List<of String>()) to List<of String>
+			for refer in thing
+				backEndOptions += ' "[optChar]r:[refer]"'
+
+			debug = options.getDefault('debug', '') to String
+			if debug.length
+				# TODO: mono does not support full and pdbonly afaik
+				assert debug in ['-', '+', 'full', 'pdbonly'], debug
+				backEndOptions += ' [optChar]debug' + if(debug.length==1, debug, ':[debug]')
+
+			backEndOptions += ' "[optChar]out:[outName]"'
+
+			if _verbosity<3
+				backEndOptions += ' [optChar]nologo'
+
+			backEndOptions += ' [optChar]nowarn:0162,0169,0183,0184,0219,0414,0429'
+				# CS0162: Unreachable code detected
+				# CS0169: The private field `Cobra.Lang.CannotReadPropertyException._ih_invariantGuard' is never used
+				# CS0183: The given expression is always of the provided (`int') type
+				# CS0184: The given expression is never of the provided (`decimal') type
+				# CS0219: The variable `x' is assigned but its value is never used / Cobra handles these
+				# CS0414: The private field `Point._ih_invariantGuard' is assigned but its value is never used
+				# CS0429: Unreachable expression code detected / MS C# 2.0 gives these especially for the 'bool' test case in 'basics'
+
+			backEndOptions += ' ' + extraCscOptions
+
+			sharpArgs = .options.getDefault('sharp-args', '') to String
+			if sharpArgs.length
+				if sharpArgs.length > 2 and sharpArgs[0]=="'" and sharpArgs[sharpArgs.length-1]=="'"
+					# on Windows, you should really use double quotes instead of single, but
+					# we try to compensate here.
+					sharpArgs = sharpArgs[1:-1]
+				backEndOptions += ' ' + sharpArgs
+
+			for libPath in .options.getDefault('library-directory', [])
+				backEndOptions += ' ' + '-lib:"[libPath]"'
+
+			for pkgName in .options.getDefault('pkg', [])
+				backEndOptions += ' ' + '-pkg:[pkgName]'
+
+			# .cs files
+			sharpFileNameList = List<of String>()
+			for module in _modules[1:]
+				if module.sharpFileName.length
+					sharpFileNameList.add(module.sharpFileName)
+
+			# compilation command
+			if _verbosity
+				print 'Compiling to produce [outName]'
+			if cscPath <> ''
+				# use Process class instead of CSharpCodeProvider because the user specified a path to a C# compiler
+				p = System.Diagnostics.Process()
+				p.startInfo.fileName = cscPath
+				sharpFileNames = Utils.join(' ', for fileName in sharpFileNameList get '"' + fileName + '"')
+				p.startInfo.arguments = '[backEndOptions] [sharpFileNames]'
+				if _verbosity >= 2
+					print '[p.startInfo.fileName] [p.startInfo.arguments]'
+				output = CobraCore.runAndCaptureAllOutput(p)
+				# TODO: check p.exitCode, especially if output is empty
+				_parseSharpCompilerOutput(output)
+			else
+				# use code provider
+				provider = Microsoft.CSharp.CSharpCodeProvider()
+				cp = System.CodeDom.Compiler.CompilerParameters()
+				cp.referencedAssemblies.add('System.dll')
+				cp.generateExecutable = options.getDefault('target', 'exe') in ['exe', 'winexe']
+				cp.outputAssembly = _fullExeFileName
+				cp.compilerOptions = backEndOptions
+				#trace backEndOptions
+				#trace sharpFileNameList
+				cr = provider.compileAssemblyFromFile(cp, sharpFileNameList.toArray)
+				if false
+					trace cr.compiledAssembly
+					trace cr.evidence
+					trace cr.pathToAssembly
+					trace cr.errors
+					trace cr.output
+					trace cr.nativeCompilerReturnValue
+					trace cr.tempFiles
+				# On MS .NET 2.0, the CompilerResult.errors never include "(Location of symbol related to previous error)", while the CompilerResult.output contains everything
+				# On Novell Mono 1.9, the CompilerResult.output is empty, leaving CompilerResult.errors as the only means to get the C# compiler messages.
+				# Do the Mono .errors have "(Location of symbol related to previous error)"? I haven't checked.
+				if CobraCore.isRunningOnMono
+					for bem in cr.errors  # cr.errors also includes warnings. supposedly.
+						backEndMessage = bem to System.CodeDom.Compiler.CompilerError
+						if not SharpCompilationMessage.willSkipMessage(backEndMessage.errorText to !)
+							_addMessage(SharpCompilationMessage(backEndMessage, this))
+				else				
+					#for x in cr.output to dynamic
+					#	print 'output>', x
+					# [1:] below is to chop out the first line which is the C# compilation line
+					
+					# cr.output is empty if there was no error
+					# otherwise, the first element is the C# compilation line
+					if _verbosity >= 2 and cr.output.count > 0
+						print '>>', cr.output[0], '<<'
+					output = if(cr.output.count==0, '', Utils.join('\n', cr.output[1:]).trim)
+					# trace output
+					_parseSharpCompilerOutput(output)
+
+			if .errors.count
+				_exitFromErrors
+
+			# remove intermediate files such as *.cobra.cs
+			if _intermediateFileNames.count == 0
+				if _verbosity >= 1
+					print 'No intermediate files to keep or delete.'
+			else
+				if options.getDefault('keep-intermediate-files', 0)
+					if _verbosity >= 1
+						print 'Keeping intermediate files.'
+				else
+					if _verbosity >= 1
+						print 'Deleting intermediate files.'
+					for fileName in _intermediateFileNames
+						if _verbosity >= 3
+							print 'Deleting', fileName
+						File.delete(fileName)
+
+	def _parseSharpCompilerOutput(output as String)
+		for line in output.split(c'\n')
+			line = line.trim
+			if not line.length
+				continue
+			if SharpCompilationMessage.willSkipMessage(line)
+				continue
+			else
+				if _verbosity >= 3
+					print 'C# message: [line]'
+				_addMessage(SharpCompilationMessage(line, this))
+
+	def cobraLineNumForSharp(fileName as String, lineNum as int) as int
+		"""
+		Returns the source cobra line number given a filename (sans ".cs") and line number in the
+		generated C#. Used by SharpCompilationMessage.
+		"""
+		# for some reason the C# filenames come in with a lower case drive letter,
+		# and in 2006 strings are *still* case sensitive.
+		# *sigh*
+		if fileName.length>=2 and fileName[1]==c':'
+			fileName = fileName.capped
+
+		# TODO: handle relative paths like ..\foo.cobra which C# spells out as absolute paths
+
+		if not _moduleFileName_to_sharpToCobraLineNum.containsKey(fileName)
+			return lineNum
+		map = _moduleFileName_to_sharpToCobraLineNum[fileName]
+
+		# sometimes the line numbers are one off. that's not ideal, but keep chugging:
+		if not map.containsKey(lineNum) and map.containsKey(lineNum-1)
+			lineNum -= 1
+
+		if map.containsKey(lineNum)
+			return map[lineNum]
+		else
+			# TODO: take this out someday. was put in 2006-11-12
+			print '<> Cannot map C# location back to cobra.'
+			print '   fileName = [fileName]'
+			print '   lineNum = [lineNum]'
+			print '   sharpToCobraLineNum = [CobraCore.toTechString(map)]'
+			return map[lineNum]
+
+
+
+##
+## Node
+##
+
+class Node
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		require .didBindInt or .didBindImp
+		pass
+
+
+class SyntaxNode
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		sw.node(this)
+
+
+interface INamedNode
+	is partial
+
+	get sharpName as String
+		"""
+		Return the name that should be used in C# source code.
+		"""
+
+
+class NamedNode
+	is abstract, partial
+
+	get sharpName as String
+		return _name
+
+	get sharpRef as String
+		return .sharpName
+
+
+##
+## Module
+##
+
+class Module
+	is partial
+
+	var _sharpFileName = ''
+
+	get sharpFileName from var
+
+
+	get sharpSource as String
+		if _sharpFileName.length
+			return File.readAllText(_sharpFileName)
+		else
+			throw FallThroughException('csFileName is blank')
+
+	def writeSharpDef as Dictionary<of int, int>? is abstract
+
+	def writeSharpTestInvocation(sw as SharpWriter)
+		pass
+
+
+class SharpModule
+	inherits Module
+	"""
+	The purpose of a C# module is to allow the programmer to include .cs command for Cobra to
+	incorporate in the final compilation.
+	"""
+
+	def init(fileName as String, verbosity as int)
+		base.init(fileName, verbosity, '')
+		_sharpFileName = fileName
+
+	def writeSharpDef as Dictionary<of int, int>? is override
+		if false
+			# kind of silly, but it works:
+			d = Dictionary<of int, int>()
+			for i = 1 .. Utils.countChars(File.readAllText(_sharpFileName), c'\n')+1
+				d[i] = i
+			return d	
+		return nil
+
+
+class AssemblyModule
+	is partial
+
+	get sharpSource as String is override
+		return '(no C# source for [this])'
+
+	def writeSharpDef as Dictionary<of int, int>? is override
+		return nil
+
+
+class CobraModule
+	is partial
+
+	get sharpFileName as String is override
+		if _sharpFileName == '' and not _fileName.endsWith('SystemInterfaces.cobra')
+			_sharpFileName = _fileName + '.cs'
+		return _sharpFileName
+
+	def writeSharpDef as Dictionary<of int, int>? is override
+		file = File.createText(.sharpFileName)
+		using sw = SharpWriter(file)
+			.compiler.addIntermediateFile(_sharpFileName)
+			sw.start(.fileName)
+			sw.write('// [_sharpFileName]\n')
+			sw.write('// Generated by Cobra\n')  # TODO: put version number here
+			sw.write('// on [DateTime.now]\n')
+			# TODO: list op sys
+			sw.write('\n')
+			.topNameSpace.writeSharpDef(sw)
+			d = sw.sharpToCobraLineNum
+		return d
+
+	def writeSharpTestInvocation(sw as SharpWriter) is override
+		.topNameSpace.writeSharpTestInvocation(sw)
 
 
 ##
@@ -205,6 +653,102 @@ class UnspecifiedType
 	get sharpInit as String is override
 		# TODO: throw Exception('Not expecting code gen for unspecified types.')
 		return '!UnspecifiedType!'
+
+
+##
+## Container and friends
+##
+
+interface IParentSpace
+	is partial
+	
+	get sharpRef as String
+
+
+class Container<of TMember>
+	is partial
+
+	get sharpInit as String is abstract
+
+	get sharpNameComponent as String
+		"""
+		Returns a string that can be used in a C# identifier. That means it cannot have special symbols such as period or left bracket.
+		"""
+		ensure result.length > 0  # TODO? Move to interface
+		return .sharpRef
+
+	var _sharpRef as String?
+
+	get sharpRef as String is override
+		if _sharpRef is nil and .didBindImp
+			_sharpRef = _computeSharpRef
+			return _sharpRef to !
+		else
+			return _computeSharpRef
+
+	get sharpParamRef as String
+		return .sharpRef
+
+	get _computeSharpRef as String
+		if .parent
+			s = .parent.sharpRef
+			if s.length and not s.endsWith('::')  # C# has weird "global::" name
+				s += '.'
+			s += .sharpName
+		else
+			s = .sharpName
+		return s
+
+	def writeSharpIsNames(sw as SharpWriter)
+		# TODO: cache this somewhere
+		accessLevels = ['public', 'protected', 'internal', 'protected internal', 'private']
+		# CC: accessLevels = 'public,protected,internal,protected internal,private'.split(c',')
+			# same names in both Cobra and C#
+
+		# TODO:
+		# if isNames is nil
+		#	isNames = _isNames
+		isNames = List<of String>()
+		isNames.addRange(_isNames)
+		if .defaultAccessLevel.length
+			found = false
+			for level as String in accessLevels  # CC: axe as
+				if level in isNames
+					found = true
+			if not found
+				isNames.insert(0, .defaultAccessLevel)
+		isNameCS = {
+			# only have to specify the ones that are different
+			'shared': 'static',
+			'nonvirtual': '',
+		}
+		sep = ''
+		for name in isNames
+			name = Utils.getSS(isNameCS to passthrough, name, name) to !
+			sw.write(sep)
+			sw.write(name)
+			sep = ' '
+		if sep.length
+			sw.write(' ')
+
+	def writeSharpTestInvocation(sw as SharpWriter)
+		pass
+
+
+interface IMember
+	is partial
+
+
+	def writeSharpDef(sw as SharpWriter)
+		"""
+		Write the C# code for this member declaration to the given
+		SharpWriter.
+		"""
+
+	def writeSharpTestInvocation(sw as SharpWriter)
+		"""
+		Write the C# call to the test method for this member.
+		"""
 
 
 ##
@@ -1837,4 +2381,3 @@ class AssemblyDecl
 
 	def writeSharpTestInvocation(sw as SharpWriter)
 		pass
-	
