@@ -848,6 +848,393 @@ class EnumMember
 
 
 ##
+## Boxes
+##
+
+
+class Box
+	is abstract, partial
+
+	get sharpNameComponent as String is override
+		name = .sharpName
+		i = name.indexOf('/*')  # example: /*dynamic*/object
+		if i <> -1
+			j = name.indexOf('*/', i)
+			name = name[:i] + name[j+2:]
+		# qualified types and generics need cleanup
+		for ch in '.<>, '
+			name = name.replace(ch, c'_')
+		return name
+
+	get sharpThis as String
+		"""
+		Returns 'this' as you would expect.
+		Overridden by Extension.
+		"""
+		return 'this'
+
+	get sharpKeyWord as String is abstract
+
+	get sharpName as String is override
+		return _name.replace('<of', '<')
+
+	get _computeSharpRef as String is override
+		if _genericParams.count
+			sb = StringBuilder()
+			# generic
+			name = .rootName
+			sb.append(name)
+			sb.append('<')
+			sep = ''
+			for param in _genericParams
+				sb.append(sep)
+				sb.append(param.sharpRef)
+				sep = ', '
+			sb.append('>')
+			sharp = sb.toString
+		else
+			sharp = .sharpName
+		if .parentNameSpace and not .parentNameSpace.isRoot
+			sharp = .parentNameSpace.fullName + '.' + sharp
+		else if .parentBox
+			sharp = .parentBox.sharpRef + '.' + sharp
+		return sharp
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		.compiler.boxStack.push(this)
+		try
+			if .isFake
+				return
+			assert not .isConstructed
+			.writeSharpAttribs(sw)
+			.writeSharpIsNames(sw)
+			sw.write('[.sharpKeyWord] ')
+			.writeSharpDefName(sw)
+			.writeSharpInheritance(sw)
+	
+			sep = ''
+			for inter in _baseInterfaces
+				sw.write(sep)
+				sw.write(inter.sharpRef)
+				sep = ', '
+	
+			if _genericParams.count
+				sw.indent
+				for param in _genericParams
+					if param inherits GenericParam
+						param.writeSharpConstraint(sw)
+				sw.dedent
+	
+			sw.writeAndIndent('{\n')
+			.writeSharpInvariantMethod(sw)
+			if _testMethod
+				_testMethod.writeSharpDef(sw)
+			for decl in _declsInOrder
+				.compiler.boxMemberStack.push(decl)
+				try
+					if decl inherits BoxMember
+						if decl.parentBox is not this  # skip extension methods that were not declared in this box
+							continue
+					decl.writeSharpDef(sw)
+				finally
+					.compiler.boxMemberStack.pop
+			if .compiler.includeTests
+				.writeSharpTest(sw)
+			sw.dedentAndWrite('} // [.sharpKeyWord] [.name]\n')
+			sw.write('\n')
+		finally
+			.compiler.boxStack.pop
+
+	def writeSharpAttribs(sw as SharpWriter)
+		for attrib in _attribs
+			attrib.writeSharpDef(sw)
+
+	def writeSharpDefName(sw as SharpWriter)
+		sw.write('[.rootName]')
+		if _genericParams.count
+			sw.write('<')
+			sep = ''
+			for param in _genericParams
+				sw.write(sep)
+				param.writeSharpDef(sw)
+				sep = ', '
+			sw.write('>')
+
+	def writeSharpInheritance(sw as SharpWriter)
+		"""
+		Class uses this to write its base class declaration.
+		No box uses this to write interface implementation--that's handled in the Box class.
+		"""
+		pass
+
+	get sharpInvariantVisibility as String is abstract
+
+	def writeSharpInvariantMethod(sw as SharpWriter)
+		if .compiler.options['contracts'] <> 'none'
+			sw.write('\nint _ih_invariantGuard;\n\n')
+		if .compiler.options['contracts'] <> 'methods'
+			return
+		sw.write('\n[.sharpInvariantVisibility] void invariant_[.rootName]() {\n')
+		sw.indent
+		if _baseClass and (not _baseClass.isFromAssembly or _baseClass.declForName('invariant_[_baseClass.rootName]'))
+			sw.write('invariant_[_baseClass.rootName]();\n')
+		.writeSharpInvariantChecks(sw)
+		sw.dedent
+		sw.write('}\n\n')
+
+	def writeAllSharpInvariantChecks(sw as SharpWriter)
+		"""
+		Writes all C# invariant checks including inherited. In support of -contracts:inline
+		"""
+		_writeAllSharpInvariantChecks(sw, this)
+
+	def _writeAllSharpInvariantChecks(sw as SharpWriter, box as Box)
+		if box.baseClass and not box.baseClass.isFromAssembly
+			_writeAllSharpInvariantChecks(sw, box.baseClass to !)
+		box.writeSharpInvariantChecks(sw)
+		
+	def writeSharpInvariantChecks(sw as SharpWriter)
+		"""
+		Writes the C# invariant checks just for this class.
+		"""
+		for expr in _invariants
+			sharpThis = 'typeof([.sharpName])'
+			sw.write('if (!')
+			expr.writeSharpDef(sw)
+			sw.write(')\n')
+			sw.indent
+			sw.write('throw new InvariantException([expr.sharpSourceSite(.name, "invariant", sharpThis)], ')
+			expr.writeSharpBreakdown(sw)
+			sw.write('[sharpThis], null);\n')
+			sw.dedent
+
+	def writeSharpTest(sw as SharpWriter)
+		# Running tests from the static initializer seems like a good idea, but has been problematic at various times on both .NET and Mono, so no more:
+		# sw.write('\nstatic [.rootName]() { RunTestsIfNeeded(); }\n')
+		# -- er, it turned out that the problem was likely -dst on SourceSite. Consequently we could try returning to static initializers to trigger tests.
+		sw.write('\nprivate static bool __didStartTests = false;\n')
+		newWord = .newForSharpTest
+		sw.write('\npublic static[newWord] void RunTestsIfNeeded() { if (!__didStartTests) RunTests(); }\n')
+		sw.write('\npublic static[newWord] void RunTests()')
+		sw.writeAndIndent(' {\n')
+		sw.write('__didStartTests = true;\n')
+		sw.write('CobraImp.TestBegan("[.name]");\n')
+		if _testMethod
+			sw.write('[_testMethod.sharpName]();\n')
+		for decl in _declsInOrder
+			decl.writeSharpTestInvocation(sw)
+		sw.write('CobraImp.TestEnded("[.name]");\n')
+		sw.dedentAndWrite('}\n')
+
+	var _didWriteSharpTestInvocation = false
+
+	def writeSharpTestInvocation(sw as SharpWriter) is override
+		# used by the test option
+		if _didWriteSharpTestInvocation
+			return
+		if .isFake
+			return
+		if .isGenericDef  # sorry, but static methods always require a type arg even if you don't need it. workaround. make another class with a 'test' section that tests the generic class TODO: make Cobra do this, but then watch for use of the generic param!
+			return
+		assert .parentNameSpace
+		sw.write('\t\t[.sharpRef].RunTestsIfNeeded();\n')
+		_didWriteSharpTestInvocation = true
+
+	get newForSharpTest as String
+		return ''
+
+
+class Class
+	is partial
+
+	get sharpInit as String is override
+		return 'null'
+
+	get sharpInvariantVisibility as String is override
+		return 'protected'
+
+	get sharpKeyWord as String is override
+		return 'class'
+
+	def writeSharpInheritance(sw as SharpWriter) is override
+		sw.write(' : ')
+		if _baseClass
+			sw.write(_baseClass.sharpRef)
+			didWrite = true
+		if didWrite
+			if _baseInterfaces.count
+				sw.write(', ')
+			else
+				sw.write(' ')
+
+	get newForSharpTest as String is override
+		return if(not _baseClass.isFake, ' new', '')
+
+
+class Interface
+	is partial
+
+	get sharpInit as String is override
+		return 'null'
+
+	get sharpInvariantVisibility as String is override
+		throw ShouldNotCallException(.getType)
+
+	get sharpKeyWord as String is override
+		return 'interface'
+
+	def writeSharpInheritance(sw as SharpWriter) is override
+		if _baseInterfaces.count
+			sw.write(' : ')
+
+	def writeSharpInvariantMethod(sw as SharpWriter) is override
+		# Even when invariants are inherited by the classes and structs that implement them,
+		# the code gen for the interface invariant does not go "here", inside the C# interface definition.
+		pass
+
+	def writeSharpTest(sw as SharpWriter) is override
+		# Static methods can't be put in interfaces. However, at some point Cobra should support
+		# tests for interfaces which could then be run against the classes that implement them.
+		# Just requires more code gen smarts.
+		pass
+
+	def writeSharpTestInvocation(sw as SharpWriter) is override
+		pass
+
+
+class Struct
+	is partial
+
+	get sharpInit as String is override
+		return ''  # blank to indicate there is no valid init
+
+	get sharpInvariantVisibility as String is override
+		return 'private'
+
+	get sharpKeyWord as String is override
+		return 'struct'
+
+	def writeSharpInheritance(sw as SharpWriter) is override
+		if _baseInterfaces.count
+			sw.write(' : ')
+
+
+class MethodSig
+	is partial
+
+	def writeSharpDef(sw as SharpWriter) is override
+		.writeSharpAttribs(sw)
+		.writeSharpIsNames(sw)
+		sw.write('delegate [.resultType.sharpRef] [.rootName]')
+		if _genericParams.count
+			sw.write('<')
+			sep = ''
+			for genericParam in _genericParams
+				sw.write(sep)
+				genericParam.writeSharpDef(sw)
+				sep = ', '
+			sw.write('>')
+		sw.write('(')
+		sep = ''
+		for param in .params
+			sw.write(sep)
+			param.writeSharpDef(sw)
+			sep = ', '
+		sw.write(');\n')
+
+	def writeSharpTest(sw as SharpWriter) is override
+		pass
+
+	def writeSharpTestInvocation(sw as SharpWriter) is override
+		pass
+
+
+class GenericParam
+	is partial
+
+	get sharpInit as String is override
+		return 'default([_name])'
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		sw.write(.name)
+
+	def writeSharpConstraint(sw as SharpWriter)
+		if _constraints.count
+			sw.write(' where [_name] :  ')
+			sep = ''
+			for constraint in _constraints
+				sw.write(sep)
+				constraint.writeSharpDef(sw)
+				sep = ', '
+			sw.write('\n')
+
+
+class GenericClassConstraint
+	is partial
+
+	def writeSharpDef(sw as SharpWriter) is override
+		sw.write('class')
+
+
+class GenericStructConstraint
+	is partial
+
+	def writeSharpDef(sw as SharpWriter) is override
+		sw.write('struct')
+
+
+class GenericCallableConstraint
+	is partial
+
+	def writeSharpDef(sw as SharpWriter) is override
+		sw.write('new()')
+
+
+class GenericTypeConstraint
+	is partial
+
+	def writeSharpDef(sw as SharpWriter) is override
+		sw.write(_representedType.sharpRef)
+
+
+class Extension
+	is partial
+
+	get sharpInit as String is override
+		return _extendedBox.sharpInit
+
+	get sharpInvariantVisibility as String is override
+		return _extendedBox.sharpInvariantVisibility
+
+	get sharpKeyWord as String is override
+		return 'class'  # because the extension is always housed in a C# class
+
+	var _sharpName as String?
+	
+	get sharpName as String is override
+		if not _sharpName
+			_sharpName = if(_clrType, _clrType.name, 'Extend_[.extendedBox.sharpNameComponent]_[Utils.toIdentifier(Path.getFileNameWithoutExtension(.compiler.curModule.fileName) to !)]')
+		return _sharpName to !
+
+	get sharpThis as String is override
+		return '_lh_this'
+
+	def writeSharpDefName(sw as SharpWriter) is override
+		# replace base behavior
+		sw.write(.sharpName)
+
+	def writeSharpDef(sw as SharpWriter) is override
+		for decl in .declsInOrder
+			if decl inherits BoxMember
+				decl.sharpExtraIsNames = {'static'}
+				if decl inherits AbstractMethod
+					decl.params.insert(0, Param('_lh_this', .extendedBox, true).bindAll to Param)
+		base.writeSharpDef(sw)
+
+
+##
 ## Expressions
 ##
 
