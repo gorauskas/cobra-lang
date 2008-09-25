@@ -718,6 +718,7 @@ class InExpr
 
 
 class InheritsExpr
+	is partial
 	inherits BinaryOpExpr
 
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
@@ -782,11 +783,6 @@ class InheritsExpr
 					pass
 				else
 					.throwError('Cannot test "[.op.toLower]" against a [(defi to dynamic).englishName].')
-				
-	def _writeSharpDef(sw as SharpWriter) is override
-		_left.writeSharpDef(sw)
-		sw.write(' is ')
-		_right.writeSharpDef(sw, false)
 
 
 class AbstractToExpr
@@ -815,6 +811,7 @@ class AbstractToExpr
 
 
 class ToExpr
+	is partial
 	inherits AbstractToExpr
 
 	var _rightTypeExpr as IPotentialTypeExpr
@@ -841,23 +838,9 @@ class ToExpr
 		else
 			.throwError('Cannot locate a type for the type cast "to [_rightTypeExpr.toCobraSource]".')
 
-	def _writeSharpDef(sw as SharpWriter) is override
-		rightType = _rightTypeExpr.potentialType to !   # its not nil or _bindImp would have thrown an error
-		if rightType is .compiler.passThroughType
-			_left.writeSharpDef(sw)
-			return
-		sw.write('(')
-		_right.writeSharpDef(sw, false)  # double parens would be pointless and also causes a C# error
-		sw.write(')')
-		if not rightType inherits NilableType and rightType.isReference
-			sw.write('CobraImp.CheckNonNil<[_left.type.sharpRef]>([.sharpThis], [Utils.sharpStringLiteralFor(_left.toCobraSource)], ')
-			_left.writeSharpDef(sw, false)
-			sw.write(', [.sharpSourceSite])')
-		else
-			_left.writeSharpDef(sw)
-
 
 class ToQExpr
+	is partial
 	inherits AbstractToExpr
 
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
@@ -870,36 +853,9 @@ class ToQExpr
 			_type = NilableType(_type).bindAll to NilableType  # CC: axe cast when 'as this' is supported
 		# TODO: warn about redundancy
 
-	def _writeSharpDef(sw as SharpWriter) is override
-		# x to? int     --> ((x is int || x is int?) ? (int?)x : (int?)null)
-		# x to? int?    --> ((x is int || x is int?) ? (int?)x : (int?)null)
-		# ^ but this would cause multiple evaluation of x, so...
-		# x to? int?	--> (int?)CobraImp.ToOrNil(x)
-
-		# x to? string  --> (x as String)
-		# x to? string? --> (x as String)
-		right = .right
-		if right inherits TypeExpr
-			t = right.containedType to !
-		else if right inherits IdentifierExpr
-			t = right.definition to IType
-		else
-			throw FallThroughException(t)
-		# TODO?: t = t.realType
-#		assert t inherits IType
-		if t inherits NilableType
-			t = t.theWrappedType
-		typeSharpRef = t.sharpRef
-		if t.isReference
-			sw.write('(')
-			.left.writeSharpDef(sw)
-			sw.write(') as [typeSharpRef]')
-		else
-			sw.write('[typeSharpRef]?)CobraImp.ToOrNil<[typeSharpRef]>(')
-			.left.writeSharpDef(sw)
-
 
 class CoalesceExpr
+	is partial
 	inherits BinaryOpExpr
 	"""
 	x ? y ==> if(x is nil, y, x)
@@ -922,13 +878,9 @@ class CoalesceExpr
 			# the catch all case
 			_type = _left.type  # TODO: should be greatest common denominator between the two
 
-	def _writeSharpDef(sw as SharpWriter) is override
-		_left.writeSharpDef(sw)
-		sw.write(' ?? ')
-		_right.writeSharpDef(sw)
-
 
 class InverseCoalesceExpr
+	is partial
 	inherits BinaryOpExpr
 	"""
 	x ! y ==> if(x is not nil, y, x)
@@ -952,26 +904,9 @@ class InverseCoalesceExpr
 			# the catch all case
 			_type = _left.type  # TODO: should be greatest common denominator between the two
 
-	def _writeSharpDef(sw as SharpWriter) is override
-		if _right inherits NilLiteral
-			# `left ! nil` always returns nil -- it's like a no-op
-			if _left inherits IdentifierExpr
-				# no side effect possibl
-				sw.write('null')
-			else
-				# in case `left` has side effects, evaluate it
-				sw.write('CobraImp.Return<[_type.sharpRef]>(null, ')
-				_left.writeSharpDef(sw, false)
-				sw.write(')')
-		else
-			_left.writeSharpDef(sw)
-			sw.write('==null ? null : ')
-			if not _right.type inherits NilableType and not _right.type inherits NilType
-				sw.write('([_right.type.sharpRef]?)')
-			_right.writeSharpDef(sw)
-
 
 class CoalesceAssignExpr
+	is partial
 	inherits AbstractAssignExpr
 	"""
 	x ?= y
@@ -986,16 +921,9 @@ class CoalesceAssignExpr
 		# TODO: error check that the right hand type is not nilable?
 		_type = _right.type
 
-	def _writeSharpDef(sw as SharpWriter) is override
-		# L = L * R
-		_left.writeSharpDef(sw)
-		sw.write(' = ')
-		_left.writeSharpDef(sw)
-		sw.write(' ?? ')
-		_right.writeSharpDef(sw)
-
 
 class InverseCoalesceAssignExpr
+	is partial
 	inherits AbstractAssignExpr
 	"""
 	x != y
@@ -1008,16 +936,3 @@ class InverseCoalesceAssignExpr
 		base._bindImp
 		# TODO: any error checks here?
 		_type = _left.type
-
-	def _writeSharpDef(sw as SharpWriter) is override
-		_left.writeSharpDef(sw)
-		sw.write(' = ')
-		if _right inherits NilLiteral
-			# `left != nil` is the same as `left = nil`
-			sw.write('null')
-		else
-			_left.writeSharpDef(sw)
-			sw.write('==null ? null : ')
-			if not _right.type inherits NilableType and not _right.type inherits NilType
-				sw.write('([_right.type.sharpRef]?)')
-			_right.writeSharpDef(sw)

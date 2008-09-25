@@ -1674,3 +1674,167 @@ class InExpr
 			sw.write(',')
 			_right.writeSharpDef(sw, false)
 			sw.write(')')
+
+
+class InheritsExpr
+	is partial
+				
+	def _writeSharpDef(sw as SharpWriter) is override
+		_left.writeSharpDef(sw)
+		sw.write(' is ')
+		_right.writeSharpDef(sw, false)
+
+
+class ToExpr
+	is partial
+
+	def _writeSharpDef(sw as SharpWriter) is override
+		rightType = _rightTypeExpr.potentialType to !   # its not nil or _bindImp would have thrown an error
+		if rightType is .compiler.passThroughType
+			_left.writeSharpDef(sw)
+			return
+		sw.write('(')
+		_right.writeSharpDef(sw, false)  # double parens would be pointless and also causes a C# error
+		sw.write(')')
+		if not rightType inherits NilableType and rightType.isReference
+			sw.write('CobraImp.CheckNonNil<[_left.type.sharpRef]>([.sharpThis], [Utils.sharpStringLiteralFor(_left.toCobraSource)], ')
+			_left.writeSharpDef(sw, false)
+			sw.write(', [.sharpSourceSite])')
+		else
+			_left.writeSharpDef(sw)
+
+
+class ToQExpr
+	is partial
+
+	def _writeSharpDef(sw as SharpWriter) is override
+		# x to? int     --> ((x is int || x is int?) ? (int?)x : (int?)null)
+		# x to? int?    --> ((x is int || x is int?) ? (int?)x : (int?)null)
+		# ^ but this would cause multiple evaluation of x, so...
+		# x to? int?	--> (int?)CobraImp.ToOrNil(x)
+
+		# x to? string  --> (x as String)
+		# x to? string? --> (x as String)
+		right = .right
+		if right inherits TypeExpr
+			t = right.containedType to !
+		else if right inherits IdentifierExpr
+			t = right.definition to IType
+		else
+			throw FallThroughException(t)
+		# TODO?: t = t.realType
+#		assert t inherits IType
+		if t inherits NilableType
+			t = t.theWrappedType
+		typeSharpRef = t.sharpRef
+		if t.isReference
+			sw.write('(')
+			.left.writeSharpDef(sw)
+			sw.write(') as [typeSharpRef]')
+		else
+			sw.write('[typeSharpRef]?)CobraImp.ToOrNil<[typeSharpRef]>(')
+			.left.writeSharpDef(sw)
+
+
+class CoalesceExpr
+	is partial
+
+	def _writeSharpDef(sw as SharpWriter) is override
+		_left.writeSharpDef(sw)
+		sw.write(' ?? ')
+		_right.writeSharpDef(sw)
+
+
+class InverseCoalesceExpr
+	is partial
+
+	def _writeSharpDef(sw as SharpWriter) is override
+		if _right inherits NilLiteral
+			# `left ! nil` always returns nil -- it's like a no-op
+			if _left inherits IdentifierExpr
+				# no side effect possibl
+				sw.write('null')
+			else
+				# in case `left` has side effects, evaluate it
+				sw.write('CobraImp.Return<[_type.sharpRef]>(null, ')
+				_left.writeSharpDef(sw, false)
+				sw.write(')')
+		else
+			_left.writeSharpDef(sw)
+			sw.write('==null ? null : ')
+			if not _right.type inherits NilableType and not _right.type inherits NilType
+				sw.write('([_right.type.sharpRef]?)')
+			_right.writeSharpDef(sw)
+
+
+class CoalesceAssignExpr
+	is partial
+
+	def _writeSharpDef(sw as SharpWriter) is override
+		# L = L * R
+		_left.writeSharpDef(sw)
+		sw.write(' = ')
+		_left.writeSharpDef(sw)
+		sw.write(' ?? ')
+		_right.writeSharpDef(sw)
+
+
+class InverseCoalesceAssignExpr
+	is partial
+
+	def _writeSharpDef(sw as SharpWriter) is override
+		_left.writeSharpDef(sw)
+		sw.write(' = ')
+		if _right inherits NilLiteral
+			# `left != nil` is the same as `left = nil`
+			sw.write('null')
+		else
+			_left.writeSharpDef(sw)
+			sw.write('==null ? null : ')
+			if not _right.type inherits NilableType and not _right.type inherits NilType
+				sw.write('([_right.type.sharpRef]?)')
+			_right.writeSharpDef(sw)
+
+
+##
+## Attributes
+##
+
+class AttributeDecl
+	is partial
+
+	def writeSharpDef(sw as SharpWriter) is override
+		.writeSharpDef(sw, '')
+
+	def writeSharpDef(sw as SharpWriter, prefix as String)
+		sw.write(r'[')
+		sw.write(prefix)
+		expr = _expr
+		sw.write('[expr.name]')
+		if expr.args.count
+			sw.write('(')
+			sep = ''
+			for arg in expr.args
+				sw.write(sep)
+				if arg inherits AssignExpr
+					sw.write(((arg.left to dynamic).name to String).capped) # CC: wouldn't need this if extension methods were registered with dynamic binder
+					sw.write('=')
+					arg = arg.right
+				assert not arg inherits AssignExpr
+				arg.writeSharpDefInContext(sw)
+				sep = ', '
+			sw.write(')')
+		sw.writeLine(r']')
+
+
+class AssemblyDecl
+	is partial
+
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		for attrib in _attribs
+			attrib.writeSharpDef(sw, 'assembly: ')
+
+	def writeSharpTestInvocation(sw as SharpWriter)
+		pass
+	

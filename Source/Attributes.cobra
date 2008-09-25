@@ -6,6 +6,7 @@ class AttributeList
 
 
 class AttributeDecl
+	is partial
 	inherits NamedNode
 
 	var _expr as PostCallExpr
@@ -51,31 +52,9 @@ class AttributeDecl
 		else
 			return false
 
-	def writeSharpDef(sw as SharpWriter) is override
-		.writeSharpDef(sw, '')
-
-	def writeSharpDef(sw as SharpWriter, prefix as String)
-		sw.write(r'[')
-		sw.write(prefix)
-		expr = _expr
-		sw.write('[expr.name]')
-		if expr.args.count
-			sw.write('(')
-			sep = ''
-			for arg in expr.args
-				sw.write(sep)
-				if arg inherits AssignExpr
-					sw.write(((arg.left to dynamic).name to String).capped) # CC: wouldn't need this if extension methods were registered with dynamic binder
-					sw.write('=')
-					arg = arg.right
-				assert not arg inherits AssignExpr
-				arg.writeSharpDefInContext(sw)
-				sep = ', '
-			sw.write(')')
-		sw.writeLine(r']')
-
 
 class AssemblyDecl
+	is partial
 	inherits NamedNode
 	implements INameSpaceMember
 	"""
@@ -110,11 +89,6 @@ class AssemblyDecl
 	def extensionMemberFor(box as Box, name as String) as IMember?
 		return nil
 
-	def writeSharpDef(sw as SharpWriter) is override
-		base.writeSharpDef(sw)
-		for attrib in _attribs
-			attrib.writeSharpDef(sw, 'assembly: ')
-
 	def _bindInt
 		base._bindInt
 		for attrib in _attribs
@@ -134,9 +108,6 @@ class AssemblyDecl
 	# TODO: shouldn't need these, but INameSpaceMember forces it on us (mostly/entirely through inheriting IMember)
 	
 	def unNilReturnType
-		pass
-	
-	def writeSharpTestInvocation(sw as SharpWriter)
 		pass
 	
 	get isCallable as bool
