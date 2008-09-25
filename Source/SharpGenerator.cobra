@@ -453,6 +453,153 @@ class CobraModule
 
 
 ##
+## Container and friends
+##
+
+interface IParentSpace
+	is partial
+	
+	get sharpRef as String
+
+
+class Container<of TMember>
+	is partial
+
+	get sharpInit as String is abstract
+
+	get sharpNameComponent as String
+		"""
+		Returns a string that can be used in a C# identifier. That means it cannot have special symbols such as period or left bracket.
+		"""
+		ensure result.length > 0  # TODO? Move to interface
+		return .sharpRef
+
+	var _sharpRef as String?
+
+	get sharpRef as String is override
+		if _sharpRef is nil and .didBindImp
+			_sharpRef = _computeSharpRef
+			return _sharpRef to !
+		else
+			return _computeSharpRef
+
+	get sharpParamRef as String
+		return .sharpRef
+
+	get _computeSharpRef as String
+		if .parent
+			s = .parent.sharpRef
+			if s.length and not s.endsWith('::')  # C# has weird "global::" name
+				s += '.'
+			s += .sharpName
+		else
+			s = .sharpName
+		return s
+
+	def writeSharpIsNames(sw as SharpWriter)
+		# TODO: cache this somewhere
+		accessLevels = ['public', 'protected', 'internal', 'protected internal', 'private']
+		# CC: accessLevels = 'public,protected,internal,protected internal,private'.split(c',')
+			# same names in both Cobra and C#
+
+		# TODO:
+		# if isNames is nil
+		#	isNames = _isNames
+		isNames = List<of String>()
+		isNames.addRange(_isNames)
+		if .defaultAccessLevel.length
+			found = false
+			for level as String in accessLevels  # CC: axe as
+				if level in isNames
+					found = true
+			if not found
+				isNames.insert(0, .defaultAccessLevel)
+		isNameCS = {
+			# only have to specify the ones that are different
+			'shared': 'static',
+			'nonvirtual': '',
+		}
+		sep = ''
+		for name in isNames
+			name = Utils.getSS(isNameCS to passthrough, name, name) to !
+			sw.write(sep)
+			sw.write(name)
+			sep = ' '
+		if sep.length
+			sw.write(' ')
+
+	def writeSharpTestInvocation(sw as SharpWriter)
+		pass
+
+
+interface IMember
+	is partial
+
+
+	def writeSharpDef(sw as SharpWriter)
+		"""
+		Write the C# code for this member declaration to the given
+		SharpWriter.
+		"""
+
+	def writeSharpTestInvocation(sw as SharpWriter)
+		"""
+		Write the C# call to the test method for this member.
+		"""
+
+
+##
+## Namespace
+##
+
+class NameSpace
+	is partial
+
+	get sharpInit as String is override  # TODO: remove when not a type
+		assert false
+		return ''
+
+	get sharpRef as String is override
+		if _superNameSpace is nil
+			return 'global::'
+		else
+			return .fullName
+
+	get sharpQualifier as String
+		if _superNameSpace is nil
+			return 'global::'
+		else
+			return .fullName + '.'
+	
+	def writeSharpDef(sw as SharpWriter) is override
+		assert not .isUnified
+		base.writeSharpDef(sw)
+		if not .isRoot
+			sw.writeAndIndent('namespace [.name] {\n\n')
+		for ud in _useDirectives
+			ud.writeSharpDef(sw)
+		for decl in _declsInOrder
+			if decl inherits Box
+				.compiler.boxStack.push(decl)
+			decl.writeSharpDef(sw)
+			if decl inherits Box
+				.compiler.boxStack.pop
+		if not .isRoot
+			sw.dedentAndWrite('} // namespace [.name]\n')
+
+	def writeSharpTestInvocation(sw as SharpWriter) is override
+		for decl in _declsInOrder
+			decl.writeSharpTestInvocation(sw)
+	
+
+class UseDirective
+	is partial
+
+	def writeSharpDef(sw as SharpWriter) is override
+		sw.write('using [_fullName];\n')
+
+
+##
 ## Types
 ##
 
@@ -656,99 +803,48 @@ class UnspecifiedType
 
 
 ##
-## Container and friends
+## Enums
 ##
 
-interface IParentSpace
-	is partial
-	
-	get sharpRef as String
-
-
-class Container<of TMember>
+class EnumDecl
 	is partial
 
-	get sharpInit as String is abstract
+	get sharpInit as String is override
+		return .sharpRef + '.' + _declsInOrder[0].name.capped
 
-	get sharpNameComponent as String
-		"""
-		Returns a string that can be used in a C# identifier. That means it cannot have special symbols such as period or left bracket.
-		"""
-		ensure result.length > 0  # TODO? Move to interface
-		return .sharpRef
-
-	var _sharpRef as String?
-
-	get sharpRef as String is override
-		if _sharpRef is nil and .didBindImp
-			_sharpRef = _computeSharpRef
-			return _sharpRef to !
-		else
-			return _computeSharpRef
-
-	get sharpParamRef as String
-		return .sharpRef
-
-	get _computeSharpRef as String
-		if .parent
-			s = .parent.sharpRef
-			if s.length and not s.endsWith('::')  # C# has weird "global::" name
-				s += '.'
-			s += .sharpName
-		else
-			s = .sharpName
-		return s
-
-	def writeSharpIsNames(sw as SharpWriter)
-		# TODO: cache this somewhere
-		accessLevels = ['public', 'protected', 'internal', 'protected internal', 'private']
-		# CC: accessLevels = 'public,protected,internal,protected internal,private'.split(c',')
-			# same names in both Cobra and C#
-
-		# TODO:
-		# if isNames is nil
-		#	isNames = _isNames
-		isNames = List<of String>()
-		isNames.addRange(_isNames)
-		if .defaultAccessLevel.length
-			found = false
-			for level as String in accessLevels  # CC: axe as
-				if level in isNames
-					found = true
-			if not found
-				isNames.insert(0, .defaultAccessLevel)
-		isNameCS = {
-			# only have to specify the ones that are different
-			'shared': 'static',
-			'nonvirtual': '',
-		}
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		if 'fake' in _isNames
+			return
+		.writeSharpIsNames(sw)
+		sw.write('enum [_name]')
+		storageType = _storageType
+		if storageType and storageType is not .compiler.intType
+			sw.write(' [storageType.sharpRef]')
+		sw.write(' {\n')
+		sw.indent
 		sep = ''
-		for name in isNames
-			name = Utils.getSS(isNameCS to passthrough, name, name) to !
+		i = 0
+		for em as EnumMember in .declsInOrder
 			sw.write(sep)
-			sw.write(name)
-			sep = ' '
-		if sep.length
-			sw.write(' ')
+			sw.write(em.name.capped)
+			if em.value
+				sw.write(' = [em.value]')
+			i += 1
+			sep = ',\n'
+		sw.write('\n')
+		sw.dedent
+		sw.write('}\n\n')
+
+
+class EnumMember
+	is partial
 
 	def writeSharpTestInvocation(sw as SharpWriter)
 		pass
 
-
-interface IMember
-	is partial
-
-
-	def writeSharpDef(sw as SharpWriter)
-		"""
-		Write the C# code for this member declaration to the given
-		SharpWriter.
-		"""
-
-	def writeSharpTestInvocation(sw as SharpWriter)
-		"""
-		Write the C# call to the test method for this member.
-		"""
+	get sharpRef as String is override
+		return _enumDecl.sharpRef + '.' + .sharpName
 
 
 ##

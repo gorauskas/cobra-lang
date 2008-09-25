@@ -10,6 +10,7 @@ interface INameSpaceMember
 
 
 class NameSpace
+	is partial
 	inherits Container<of INameSpaceMember>
 	implements IParentSpace, INameSpaceMember
 
@@ -50,10 +51,6 @@ class NameSpace
 		assert false
 		return true
 
-	get sharpInit as String is override  # TODO: remove when not a type
-		assert false
-		return ''
-	
 	get defaultAccessLevel as String is override  # TODO: remove when not a type
 		assert false
 		return ''
@@ -287,40 +284,9 @@ class NameSpace
 				else
 					uni.addDecl(decl)
 
-	get sharpRef as String is override
-		if _superNameSpace is nil
-			return 'global::'
-		else
-			return .fullName
-
-	get sharpQualifier as String
-		if _superNameSpace is nil
-			return 'global::'
-		else
-			return .fullName + '.'
-	
-	def writeSharpDef(sw as SharpWriter) is override
-		assert not .isUnified
-		base.writeSharpDef(sw)
-		if not .isRoot
-			sw.writeAndIndent('namespace [.name] {\n\n')
-		for ud in _useDirectives
-			ud.writeSharpDef(sw)
-		for decl in _declsInOrder
-			if decl inherits Box
-				.compiler.boxStack.push(decl)
-			decl.writeSharpDef(sw)
-			if decl inherits Box
-				.compiler.boxStack.pop
-		if not .isRoot
-			sw.dedentAndWrite('} // namespace [.name]\n')
-
-	def writeSharpTestInvocation(sw as SharpWriter) is override
-		for decl in _declsInOrder
-			decl.writeSharpTestInvocation(sw)
-
 
 class UseDirective
+	is partial
 	inherits SyntaxNode
 
 	var _nameParts as List<of String>
@@ -365,6 +331,3 @@ class UseDirective
 		#assert curNS, 'last name=[name], dottedNames=[.dottedNames]'
 		_boundNameSpace = curNS
 		_didBindUse = true
-
-	def writeSharpDef(sw as SharpWriter) is override
-		sw.write('using [_fullName];\n')
