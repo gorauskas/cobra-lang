@@ -3,16 +3,17 @@ class EnumDecl
 	inherits Container<of EnumMember>
 	implements IBoxMember, INameSpaceMember
 
-	# TODO: can an enum decl have attributes?
 	# TODO: defaultAccessLevel = 'public'
 
+	var _attribs as AttributeList
 	var _storageTypeNode as ITypeProxy?
 	var _storageType as IType?
 	var _clrType as Type?
 	var _needScanClrType as bool
 
-	def init(parent as IParentSpace?, token as IToken, name as String, isNames as List<of String>, storageTypeNode as ITypeProxy?, docString as String, enumMembers as List<of EnumMember>)
+	def init(parent as IParentSpace?, token as IToken, name as String, isNames as List<of String>, attribs as AttributeList, storageTypeNode as ITypeProxy?, docString as String, enumMembers as List<of EnumMember>)
 		base.init(parent, token, name, isNames, docString)
+		_attribs = attribs
 		_storageTypeNode = storageTypeNode
 		for em in enumMembers
 			.addDecl(em)
@@ -20,11 +21,13 @@ class EnumDecl
 
 	def init(parent as IParentSpace?, clrType as Type, isNames as List<of String>, docString as String?)
 		base.init(parent, TokenFix.empty, clrType.name, isNames, docString)
+		_attribs = AttributeList()
 		_clrType = clrType
 		_storageTypeNode = ClrTypeProxy(Enum.getUnderlyingType(clrType))
 		_needScanClrType = true
 
 	def _scanClrType
+		# TODO: read attribs
 		_needScanClrType = false
 		clrType = _clrType to !
 		isByte = Enum.getUnderlyingType(clrType).name == 'Byte'
@@ -47,6 +50,9 @@ class EnumDecl
 			member.enumDecl = this
 			.addDecl(member)
 			i += 1
+
+	get attributes as AttributeList is override
+		return _attribs
 
 	get defaultAccessLevel as String is override
 		return 'public'
@@ -77,6 +83,7 @@ class EnumDecl
 
 	def _bindInt is override
 		base._bindInt
+		for attrib in .attributes, attrib.bindInt
 		if _storageTypeNode
 			_storageType = _storageTypeNode.realType
 			# TODO: give error if _storageType is not some kind of int or char or whatever is legal
@@ -85,6 +92,7 @@ class EnumDecl
 
 	def _bindImp is override
 		base._bindImp
+		for attrib in .attributes, attrib.bindImp
 		# TODO: can this be removed? since the storage type is always something primitive like 'int', there should be no need for enum to give it .bindImp
 		if _storageType
 			_storageType.bindImp
