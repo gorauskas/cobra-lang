@@ -1,0 +1,186 @@
+class KeywordSpecs
+	"""
+	Specifies the keywords, their logical groups and documentation.
+	
+	The tokenizer obtains its list of keywords from this class.
+
+	Also, this information can be used for command line help and to generate documentation.
+	"""
+
+	shared
+
+		var _keywords as List<of String>?
+
+		def keywords as List<of String>
+			if _keywords is nil, _keywords = .unpackKeywords(.rawSpecs)
+			return List<of String>(_keywords to !)
+
+		def unpackKeywords(specs as List<of String>) as List<of String>
+			"""
+			Return a list of keyword names in no particular order.
+			"""
+			keywords = List<of String>()
+			for spec in specs
+				i = spec.indexOf('|')
+				assert i > 0
+				name = spec[:i].trim
+				if name.endsWith('(r)')
+					name = name[:-3].trim
+				keywords.add(name)
+			return keywords
+
+		var _groups as Dictionary<of String, List<of Keyword>>?
+
+		def groups as Dictionary<of String, List<of Keyword>>
+			if _groups is nil, _groups = .unpackGroups(.rawSpecs)
+			return _groups to !
+
+		def unpackGroups(specs as List<of String>) as Dictionary<of String, List<of Keyword>>
+			"""
+			Return a dictionary of keyword groups.
+			"""
+			groups = Dictionary<of String, List<of Keyword>>()
+			for spec in specs
+				parts = spec.trim.split(c'|')
+				assert parts.length >= 2
+				name = parts[0].trim
+				if name.endsWith('(r)')
+					reservedForFutureUse = true
+					name = name[:-3].trim
+				else
+					reservedForFutureUse = false
+				for part in parts  # CC: parts[1:]
+					i = part.indexOf(':')
+					if i == -1, continue
+					group = part[:i].trim
+					description = part[i+1:].trim
+					groups[group].add(Keyword(name, description, reservedForFutureUse))
+			return groups
+
+		get rawSpecs as List<of String>
+			# format:
+			#     word | explanation 1 | explanation 2 | ... | explanation N
+			# a 'word' can be suffixed with ' (r)' to indicate 'reserved'
+			# an 'explanation' is: group: text
+			# where 'group' is the group of keywords that the explanation belongs to
+			return [
+				'use         | module: Specify namespaces used in module.',
+				'import (r)  | module: From another Cobra module, import all the "use" clauses and declare the same namespace.',
+				'namespace   | declarative: Specify the namespace that subsequent declarations reside in.',
+				'enum        | declarative: Declare an enumeration type.',
+				'class       | declarative: Declare a class type.',
+				'inherits    | declarative: Specify inheritance for a class or interface. | operator: Test type inheritance.',
+				'implements  | declarative: Specify the interfaces that a class implements. | operator: Test interface implementation.',
+				'interface   | declarative: Declare an interface.',
+				'struct      | declarative: Declare a struct.',
+				'extend      | declarative: Declare extension methods on an existing type.',
+				'where       | declarative: Specify constraints on generic parameters. | expression: The filtering condition on a `for` expression.',
+				'must        | declarative: Specify constraints on generic parameters (`must be`).',
+				'be          | declarative: Specify constraints on generic parameters (`must be`).',
+				'callable    | declarative: Specify constraint that generic type argument must be callable/instantiable.',
+				'cue         | declarative: Reserved for future use.',
+				'invariant   | declarative, contracts: Declare invariant conditions that are true on objects after any public call.',
+				'def         | declarative: Declare a method.',
+				'sig         | declarative: Declare a method signature.',
+				'as          | declarative: Declare the type for an argument, variable, method return, property, etc.',
+				'get         | declarative: Declare property reader/accessor. | expression: The evaluation result on a `for` expression.',
+				'set         | declarative: Declare property writer/mutator.',
+				'pro         | declarative: Declare a property.',
+				'var         | declarative: Declare a variable at the object or type level. Also, used as `from var` in property declarations. | expression: Refer to the variable that matches the containing property name.',
+				'from        | declarative: Specify the backing variable for a property. Also, may be used for future LINQ syntax.',
+				'has         | declarative: Specify attributes to attach to the containing declaration.',
+				'body        | declarative: Declare the body of a method, indexer or property after blocked contracts or unit tests.',
+				'test        | declarative: Declare a unit test attached to the containing declaration.',
+				'shared      | declarative: Specify that a member is shared among all instances. (Called `static` in some languages.)',
+				'is          | declarative: Specify modifies on a member such as `override` and `shared`.',
+				'event       | declarative: Declare an event.',
+				'of          | declarative: Specify the underlying type of an enumeration. Also, specify type arguments to a generic type.',
+				'inlined (r) | declarative: ',
+				'virtual     | is name: Specify that the member can be overidden. On by default.',
+				'override    | is name: Specify that the member is overriding the same member in an ancestor type.',
+				'bool        | type: The Boolean data type.',
+				'char        | type: The (Unicode) character data type.',
+				'int         | type: The default integer data type; signed 32-bit. Alias for `int32`.',
+				'uint        | type: The unsigned integer data type; unsigned 32-bit. Alias for `uint32`.',
+				'decimal     | type: The default decimal data type for accurate, but slower, decimal point arithmetic.',
+				'float       | type: The floating point type, 64-bit, for less accurate, but faster decimal point arithmetic. Alias for `float64`.',
+				'dynamic     | type: The `dynamic` type for which all operations become late bound.`',
+				'same (r)    | type: The type indicating the same type as the current instance which will always be the same as the enclosing type or a descendant thereof.',
+				'number      | type: The numeric type which defaults to `decimal`. Via command line args or directives, can be set to a different decimal point type.',
+				'require     | contracts: Declare the preconditions of a method, property or indexer.',
+				'ensure      | contracts: Declare the postconditions of a method, property or indexer.',
+				'old         | contracts: Access the old, or original, value of an expression before the method executed.',
+				'implies     | contracts: Express a conditional in a contract.',
+				'assert      | statement: Assert that a condition is true, or throw an AssertException.',
+				'branch      | statement: Branch control against multiple choices. (Called `switch` in some languages.)',
+				'on          | statement: Used for `branch` and `trace` statements.',
+				'off         | statement: Used for `trace` statements.',
+				'expect      | statement: Expect and trap an exception, or throw an ExpectException.',
+				'if          | statement: The classic `if` statement. Execute statements if a condition is true.',
+				'else        | statement: The `else` portion of an `if-else` statement.',
+				'using       | statement: Use a resource and dispose it afterwards.',
+				'while       | statement: The classic `while` statement. Execute statements while a condition is true.',
+				'post        | statement: The `post while` loop evaluates its expression after the statements execute.',
+				'for         | statement: Enumerate through objects or numbers.',
+				'break       | statement: Break out of the closest loop.',
+				'continue    | statement: Continue at the top of the closest loop.',
+				'try         | statement: Start an exception catch/trap boundary block.',
+				'catch       | statement: Catch/trap an exception type or all exceptions.',
+				'success     | statement: Act when catch/trap block succeeds with no exception.',
+				'finally     | statement: Act regardless of exception catch/trap success.',
+				'throw       | statement: Throw an exception.',
+				'pass        | statement: Placeholder for an empty block.',
+				'print       | statement: Print output.',
+				'stop        | statement: Stop the newline after a print.',
+				'trace       | statement: Emit trace output for debugging purposes.',
+				'return      | statement: Return a value from a method, property or indexer.',
+				'yield       | statement: Yield a value from a method, property or indexer.',
+				'listen      | statement: Listen to an event.',
+				'ignore      | statement: Stop listening to an event.',
+				'raise       | statement: Raise an event.',
+				'end (r)     | statement: For Python Server Pages (PSP) style "end syntax".',
+				'ref         | expression: Refer to a method without invoking it.',
+				'this        | expression: Reference to the current object/instance at run-time.',
+				'base        | expression: Reference to the base class.',
+				'to          | expression: Cast an expression to a type or throw InvalidCastException.',
+				'to\\?       | expression: Cast an expression to a type or evaluate to `nil`.',
+				'and         | expression: Logical "and".',
+				'or          | expression: Logical "or".',
+				'not         | expression: Logical negation.',
+				'any         | expression: Evaluate to true if any element in a sequence is true.',
+				'every (r)   | expression:',
+				'all         | expression: Evaluate to true if all elements in a sequent is true.',
+				'each (r)    | expression:',
+				'in          | expression: Test inclusion | arg modifier: Value passed into method only (the default).',
+				"passthrough | expression: Psuedo-type used in typecasting in order to bypass the compiler's typechecking. Code pass through to the backend (C#, Java, whatever).",
+				'true        | expression: The Boolean value `true`.',
+				'false       | expression: The Boolean value `value`.',
+				'nil         | expression: The special value `nil`. Called `null`, `None` and `Nothing` in some languages.',
+				'vari        | arg modifier: Specify that the parameter captures variable number of arguments.',
+				'out         | arg modifier: Value returned/set by method, but not passed in.',
+				'inout       | arg modifier: Value passed in and returned/set by the method.',
+				'objc (r)    | misc: For potential Objective-C integration.',
+				'except      | misc: Catch Python syntax for exceptions to give helpful error message.',
+			]
+
+
+class Keyword
+	"""
+	Used by KeywordSpecs.unpackGroups to capture the information about a keyword including
+	its name, description and whether or not it's reserved for future use.
+	"""
+
+	var _name as String
+	var _description as String
+	var _reservedForFutureUse as bool
+	
+	def init(name as String, description as String, reservedForFutureUse as bool)
+		_name = name
+		_description = description
+		_reservedForFutureUse = reservedForFutureUse
+
+	get name from var
+
+	get description from var
+
+	get reservedForFutureUse from var
