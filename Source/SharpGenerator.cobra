@@ -1237,6 +1237,158 @@ class Extension
 
 
 ##
+## Vars
+##
+
+interface IVar
+	is partial
+
+	get useSharpNameStack as Stack<of String>
+
+	get sharpAssignmentNames as List<of String>?
+		"""
+		Return the C# names to assign to above and beyond the sharpName.
+		This in support of if-inherits.
+		"""
+
+
+class AbstractLocalVar
+	is partial
+
+	get sharpAssignmentNames as List<of String>
+		return [_sharpName]
+		# return List<of String>(_useSharpNameStack)
+
+	get sharpName as String is override
+		if _ifInheritsStack.count
+			if _type.isReference
+				return '(([_ifInheritsStack.peek.sharpRef])[_sharpName])'
+			else
+				# could it be a subclass? no. value types are structs and cannot be subclassed so this must be `if i` where `i` is nullable struct
+				return '[.name].Value'  # Nullable<of T>.Value
+		else
+			return _sharpName
+		# return _useSharpNameStack.peek to !
+
+
+class Param
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		if .type.isReference and not .type inherits NilableType
+			sw.write(r'[NotNull] ')
+		branch .kind
+			on KindEnum.Value, pass
+			on KindEnum.InOut, sw.write('ref ')
+			on KindEnum.Out, sw.write('out ')
+		sw.write('[.type.sharpParamRef] [.sharpName]')
+
+	def writeSharpDefSansReferenceLabels(sw as SharpWriter)
+		"""
+		Writes the parameter declaration but without C# "out" or "ref"--these are not available for
+		contract methods (require_foo and ensure_foo) because contracts cannot modify arguments.
+		"""
+		# skip the [NotNull] as well since it's not really needed
+		sw.write('[.type.sharpRef] [.sharpName]')		
+
+
+class LocalVar
+	is partial
+
+	pass
+
+
+class ResultVar
+	is partial
+
+	get sharpName as String is override
+		return _sharpName
+
+
+##
+## Members
+##
+
+class Property
+	is partial
+
+	get sharpNotNullPrefix as String is override
+		return ''
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		sw.writeLine('')
+		.writeSharpNotNull(sw)
+		.writeSharpAttribs(sw)
+		.writeSharpIsNames(sw)
+		sw.write(' [_returnType.sharpRef] [.name.capped]')
+		.writeSharpBody(sw)
+		getPart = .getPart
+		if getPart
+			.compiler.codeMemberStack.push(getPart)
+			try
+				if getPart.requirePart
+					getPart.requirePart.writeSharpMethod(sw)
+				if getPart.ensurePart
+					getPart.ensurePart.writeSharpMethod(sw)
+			finally
+				.compiler.codeMemberStack.pop
+		setPart = .setPart
+		if setPart
+			.compiler.codeMemberStack.push(setPart)
+			try
+				if setPart.requirePart
+					setPart.requirePart.writeSharpMethod(sw)
+				if setPart.ensurePart
+					setPart.ensurePart.writeSharpMethod(sw)
+			finally
+				.compiler.codeMemberStack.pop
+		if .compiler.includeTests
+			.writeSharpTest(sw)
+
+
+class Indexer
+	is partial
+
+	get sharpNotNullPrefix as String is override
+		return ''
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		assert _name==r'[]'
+		sw.writeLine('')
+		.writeSharpNotNull(sw)
+		.writeSharpAttribs(sw)
+		.writeSharpIsNames(sw)
+		sw.write(' [_returnType.sharpRef] this')
+		.writeSharpParams(sw, r'[]')
+		.writeSharpBody(sw)
+		getPart = .getPart
+		if getPart
+			.compiler.codeMemberStack.push(getPart)
+			try
+				if getPart.requirePart
+					getPart.requirePart.writeSharpMethod(sw)
+				if getPart.ensurePart
+					getPart.ensurePart.writeSharpMethod(sw)
+			finally
+				.compiler.codeMemberStack.pop
+		setPart = .setPart
+		if setPart
+			.compiler.codeMemberStack.push(setPart)
+			try
+				if setPart.requirePart
+					setPart.requirePart.writeSharpMethod(sw)
+				if setPart.ensurePart
+					setPart.ensurePart.writeSharpMethod(sw)
+			finally
+				.compiler.codeMemberStack.pop
+		if .compiler.includeTests
+			.writeSharpTest(sw)
+
+
+##
 ## Expressions
 ##
 

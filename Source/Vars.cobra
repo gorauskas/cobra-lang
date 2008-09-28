@@ -3,6 +3,7 @@ For ClassVar, see Members.cobra.
 """
 
 interface IVar
+	is partial
 	inherits INamedNode
 
 	pro type as IType?
@@ -23,17 +24,9 @@ interface IVar
 		"""
 		require type <> .type
 
-	get useSharpNameStack as Stack<of String>
-
-	get sharpAssignmentNames as List<of String>?
-		"""
-		Return the C# names to assign to above and beyond the sharpName.
-		This in support of if-inherits.
-		"""
-
 
 class AbstractLocalVar
-	is abstract
+	is abstract, partial
 	inherits NamedNode
 	implements IVar
 	"""
@@ -169,23 +162,9 @@ class AbstractLocalVar
 		assert _type
 		return if(_ifInheritsStack.count, _ifInheritsStack.peek, _type to !)
 
-	get sharpAssignmentNames as List<of String>
-		return [_sharpName]
-		# return List<of String>(_useSharpNameStack)
-
-	get sharpName as String is override
-		if _ifInheritsStack.count
-			if _type.isReference
-				return '(([_ifInheritsStack.peek.sharpRef])[_sharpName])'
-			else
-				# could it be a subclass? no. value types are structs and cannot be subclassed so this must be `if i` where `i` is nullable struct
-				return '[.name].Value'  # Nullable<of T>.Value
-		else
-			return _sharpName
-		# return _useSharpNameStack.peek to !
-
 
 class Param
+	is partial
 	inherits AbstractLocalVar
 
 	enum KindEnum
@@ -242,26 +221,9 @@ class Param
 			p._type = p._type.secondaryConstructedTypeFor(box, gpToType)
 			return p
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		if .type.isReference and not .type inherits NilableType
-			sw.write(r'[NotNull] ')
-		branch .kind
-			on KindEnum.Value, pass
-			on KindEnum.InOut, sw.write('ref ')
-			on KindEnum.Out, sw.write('out ')
-		sw.write('[.type.sharpParamRef] [.sharpName]')
-
-	def writeSharpDefSansReferenceLabels(sw as SharpWriter)
-		"""
-		Writes the parameter declaration but without C# "out" or "ref"--these are not available for
-		contract methods (require_foo and ensure_foo) because contracts cannot modify arguments.
-		"""
-		# skip the [NotNull] as well since it's not really needed
-		sw.write('[.type.sharpRef] [.sharpName]')		
-
 
 class LocalVar
+	is partial
 	inherits AbstractLocalVar
 
 	def init(token as IToken, type as IType)
@@ -285,6 +247,7 @@ class LocalVar
 
 
 class ResultVar
+	is partial
 	inherits LocalVar
 	"""
 	The implicit variable `result` used in `ensure` blocks.
@@ -301,6 +264,3 @@ class ResultVar
 
 	get englishName as String is override
 		return 'implicit result variable'
-
-	get sharpName as String is override
-		return _sharpName
