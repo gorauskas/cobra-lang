@@ -816,7 +816,9 @@ static public class CobraImp {
 		Array.ConstrainedCopy(array, start.Value, slice, 0, count);
 		return slice;
 	}
-		
+	
+	/*
+	Favor the generic implementation above.	
 	static public Array GetSlice(System.Array array, int? start, int? stop, int? step) {
 		if (array==null)
 			throw new NullReferenceException("Cannot slice null.");
@@ -825,6 +827,7 @@ static public class CobraImp {
 		Array.ConstrainedCopy(array, start.Value, slice, 0, stop.Value-start.Value);
 		return slice;
 	}
+	*/
 
 	static public Object GetSlice(Object obj, int? start, int? stop, int? step) {
 		// this is for when obj is type `dynamic`
