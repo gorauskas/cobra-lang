@@ -1,5 +1,5 @@
 class Stmt
-	is abstract
+	is abstract, partial
 	inherits SyntaxNode
 
 	var _parent as INode?
@@ -110,62 +110,9 @@ class Stmt
 		# note that the code member stack can be empty because of class vars (ex: var _foo = true)
 		# even the box stack can be empty because of assembly; has ...
 
-	def sharpSourceSite as String
-		"""
-		Returns a C# "new SourceSite(...)" expression with the correct arguments for the current code generation.
-		"""
-		if .compiler.codeMemberStack.count
-			codeMember = .compiler.curCodeMember
-			return .sharpSourceSite(codeMember.parentBox.name, codeMember.name, .sharpThis)
-		else
-			# example: var _x = someExpr ...
-			return .sharpSourceSite(.compiler.curBox.name, .compiler.curBoxMember.name, .sharpThis)
-		
-	def sharpSourceSite(boxName as String, memberName as String, sharpThis as String) as String
-		"""
-		Returns a C# "new SourceSite(...)" expression with the correct arguments for the current code generation.
-		The arguments to this method allow for some explicit control in special circumstances, such as `invariant`.
-		"""
-		require
-			boxName.length
-			memberName.length
-			sharpThis.length
-		body
-			boxName = Utils.sharpStringLiteralFor(boxName)
-			memberName = Utils.sharpStringLiteralFor(memberName)
-			tok = .token
-			fileName = tok.fileName
-			if not Path.isPathRooted(fileName)
-				fileName = Path.combine(Environment.currentDirectory, fileName)
-			fileName = Utils.sharpStringLiteralFor(fileName)
-			return 'new SourceSite([fileName], [tok.lineNum], [boxName], [memberName], [sharpThis])'
-
-	shared
-		var _inInitCall as bool
-		pro inInitCall from var
-	
-	get sharpThis as String
-		if _inInitCall  # C# won't allow 'this' in a base constructor call
-			return '"(uninitialized [.compiler.curBox.name] instance)"'
-		else if .compiler.codeMemberStack.count
-			return .compiler.curCodeMember.sharpThis
-		else
-			assert .compiler.boxMemberStack.count
-			# so not a code member
-			return '"(uninitialized [.compiler.curBox.name] instance)"'
-
-	def writeSharpSetLine(sw as SharpWriter)
-		if _canSetLine and .token.lineNum > 0
-			sw.write('CobraImp._curFrame._lineNum = [.token.lineNum];\n')
-
-	def writeSharpStmt(sw as SharpWriter)
-		assert .didBindImp
-		sw.node(this)
-		.writeSharpSetLine(sw)
-		.writeSharpDef(sw)
-
 
 class AssertStmt
+	is partial
 	inherits Stmt
 
 	var _expr as Expr
@@ -202,24 +149,6 @@ class AssertStmt
 			'You can remove the expression', _
 			'This assertion is always true. You can remove the assertion or correct the condition')
 		if _info, _info.bindImp
-
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		if not .compiler.options.boolValue('include-asserts')
-			return
-		sw.write('if (CobraCore._willCheckAssert && !')
-		_expr.writeSharpDef(sw)
-		sw.write(') ')
-		sw.indent
-		sw.write('throw new AssertException([.sharpSourceSite], ')
-		_expr.writeSharpBreakdown(sw)
-		sw.write('[.sharpThis], ')
-		if _info
-			_info.writeSharpDef(sw)
-		else
-			sw.write('null')
-		sw.write(');\n')
-		sw.dedent
 
 
 class CompileTimeTraceStmt
@@ -262,6 +191,7 @@ class CompileTimeTraceStmt
 
 
 class BranchStmt
+	is partial
 	inherits Stmt
 
 	var _expr as Expr
@@ -283,61 +213,8 @@ class BranchStmt
 	def _bindImp
 		base._bindImp
 		_expr.bindImp
-		for bop in _onParts
-			bop.bindImp
-		if _elsePart
-			_elsePart.bindImp
-
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		if _expr.type.isDynamic
-			# if the expression is dynamic, then use an if-else ladder with CobraImp.Equals(
-			sw.writeLine('// branch [_expr.toCobraSource]')
-			
-			varName = '_lh_branch_[.serialNum]'
-			sw.write('[_expr.type.sharpRef] [varName] = ')
-			_expr.writeSharpDef(sw)
-			sw.writeLine(';')
-						
-			elseWord = ''
-			for onPart in _onParts
-				sw.write('[elseWord]if (')
-				sep = ''
-				for e in onPart.exprs
-					sw.write(sep)
-					sw.write('CobraImp.Equals([varName], ')
-					e.writeSharpDef(sw, false)
-					sw.write(')')
-					sep = ' || '
-				sw.write(')')
-				onPart.block.writeSharpDef(sw)
-				elseWord = 'else '
-			if _elsePart
-				sw.write('else ')
-				_elsePart.writeSharpDef(sw)
-		else
-			# for any other kind of expression, use a C# switch
-			sw.write('switch(')
-			_expr.writeSharpDef(sw)
-			sw.write(') {\n')
-			sw.indent
-			for onPart in _onParts
-				sep = ''
-				for e in onPart.exprs
-					sw.write(sep)
-					sw.write('case ')
-					e.writeSharpDef(sw)
-					sw.write(': ')
-					sep = '\n'
-				onPart.block.writeSharpDef(sw)
-				if not onPart.block.stmts.count or not onPart.block.stmts[onPart.block.stmts.count-1] inherits ReturnStmt  # CC: use .last
-					sw.write('break;\n')
-			if _elsePart
-				sw.write('default: ')
-				_elsePart.writeSharpDef(sw)
-				sw.write('break;\n')
-			sw.dedent
-			sw.write('}\n')
+		for bop in _onParts, bop.bindImp
+		if _elsePart, _elsePart.bindImp
 
 
 class BranchOnPart
@@ -363,12 +240,12 @@ class BranchOnPart
 
 	def _bindImp
 		base._bindImp
-		for expr in _exprs
-			expr.bindImp
+		for expr in _exprs, expr.bindImp
 		_block.bindImp
 
 
 class BlockStmt
+	is partial
 	inherits Stmt
 	"""
 	A BlockStmt holds a series of statements which are the target of complex statement such
@@ -398,7 +275,6 @@ class BlockStmt
 	get stmts from var
 		has Subnodes
 
-
 	def replaceChild(find as INode, replace as INode) as bool
 		# using _curStmtIndex is faster and blocks can get potentially large
 		if _curStmtIndex < _stmts.count and _stmts[_curStmtIndex] is find
@@ -419,62 +295,25 @@ class BlockStmt
 				.compiler.recordError(ne)
 			_curStmtIndex += 1
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		.writeSharpDef(sw, true, nil)
-
-	def writeSharpDef(sw as SharpWriter, close as bool)
-		.writeSharpDef(sw, close, nil)
-
-	def writeSharpDef(sw as SharpWriter, top as String?)
-		.writeSharpDef(sw, true, top)
-
-	def writeSharpDef(sw as SharpWriter, close as bool, top as String?)
-		sw.node(this)
-		sw.write(' {\n')
-		sw.indent
-		if top
-			sw.write(top)
-		if _ifInheritsVar
-			#typeName = _ifInheritsType.sharpRef
-			#newName = '_lh_' + _ifInheritsVar.name + '_' + _ifInheritsType.sharpNameComponent
-			#sw.write('[typeName] [newName] = ([typeName])[_ifInheritsVar.sharpName];\n')
-			#_ifInheritsVar.useSharpNameStack.push(newName)
-			ifInheritsCount = _ifInheritsVar.ifInheritsStack.count  # AssignExpr could pop our _ifInheritsType. We detect that with the count.
-			_ifInheritsVar.ifInheritsStack.push(_ifInheritsType)
-		for stmt in _stmts
-			stmt.writeSharpStmt(sw)
-		if _ifInheritsVar and _ifInheritsVar.ifInheritsStack.count > ifInheritsCount
-			#_ifInheritsVar.useSharpNameStack.pop
-			_ifInheritsVar.ifInheritsStack.pop
-		if close
-			sw.dedent
-			sw.write('}\n')
-
 
 class BreakStmt
+	is partial
 	inherits Stmt
 
 	def init(tok as IToken)
 		base.init(tok)
-
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		sw.write('break;\n')
 
 
 class ContinueStmt
+	is partial
 	inherits Stmt
 
 	def init(tok as IToken)
 		base.init(tok)
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		sw.write('continue;\n')
-
 
 class ExpectStmt
+	is partial
 	inherits Stmt
 
 	var _exceptionTypeNode as ITypeProxy
@@ -508,26 +347,9 @@ class ExpectStmt
 		_varNumber = .compiler.curBox.makeNextPrivateSerialNumber
 		_block.bindImp
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		exceptionTypeRef = _exceptionType.sharpRef
-		gotRightExceptionVarName = '_lh_expect_[_varNumber-1]'  # lh => "local helper"
-		sw.write('bool [gotRightExceptionVarName] = false;\n')
-		sw.write('try ')
-		_block.writeSharpDef(sw)
-		sw.writeAndIndent('catch ([exceptionTypeRef]) {\n')
-		sw.write('// exactly what is expected\n')
-		sw.write('[gotRightExceptionVarName] = true;\n')
-		sw.dedentAndWrite('}\n')
-		wrongExceptionVarName = '_lh_expect_[_varNumber]'
-		assert gotRightExceptionVarName<>wrongExceptionVarName
-		sw.writeAndIndent('catch (Exception [wrongExceptionVarName]) {\n')
-		sw.write('throw new ExpectException(typeof([exceptionTypeRef]), [wrongExceptionVarName]);\n')
-		sw.dedentAndWrite('}\n')
-		sw.write('if (![gotRightExceptionVarName]) throw new ExpectException(typeof([exceptionTypeRef]), null);\n')
-
 
 class ForStmt
+	is partial
 	inherits Stmt
 	"""
 	Abstract base class for ForNumericStmt and ForEnumerablebase.
@@ -598,6 +420,7 @@ class ForStmt
 
 
 class OldForNumericStmt
+	is partial
 	inherits ForStmt
 
 	var _start as Expr
@@ -635,49 +458,9 @@ class OldForNumericStmt
 	def inferredType as IType? is override
 		return _start.type.greatestCommonDenominatorWith(_stop.type to !)
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		csVar = _var.sharpName
-		trackLocals = .compiler.willTrackLocals
-		if trackLocals
-			sw.write('for (CobraImp.SetLocal("[.var.name]", [csVar]=')
-		else
-			sw.write('for ([csVar]=')
-		_start.writeSharpDef(sw)
-		if trackLocals
-			sw.write(')')
-		if _var.type.isDynamic
-			sw.write('; CobraImp.DynamicCompare([csVar], ')
-			_stop.writeSharpDef(sw, false)
-			sw.write(')[if(_dir==1, "<", ">")]0')
-			opName = if(_dir==1, 'op_Addition', 'op_Subtraction')
-			sw.write('; [csVar]=CobraImp.DynamicOp("[opName]", [csVar], ')
-			if _step
-				_step.writeSharpDef(sw, false)
-			else
-				sw.write('1')
-			sw.write(')')
-		else
-			sw.write('; [csVar]')
-			sw.write(if(_dir==1, '<', '>'))
-			_stop.writeSharpDef(sw)
-			sw.write('; ')
-			if _step
-				if _dir==1
-					sw.write('[csVar]+=')
-				else
-					sw.write('[csVar]-=')
-				_step.writeSharpDef(sw)
-			else
-				if _dir==1
-					sw.write('[csVar]++')
-				else
-					sw.write('[csVar]--')
-		sw.write(')')
-		_block.writeSharpDef(sw)
-
 
 class ForNumericStmt
+	is partial
 	inherits ForStmt
 
 	var _start as Expr
@@ -731,110 +514,9 @@ class ForNumericStmt
 	def inferredType as IType? is override
 		return _start.type.greatestCommonDenominatorWith(_stop.type to !)
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		if _var.type.isDynamic
-			_writeSharpDefForDynamic(sw)
-		else
-			_writeSharpDefForStatic(sw)
-	
-	def _writeSharpDefForDynamic(sw as SharpWriter)
-		# TODO: this is the old numeric for loop behavior. 
-		csVar = _var.sharpName
-		trackLocals = .compiler.willTrackLocals
-		if trackLocals
-			sw.write('for (CobraImp.SetLocal("[.var.name]", [csVar]=')
-		else
-			sw.write('for ([csVar]=')
-		_start.writeSharpDef(sw)
-		if trackLocals
-			sw.write(')')
-		sw.write('; CobraImp.DynamicCompare([csVar], ')
-		_stop.writeSharpDef(sw, false)
-		sw.write(')[if(_dir==1, "<", ">")]0')
-		opName = if(_dir==1, 'op_Addition', 'op_Subtraction')
-		sw.write('; [csVar]=CobraImp.DynamicOp("[opName]", [csVar], ')
-		if _step
-			_step.writeSharpDef(sw, false)
-		else
-			sw.write('1')
-		sw.write(')')
-		sw.write(')')
-		_block.writeSharpDef(sw)
-
-	def _writeSharpDefForStatic(sw as SharpWriter)
-		"""
-		Pseudo example:
-			Cobra:
-				for x in start : stop : step
-					statements
-			C#:
-				{
-				type _lh_start_1 = start;
-				type _lh_stop_2 = stop;
-				type _lh_step_3 = step;
-				int _lh_dir_4 = (_lh_stop_2 - _lh_start_1) < 0 ? -1 : +1;
-				for (x = start; (_lh_dir_4==-1) ? x > stop : x < stop; x += step) {
-					statements
-				}
-				}
-		Note that it's important that the C# code gen uses a for() loop so that
-		the "continue" statement still increments the control variable.
-		
-		In the case that the 'stop' or 'step' are integer literals, no variables are needed for them.
-		TODO: If 'stop' or 'step' are const or readonly, same thing.
-		"""
-		trackLocals = .compiler.willTrackLocals
-		sw.write('{ // for [.var.name] in [.start.toCobraSource] : [.stop.toCobraSource]' + if(.step, ' : [.step.toCobraSource]', '') + '\n')
-		sharpVar = _var.sharpName
-		sharpStart = '_lh_start_[.serialNum]'
-		sharpStop = '_lh_stop_[.serialNum]'
-		sharpStep = '_lh_step_[.serialNum]'
-		sharpDir = '_lh_dir_[.serialNum]'
-		sharpType = _var.type.sharpRef
-
-		sw.write('[sharpType] [sharpStart] = ')
-		.start.writeSharpDef(sw)
-		sw.write(';\n')
-		
-		if .stop inherits IntegerLit
-			sharpStop = (.stop to IntegerLit).asSharp
-		else
-			sw.write('[sharpType] [sharpStop] = ')
-			.stop.writeSharpDef(sw)
-			sw.write(';\n')
-
-		if .step is nil
-			sharpStep = '1'
-		else if .step inherits IntegerLit
-			sharpStep = (.step to IntegerLit).asSharp
-		else
-			sw.write('[sharpType] [sharpStep] = ')
-			.step.writeSharpDef(sw)
-			sw.write(';\n')
-
-		sw.write('int [sharpDir] = [sharpStep] < 0 ? -1 : +1;\n')
-
-		sw.write('for(')
-		if trackLocals
-			sw.write('CobraImp.SetLocal("[.var.name]", [sharpVar] = [sharpStart])')
-		else
-			sw.write('[sharpVar] = [sharpStart]')		
-		sw.write('; ([sharpDir]==1) ? [sharpVar] < [sharpStop] : [sharpVar] > [sharpStop]; ')
-		if trackLocals
-			sw.write('CobraImp.SetLocal("[.var.name]", [sharpVar] += [sharpStep])')
-		else
-			sw.write('[sharpVar] += [sharpStep]')		
-		sw.write(') ')
-
-		_block.writeSharpDef(sw, false)
-
-		sw.dedent
-		sw.write('}\n')
-		sw.write('} // for [.var.name]\n')
-
 
 class ForEnumerableStmt
+	is partial
 	inherits ForStmt
 
 	var _what as Expr
@@ -871,31 +553,9 @@ class ForEnumerableStmt
 		assert _what.type
 		return _what.type.innerType
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		# in a C# foreach, (1) you must declare a new variable, (2) you cannot reassign it and (3) you cannot access it after the loop
-		# these constraints don't exist in Cobra
-		helperName = '_lh_for_[_var.name]_[_varNumber]'
-		sw.write('foreach ([_var.type.sharpRef] [helperName] in ')
-
-		# TODO: the sharpRef of a type is not qualified and there is no using System.Collections;
-		# _what.writeSharpDefInContext(sw, false)
-		if _what.type.isDynamic
-			sw.write('CobraImp.GetEnumerable(')
-			_what.writeSharpDef(sw, false)
-			sw.write(')')
-		else
-			_what.writeSharpDef(sw, false)
-
-		sw.write(')')
-		stmt = '[.var.sharpName] = [helperName]'
-		if .compiler.willTrackLocals
-			stmt = 'CobraImp.SetLocal("[.var.name]", [stmt])'
-		stmt += ';\n'
-		_block.writeSharpDef(sw, stmt)
-
 
 class IfStmt
+	is partial
 	inherits Stmt
 
 	var _cond as Expr
@@ -1022,23 +682,9 @@ class IfStmt
 	def doNotPopIfInheritsStack
 		_doNotPopIfInheritsStack = true
 
-	def writeSharpDef(sw as SharpWriter)
-		# if you're looking for if-inherits related code gen, see BlockStmt
-		base.writeSharpDef(sw)
-		sw.write('if (')
-		_cond.writeSharpDef(sw, false)
-		sw.write(')')
-		_trueStmts.writeSharpDef(sw, false)
-		sw.dedent
-		if _falseStmts
-			sw.write('} else')
-			_falseStmts.writeSharpDef(sw, false)
-			sw.dedent
-		sw.write('}\n')
-
 
 class ListenOrIgnoreStmt
-	is abstract
+	is abstract, partial
 	inherits Stmt
 	
 	var _event as Expr?
@@ -1063,37 +709,25 @@ class ListenOrIgnoreStmt
 		_event.bindImp
 		_target.bindImp
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		_event.writeSharpDef(sw, false)
-		sw.write(' [.sharpOperator] ')
-		_target.writeSharpDef(sw, false)
-		sw.writeLine(';')
-
-	get sharpOperator as String is abstract
-
 
 class ListenStmt
+	is partial
 	inherits ListenOrIgnoreStmt
 
 	def init(token as IToken, eventRef as Expr, target as Expr)
 		base.init(token, eventRef, target)
-
-	get sharpOperator as String is override
-		return '+='
 
 
 class IgnoreStmt
+	is partial
 	inherits ListenOrIgnoreStmt
 
 	def init(token as IToken, eventRef as Expr, target as Expr)
 		base.init(token, eventRef, target)
 
-	get sharpOperator as String is override
-		return '-='
-
 
 class PassStmt
+	is partial
 	inherits Stmt
 	
 	def init(token as IToken)
@@ -1101,6 +735,7 @@ class PassStmt
 		
 
 class PrintStmt
+	is partial
 	inherits Stmt
 
 	var _destination as Expr?
@@ -1129,25 +764,9 @@ class PrintStmt
 	get args from var
 		has Subnodes
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		if _destination
-			_destination.writeSharpDef(sw, true)
-			methodName = if(_stop, 'Write', 'WriteLine')
-			sw.write('.[methodName](')
-		else
-			methodName = if(_stop, 'PrintStop', 'PrintLine')
-			sw.write('CobraImp.[methodName](')
-		sep = ''
-		for arg in _args
-			sw.write('[sep]CobraImp._printStringMaker.MakeString(')
-			arg.writeSharpDef(sw)
-			sw.write(')')
-			sep = '+" "+'
-		sw.writeLine(');')
-
 
 class PrintRedirectStmt
+	is partial
 	inherits Stmt
 
 	var _destination as Expr
@@ -1171,21 +790,9 @@ class PrintRedirectStmt
 		.addField('destination', _destination)
 		.addField('block', _block)
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		sw.write('CobraImp.PushPrintTo(')
-		_destination.writeSharpDef(sw, false)
-		sw.write(');\n')
-		sw.write('try')
-		_block.writeSharpDef(sw)
-		sw.write('finally {\n')
-		sw.indent
-		sw.write('CobraImp.PopPrintTo();\n')
-		sw.dedent
-		sw.write('}\n')
-
 
 class RaiseStmt
+	is partial
 	inherits Stmt
 	"""
 	Raise an event.
@@ -1292,25 +899,12 @@ class RaiseStmt
 			.throwError('Missing argument for "raise" of type "[type.name]".')
 		throw FallThroughException() # suppress an error
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		name = .name.capped
-		localName = '_lh_event_[.serialNum]'
-		sw.writeLine('// raise [.name] ...')
-		sw.write('{ [_eventType.sharpRef] [localName] = this.[name]; if ([localName]!=null) [localName](')
-		sep = ''
-		for expr in _args
-			sw.write(sep)
-			expr.writeSharpDef(sw, false)
-			sep = ', '
-		sw.write('); }\n')
-
 
 class ReturnStmt
+	is partial
 	inherits Stmt
 
 	var _expr as Expr?
-	var _sharpResultVarName as String?
 
 	def init(token as IToken, expr as Expr?)
 		base.init(token)
@@ -1321,8 +915,6 @@ class ReturnStmt
 		.addField('expr', _expr)
 
 	get expr from var
-
-	pro sharpResultVarName from var
 
 	def _bindImp
 		base._bindImp
@@ -1340,27 +932,9 @@ class ReturnStmt
 		curCodeMember.hasReturnStmt = true
 		_sharpResultVarName = curCodeMember.sharpResultVarName
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		ensurePart = .compiler.curCodeMember.ensurePart
-		willEnsure = ensurePart and ensurePart.willWriteSharp
-		if willEnsure
-			sw.write('_lh_canEnsure = true;\n')
-		if _expr
-			if willEnsure and _sharpResultVarName and _sharpResultVarName.length
-				sw.write('return [_sharpResultVarName]=')
-				_expr.writeSharpDefInContext(sw)
-				sw.write(';\n')
-			else
-				sw.write('return ')
-				_expr.writeSharpDefInContext(sw)
-				sw.write(';\n')
-		else
-			sw.write('return;\n')
-
 
 class TraceStmt
-	is abstract
+	is abstract, partial
 	inherits Stmt
 
 	var _codePart as AbstractMethod
@@ -1371,33 +945,23 @@ class TraceStmt
 
 
 class TraceLocationStmt
+	is partial
 	inherits TraceStmt
 
 	def init(token as IToken, codePart as AbstractMethod)
 		base.init(token, codePart)
-
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		sw.write('CobraCore.Tracer.Trace([.sharpSourceSite]);\n')
 
 
 class TraceAllStmt
+	is partial
 	inherits TraceStmt
 
 	def init(token as IToken, codePart as AbstractMethod)
 		base.init(token, codePart)
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		sw.write('CobraCore.Tracer.Trace([.sharpSourceSite], "this", [_codePart.sharpThis]')
-		for param in _codePart.params
-			sw.write(', "[param.name]", [param.sharpName]')
-		for local in _codePart.locals
-			sw.write(', "[local.name]", [local.sharpName]')
-		sw.write(');\n')
-
 
 class TraceExprsStmt
+	is partial
 	inherits TraceStmt
 
 	var _exprs as List<of Expr>
@@ -1414,17 +978,9 @@ class TraceExprsStmt
 		for expr in _exprs
 			expr.bindImp
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		sw.write('CobraCore.Tracer.Trace([.sharpSourceSite]')
-		sep = ', '
-		for expr in _exprs
-			sw.write('[sep][Utils.sharpStringLiteralFor(expr.toCobraSource)][sep]')
-			expr.writeSharpDef(sw, false)
-		sw.write(');\n')
-
 
 class TryStmt
+	is partial
 	inherits Stmt
 
 	var _tryBlock as BlockStmt
@@ -1485,64 +1041,9 @@ class TryStmt
 				if stmt inherits YieldStmt
 					stmt.recordError('Cannot yield in the body of a finally clause.')
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		if _successBlock
-			# C# has no "success" (or in Python, "else") block for the "try" statement
-			# so it has to be simulated
-			helperName = '_lh_success_[_varNumber]'
-			sw.write('bool [helperName] = false;\n')
-			if _finallyBlock
-				sw.write('try {\n')
-				sw.indent
-			sw.write('try')
-			_tryBlock.writeSharpDef(sw, false)
-			sw.write('[helperName] = true;\n')
-			sw.dedent
-			sw.write('}\n')
-			if _catchBlocks.count
-				.writeCatchBlocks(sw)
-			else
-				sw.write('finally { }\n')  # syntactically necessary
-			sw.write('if ([helperName])')
-			_successBlock.writeSharpDef(sw)
-			if _finallyBlock
-				sw.dedent
-				sw.write('}\n')
-				sw.write('finally')
-				_finallyBlock.writeSharpDef(sw)
-		else
-			sw.write('try')
-			_tryBlock.writeSharpDef(sw)
-			.writeCatchBlocks(sw)
-			if _finallyBlock
-				sw.write('finally')
-				_finallyBlock.writeSharpDef(sw)
-
-	def writeCatchBlocks(sw as SharpWriter)
-		for eb in _catchBlocks
-			sw.write('catch')
-			if eb.type
-				sw.write(' ([eb.type.sharpRef]')
-				if eb.varName
-					helperName = eb.sharpHelperName
-					sw.write(' [helperName]')
-				sw.write(')')
-			sb = StringBuilder()
-			if .compiler.hasDetailedStackTraceOption
-				sb.append('CobraImp.HandledException();\n')
-			if eb.varName
-				trackLocals = .compiler.willTrackLocals
-				if trackLocals
-					sb.append('CobraImp.SetLocal("[eb.varName]", ')
-				sb.append('[eb.sharpVarName] = [helperName]')
-				if trackLocals
-					sb.append(')')
-				sb.append(';\n')
-			eb.block.writeSharpDef(sw, sb.toString)
-
 
 class CatchBlock
+	is partial
 	inherits SyntaxNode
 
 	var _var as AbstractLocalVar?
@@ -1550,7 +1051,6 @@ class CatchBlock
 	var _type as IType?
 	var _block as BlockStmt
 	var _varName as String?
-	var _sharpHelperName as String?
 
 	def init(token as IToken, block as BlockStmt)
 		"""
@@ -1609,15 +1109,9 @@ class CatchBlock
 		_sharpHelperName = '_lh_catch_[.compiler.curBox.makeNextPrivateSerialNumber]'
 		_block.bindImp
 
-	## Code gen
-
-	get sharpHelperName from var
-
-	get sharpVarName as String
-		return _var.sharpName
-
 
 class ThrowStmt
+	is partial
 	inherits Stmt
 
 	var _expr as Expr?
@@ -1672,19 +1166,9 @@ class ThrowStmt
 					.throwError('Cannot throw "[_expr.type.name]" because [reason].')
 		.compiler.curCodeMember.hasThrowStmt = true
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		sw.write('throw ')
-		if _expr
-			if _expr.type.isDynamic
-				sw.write('((System.Exception)')
-			_expr.writeSharpDef(sw, false)
-			if _expr.type.isDynamic
-				sw.write(')')
-		sw.write(';\n')
-
 
 class UsingStmt
+	is partial
 	inherits Stmt
 
 	var _varExpr as NameExpr
@@ -1712,24 +1196,9 @@ class UsingStmt
 		assert _initExpr.type
 		return _initExpr.type
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		name = _var.sharpName
-		sw.write('// using\n')
-		sw.write('[name] = ')
-		_initExpr.writeSharpDef(sw)
-		sw.write(';\ntry')
-		_block.writeSharpDef(sw)
-		sw.write('finally {\n')
-		sw.indent
-		if _var.type.isReference
-			sw.write('if ([name]!=null) { ((IDisposable)[name]).Dispose(); [name] = null; }\n')
-		else
-			sw.write('((IDisposable)[name]).Dispose();\n')
-		sw.dedentAndWrite('}\n')
-
 
 class WhileStmt
+	is partial
 	inherits Stmt
 
 	var _expr as Expr
@@ -1760,32 +1229,17 @@ class WhileStmt
 				_expr = TruthExpr(_expr).bindImp to TruthExpr  # CC: axe when I have "as this"
 		_block.bindImp
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		sw.write('while (')
-		_expr.writeSharpDef(sw, false)
-		sw.write(')')
-		_block.writeSharpDef(sw)
-
 
 class PostWhileStmt
+	is partial
 	inherits WhileStmt
 
 	def init(token as IToken, expr as Expr, block as BlockStmt)
 		base.init(token, expr, block)
 
-	def writeSharpDef(sw as SharpWriter) is override
-		# base.writeSharpDef(sw) - don't generate the other form of while loop
-		sw.write('do')
-		_block.writeSharpDef(sw, false)
-		sw.dedent
-		sw.write('} while (')
-		_expr.writeSharpDef(sw, false)
-		sw.write(');\n')
-
 
 class YieldStmt
-	is abstract
+	is abstract, partial
 	inherits Stmt
 
 	# CC: axe when initializers are inherited
@@ -1801,6 +1255,7 @@ class YieldStmt
 
 
 class YieldBreakStmt
+	is partial
 	inherits YieldStmt
 
 	# CC: axe when initializers are inherited
@@ -1810,16 +1265,12 @@ class YieldBreakStmt
 	def _bindImp
 		base._bindImp
 
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		sw.write('yield break;\n')
-
 
 class YieldReturnStmt
+	is partial
 	inherits YieldStmt
 
 	var _expr as Expr?
-	var _sharpResultVarName as String?
 
 	def init(token as IToken, expr as Expr?)
 		base.init(token)
@@ -1828,8 +1279,6 @@ class YieldReturnStmt
 	def addSubFields
 		base.addSubFields
 		.addField('expr', _expr)
-
-	pro sharpResultVarName from var
 
 	def _bindImp
 		base._bindImp
@@ -1859,22 +1308,3 @@ class YieldReturnStmt
 			pass
 		curCodeMember.hasYieldStmt = true
 		_sharpResultVarName = curCodeMember.sharpResultVarName
-
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		ensurePart = .compiler.curCodeMember.ensurePart
-		willEnsure = ensurePart and ensurePart.willWriteSharp
-		if willEnsure
-			sw.write('_lh_canEnsure = true;\n')
-		if _expr
-			if willEnsure and _sharpResultVarName and _sharpResultVarName.length
-				#sw.write('yield return [_sharpResultVarName]=')  # TODO: resolve yield return with ensure
-				sw.write('yield return ')
-				_expr.writeSharpDefInContext(sw)
-				sw.write(';\n')
-			else
-				sw.write('yield return ')
-				_expr.writeSharpDefInContext(sw)
-				sw.write(';\n')
-		else
-			sw.write('yield return;\n')

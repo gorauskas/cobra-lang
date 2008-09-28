@@ -1328,7 +1328,7 @@ class TestMethod
 
 
 class ContractPart
-	is abstract
+	is abstract, partial
 	inherits SyntaxNode
 	"""
 	The abstract base class for RequirePart and EnsurePart.
@@ -1338,7 +1338,6 @@ class ContractPart
 	var _codeMember as AbstractMethod
 	var _exprs as List<of Expr>
 	var _isImplicit as bool # meaning the source code did not define this object
-	var _sharpMethodNameCache as String?
 
 	def init(codeMember as AbstractMethod)
 		base.init(codeMember.token)
@@ -1407,30 +1406,10 @@ class ContractPart
 				if 'override' in isNames
 					what = if('override' in isNames, 'override', 'new')
 					.recordError('The contract must be declared "[.connectWord] [.token.text]" rather than "[.token.text]" because the code member is "[what]".')
-		
-	def writeSharpMethod(sw as SharpWriter) is abstract
-
-	def _sharpMethodName(prefix as String) as String
-		if _sharpMethodNameCache is nil
-			# TODO: having the serial number in the name avoids problem with overloads, but it's ugly and it can change from run-to-run.
-			# 		would be nice if each member of an overload had an overload number.
-			name = '[prefix]_[_codeMember.sharpName][_codeMember.sharpGenericParams]_[_codeMember.serialNum]_[_codeMember.parentBox.name]'
-			name = name.replace(r'[]', 'Item') # indexer # TODO: maybe Indexer should return 'Item' in the first place
-			# properindexers like "name.get" have a '.'
-			# generics have < > and ,
-			for ch in [c'.', c'<', c'>', c',']
-				name = name.replace(ch, c'_')
-			_sharpMethodNameCache = name
-		return _sharpMethodNameCache to !
-
-	get sharpThis as String
-		return _codeMember.sharpThis
-
-	get willInlineSharp as bool
-		return .compiler.options['contracts'] == 'inline'
 
 
 class RequirePart
+	is partial
 	inherits ContractPart
 
 	def init(codeMember as AbstractMethod)
@@ -1456,104 +1435,9 @@ class RequirePart
 		else
 			return _codeMember.requirePart.exprs.count > 0
 
-	get sharpMethodName as String
-		return _sharpMethodName('require')
-
-	def writeSharpDef(sw as SharpWriter) is override
-		base.writeSharpDef(sw)
-		assert .willWriteSharp
-		willInline = .willInlineSharp
-		sw.write('if (CobraCore._willCheckRequire) {\n')
-		sw.indent
-		if _codeMember.isOverride
-			# Note that in Cobra, when the top level class does not define `require` then that is the
-			# same as saying `require true`--there is no requirement for calling the method. But when
-			# an overriding method does not define `require` then it is inheriting the `require` of
-			# its matching base method.
-			curCodeMember = _codeMember to ?
-			count = 0
-			n = 1
-			post while curCodeMember
-				if not curCodeMember.parentBox.isFake and curCodeMember.requirePart and (not curCodeMember.requirePart.isImplicit or curCodeMember.matchingBaseMember is nil)
-					count += 1
-					sw.write('try {\n')
-					sw.indent
-					if willInline
-						if curCodeMember.requirePart.exprs.count
-							willEncapsulate = curCodeMember is not _codeMember
-							if willEncapsulate
-								# parameter names can be different
-								sw.write('{\n')
-								sw.indent
-								for i = 0 .. _codeMember.params.count
-									ourParam = _codeMember.params[i]
-									ancestorParam = curCodeMember.params[i]
-									if ourParam.name <> ancestorParam.name  # this is the problem`; name mismatch
-										sw.write('[ourParam.type.sharpRef] [ancestorParam.name] = [ourParam.name];\n')
-							curCodeMember.requirePart.writeSharpChecks(sw)
-							if willEncapsulate
-								sw.dedent
-								sw.write('}\n')
-					else
-						sw.write('[curCodeMember.requirePart.sharpMethodName]')
-						_codeMember.writeSharpPassArgs(sw, '()', true)  # always use *our* code member since the arg names can be different than base classes
-						sw.write(';\n')
-					sw.dedent
-					sw.write('} catch (RequireException re[n]) {\n')
-					sw.indent
-					if n>1
-						sw.write('re[n-1].Next = re[n];\n')
-					n += 1
-				curCodeMember = curCodeMember.matchingBaseMember to AbstractMethod?
-			# at this point in C# code, all requirements have failed
-			if n > 1
-				sw.write('throw re1;\n')
-			for m = 1 .. n
-				sw.dedent
-				sw.write('}\n')
-				count -= 1
-		else
-			if willInline
-				.writeSharpChecks(sw)
-			else
-				sw.write('[.sharpMethodName]')
-				_codeMember.writeSharpPassArgs(sw, '()', true)
-				sw.write(';\n')
-		sw.dedent
-		sw.write('}\n')
-
-	def writeSharpMethod(sw as SharpWriter) is override
-		if .compiler.options['contracts'] <> 'methods'
-			return
-		if _codeMember.isInterfaceMember
-			# contracts on interface members are not supported yet
-			# and when they are, these methods will have to be written outside the interface
-			return
-		if not .willWriteSharp
-			return
-		static = if(_codeMember.isShared, 'static ', '')
-		access = if(_codeMember.parentBox inherits Struct, 'private', 'protected')
-		sw.write('[static][access] void [.sharpMethodName][_codeMember.sharpGenericParams](')
-		_codeMember.writeSharpRequireParamDecls(sw)
-		sw.write(') {\n')
-		sw.indent
-		.writeSharpChecks(sw)
-		sw.dedent
-		sw.write('}\n\n')
-
-	def writeSharpChecks(sw as SharpWriter)
-		for expr in _exprs
-			sw.write('if (!')
-			expr.writeSharpDef(sw)
-			sw.write(') ')
-			sw.indent
-			sw.write('throw new RequireException([expr.sharpSourceSite], ')
-			expr.writeSharpBreakdown(sw)
-			sw.write('[.sharpThis], null);\n')
-			sw.dedent
-
 	
 class EnsurePart
+	is partial
 	inherits ContractPart
 
 	def init(codeMember as AbstractMethod)
@@ -1594,78 +1478,3 @@ class EnsurePart
 					_codeMember.replaceLocal(resultLocal to LocalVar)
 				else
 					_codeMember.removeLocal('result')
-
-	get sharpMethodName as String
-		return _sharpMethodName('ensure')
-
-	def writeSharpDef(sw as SharpWriter) is override
-		base.writeSharpDef(sw)
-		assert .willWriteSharp
-		willInline = .willInlineSharp
-		sw.write('if (CobraCore._willCheckEnsure) {\n')
-		sw.indent
-		if _codeMember.isOverride
-			curCodeMember = _codeMember to ?
-			post while curCodeMember
-				if not curCodeMember.parentBox.isFake and curCodeMember.ensurePart
-					if willInline
-						curCodeMember.ensurePart.writeSharpChecks(sw)
-					else
-						sw.write('[curCodeMember.ensurePart.sharpMethodName](')
-						_codeMember.writeSharpEnsureArgs(sw)
-						sw.write(');\n')
-				curCodeMember = curCodeMember.matchingBaseMember to AbstractMethod?  # TODO: should a cast really be needed here?
-			# at this point in C# code, all ensure have passed
-		else
-			if willInline
-				.writeSharpChecks(sw)
-			else
-				sw.write('[_codeMember.ensurePart.sharpMethodName](')
-				_codeMember.writeSharpEnsureArgs(sw)
-				sw.write(');\n')
-		sw.dedent
-		sw.write('}\n')
-
-	def writeSharpMethod(sw as SharpWriter) is override
-		if .compiler.options['contracts'] <> 'methods'
-			return
-		if _codeMember.isInterfaceMember
-			# contracts on interface members are not supported yet
-			# and when they are, these methods will have to be written outside the interface
-			return
-		if not .willWriteSharp
-			return
-		static = if(_codeMember.isShared, 'static ', '')
-		access = if(_codeMember.parentBox inherits Struct, 'private', 'protected')
-		sw.write('[static][access] void [.sharpMethodName][_codeMember.sharpGenericParams](')
-		_codeMember.writeSharpEnsureParamDecls(sw)
-		sw.write(') {\n')
-		sw.indent
-		.writeSharpChecks(sw)
-		sw.dedent
-		sw.write('}\n\n')
-
-	def writeSharpChecks(sw as SharpWriter)
-		for expr in _exprs
-			sw.write('if (!')
-			expr.writeSharpDef(sw)
-			sw.write(') ')
-			sw.indent
-			sw.write('throw new EnsureException([expr.sharpSourceSite], ')
-			expr.writeSharpBreakdown(sw)
-			sw.write('[.sharpThis], null);\n')
-			sw.dedent
-		if not _codeMember.isShared and not _codeMember.isExtensionMember
-			sw.write('if (CobraCore._willCheckInvariant && _ih_invariantGuard == 0) {\n')
-			sw.indent
-			sw.write('_ih_invariantGuard += 1;\n')
-			sw.write('try {\n')
-			sw.indent
-			if .willInlineSharp
-				.codeMember.parentBox.writeAllSharpInvariantChecks(sw)
-			else
-				sw.write('invariant_[_codeMember.parentBox.rootName]();')
-			sw.dedent
-			sw.write('} finally { _ih_invariantGuard -= 1; }\n')
-			sw.dedent
-			sw.write('} // invariant\n')

@@ -1,8 +1,6 @@
 """
 Eventually this file will contain all C# code generation.
 In the future, you can expect (or contribute!) alternate code generators such as IL, JVM and Objective-C.
-
-gco 'def writesharp' | grep -vi sharpgen | grep -vi save
 """
 
 
@@ -534,7 +532,6 @@ class Container<of TMember>
 
 interface IMember
 	is partial
-
 
 	def writeSharpDef(sw as SharpWriter)
 		"""
@@ -1896,6 +1893,957 @@ class TestMethod
 			return name
 		else
 			return 'test_[_forBox.sharpKeyWord]_'+_forBox.sharpNameComponent
+
+
+class ContractPart
+	is partial
+
+	var _sharpMethodNameCache as String?
+
+		
+	def writeSharpMethod(sw as SharpWriter) is abstract
+
+	def _sharpMethodName(prefix as String) as String
+		if _sharpMethodNameCache is nil
+			# TODO: having the serial number in the name avoids problem with overloads, but it's ugly and it can change from run-to-run.
+			# 		would be nice if each member of an overload had an overload number.
+			name = '[prefix]_[_codeMember.sharpName][_codeMember.sharpGenericParams]_[_codeMember.serialNum]_[_codeMember.parentBox.name]'
+			name = name.replace(r'[]', 'Item') # indexer # TODO: maybe Indexer should return 'Item' in the first place
+			# properindexers like "name.get" have a '.'
+			# generics have < > and ,
+			for ch in [c'.', c'<', c'>', c',']
+				name = name.replace(ch, c'_')
+			_sharpMethodNameCache = name
+		return _sharpMethodNameCache to !
+
+	get sharpThis as String
+		return _codeMember.sharpThis
+
+	get willInlineSharp as bool
+		return .compiler.options['contracts'] == 'inline'
+
+
+class RequirePart
+	is partial
+
+
+	get sharpMethodName as String
+		return _sharpMethodName('require')
+
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		assert .willWriteSharp
+		willInline = .willInlineSharp
+		sw.write('if (CobraCore._willCheckRequire) {\n')
+		sw.indent
+		if _codeMember.isOverride
+			# Note that in Cobra, when the top level class does not define `require` then that is the
+			# same as saying `require true`--there is no requirement for calling the method. But when
+			# an overriding method does not define `require` then it is inheriting the `require` of
+			# its matching base method.
+			curCodeMember = _codeMember to ?
+			count = 0
+			n = 1
+			post while curCodeMember
+				if not curCodeMember.parentBox.isFake and curCodeMember.requirePart and (not curCodeMember.requirePart.isImplicit or curCodeMember.matchingBaseMember is nil)
+					count += 1
+					sw.write('try {\n')
+					sw.indent
+					if willInline
+						if curCodeMember.requirePart.exprs.count
+							willEncapsulate = curCodeMember is not _codeMember
+							if willEncapsulate
+								# parameter names can be different
+								sw.write('{\n')
+								sw.indent
+								for i = 0 .. _codeMember.params.count
+									ourParam = _codeMember.params[i]
+									ancestorParam = curCodeMember.params[i]
+									if ourParam.name <> ancestorParam.name  # this is the problem`; name mismatch
+										sw.write('[ourParam.type.sharpRef] [ancestorParam.name] = [ourParam.name];\n')
+							curCodeMember.requirePart.writeSharpChecks(sw)
+							if willEncapsulate
+								sw.dedent
+								sw.write('}\n')
+					else
+						sw.write('[curCodeMember.requirePart.sharpMethodName]')
+						_codeMember.writeSharpPassArgs(sw, '()', true)  # always use *our* code member since the arg names can be different than base classes
+						sw.write(';\n')
+					sw.dedent
+					sw.write('} catch (RequireException re[n]) {\n')
+					sw.indent
+					if n>1
+						sw.write('re[n-1].Next = re[n];\n')
+					n += 1
+				curCodeMember = curCodeMember.matchingBaseMember to AbstractMethod?
+			# at this point in C# code, all requirements have failed
+			if n > 1
+				sw.write('throw re1;\n')
+			for m = 1 .. n
+				sw.dedent
+				sw.write('}\n')
+				count -= 1
+		else
+			if willInline
+				.writeSharpChecks(sw)
+			else
+				sw.write('[.sharpMethodName]')
+				_codeMember.writeSharpPassArgs(sw, '()', true)
+				sw.write(';\n')
+		sw.dedent
+		sw.write('}\n')
+
+	def writeSharpMethod(sw as SharpWriter) is override
+		if .compiler.options['contracts'] <> 'methods'
+			return
+		if _codeMember.isInterfaceMember
+			# contracts on interface members are not supported yet
+			# and when they are, these methods will have to be written outside the interface
+			return
+		if not .willWriteSharp
+			return
+		static = if(_codeMember.isShared, 'static ', '')
+		access = if(_codeMember.parentBox inherits Struct, 'private', 'protected')
+		sw.write('[static][access] void [.sharpMethodName][_codeMember.sharpGenericParams](')
+		_codeMember.writeSharpRequireParamDecls(sw)
+		sw.write(') {\n')
+		sw.indent
+		.writeSharpChecks(sw)
+		sw.dedent
+		sw.write('}\n\n')
+
+	def writeSharpChecks(sw as SharpWriter)
+		for expr in _exprs
+			sw.write('if (!')
+			expr.writeSharpDef(sw)
+			sw.write(') ')
+			sw.indent
+			sw.write('throw new RequireException([expr.sharpSourceSite], ')
+			expr.writeSharpBreakdown(sw)
+			sw.write('[.sharpThis], null);\n')
+			sw.dedent
+
+
+class EnsurePart
+	is partial
+
+
+	get sharpMethodName as String
+		return _sharpMethodName('ensure')
+
+	def writeSharpDef(sw as SharpWriter) is override
+		base.writeSharpDef(sw)
+		assert .willWriteSharp
+		willInline = .willInlineSharp
+		sw.write('if (CobraCore._willCheckEnsure) {\n')
+		sw.indent
+		if _codeMember.isOverride
+			curCodeMember = _codeMember to ?
+			post while curCodeMember
+				if not curCodeMember.parentBox.isFake and curCodeMember.ensurePart
+					if willInline
+						curCodeMember.ensurePart.writeSharpChecks(sw)
+					else
+						sw.write('[curCodeMember.ensurePart.sharpMethodName](')
+						_codeMember.writeSharpEnsureArgs(sw)
+						sw.write(');\n')
+				curCodeMember = curCodeMember.matchingBaseMember to AbstractMethod?  # TODO: should a cast really be needed here?
+			# at this point in C# code, all ensure have passed
+		else
+			if willInline
+				.writeSharpChecks(sw)
+			else
+				sw.write('[_codeMember.ensurePart.sharpMethodName](')
+				_codeMember.writeSharpEnsureArgs(sw)
+				sw.write(');\n')
+		sw.dedent
+		sw.write('}\n')
+
+	def writeSharpMethod(sw as SharpWriter) is override
+		if .compiler.options['contracts'] <> 'methods'
+			return
+		if _codeMember.isInterfaceMember
+			# contracts on interface members are not supported yet
+			# and when they are, these methods will have to be written outside the interface
+			return
+		if not .willWriteSharp
+			return
+		static = if(_codeMember.isShared, 'static ', '')
+		access = if(_codeMember.parentBox inherits Struct, 'private', 'protected')
+		sw.write('[static][access] void [.sharpMethodName][_codeMember.sharpGenericParams](')
+		_codeMember.writeSharpEnsureParamDecls(sw)
+		sw.write(') {\n')
+		sw.indent
+		.writeSharpChecks(sw)
+		sw.dedent
+		sw.write('}\n\n')
+
+	def writeSharpChecks(sw as SharpWriter)
+		for expr in _exprs
+			sw.write('if (!')
+			expr.writeSharpDef(sw)
+			sw.write(') ')
+			sw.indent
+			sw.write('throw new EnsureException([expr.sharpSourceSite], ')
+			expr.writeSharpBreakdown(sw)
+			sw.write('[.sharpThis], null);\n')
+			sw.dedent
+		if not _codeMember.isShared and not _codeMember.isExtensionMember
+			sw.write('if (CobraCore._willCheckInvariant && _ih_invariantGuard == 0) {\n')
+			sw.indent
+			sw.write('_ih_invariantGuard += 1;\n')
+			sw.write('try {\n')
+			sw.indent
+			if .willInlineSharp
+				.codeMember.parentBox.writeAllSharpInvariantChecks(sw)
+			else
+				sw.write('invariant_[_codeMember.parentBox.rootName]();')
+			sw.dedent
+			sw.write('} finally { _ih_invariantGuard -= 1; }\n')
+			sw.dedent
+			sw.write('} // invariant\n')
+
+
+##
+## Statements
+##
+
+class Stmt
+	is partial
+
+
+	def sharpSourceSite as String
+		"""
+		Returns a C# "new SourceSite(...)" expression with the correct arguments for the current code generation.
+		"""
+		if .compiler.codeMemberStack.count
+			codeMember = .compiler.curCodeMember
+			return .sharpSourceSite(codeMember.parentBox.name, codeMember.name, .sharpThis)
+		else
+			# example: var _x = someExpr ...
+			return .sharpSourceSite(.compiler.curBox.name, .compiler.curBoxMember.name, .sharpThis)
+		
+	def sharpSourceSite(boxName as String, memberName as String, sharpThis as String) as String
+		"""
+		Returns a C# "new SourceSite(...)" expression with the correct arguments for the current code generation.
+		The arguments to this method allow for some explicit control in special circumstances, such as `invariant`.
+		"""
+		require
+			boxName.length
+			memberName.length
+			sharpThis.length
+		body
+			boxName = Utils.sharpStringLiteralFor(boxName)
+			memberName = Utils.sharpStringLiteralFor(memberName)
+			tok = .token
+			fileName = tok.fileName
+			if not Path.isPathRooted(fileName)
+				fileName = Path.combine(Environment.currentDirectory, fileName)
+			fileName = Utils.sharpStringLiteralFor(fileName)
+			return 'new SourceSite([fileName], [tok.lineNum], [boxName], [memberName], [sharpThis])'
+
+	shared
+		var _inInitCall as bool
+		pro inInitCall from var
+	
+	get sharpThis as String
+		if _inInitCall  # C# won't allow 'this' in a base constructor call
+			return '"(uninitialized [.compiler.curBox.name] instance)"'
+		else if .compiler.codeMemberStack.count
+			return .compiler.curCodeMember.sharpThis
+		else
+			assert .compiler.boxMemberStack.count
+			# so not a code member
+			return '"(uninitialized [.compiler.curBox.name] instance)"'
+
+	def writeSharpSetLine(sw as SharpWriter)
+		if _canSetLine and .token.lineNum > 0
+			sw.write('CobraImp._curFrame._lineNum = [.token.lineNum];\n')
+
+	def writeSharpStmt(sw as SharpWriter)
+		assert .didBindImp
+		sw.node(this)
+		.writeSharpSetLine(sw)
+		.writeSharpDef(sw)
+
+
+class AssertStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		if not .compiler.options.boolValue('include-asserts')
+			return
+		sw.write('if (CobraCore._willCheckAssert && !')
+		_expr.writeSharpDef(sw)
+		sw.write(') ')
+		sw.indent
+		sw.write('throw new AssertException([.sharpSourceSite], ')
+		_expr.writeSharpBreakdown(sw)
+		sw.write('[.sharpThis], ')
+		if _info
+			_info.writeSharpDef(sw)
+		else
+			sw.write('null')
+		sw.write(');\n')
+		sw.dedent
+
+
+class BranchStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		if _expr.type.isDynamic
+			# if the expression is dynamic, then use an if-else ladder with CobraImp.Equals(
+			sw.writeLine('// branch [_expr.toCobraSource]')
+			
+			varName = '_lh_branch_[.serialNum]'
+			sw.write('[_expr.type.sharpRef] [varName] = ')
+			_expr.writeSharpDef(sw)
+			sw.writeLine(';')
+						
+			elseWord = ''
+			for onPart in _onParts
+				sw.write('[elseWord]if (')
+				sep = ''
+				for e in onPart.exprs
+					sw.write(sep)
+					sw.write('CobraImp.Equals([varName], ')
+					e.writeSharpDef(sw, false)
+					sw.write(')')
+					sep = ' || '
+				sw.write(')')
+				onPart.block.writeSharpDef(sw)
+				elseWord = 'else '
+			if _elsePart
+				sw.write('else ')
+				_elsePart.writeSharpDef(sw)
+		else
+			# for any other kind of expression, use a C# switch
+			sw.write('switch(')
+			_expr.writeSharpDef(sw)
+			sw.write(') {\n')
+			sw.indent
+			for onPart in _onParts
+				sep = ''
+				for e in onPart.exprs
+					sw.write(sep)
+					sw.write('case ')
+					e.writeSharpDef(sw)
+					sw.write(': ')
+					sep = '\n'
+				onPart.block.writeSharpDef(sw)
+				if not onPart.block.stmts.count or not onPart.block.stmts[onPart.block.stmts.count-1] inherits ReturnStmt  # CC: use .last
+					sw.write('break;\n')
+			if _elsePart
+				sw.write('default: ')
+				_elsePart.writeSharpDef(sw)
+				sw.write('break;\n')
+			sw.dedent
+			sw.write('}\n')
+
+
+class BlockStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		.writeSharpDef(sw, true, nil)
+
+	def writeSharpDef(sw as SharpWriter, close as bool)
+		.writeSharpDef(sw, close, nil)
+
+	def writeSharpDef(sw as SharpWriter, top as String?)
+		.writeSharpDef(sw, true, top)
+
+	def writeSharpDef(sw as SharpWriter, close as bool, top as String?)
+		sw.node(this)
+		sw.write(' {\n')
+		sw.indent
+		if top
+			sw.write(top)
+		if _ifInheritsVar
+			#typeName = _ifInheritsType.sharpRef
+			#newName = '_lh_' + _ifInheritsVar.name + '_' + _ifInheritsType.sharpNameComponent
+			#sw.write('[typeName] [newName] = ([typeName])[_ifInheritsVar.sharpName];\n')
+			#_ifInheritsVar.useSharpNameStack.push(newName)
+			ifInheritsCount = _ifInheritsVar.ifInheritsStack.count  # AssignExpr could pop our _ifInheritsType. We detect that with the count.
+			_ifInheritsVar.ifInheritsStack.push(_ifInheritsType)
+		for stmt in _stmts
+			stmt.writeSharpStmt(sw)
+		if _ifInheritsVar and _ifInheritsVar.ifInheritsStack.count > ifInheritsCount
+			#_ifInheritsVar.useSharpNameStack.pop
+			_ifInheritsVar.ifInheritsStack.pop
+		if close
+			sw.dedent
+			sw.write('}\n')
+
+
+class BreakStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		sw.write('break;\n')
+
+
+class ContinueStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		sw.write('continue;\n')
+
+
+class ExpectStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		exceptionTypeRef = _exceptionType.sharpRef
+		gotRightExceptionVarName = '_lh_expect_[_varNumber-1]'  # lh => "local helper"
+		sw.write('bool [gotRightExceptionVarName] = false;\n')
+		sw.write('try ')
+		_block.writeSharpDef(sw)
+		sw.writeAndIndent('catch ([exceptionTypeRef]) {\n')
+		sw.write('// exactly what is expected\n')
+		sw.write('[gotRightExceptionVarName] = true;\n')
+		sw.dedentAndWrite('}\n')
+		wrongExceptionVarName = '_lh_expect_[_varNumber]'
+		assert gotRightExceptionVarName<>wrongExceptionVarName
+		sw.writeAndIndent('catch (Exception [wrongExceptionVarName]) {\n')
+		sw.write('throw new ExpectException(typeof([exceptionTypeRef]), [wrongExceptionVarName]);\n')
+		sw.dedentAndWrite('}\n')
+		sw.write('if (![gotRightExceptionVarName]) throw new ExpectException(typeof([exceptionTypeRef]), null);\n')
+
+
+class ForStmt
+	is partial
+
+	pass
+	
+
+class OldForNumericStmt
+	is partial
+
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		csVar = _var.sharpName
+		trackLocals = .compiler.willTrackLocals
+		if trackLocals
+			sw.write('for (CobraImp.SetLocal("[.var.name]", [csVar]=')
+		else
+			sw.write('for ([csVar]=')
+		_start.writeSharpDef(sw)
+		if trackLocals
+			sw.write(')')
+		if _var.type.isDynamic
+			sw.write('; CobraImp.DynamicCompare([csVar], ')
+			_stop.writeSharpDef(sw, false)
+			sw.write(')[if(_dir==1, "<", ">")]0')
+			opName = if(_dir==1, 'op_Addition', 'op_Subtraction')
+			sw.write('; [csVar]=CobraImp.DynamicOp("[opName]", [csVar], ')
+			if _step
+				_step.writeSharpDef(sw, false)
+			else
+				sw.write('1')
+			sw.write(')')
+		else
+			sw.write('; [csVar]')
+			sw.write(if(_dir==1, '<', '>'))
+			_stop.writeSharpDef(sw)
+			sw.write('; ')
+			if _step
+				if _dir==1
+					sw.write('[csVar]+=')
+				else
+					sw.write('[csVar]-=')
+				_step.writeSharpDef(sw)
+			else
+				if _dir==1
+					sw.write('[csVar]++')
+				else
+					sw.write('[csVar]--')
+		sw.write(')')
+		_block.writeSharpDef(sw)
+
+
+class ForNumericStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		if _var.type.isDynamic
+			_writeSharpDefForDynamic(sw)
+		else
+			_writeSharpDefForStatic(sw)
+	
+	def _writeSharpDefForDynamic(sw as SharpWriter)
+		# TODO: this is the old numeric for loop behavior. 
+		csVar = _var.sharpName
+		trackLocals = .compiler.willTrackLocals
+		if trackLocals
+			sw.write('for (CobraImp.SetLocal("[.var.name]", [csVar]=')
+		else
+			sw.write('for ([csVar]=')
+		_start.writeSharpDef(sw)
+		if trackLocals
+			sw.write(')')
+		sw.write('; CobraImp.DynamicCompare([csVar], ')
+		_stop.writeSharpDef(sw, false)
+		sw.write(')[if(_dir==1, "<", ">")]0')
+		opName = if(_dir==1, 'op_Addition', 'op_Subtraction')
+		sw.write('; [csVar]=CobraImp.DynamicOp("[opName]", [csVar], ')
+		if _step
+			_step.writeSharpDef(sw, false)
+		else
+			sw.write('1')
+		sw.write(')')
+		sw.write(')')
+		_block.writeSharpDef(sw)
+
+	def _writeSharpDefForStatic(sw as SharpWriter)
+		"""
+		Pseudo example:
+			Cobra:
+				for x in start : stop : step
+					statements
+			C#:
+				{
+				type _lh_start_1 = start;
+				type _lh_stop_2 = stop;
+				type _lh_step_3 = step;
+				int _lh_dir_4 = (_lh_stop_2 - _lh_start_1) < 0 ? -1 : +1;
+				for (x = start; (_lh_dir_4==-1) ? x > stop : x < stop; x += step) {
+					statements
+				}
+				}
+		Note that it's important that the C# code gen uses a for() loop so that
+		the "continue" statement still increments the control variable.
+		
+		In the case that the 'stop' or 'step' are integer literals, no variables are needed for them.
+		TODO: If 'stop' or 'step' are const or readonly, same thing.
+		"""
+		trackLocals = .compiler.willTrackLocals
+		sw.write('{ // for [.var.name] in [.start.toCobraSource] : [.stop.toCobraSource]' + if(.step, ' : [.step.toCobraSource]', '') + '\n')
+		sharpVar = _var.sharpName
+		sharpStart = '_lh_start_[.serialNum]'
+		sharpStop = '_lh_stop_[.serialNum]'
+		sharpStep = '_lh_step_[.serialNum]'
+		sharpDir = '_lh_dir_[.serialNum]'
+		sharpType = _var.type.sharpRef
+
+		sw.write('[sharpType] [sharpStart] = ')
+		.start.writeSharpDef(sw)
+		sw.write(';\n')
+		
+		if .stop inherits IntegerLit
+			sharpStop = (.stop to IntegerLit).asSharp
+		else
+			sw.write('[sharpType] [sharpStop] = ')
+			.stop.writeSharpDef(sw)
+			sw.write(';\n')
+
+		if .step is nil
+			sharpStep = '1'
+		else if .step inherits IntegerLit
+			sharpStep = (.step to IntegerLit).asSharp
+		else
+			sw.write('[sharpType] [sharpStep] = ')
+			.step.writeSharpDef(sw)
+			sw.write(';\n')
+
+		sw.write('int [sharpDir] = [sharpStep] < 0 ? -1 : +1;\n')
+
+		sw.write('for(')
+		if trackLocals
+			sw.write('CobraImp.SetLocal("[.var.name]", [sharpVar] = [sharpStart])')
+		else
+			sw.write('[sharpVar] = [sharpStart]')		
+		sw.write('; ([sharpDir]==1) ? [sharpVar] < [sharpStop] : [sharpVar] > [sharpStop]; ')
+		if trackLocals
+			sw.write('CobraImp.SetLocal("[.var.name]", [sharpVar] += [sharpStep])')
+		else
+			sw.write('[sharpVar] += [sharpStep]')		
+		sw.write(') ')
+
+		_block.writeSharpDef(sw, false)
+
+		sw.dedent
+		sw.write('}\n')
+		sw.write('} // for [.var.name]\n')
+
+
+class ForEnumerableStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		# in a C# foreach, (1) you must declare a new variable, (2) you cannot reassign it and (3) you cannot access it after the loop
+		# these constraints don't exist in Cobra
+		helperName = '_lh_for_[_var.name]_[_varNumber]'
+		sw.write('foreach ([_var.type.sharpRef] [helperName] in ')
+
+		# TODO: the sharpRef of a type is not qualified and there is no using System.Collections;
+		# _what.writeSharpDefInContext(sw, false)
+		if _what.type.isDynamic
+			sw.write('CobraImp.GetEnumerable(')
+			_what.writeSharpDef(sw, false)
+			sw.write(')')
+		else
+			_what.writeSharpDef(sw, false)
+
+		sw.write(')')
+		stmt = '[.var.sharpName] = [helperName]'
+		if .compiler.willTrackLocals
+			stmt = 'CobraImp.SetLocal("[.var.name]", [stmt])'
+		stmt += ';\n'
+		_block.writeSharpDef(sw, stmt)
+
+
+class IfStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		# if you're looking for if-inherits related code gen, see BlockStmt
+		base.writeSharpDef(sw)
+		sw.write('if (')
+		_cond.writeSharpDef(sw, false)
+		sw.write(')')
+		_trueStmts.writeSharpDef(sw, false)
+		sw.dedent
+		if _falseStmts
+			sw.write('} else')
+			_falseStmts.writeSharpDef(sw, false)
+			sw.dedent
+		sw.write('}\n')
+
+
+class ListenOrIgnoreStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		_event.writeSharpDef(sw, false)
+		sw.write(' [.sharpOperator] ')
+		_target.writeSharpDef(sw, false)
+		sw.writeLine(';')
+
+	get sharpOperator as String is abstract
+
+
+class ListenStmt
+	is partial
+
+	get sharpOperator as String is override
+		return '+='
+
+
+class IgnoreStmt
+	is partial
+
+	get sharpOperator as String is override
+		return '-='
+
+
+class PassStmt
+	is partial
+
+	pass
+
+
+class PrintStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		if _destination
+			_destination.writeSharpDef(sw, true)
+			methodName = if(_stop, 'Write', 'WriteLine')
+			sw.write('.[methodName](')
+		else
+			methodName = if(_stop, 'PrintStop', 'PrintLine')
+			sw.write('CobraImp.[methodName](')
+		sep = ''
+		for arg in _args
+			sw.write('[sep]CobraImp._printStringMaker.MakeString(')
+			arg.writeSharpDef(sw)
+			sw.write(')')
+			sep = '+" "+'
+		sw.writeLine(');')
+
+
+class PrintRedirectStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		sw.write('CobraImp.PushPrintTo(')
+		_destination.writeSharpDef(sw, false)
+		sw.write(');\n')
+		sw.write('try')
+		_block.writeSharpDef(sw)
+		sw.write('finally {\n')
+		sw.indent
+		sw.write('CobraImp.PopPrintTo();\n')
+		sw.dedent
+		sw.write('}\n')
+
+
+class RaiseStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		name = .name.capped
+		localName = '_lh_event_[.serialNum]'
+		sw.writeLine('// raise [.name] ...')
+		sw.write('{ [_eventType.sharpRef] [localName] = this.[name]; if ([localName]!=null) [localName](')
+		sep = ''
+		for expr in _args
+			sw.write(sep)
+			expr.writeSharpDef(sw, false)
+			sep = ', '
+		sw.write('); }\n')
+
+
+class ReturnStmt
+	is partial
+
+	var _sharpResultVarName as String?
+
+	pro sharpResultVarName from var
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		ensurePart = .compiler.curCodeMember.ensurePart
+		willEnsure = ensurePart and ensurePart.willWriteSharp
+		if willEnsure
+			sw.write('_lh_canEnsure = true;\n')
+		if _expr
+			if willEnsure and _sharpResultVarName and _sharpResultVarName.length
+				sw.write('return [_sharpResultVarName]=')
+				_expr.writeSharpDefInContext(sw)
+				sw.write(';\n')
+			else
+				sw.write('return ')
+				_expr.writeSharpDefInContext(sw)
+				sw.write(';\n')
+		else
+			sw.write('return;\n')
+
+
+class TraceStmt
+	is partial
+
+	pass
+
+
+class TraceLocationStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		sw.write('CobraCore.Tracer.Trace([.sharpSourceSite]);\n')
+
+
+class TraceAllStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		sw.write('CobraCore.Tracer.Trace([.sharpSourceSite], "this", [_codePart.sharpThis]')
+		for param in _codePart.params
+			sw.write(', "[param.name]", [param.sharpName]')
+		for local in _codePart.locals
+			sw.write(', "[local.name]", [local.sharpName]')
+		sw.write(');\n')
+
+
+class TraceExprsStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		sw.write('CobraCore.Tracer.Trace([.sharpSourceSite]')
+		sep = ', '
+		for expr in _exprs
+			sw.write('[sep][Utils.sharpStringLiteralFor(expr.toCobraSource)][sep]')
+			expr.writeSharpDef(sw, false)
+		sw.write(');\n')
+
+
+class TryStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		if _successBlock
+			# C# has no "success" (or in Python, "else") block for the "try" statement
+			# so it has to be simulated
+			helperName = '_lh_success_[_varNumber]'
+			sw.write('bool [helperName] = false;\n')
+			if _finallyBlock
+				sw.write('try {\n')
+				sw.indent
+			sw.write('try')
+			_tryBlock.writeSharpDef(sw, false)
+			sw.write('[helperName] = true;\n')
+			sw.dedent
+			sw.write('}\n')
+			if _catchBlocks.count
+				.writeCatchBlocks(sw)
+			else
+				sw.write('finally { }\n')  # syntactically necessary
+			sw.write('if ([helperName])')
+			_successBlock.writeSharpDef(sw)
+			if _finallyBlock
+				sw.dedent
+				sw.write('}\n')
+				sw.write('finally')
+				_finallyBlock.writeSharpDef(sw)
+		else
+			sw.write('try')
+			_tryBlock.writeSharpDef(sw)
+			.writeCatchBlocks(sw)
+			if _finallyBlock
+				sw.write('finally')
+				_finallyBlock.writeSharpDef(sw)
+
+	def writeCatchBlocks(sw as SharpWriter)
+		for eb in _catchBlocks
+			sw.write('catch')
+			if eb.type
+				sw.write(' ([eb.type.sharpRef]')
+				if eb.varName
+					helperName = eb.sharpHelperName
+					sw.write(' [helperName]')
+				sw.write(')')
+			sb = StringBuilder()
+			if .compiler.hasDetailedStackTraceOption
+				sb.append('CobraImp.HandledException();\n')
+			if eb.varName
+				trackLocals = .compiler.willTrackLocals
+				if trackLocals
+					sb.append('CobraImp.SetLocal("[eb.varName]", ')
+				sb.append('[eb.sharpVarName] = [helperName]')
+				if trackLocals
+					sb.append(')')
+				sb.append(';\n')
+			eb.block.writeSharpDef(sw, sb.toString)
+
+
+class CatchBlock
+	is partial
+
+	var _sharpHelperName as String?
+
+	get sharpHelperName from var
+
+	get sharpVarName as String
+		return _var.sharpName
+
+
+class ThrowStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		sw.write('throw ')
+		if _expr
+			if _expr.type.isDynamic
+				sw.write('((System.Exception)')
+			_expr.writeSharpDef(sw, false)
+			if _expr.type.isDynamic
+				sw.write(')')
+		sw.write(';\n')
+
+
+class UsingStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		name = _var.sharpName
+		sw.write('// using\n')
+		sw.write('[name] = ')
+		_initExpr.writeSharpDef(sw)
+		sw.write(';\ntry')
+		_block.writeSharpDef(sw)
+		sw.write('finally {\n')
+		sw.indent
+		if _var.type.isReference
+			sw.write('if ([name]!=null) { ((IDisposable)[name]).Dispose(); [name] = null; }\n')
+		else
+			sw.write('((IDisposable)[name]).Dispose();\n')
+		sw.dedentAndWrite('}\n')
+
+
+class WhileStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		sw.write('while (')
+		_expr.writeSharpDef(sw, false)
+		sw.write(')')
+		_block.writeSharpDef(sw)
+
+
+class PostWhileStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter) is override
+		# base.writeSharpDef(sw) - don't generate the other form of while loop
+		sw.write('do')
+		_block.writeSharpDef(sw, false)
+		sw.dedent
+		sw.write('} while (')
+		_expr.writeSharpDef(sw, false)
+		sw.write(');\n')
+
+
+class YieldStmt
+	is partial
+
+	pass
+
+
+class YieldBreakStmt
+	is partial
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		sw.write('yield break;\n')
+
+
+class YieldReturnStmt
+	is partial
+
+	var _sharpResultVarName as String?
+
+	pro sharpResultVarName from var
+
+	def writeSharpDef(sw as SharpWriter)
+		base.writeSharpDef(sw)
+		ensurePart = .compiler.curCodeMember.ensurePart
+		willEnsure = ensurePart and ensurePart.willWriteSharp
+		if willEnsure
+			sw.write('_lh_canEnsure = true;\n')
+		if _expr
+			if willEnsure and _sharpResultVarName and _sharpResultVarName.length
+				#sw.write('yield return [_sharpResultVarName]=')  # TODO: resolve yield return with ensure
+				sw.write('yield return ')
+				_expr.writeSharpDefInContext(sw)
+				sw.write(';\n')
+			else
+				sw.write('yield return ')
+				_expr.writeSharpDefInContext(sw)
+				sw.write(';\n')
+		else
+			sw.write('yield return;\n')
 
 
 ##
