@@ -394,7 +394,7 @@ class Module
 
 
 class SharpModule
-	inherits Module
+	inherits NativeModule
 	"""
 	The purpose of a C# module is to allow the programmer to include .cs command for Cobra to
 	incorporate in the final compilation.
@@ -2822,10 +2822,6 @@ class YieldBreakStmt
 class YieldReturnStmt
 	is partial
 
-	var _sharpResultVarName as String?
-
-	pro sharpResultVarName from var
-
 	def writeSharpDef(sw as SharpWriter)
 		base.writeSharpDef(sw)
 		ensurePart = .compiler.curCodeMember.ensurePart
@@ -2833,8 +2829,11 @@ class YieldReturnStmt
 		if willEnsure
 			sw.write('_lh_canEnsure = true;\n')
 		if _expr
-			if willEnsure and _sharpResultVarName and _sharpResultVarName.length
-				#sw.write('yield return [_sharpResultVarName]=')  # TODO: resolve yield return with ensure
+			sharpResultVarName = .compiler.curCodeMember.sharpResultVarName
+			if willEnsure and sharpResultVarName.length
+				# TODO: resolve yield return with ensure
+				# sw.write('yield return [sharpResultVarName]=')
+				# so for now:
 				sw.write('yield return ')
 				_expr.writeSharpDefInContext(sw)
 				sw.write(';\n')
@@ -4211,6 +4210,16 @@ class CompareExpr
 
 class DotExpr
 	is partial
+
+	def needsContextCast as bool
+		r = base.needsContextCast
+		if not r
+			r = .left.type.isDynamic
+			# Why isn't the base implementation sufficient?
+			# Because for `d.getType` where `d` is dynamic, the type of `d.getType` is *not*.
+			# It`s System.Type because `getType` is recognized as an Object method.
+			# This would confuse the code generation into thinking that `d.getType` is a statically typed expression.
+		return r
 
 	def _writeSharpDef(sw as SharpWriter) is override
 		if _left.receiverType.isDynamic
