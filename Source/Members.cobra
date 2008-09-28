@@ -18,7 +18,7 @@ interface IBoxMember
 
 
 class BoxMember
-	is abstract
+	is abstract, partial
 	inherits NamedNode
 	implements IBoxMember
 
@@ -36,7 +36,6 @@ class BoxMember
 	var _testMethod as TestMethod?
 	var _matchingBaseMember as BoxMember?
 	var _sharedMethodBacking as String?
-	var _sharpExtraIsNames as Set<of String>?
 	var _binaryName as String?
 
 	def init(token as IToken, parentBox as Box, name as String, isNames as List<of String>, attribs as AttributeList)
@@ -309,79 +308,8 @@ class BoxMember
 		return newMember
 
 
-	## Code gen
-
-	pro sharpExtraIsNames from var
-	
-	get sharpThis as String
-		# sigh. I wish .NET had metaclasses instead of this instance vs. static crap
-		return if(.isShared, 'typeof([.parentBox.sharpName])', .parentBox.sharpThis)
-
-	def writeSharpNotNull(sw as SharpWriter)
-		if .resultType.isReference and not .resultType inherits NilableType
-			sw.writeLine(r'[' + .sharpNotNullPrefix + 'NotNull]')
-
-	get sharpNotNullPrefix as String
-		# 2007-12-22 Writing the attribute like [return: NotNull] is problematic because MemberInfo.getCustomAttributes()
-		# will not see it. At least not on Novell Mono 1.2.4. I don't know if that is a bug or a "feature".
-		#return 'return: '
-		return ''
-
-	def writeSharpTest(sw as SharpWriter)
-		if _testMethod
-			_testMethod.writeSharpDef(sw)
-
-	def writeSharpTestInvocation(sw as SharpWriter)
-		if _testMethod
-			sw.write('[_testMethod.sharpName]();\n')
-
-	def writeSharpParams(sw as SharpWriter)
-		.writeSharpParams(sw, '()')
-
-	def writeSharpParams(sw as SharpWriter, parens as String)
-		require parens.length==2 or parens==''
-		if parens.length
-			sw.write(parens[0])
-		sep = ''
-		for param in .params
-			sw.write(sep)
-			param.writeSharpDef(sw)
-			sep = ', '
-		if parens.length
-			sw.write(parens[1].toString+' ')
-
-	def writeSharpIsNames(sw as SharpWriter)
-		# TODO:
-		# if isNames is nil
-		#	isNames = _isNames
-		isNameCS = {
-			# only have to specify the ones that are different
-			'shared': 'static',
-			'nonvirtual': '',
-		}
-		wroteNames = Set<of String>()
-		sep = ''
-		for name in _isNames
-			name = Utils.getSS(isNameCS, name, name) to !
-			sw.write(sep)
-			sw.write(name)
-			sep = ' '
-			wroteNames.add(name)
-		if _sharpExtraIsNames
-			for name in _sharpExtraIsNames
-				if name not in wroteNames
-					sw.write(sep)
-					sw.write(name)
-					sep = ' '
-		if sep.length
-			sw.write(' ')
-
-	def writeSharpAttribs(sw as SharpWriter)
-		for attrib in _attribs
-			attrib.writeSharpDef(sw)
-
-
 class BoxEvent
+	is partial
 	inherits BoxMember
 	
 	var _handlerType as IType?
@@ -435,20 +363,9 @@ class BoxEvent
 		# TODO: error check that _handlerType is a delegate
 		# _handlerType.isDescendantOf(.compiler.libraryType('System.Delegate'))
 
-	get sharpName as String is override
-		return .name.capped
-
-	def writeSharpDef(sw as SharpWriter) is override
-		base.writeSharpDef(sw)
-		.writeSharpAttribs(sw)
-		.writeSharpIsNames(sw)
-		sw.write('event ')
-		sw.write(.handlerType.sharpRef)
-		sw.write(' [.sharpName]')
-		sw.write(';\n')
-
 
 class BoxVar
+	is partial
 	inherits BoxMember
 	implements IVar
 	"""
@@ -464,7 +381,6 @@ class BoxVar
 	var _type as IType?
 	var _initExpr as Expr?
 	var _ifInheritsStack as Stack<of IType>
-	var _useSharpNameStack as Stack<of String>
 	var _isAssignedTo as bool
 
 	def init(token as IToken, box as Box, name as String, typeNode as ITypeProxy?, isNames as List<of String>, initExpr as Expr?, attribs as AttributeList?, docString as String)
@@ -495,8 +411,6 @@ class BoxVar
 
 	get requiresDotPrefix as bool
 		return not _name.startsWith('_')
-
-	get useSharpNameStack from var
 
 	def attemptAssignmentOf(type as IType) as bool
 		# TODO: dup'ed with AbstractLocalVar
@@ -563,43 +477,9 @@ class BoxVar
 		set
 			assert false, 'Cannot set the type of a ClassVar.'
 
-	## Code Gen
-
-	get sharpAssignmentNames as List<of String>
-		return [_sharpName]
-		# return List<of String>(_useSharpNameStack)
-
-	get sharpName as String is override
-		if _ifInheritsStack.count
-			if _type.isReference
-				return '(([_ifInheritsStack.peek.sharpRef])[_sharpName])'
-			else
-				# could it be a subclass? no. value types are structs and cannot be subclassed so this must be `if i` where `i` is nullable struct
-				return '[_sharpName].Value'  # Nullable<of T>.Value
-		else
-			return .name
-		# return _useSharpNameStack.peek to !
-
-	get _sharpName as String
-		name = .name
-		if not name.startsWith('_')
-			name = name.capped
-		return name
-
-	def writeSharpDef(sw as SharpWriter) is override
-		base.writeSharpDef(sw)
-		.writeSharpAttribs(sw)
-		.writeSharpIsNames(sw)
-		sw.write(_type.sharpRef)
-		sw.write(' [_sharpName]')
-		if _initExpr
-			sw.write(' = ')
-			_initExpr.writeSharpDef(sw)
-		sw.write(';\n')
-
 
 class AbstractMethod
-	is abstract
+	is abstract, partial
 	inherits BoxMember
 	"""
 	The abstract ancestor class for
@@ -626,7 +506,6 @@ class AbstractMethod
 	var _hasYieldStmt as bool
 	var _curStmtIndex as int  # to implement .replaceChild
 	var _isCompilerGenerated as bool
-	var _sharpResultVarName = ''
 
 	def init(token as IToken, box as Box, name as String, paramsList as List<of Param>, isNames as List<of String>, attribs as AttributeList, docString as String)
 		base.init(token, box, name, isNames, attribs, docString)
@@ -873,216 +752,8 @@ class AbstractMethod
 		return newMember
 
 
-	## Code gen
-
-	get sharpGenericParams as String
-		"""
-		Can return, for example, '<TKey,TValue>' or ''.
-		"""
-		ensure ' ' not in result
-		return ''
-
-	get sharpResultVarName from var
-
-	def writeSharpDef(sw as SharpWriter)
-		base.writeSharpDef(sw)
-		.compiler.codeMemberStack.push(this)
-		try
-			.innerWriteSharpDef(sw)
-		finally
-			.compiler.codeMemberStack.pop
-
-	def innerWriteSharpDef(sw as SharpWriter)
-		pass
-	
-	def writeSharpImp(sw as SharpWriter, skipFirst as bool)
-		.compiler.codeMemberStack.push(this)
-		try
-			sw.writeAndIndent('{\n')
-			.writeSharpImpHeader(sw)
-			if .compiler.hasDetailedStackTraceOption
-				.writeDSTHead(sw)
-			for param in _params
-				.writeSharpParamCheck(param, sw)
-			if _requirePart and _requirePart.willWriteSharp
-				_requirePart.writeSharpDef(sw)
-			.writeSharpLocals(sw, nil, false)
-			willEnsure = _ensurePart and _ensurePart.willWriteSharp
-			if willEnsure
-				sw.write('bool _lh_canEnsure = false;\n')
-				# have to set `out` parameters or C# will error on them being passed in the `finally` for the ensure,
-				# even though the _lh_canEnsure guard logically prevents problems at run-time
-				for param in _params
-					if param.isOut
-						sharpInit = param.type.sharpInit
-						if not sharpInit.length
-							# TODO/HACK: yes we need something like this (or a way to convice C# that the out param reference in `finally` really is okay),
-							# but it should be something less hackish, like an attribute
-							sharpInit = 'DateTime.Today'
-						sw.write('[param.sharpName] = [sharpInit];')
-				if _sharpResultVarName.length  # set in _bindImp
-					sw.write('[_returnType.sharpRef] [_sharpResultVarName]')
-					if _returnType.sharpInit.length
-						sw.write('= [_returnType.sharpInit]')
-					sw.write(';\n')
-				sw.writeAndIndent('try {\n')
-			for stmt in _stmts
-				if skipFirst
-					skipFirst = false
-					continue
-				stmt.writeSharpStmt(sw)
-			if willEnsure
-				if not stmt inherits ReturnStmt and not stmt inherits ThrowStmt
-					sw.write('_lh_canEnsure = true;\n')
-				sw.dedentAndWrite('} finally { // ensure\n')
-				sw.indentAndWrite('if (_lh_canEnsure) {\n')
-				sw.indent
-				_ensurePart.writeSharpDef(sw)
-				sw.dedentAndWrite('}\n')
-				sw.dedentAndWrite('}\n')
-			if .compiler.hasDetailedStackTraceOption
-				.writeDSTTail(sw)
-			.writeSharpImpFooter(sw)
-			sw.dedent
-			sw.write('}\n')
-			sw.write('\n')
-		finally
-			.compiler.codeMemberStack.pop
-
-	def writeSharpImpHeader(sw as SharpWriter)
-		pass
-		
-	def writeSharpImpFooter(sw as SharpWriter)
-		pass
-		
-	def writeSharpPassArgs(sw as SharpWriter)
-		.writeSharpPassArgs(sw, '()', false)
-
-	def writeSharpPassArgs(sw as SharpWriter, parens as String, excludeOutArgs as bool)
-		require parens.length==2 or parens==''
-		if parens.length
-			sw.write(parens[0])
-		sep = ''
-		for param in _params
-			if excludeOutArgs and param.isOut
-				continue
-			sw.write(sep)
-			sw.write(param.sharpName)
-			sep = ', '
-		if parens.length
-			sw.write(parens[1])
-
-	def writeSharpLocals(sw as SharpWriter, locals as List<of LocalVar>?, open as bool)
-		if open
-			sw.writeAndIndent('{\n')
-		# record the `old` expressions for `ensure`
-		.writeSharpOldAssignments(sw)
-		if locals is nil
-			locals = _locals
-		if locals.count
-			sw.write('// locals\n')
-			for local in locals
-				if not local.isImplicit
-					sw.write('[local.type.sharpRef] [local.sharpName]')
-					init = local.type.sharpInit
-					if init.length
-						sw.write(' = [init]')
-					sw.write(';\n')
-
-	def writeSharpRequireParamDecls(sw as SharpWriter)
-		sep = ''
-		for param in .params
-			if param.isOut
-				# a requirement cannot say anything useful about a parameter that is output only
-				continue
-			sw.write(sep)
-			param.writeSharpDefSansReferenceLabels(sw)  # no `inout/ref` label since a contract cannot modify reference arguments
-			sep = ', '
-		
-	def writeSharpOldAssignments(sw as SharpWriter)
-		if .isOverride and .matchingBaseMember
-			(.matchingBaseMember to AbstractMethod).writeSharpOldAssignments(sw)
-		for oldExpr in _oldExprs
-			oldExpr.writeSharpAssignment(sw)
-
-	def writeSharpEnsureArgs(sw as SharpWriter)
-		if .sharpResultVarName.length
-			sw.write('[.sharpResultVarName]')
-			sep = [',']
-		else
-			sep = ['']
-		_writeSharpOldArgs(sw, sep)
-		if .params.count
-			sw.write(sep[0])
-		.writeSharpPassArgs(sw, '', false)  # these have to come last, because they might include a C# "params" which has to be last
-
-	def _writeSharpOldArgs(sw as SharpWriter, sep as List<of String>)
-		if .isOverride and .matchingBaseMember
-			assert .matchingBaseMember is not this
-			(.matchingBaseMember to AbstractMethod)._writeSharpOldArgs(sw, sep)
-		for oldExpr in _oldExprs
-			sw.write(sep[0])
-			sw.write(oldExpr.sharpVarName)
-			sep[0] = ', '
-
-	def writeSharpEnsureParamDecls(sw as SharpWriter)
-		if .sharpResultVarName.length
-			sw.write('[.resultType.sharpRef] [.sharpResultVarName]')
-			sep = [',']
-		else
-			sep = ['']
-		_writeSharpOldParamDecls(sw, sep)
-		# these have to come last, because they might include a C# "params" which has to be last
-		for param in .params
-			sw.write(sep[0])
-			param.writeSharpDefSansReferenceLabels(sw)  # no `out` or `inout/ref` labels since a contract cannot modify reference arguments
-			sep[0] = ', '
-
-	def _writeSharpOldParamDecls(sw as SharpWriter, sep as List<of String>)
-		if .isOverride and .matchingBaseMember
-			assert .matchingBaseMember is not this
-			(.matchingBaseMember to AbstractMethod)._writeSharpOldParamDecls(sw, sep)
-		for oldExpr in _oldExprs
-			sw.write(sep[0])
-			sw.write('[oldExpr.type.sharpRef] [oldExpr.sharpVarName]')
-			sep[0] = ', '
-
-	def writeSharpParamCheck(param as Param, sw as SharpWriter)
-		if .isCompilerGenerated, return
-		if param.type.isReference and not param.type inherits NilableType and not param.isOut
-			if .compiler.options.boolValue('include-nil-checks')
-				sw.write('if (CobraCore._willCheckNil && [param.sharpName]==null) throw new ArgumentNullException("[param.name]");\n')
-
-	def writeDSTHead(sw as SharpWriter)
-		if not .canHaveDetailedStackTrace
-			return
-		# could be a neat option, -trace-methods, but maybe done with events:
-		# sw.writeLine('Console.WriteLine(">> [.parentBox.name].[.name]");')
-		sw.write('CobraImp.PushFrame("[.parentBox.name]", "[.name]", [Utils.sharpStringLiteralFor(.token.fullPathName)], [.token.lineNum]')
-		if not .isShared
-			sw.write(', "this", [.compiler.curBox.sharpThis]')
-		for param in .params
-			if not param.isImplicit and not param.isOut
-				sw.write(', "[param.name]", [param.sharpName]')
-		sw.write(');\n')
-		sw.writeAndIndent('try {\n')
-
-	def writeDSTTail(sw as SharpWriter)
-		if not .canHaveDetailedStackTrace
-			return
-		# sw.writeLine('Console.WriteLine("<< [.parentBox.name].[.name]");')
-		# this catch all clashes with yield statements. which is why .canHaveDetailedStackTrace returns false if a method has a yield statement.
-		sw.dedentAndWrite('} catch {\n')
-		sw.indent
-		sw.write('CobraImp.CaughtUncaughtException();\n')
-		sw.write('throw;\n')
-		sw.dedentAndWrite('} finally {\n')
-		sw.indent
-		sw.write('CobraImp.PopFrame();\n')
-		sw.dedentAndWrite('}\n')
-
-
 class Initializer
+	is partial
 	inherits AbstractMethod
 
 	def init(token as IToken, box as Box, paramsList as List<of Param>, isNames as List<of String>, attribs as AttributeList, docString as String)
@@ -1157,54 +828,10 @@ class Initializer
 					else if stmt.left inherits ThisLit and ((stmt.right inherits MemberExpr and (stmt.right to MemberExpr).name == 'init') or (stmt.right inherits CallExpr and (stmt.right to CallExpr).name == 'init'))  # CC: axe casts
 						stmt.recordError('Another initializer can only be invoked in the first statement.')
 			first = false
-
 				
-	## Code gen
-
-	def innerWriteSharpDef(sw as SharpWriter)
-		base.innerWriteSharpDef(sw)
-		.writeSharpAttribs(sw)
-		first = if(_stmts.count, _stmts[0], nil)
-		callInitializer as String? = nil
-		if first inherits DotExpr
-			if first.left inherits ThisOrBaseLit
-				if (firstRight = first.right) inherits IDotRightExpr
-					if firstRight.name == 'init'
-						callInitializer = (first.left to ThisOrBaseLit).asSharp
-						args = firstRight.args
-						Stmt.inInitCall = true
-						didSetInInitCall = true
-		.writeSharpIsNames(sw)
-		sw.write(' [.parentBox.rootName]')
-		.writeSharpParams(sw)
-		if callInitializer
-			sw.writeAndIndent('\n')
-			sw.write(': [callInitializer](')
-			sep = ''
-			for arg in args
-				sw.write(sep)
-				arg.writeSharpDef(sw)
-				sep = ', '
-			sw.write(') ')
-			sw.dedent
-			if didSetInInitCall
-				assert Stmt.inInitCall  # make sure it wasn't reset somewhere else
-				Stmt.inInitCall = false
-		.writeSharpImp(sw, if(callInitializer, true, false))
-		if _requirePart
-			_requirePart.writeSharpMethod(sw)
-		if _ensurePart
-			_ensurePart.writeSharpMethod(sw)
-		if .compiler.includeTests
-			.writeSharpTest(sw)
-
-	def writeSharpImpHeader(sw as SharpWriter)
-		base.writeSharpImpHeader(sw)
-		if .isStructMember and .compiler.options['contracts'] <> 'none'
-			sw.write('\n_ih_invariantGuard = 0;\n\n')  # otherwise C# complains: Field "STRUCTNAME._ih_invariantGuard" must be fully assigned before control leaves the constructor
-		
 
 class Method
+	is partial
 	inherits AbstractMethod
 
 	var _implementsTypeNode as ITypeProxy?
@@ -1388,75 +1015,8 @@ class Method
 					stmt.recordError('Cannot return a value from an iterator. Use the yield return statement to return a value, or yield break to end the iteration.')
 
 
-	## Code gen
-
-	get sharpGenericParams as String is override
-		if _genericParams.count
-			sb = StringBuilder()
-			sb.append('<')
-			sep = ''
-			for param in _genericParams
-				sb.append(sep)
-				sb.append(param.sharpName)
-				sep = ','
-			sb.append('>')
-			return sb.toString
-		else
-			return ''
-
-	def innerWriteSharpDef(sw as SharpWriter)
-		base.innerWriteSharpDef(sw)
-		.writeSharpNotNull(sw)
-		.writeSharpAttribs(sw)
-		name = .sharpName
-		returnType = _returnType ? .compiler.voidType
-		if _implementsType
-			name = _implementsType.sharpRef + '.' + name
-		.writeSharpIsNames(sw)
-		sw.write('[returnType.sharpRef] [name][.sharpGenericParams]')
-		.writeSharpParams(sw)
-		if .isInterfaceMember and not .isExtensionMember
-			sw.write(';\n')
-		else
-			if .isAbstract
-				sw.writeLine(';')
-			else
-				.writeSharpImp(sw, false)
-			if _requirePart
-				_requirePart.writeSharpMethod(sw)
-			if _ensurePart
-				_ensurePart.writeSharpMethod(sw)
-			if .compiler.includeTests
-				.writeSharpTest(sw)
-
-	def writeSharpImpHeader(sw as SharpWriter)
-		base.writeSharpImpHeader(sw)
-		if .isMain
-			if .compiler.hasExceptionReportOption
-				sw.writeLine('try { // Exception Report')
-				sw.indent
-			else if .compiler.options.boolValue('debugging-tips')
-				sw.writeLine('try { // -debugging-tips')
-				sw.indent
-		if .isMain and .compiler.options.boolValue('include-tests')
-			sw.writeLine('CobraCore.RunAllTests();  // turn off with -include-tests:no (see cobra -h)')
-
-	def writeSharpImpFooter(sw as SharpWriter)
-		base.writeSharpImpFooter(sw)
-		if .isMain
-			if .compiler.hasExceptionReportOption
-				sw.dedent
-				sw.writeLine('} catch (Exception _lh_exceptionReportException) { CobraCore.HandleUnhandledException(_lh_exceptionReportException); }')
-			else if .compiler.options.boolValue('debugging-tips')
-				sw.dedent
-				sw.writeLine('} catch { CobraCore.PrintDebuggingTips(); throw; }')
-				
-	get sharpName as String is override
-		return .name.capped
-
-
 class ProperDexer
-	is abstract
+	is abstract, partial
 	inherits BoxMember
 	"""
 	The abstract base class for Property and Indexer.
@@ -1576,31 +1136,8 @@ class ProperDexer
 		return newMember
 
 
-	## Code gen
-
-	def writeSharpBody(sw as SharpWriter)
-		sw.write(' {\n')
-		sw.indent
-		if _getPart
-			if .isAbstract or .isInterfaceMember
-				sw.write('\tget;\n')
-			else if .isClassMember or .isStructMember
-				_getPart.writeSharpDef(sw)
-			else
-				throw FallThroughException(this)
-		if _setPart
-			if .isAbstract or .isInterfaceMember
-				sw.write('\tset;\n')
-			else if .isClassMember or .isStructMember
-				_setPart.writeSharpDef(sw)
-			else
-				throw FallThroughException(this)
-		sw.dedent
-		sw.write('}\n')
-
-
 class ProperDexerXetter
-	is abstract
+	is abstract, partial
 	inherits AbstractMethod
 	"""
 	Base class for IndexerGetter, IndexerSetter, PropertyGetter and PropertySetter.
@@ -1635,13 +1172,9 @@ class ProperDexerXetter
 		# not the get or set part
 		_parent.usesBase
 
-	def innerWriteSharpDef(sw as SharpWriter)
-		base.innerWriteSharpDef(sw)
-		sw.write(.xetPartName)
-		.writeSharpImp(sw, false)
-
 
 class MemberOverload
+	is partial
 	inherits BoxMember
 	"""
 	Methods and indexers can be overloaded.
@@ -1752,6 +1285,7 @@ class MemberOverload
 
 
 class TestMethod
+	is partial
 	inherits Method
 	"""
 	TODO: Does TestMethod need to be altered in light of generic parameters to methods?
@@ -1791,15 +1325,6 @@ class TestMethod
 			_name = value
 
 	pro overloadId from var
-
-	get sharpName as String is override
-		if _forMember
-			name = 'test_' + _forMember.name.capped
-			if .overloadId <> -1
-				name += '_ol_[.overloadId]'
-			return name
-		else
-			return 'test_[_forBox.sharpKeyWord]_'+_forBox.sharpNameComponent
 
 
 class ContractPart
