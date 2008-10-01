@@ -742,8 +742,7 @@ class Parser
 		"""
 		name = token.text.trim
 		if token.which=='OPEN_GENERIC'
-			for i = 0 .. paramList.count-1
-				name += ','
+			for i in paramList.count-1, name += ','
 			name += '>'
 		return name
 
@@ -1209,14 +1208,20 @@ class Parser
 			.throwError('Method names cannot be the same as their enclosing [curBox.englishName]. Use `def init` for creating an initializer/constructor or choose another name.')  # TODO list the enclosing types location
 		overload = _overloadIfNeeded(curBox, name)  # also checks for various errors
 
-		if opener.which in ['OPEN_CALL', 'OPEN_GENERIC']
-			if opener.which == 'OPEN_GENERIC'
-				.expect('LPAREN')
-			params = .paramDecls(true)
-			if params.count == 0
-				_warning(opener, 'Unnecessary parentheses. You can remove them.')
+		unnecessary = false
+		if opener.which == 'OPEN_CALL'
+			params = .paramDecls(/#skipParen=#/true)
+			if params.count == 0, unnecessary = true
+		else if opener.which == 'OPEN_GENERIC'
+			if .optional('LPAREN')
+				params = .paramDecls(/#skipParen=#/true)
+				if params.count == 0, unnecessary = true
+			else
+				params = List<of Param>()
 		else
 			params = List<of Param>()
+		if unnecessary
+			_warning(opener, 'Unnecessary parentheses. You can remove them.')
 
 		if .optional('AS')
 			returnType = .typeId to ITypeProxy?
@@ -2640,7 +2645,7 @@ class Parser
 				assert not callName.endsWith('(')
 				args = .commaSepExprs(['RPAREN'], true, true)
 				if .opStack.count and .opStack.peek == 'DOT'
-					return CallExpr(token, callName, args)
+					return CallExpr(token, callName, args, true)
 				else
 					return PostCallExpr(token, IdentifierExpr(token, callName), args)
 			on 'OPEN_GENERIC'
@@ -2653,9 +2658,13 @@ class Parser
 						on 'COMMA', pass
 						on 'GT', isDone = true
 						else, .throwError('Unexpected token [.last] in type arguments.')
-				.expect('LPAREN')
-				args = .commaSepExprs(['RPAREN'], true, true)
-				return CallExpr(token, callName, typeArgs, args)
+				if .optional('LPAREN')
+					args = .commaSepExprs(['RPAREN'], true, true)
+					parens = true
+				else
+					args = List<of Expr>()
+					parens = false
+				return CallExpr(token, callName, typeArgs, args, parens)
 			else
 				throw FallThroughException(token)				
 

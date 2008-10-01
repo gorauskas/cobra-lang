@@ -363,16 +363,18 @@ class CallExpr
 	var _genericArgProxies as List<of ITypeProxy>?
 	var _genericArgTypes as List<of IType>?
 	var _args as List<of Expr>
+	var _hasParens as bool
 	var _definition as INamedNode?
 
-	def init(token as IToken, name as String, args as List<of Expr>)
-		.init(token, name, nil, args)
+	def init(token as IToken, name as String, args as List<of Expr>, hasParens as bool)
+		.init(token, name, nil, args, hasParens as bool)
 
-	def init(token as IToken, name as String, genericArgProxies as List<of ITypeProxy>?, args as List<of Expr>)
+	def init(token as IToken, name as String, genericArgProxies as List<of ITypeProxy>?, args as List<of Expr>, hasParens as bool)
 		base.init(token)
 		_name = name
 		_genericArgProxies = genericArgProxies
 		_args = args
+		_hasParens = hasParens
 		_definition = nil
 
 	def addMinFields is override
@@ -395,6 +397,8 @@ class CallExpr
 		if base.hasError, return true
 		for arg in _args, if arg.hasError, return true
 		return false
+
+	get hasParens from var
 
 	get willChangeVar as bool is override
 		for arg in _args, if arg.willChangeVar, return true
@@ -519,12 +523,29 @@ class CallExpr
 							# Note that overloads can have different return types (even if more than just the return type is needed to distinguish them). Example: Math.
 							# Plenty of info here:
 							# http://www.google.com/search?hl=en&q=C%23+overloaded+method+resolution
+
+							# TODO: handle type inference for generic members. See the C# spec for details.
 						
 							# I cooked up the algorithm below as a quick way to fix some bugs caused by the previous implementation of um, doing nothing.
 							# But this likely needs to be rewritten.
 							candidates = []
-							# print
-							for member in definition.members
+
+							# handle generic arguments to the method
+							genericArgTypes = .genericArgTypes
+							if genericArgTypes and genericArgTypes.count
+								members = List<of BoxMember>()
+								for member as BoxMember? in definition.members
+									if member inherits Method
+										if member.containsGenericParameters
+											if member.genericParams.count == genericArgTypes.count
+												member = member.constructedMethodWith(genericArgTypes to !)
+											else
+												member = nil
+									if member, members.add(member)
+							else
+								members = definition.members
+
+							for member in members
 								if member.params.count <> args.count
 									score = -1000
 								else
@@ -572,13 +593,13 @@ class CallExpr
 									print '   [member]'
 							# print 'winner:', score, winner
 							sharp'definition = winner'
-							type = sharp'winner.ResultType'
+							type = winner.resultType
+						# end if definition inherits MemberOverload
 						else
 							type = definition.resultType
 							hasVari = false
 							for param in definition.params
-								if param.type inherits VariType
-									hasVari = true
+								if param.type inherits VariType, hasVari = true
 							if hasVari
 								# TODO handle variable number of args (4)
 								pass
@@ -586,6 +607,7 @@ class CallExpr
 								if .genericArgTypes and .genericArgTypes.count
 									if definition inherits Method
 										definition = definition.constructedMethodWith(.genericArgTypes to !)
+										type = definition.resultType
 									else
 										.throwError('Cannot pass type arguments to "[definition.name]" because it is a [definition.getType.name].') # @@ _definition.englishName; also might need this error in other locations
 								check = true
@@ -637,10 +659,10 @@ class CallExpr
 				type = .compiler.passThroughType
 			_definition = definition
 			if _definition
-				definition.isUsed = true
+				_definition.isUsed = true
 			_type = type
 		assert _type, _definition
-		if .args.count == 0
+		if .args.count == 0 and .hasParens
 			if (.definition inherits Method or .definition inherits MemberOverload) and not dotNode.isImplicit
 				.compiler.warning(this, 'Unnecessary parentheses. You can remove them.')
 		else
@@ -1418,7 +1440,7 @@ class PostCallExpr
 			if expr.name.startsWith('_') and not .compiler.symbolForName(expr.name, true, false) inherits BoxVar
 				# method invocation
 				# _foo(x) --> ._foo(x)
-				newCall = CallExpr(.token, .name, .args)
+				newCall = CallExpr(.token, .name, .args, true)
 				dotted = DotExpr(.token, 'DOT', ThisLit(.token), newCall, true).bindImp
 				_type = dotted.type to IType
 				_transformTo(dotted)
