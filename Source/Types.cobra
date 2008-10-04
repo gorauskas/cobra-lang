@@ -39,6 +39,8 @@ interface ITypeProvider
 
 	get numberType as NumberType
 
+	get objectType as IType
+
 	get passThroughType as PassThroughType
 
 	get typeType as IType
@@ -153,6 +155,9 @@ class BasicTypeProvider
 
 	get numberType as NumberType
 		return .decimalType
+
+	get objectType as IType
+		return .libraryType('System.Object')
 
 	get passThroughType as PassThroughType
 		if _passThroughType is nil
@@ -367,7 +372,7 @@ class BasicLibraryType
 		return .clrType.name
 
 	get typeForIdentifier as IType
-		return this # well should really be System.Type
+		return this # well should really be System.Type TODO: what?
 
 	get typeForReceiver as IType
 		return this
@@ -681,7 +686,7 @@ class ClrTypeProxy
 				if .compiler and .compiler.verbosity > 1
 					print msg
 				# TODO: .compiler.warning(msg)
-				return .compiler.libraryType('System.Object')
+				return .compiler.objectType
 			else
 				.throwError(msg)
 		return .compiler.intType  # CC: to make C# code gen happy.
@@ -894,7 +899,7 @@ class CobraType
 		if .superType and type.superType
 			return .superType.greatestCommonDenominatorWith(type.superType to !)
 		else
-			return .typeProvider.libraryType('System.Object')
+			return .typeProvider.objectType
 
 	def isAssignableTo(type as IType) as bool
 		require
@@ -904,7 +909,7 @@ class CobraType
 				return true
 			if type is .typeProvider.dynamicType
 				return true
-			if type is .typeProvider.libraryType('System.Object')
+			if type is .typeProvider.objectType
 				return true
 			# TODO: remove this:
 			if type inherits GenericParam
@@ -952,7 +957,7 @@ class CobraType
 		"""
 		Returns a named member of System.Object by default.
 		"""
-		objectClass = .compiler.libraryType('System.Object')
+		objectClass = .compiler.objectType
 		return objectClass.memberForName(name)
 
 	def suggestionsForBadMemberName(name as String) as List<of String>
@@ -1119,13 +1124,13 @@ class CharType
 
 	def isComparableTo(b as IType) as bool
 		r = base.isComparableTo(b)
-		if not r and b is .compiler.libraryType('System.String')
+		if not r and b is .compiler.stringType
 			r = true
 		return r
 
 	def isEquatableTo(t as IType) as bool
 		r = base.isEquatableTo(t)
-		if not r and t is .compiler.libraryType('System.String')
+		if not r and t is .compiler.stringType
 			r = true
 		return r
 

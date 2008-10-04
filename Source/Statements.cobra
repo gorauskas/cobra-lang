@@ -636,9 +636,9 @@ class IfStmt
 					if cond.expr inherits IdentifierExpr
 						leftVar = (cond.expr to IdentifierExpr).definition
 						leftType = leftVar.typeForIdentifier
-						if leftType inherits NilableType or (leftType.isReference and leftType is not .compiler.libraryType('System.Object'))
+						if leftType inherits NilableType or (leftType.isReference and leftType is not .compiler.objectType)
 							# if x ...
-							# Note: The check for System.Object just above is due to the fact that a type of System.Object can point to boxed values such as ints and bools which Cobra will treat properly at runtime.
+							# Note: The check for .objectType just above is due to the fact that a type of Object can point to boxed values such as ints and bools which Cobra will treat properly at runtime.
 							notNil = true
 			# TODO: the checks about variables that are never nil (/always non-nil) need to happen at the *expression* level so they kick in for assert, require, etc.
 			if not ifInherits and not notNil
@@ -849,7 +849,7 @@ class RaiseStmt
 				_eventType = expr.potentialType
 				if _eventType.isDescendantOf(.compiler.libraryType('System.Delegate')) or _eventType inherits MethodSig
 					pass
-				else if _eventType.isDescendantOf(.compiler.libraryType('System.Exception'))
+				else if _eventType.isDescendantOf(.compiler.exceptionType)
 					.throwError('Use "throw" instead of "raise" for the exception "[_eventType.name]".')
 				else
 					.throwError('Invalid expression for raising events. Try "raise .someEvent, args" or "throw SomeException(args)".')
@@ -1304,7 +1304,7 @@ class YieldReturnStmt
 			if resultType inherits Box and (resultType to Box).isGeneric
 				elementType = (resultType to Box).genericParams[0]
 			else
-				elementType = .compiler.libraryType('System.Object')
+				elementType = .compiler.objectType
 			if not expr.canBeAssignedTo(elementType)
 				suffix = if(elementType is .compiler.voidType, 'not declared to return anything.', 'declared to return a [elementType.name].')
 				.throwError('Cannot return [expr.type.name] because "[curCodeMember.name]" is [suffix]')

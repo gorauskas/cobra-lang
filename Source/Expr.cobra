@@ -185,23 +185,20 @@ class Expr
 		if type inherits NilableType
 			return _isSequence(type.theWrappedType to passthrough)
 		# TODO: check for ISliceable which would have a .getSlice
-		if type.isDescendantOf(.compiler.libraryType('System.String'))
+		if type.isDescendantOf(.compiler.stringType)
 			return true
-		# if type.isDescendantOf(.compiler.libraryType('System.Array'))
+		# if type.isDescendantOf(.compiler.arrayType)
 		if type inherits ArrayType
 			return true
-		if type.isDescendantOf(.compiler.libraryType('System.Collections.IList'))
+		if type.isDescendantOf(.compiler.ilistType)
 			return true
-		# TODO: is ArrayList redundant with IList above? I think so.
-		if type.isDescendantOf(.compiler.libraryType('System.Collections.ArrayList'))
-			return true
-		genericList = .compiler.libraryType('System.Collections.Generic.List<of>')
+		genericList = .compiler.listOfType
 		if type.isDescendantOf(genericList)
 			return true
 		if type inherits Box
 			if type.genericDef is genericList
 				return true
-		genericIList = .compiler.libraryType('System.Collections.Generic.IList<of>')
+		genericIList = .compiler.ilistOfType
 		if type.isDescendantOf(genericIList)
 			return true
 		if type inherits Box
@@ -491,7 +488,7 @@ class CallExpr
 					type = .compiler.nilableDynamicType
 				else if lrt is .compiler.passThroughType or lrt inherits PrimitiveType  # TODO: lame: bailing out on PrimitiveType so float.parse() will work. See Tests\150-basics-two\510-number-parse.cobra
 					if _name == 'toString'
-						type = .compiler.libraryType('System.String')
+						type = .compiler.stringType
 					else
 						type = .compiler.passThroughType
 				else
@@ -1627,7 +1624,7 @@ class RefExpr
 				.throwError('Only methods can be referenced, not [Utils.pluralize((_expr.definition to dynamic).englishName)].')
 		else
 			.throwError('Unexpected reference. Refer to methods after `ref` or remove `ref`.')
-		_type = .compiler.passThroughType # .libraryType('System.Delegate')
+		_type = .compiler.passThroughType # TODO: Set a real type such as .libraryType('System.Delegate')
 		# TODO: need to do something more sophisticated like overriding: 	def canBeAssignedTo(type as IType) as bool
 
 	def toCobraSource as String is override
@@ -2286,12 +2283,12 @@ class StringLit
 
 	def _bindInt is override
 		if not _type
-			_type = .compiler.libraryType('System.String')
+			_type = .compiler.stringType
 		base._bindInt
 
 	def _bindImp is override
 		if not _type
-			_type = .compiler.libraryType('System.String')
+			_type = .compiler.stringType
 		base._bindImp
 
 	def toCobraSource as String is override
@@ -2352,7 +2349,7 @@ class StringSubstLit
 			catch ne as NodeException
 				.compiler.recordError(ne)
 		if not _type
-			_type = .compiler.libraryType('System.String')
+			_type = .compiler.stringType
 
 
 class FormattedExpr
@@ -2385,7 +2382,7 @@ class FormattedExpr
 	def _bindImp is override
 		base._bindImp
 		_expr.bindImp
-		_type = .compiler.libraryType('System.String')
+		_type = .compiler.stringType
 
 
 class ThisOrBaseLit
@@ -2530,7 +2527,7 @@ class SequenceLit
 					i += 1
 				# TODO: get rid of this hack:
 				if type.getType.name=='CobraType'
-					type = .compiler.libraryType('System.Object')
+					type = .compiler.objectType
 			_type = _makeTypeWith(type)
 
 	def _makeTypeWith(type as IType) as IType is abstract

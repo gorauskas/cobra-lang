@@ -305,7 +305,7 @@ class NumericPromoExpr
 		tdecimal = .compiler.decimalType
 		tfloat = .compiler.anyFloatType
 		tpassthrough = .compiler.passThroughType
-		tstring = .compiler.libraryType('System.String')
+		tstring = .compiler.stringType
 		cannotMix = false
 		leftType = _left.type
 		if leftType inherits NilableType
@@ -611,7 +611,7 @@ class DotExpr
 			_type = _right.type
 			if not _type.isDynamic
 				# interesting example: d.getType
-				# where `d` is dynamic. The resulting type, however, is System.Type because `getType` is recognized as a method of System.Object
+				# where `d` is dynamic. The resulting type, however, is the .typeType because `getType` is recognized as a method of Object
 				_contextType = _type
 		else if not _left.hasError and not _right.hasError
 			if _left inherits IdentifierExpr  # TODO: seems flawed. The error below should take place if left is a DotExpr
@@ -626,8 +626,8 @@ class DotExpr
 			if _left inherits ThisOrBaseLit
 				if .curCodeMember and .curCodeMember.isShared and not _dotRightExpr.member.isShared  # .curCodeMember is nil when bind imp'ing on var init exprs like "var _x = someExpr"
 					.throwError('Cannot access instance member "[_dotRightExpr.name]" from the current shared member. Make the member "shared" or create an instance of the type.')
-			# Check for qualified type such as System.Object
-			if .definition implements IType and .type.isDescendantOf(.compiler.libraryType('System.Type'))
+			# Check for qualified type such as Foo.Bar
+			if .definition implements IType and .type.isDescendantOf(.compiler.typeType)
 				# A.B where A and B are namespaces or types
 				_transformTo(TypeExpr(.token, .definition to IType).bindImp)
 			else if (right = .right) inherits CallExpr
@@ -787,7 +787,7 @@ class AbstractToExpr
 		base.init(opToken, op, left, right)
 		assert right inherits IPotentialTypeExpr
 		_potentialTypeExpr = right to IPotentialTypeExpr
-		
+
 	def _bindImp
 		base._bindImp
 		if not _right.isKindOf(.compiler.typeType) and not _right.type inherits Box
@@ -796,7 +796,7 @@ class AbstractToExpr
 		if _type is nil
 			.throwError('The expression "[_potentialTypeExpr.toCobraSource]" does not identify a type.')
 		# TODO: not quite ready for the following
-		#       at the very least, need to enhance CobraType and descendants to have a superType of System.Object
+		#       at the very least, need to enhance CobraType and descendants to have a superType of .objectType
 		# test case is 208-to-errors.cobra with substring 'can never be cast to a'
 		#else if _left.type and not _type.isDescendantOf(_left.type to !)
 		#	.throwError('The given expression, of type "[_left.type.name]", can never be cast to a "[_potentialTypeExpr.toCobraSource]".')
