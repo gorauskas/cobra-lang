@@ -126,6 +126,13 @@ class Expr
 		body
 			return .type.isDescendantOf(type)
 
+	def isKindOfCollection as bool
+		require
+			.type
+			.compiler
+		body
+			return .isKindOf(.compiler.collectionType) or .isKindOf(.compiler.collectionOfType)
+
 	pro isParened from var
 		"""
 		Set by the parser if this expression was wrapped in parenthesis.
@@ -794,7 +801,7 @@ class ForExpr
 		base._bindImp
 		_what.bindImp  # bind first because it may be needed for type inference
 		whatType = _what.type to !
-		if not whatType.isDescendantOf(.compiler.libraryBox('System.Collections.IEnumerable')) and not _isSequence(whatType)  # TODO: can probably drop _isSequence
+		if not whatType.isDescendantOf(.compiler.enumerableType) and not _isSequence(whatType)  # TODO: can probably drop _isSequence
 			.throwError('Cannot enumerate values of type "[whatType.name]". You can enumerate anything enumerable (IEnumerable, IList, arrays, strings, etc.).')
 		_var = .bindVar(_nameExpr)
 		if _nameExpr.definition
@@ -810,7 +817,7 @@ class ForExpr
 			if _whereExpr.type is not .compiler.boolType
 				_whereExpr = TruthExpr(_whereExpr).bindAll to TruthExpr  # CC: axe cast when have "as same"
 		_getExpr.bindImp
-		ilist = .compiler.libraryBox('System.Collections.Generic.List<of>')
+		ilist = .compiler.listOfType
 		_type = ilist.constructedTypeFor([_getExpr.type to !])
 
 	def inferredType as IType? is override
@@ -1863,21 +1870,21 @@ class TruthExpr
 		if type.isReference and not type inherits NilableType and not type inherits NilType and not type inherits PassThroughType and not type inherits DynamicType
 			hint = 'You can remove the expression'
 			if _notExpr
-				if _expr.isKindOf(.compiler.libraryBox('System.String'))
+				if _expr.isKindOf(.compiler.stringType)
 					hint += ' or check for an empty string.'
 				else if type inherits ArrayType
 					hint += ' or check for an empty array.'
-				else if _expr.isKindOf(.compiler.libraryBox('System.Collections.ICollection')) or _expr.isKindOf(.compiler.libraryBox('System.Collections.Generic.ICollection<of>'))
+				else if _expr.isKindOfCollection
 					hint += ' or check for an empty collection.'
 				else
 					hint += '.'
 				.compiler.warning(_notExpr, 'The expression "[_notExpr.toCobraSource]" (of type "[type.name]") will never evaluate to false because the expression is not nilable. [hint]')
 			else
-				if _expr.isKindOf(.compiler.libraryBox('System.String'))
+				if _expr.isKindOf(.compiler.stringType)
 					hint += ' or check for non-empty strings with ".length".'
 				else if type inherits ArrayType
 					hint += ' or check for non-empty arrays with ".length".'
-				else if _expr.isKindOf(.compiler.libraryBox('System.Collections.ICollection')) or _expr.isKindOf(.compiler.libraryBox('System.Collections.Generic.ICollection<of>'))
+				else if _expr.isKindOfCollection
 					hint += ' or check for non-empty collections with ".count".'
 				else
 					hint += '.'
@@ -1986,7 +1993,7 @@ class AllOrAnyExpr
 		base._bindImp
 		_type = .compiler.boolType
 		_expr.bindImp
-		enumerable = .compiler.libraryBox('System.Collections.IEnumerable')
+		enumerable = .compiler.enumerableType
 		if _expr.type.isDescendantOf(enumerable)
 			pass
 		else if _expr.type.isDynamic
@@ -2551,7 +2558,7 @@ class ListLit
 		base.init(token, exprs)
 
 	def _makeTypeWith(type as IType) as IType is override
-		return .compiler.libraryClass('System.Collections.Generic.List<of>').constructedTypeFor([type])
+		return .compiler.listOfType.constructedTypeFor([type])
 
 	get brackets as List<of String> is override
 		return [r'[', ']']
@@ -2592,7 +2599,7 @@ class SetLit
 		base.init(token, exprs)
 
 	def _makeTypeWith(type as IType) as IType is override
-		return .compiler.libraryClass('Cobra.Lang.Set<of>').constructedTypeFor([type])
+		return .compiler.setOfType.constructedTypeFor([type])
 
 	get brackets as List<of String> is override
 		return [r'{', '}']
@@ -2671,7 +2678,7 @@ class DictLit
 					keyType   = entries[i][0].type.greatestCommonDenominatorWith(keyType)
 					valueType = entries[i][1].type.greatestCommonDenominatorWith(valueType)
 					i += 1
-			_type = .compiler.libraryClass('System.Collections.Generic.Dictionary<of,>').constructedTypeFor([keyType, valueType])
+			_type = .compiler.dictionaryOfType.constructedTypeFor([keyType, valueType])
 
 
 class ToNilableOrNotExpr

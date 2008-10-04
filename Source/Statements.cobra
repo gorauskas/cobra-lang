@@ -340,7 +340,7 @@ class ExpectStmt
 		if _exceptionType is nil
 			_exceptionType = (_exceptionTypeNode.bindAll to ITypeProxy).realType  # CC: axe cast
 		assert _exceptionType, this
-		excClass = .compiler.libraryClass('System.Exception')
+		excClass = .compiler.exceptionType
 		if not _exceptionType.isDescendantOf(excClass)
 			.throwError('Can only use Exception and its descendants for "expect". "[_exceptionType.name]" does not inherit the Exception class.')
 		.compiler.curBox.makeNextPrivateSerialNumber  # `writeSharpDef` uses two serial nums
@@ -538,7 +538,7 @@ class ForEnumerableStmt
 	def _bindImp
 		_what.bindImp
 		if _what.type.isDynamic
-			_what.contextType = .compiler.libraryType('System.Collections.IEnumerable')
+			_what.contextType = .compiler.enumerableType
 		if _what.type inherits AnyIntType
 			# 'for x in 10' is a numeric for loop
 			_transformTo(ForNumericStmt(.token, _varExpr, IntegerLit(.token.copy('INTEGER_LIT', '0'), 0), _what, 1, nil, _block).bindAll)
@@ -1135,8 +1135,8 @@ class ThrowStmt
 		if _expr
 			_expr.bindImp
 			if not _expr.hasError
-				exceptionType = .compiler.libraryClass('System.Exception')
-				typeType = .compiler.libraryClass('System.Type')
+				exceptionType = .compiler.exceptionType
+				typeType = .compiler.typeType
 				if _expr.canBeAssignedTo(exceptionType)
 					pass
 				else if _expr.canBeAssignedTo(typeType)
@@ -1293,11 +1293,11 @@ class YieldReturnStmt
 		if expr
 			_expr.bindImp
 			resultType = curCodeMember.resultType
-			if resultType is not .compiler.libraryBox('System.Collections.IEnumerable') and resultType is not .compiler.libraryBox('System.Collections.IEnumerator')
+			if resultType is not .compiler.enumerableType and resultType is not .compiler.enumeratorType
 				okay = false
 				if resultType inherits Box
-					ienumerableOf = .compiler.libraryBox('System.Collections.Generic.IEnumerable<of>')
-					ienumeratorOf = .compiler.libraryBox('System.Collections.Generic.IEnumerator<of>')
+					ienumerableOf = .compiler.enumerableOfType
+					ienumeratorOf = .compiler.enumeratorOfType
 					okay = not (resultType is not ienumerableOf and resultType is not ienumeratorOf and not resultType.isConstructionOf(ienumerableOf) and not resultType.isConstructionOf(ienumeratorOf))
 				if not okay
 					.throwError('Cannot yield unless the return type is an iterator type (IEnumerable or IEnumerator, generic or not). Try "IEnumerable<of [expr.type.name]>".')

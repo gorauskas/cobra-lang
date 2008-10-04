@@ -538,7 +538,7 @@ class Compiler
 		return _passThroughType to !
 
 	get typeType as IType
-		return .libraryClass('System.Type')
+		return _libraryType('System.Type')
 
 	get unspecifiedType as UnspecifiedType
 		if _unspecifiedType is nil
@@ -884,10 +884,8 @@ class Compiler
 							_curModule.bindInh
 						catch ce as SourceException
 							.recordError(ce)
-					stringClass = .libraryClass('System.String')
-					objectClass = .libraryClass('System.Object')
-					assert stringClass.isDescendantOf(objectClass)
-					assert stringClass.isDescendantOf(stringClass)
+					assert .stringType.isDescendantOf(.objectType)
+					assert .stringType.isDescendantOf(.stringType)
 				finally
 					Node.setCompiler(nil)
 			finally
@@ -1066,6 +1064,105 @@ class Compiler
 	def _compilationFailedMessage as String
 		return 'Compilation failed - [_errors.count] error[if(_errors.count==1,'','s')], [_warnings.count] warning[if(_warnings.count==1,'','s')]'
 
+
+	##
+	## Important system library types
+	##
+
+	def objectType as Class
+		return _libraryClass('System.Object')
+
+	def stringType as Class
+		return _libraryClass('System.String')
+
+	def exceptionType as Class
+		return _libraryClass('System.Exception')
+
+	def attributeType as Box
+		return _libraryBox('System.Attribute')
+
+	def enumerableType as Box
+		return _libraryBox('System.Collections.IEnumerable')
+
+	def enumeratorType as Box
+		return _libraryBox('System.Collections.IEnumerator')
+
+	def enumerableOfType as Box
+		return _libraryBox('System.Collections.Generic.IEnumerable<of>')
+
+	def enumeratorOfType as Box
+		return _libraryBox('System.Collections.Generic.IEnumerator<of>')
+
+	def collectionType as Box
+		return _libraryBox('System.Collections.ICollection')
+
+	def collectionOfType as Box
+		return _libraryBox('System.Collections.Generic.ICollection<of>')
+
+	def listOfType as Class
+		return _libraryClass('System.Collections.Generic.List<of>')
+
+	def dictionaryOfType as Class
+		return _libraryClass('System.Collections.Generic.Dictionary<of,>')
+
+	def setOfType as Class
+		return _libraryClass('Cobra.Lang.Set<of>')
+
+	def libraryType(qualifiedName as String) as IType
+		"""
+		Implemented for ITypeProvider, but use the more specific methods such as .stringType instead.
+		"""
+		return _libraryType(qualifiedName)
+
+	var _libraryTypeCache = Dictionary<of String, IType>()
+
+	def _libraryType(qualifiedName as String) as IType
+		"""
+		Used to retrieve types such as System.String.
+		Example:
+			_libraryType('System.String')
+		"""
+		type as IType?
+		if _libraryTypeCache.tryGetValue(qualifiedName, out type)
+			return type to !
+		names = qualifiedName.split(c'.')
+		type = _libraryType(names to passthrough)
+		_libraryTypeCache[qualifiedName] = type to !
+		return type to !
+
+	def _libraryType(names as vari String) as IType
+		ns as IContainer = _globalNS
+		thing as IContainer? = nil
+		for name in names
+			possible = (thing ? ns).declForName(name)
+			assert possible, name
+			if possible inherits IContainer
+				thing = possible
+			else
+				assert false, [name, possible.getType.name, possible]
+		if thing inherits IType
+			if thing.name<>names[names.length-1] # TODO: add this as an ensure as well
+				print 'names=' stop
+				print CobraCore.toTechString(names)
+				print 'thing=[thing]'
+				assert false
+			return thing
+		else
+			throw FallThroughException('found [name], but it is not an IType. it is [thing]')
+
+	def _libraryBox(qualifiedName as String) as Box
+		"""
+		Returns a box from the standard library such as 'System.Object' or 'System.Collections.Generic.IEnumerable<of>'.
+		"""
+		return _libraryType(qualifiedName) to Box
+
+	def _libraryClass(qualifiedName as String) as Class
+		"""
+		Returns a class from the standard library such as 'System.Object' or 'System.Collections.Generic.Dictionary<of,>'.
+		"""
+		return _libraryType(qualifiedName) to Class
+
+
 	##
 	## Services to nodes
 	##
@@ -1098,57 +1195,6 @@ class Compiler
 			t = sharp'Type.GetType(qualifiedName)' # to System.Type
 			_clrTypeCache[qualifiedName] = t to passthrough  # "to passthrough" instead of "to !" to avoid non-nil check
 		return t to passthrough
-
-	def libraryType(qualifiedName as String) as IType
-		"""
-		Used to retrieve types such as System.String.
-		Example:
-			.compiler.libraryType('System.String')
-		"""
-		return _libraryType(qualifiedName)
-
-	def libraryBox(qualifiedName as String) as Box
-		"""
-		Returns a box from the standard library such as 'System.Object' or 'System.Collections.Generic.IEnumerable<of>'.
-		"""
-		return _libraryType(qualifiedName) to Box
-
-	def libraryClass(qualifiedName as String) as Class
-		"""
-		Returns a class from the standard library such as 'System.Object' or 'System.Collections.Generic.Dictionary<of,>'.
-		"""
-		return _libraryType(qualifiedName) to Class
-
-	var _libraryTypeCache = Dictionary<of String, IType>()
-
-	def _libraryType(qualifiedName as String) as IType
-		type as IType?
-		if _libraryTypeCache.tryGetValue(qualifiedName, out type)
-			return type to !
-		names = qualifiedName.split(c'.')
-		type = _libraryType(names to passthrough)
-		_libraryTypeCache[qualifiedName] = type to !
-		return type to !
-
-	def _libraryType(names as vari String) as IType
-		ns as IContainer = _globalNS
-		thing as IContainer? = nil
-		for name in names
-			possible = (thing ? ns).declForName(name)
-			assert possible, name
-			if possible inherits IContainer
-				thing = possible
-			else
-				assert false, [name, possible.getType.name, possible]
-		if thing inherits IType
-			if thing.name<>names[names.length-1] # TODO: add this as an ensure as well
-				print 'names=' stop
-				print CobraCore.toTechString(names)
-				print 'thing=[thing]'
-				assert false
-			return thing
-		else
-			throw FallThroughException('found [name], but it is not an IType. it is [thing]')
 
 	def suggestionFor(name as String) as String? is shared
 		require name.length
