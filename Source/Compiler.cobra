@@ -78,6 +78,7 @@ class Compiler
 	var _noWarningLines as ISet<of String>  	# key is 'filename:lineNum'
 
 	var _intermediateFileNames as List<of String>
+	var _loadedReferences as List<of String>
 
 	var _clrTypeCache as Dictionary<of String, System.Type>
 
@@ -108,6 +109,7 @@ class Compiler
 		_errors = List<of SourceException>()
 		_warnings = List<of SourceException>()
 		_intermediateFileNames = List<of String>()
+		_loadedReferences = List<of String>()
 		_clrTypeCache = Dictionary<of String, System.Type>()
 		if initialModules
 			if false # TODO: not working yet
@@ -184,6 +186,13 @@ class Compiler
 	get messages from var
 
 	get noWarningLines from var
+
+	get loadedReferences from var
+		"""
+		Returns the list of library references that were loaded.
+		This could be more than what's specified on the command line due to UseDirective.
+		And it could be less due to failures to load.
+		"""
 
 	pro htmlWriter from var
 		"""
@@ -636,41 +645,8 @@ class Compiler
 		# $sharp('curDomain.ReflectionOnlyAssemblyResolve += _resolveEvent')
 
 		for reference in references
-			if .verbosity > 0
-				print 'Loading reference:', reference
-			if false
-				# Does not work on Novell Mono. See notes above.
-				referredAss = Assembly.reflectionOnlyLoadFrom(reference)
-				# TODO: handle all the exceptions from Assembly.loadFrom
-			else
-				if File.exists(reference)
-					# try current directory
-					referredAss = Assembly.loadFrom(reference)
-				else
-					# TODO: the problem with -lib: in both Cobra and C# is that it has no effect on runtime,
-					# you must still register the DLLs in the GAC or copy them into the same dir as the .exe
-					# because the -lib: paths are not passed into executable.
-					# So should Cobra copy the .dll's into the target directory (if their paths are not in MONO_PATH)?
-					searchPaths = .options.getDefault('library-directory', List<of String>()) to List<of String>
-					# TODO: ?: searchPaths.add(Path.getDirectoryName(Assembly.getExecutingAssembly.location))  # try Cobra's directory - also should be added to .options.'library-directory' not to a local var
-					found = false
-					for searchPath in searchPaths
-						combinedPath = Path.combine(searchPath, reference)
-						if File.exists(combinedPath)
-							referredAss = Assembly.loadFrom(combinedPath)
-							found = true
-							break
-					if not found
-						# try system wide (GAC)
-						if reference.endsWith('.dll')
-							reference = reference[:-4]
-						referredAss = Utils.loadWithPartialName(reference)
-				# TODO: handle all the exceptions from Assembly.loadFrom
-			if referredAss
-				.readAssembly(referredAss, reference <> 'Cobra.Lang.dll')
-			else
+			if not .loadReference(reference)
 				_addMessage(SourceException('Cannot locate assembly reference "[reference]".'))
-			i += 1
 
 	def refsForPackage(pkgName as String) as List<of String>
 		"""
@@ -702,6 +678,60 @@ class Compiler
 
 	def _resolveEvent(sender as Object, args as ResolveEventArgs) as Assembly?
 		return nil
+
+	def loadReference(reference as String) as bool
+		"""
+		Attempts to load the given library reference.
+		On success, adds reference to .loadedReferences and returns true.
+		On failure, returns false, but does not add any warnings or errors.
+		This method is used by Compiler and UseDirective.
+		"""
+		require
+			reference.endsWith('.dll') or reference.endsWith('.exe')
+			reference not in ['.dll', '.exe']
+		ensure
+			result implies .loadedReferences[.loadedReferences.count-1] == reference
+			not result implies .loadedReferences.count == old .loadedReferences.count
+		body
+			if .verbosity > 0
+				print 'Loading reference:', reference
+			if false
+				# Does not work on Novell Mono. See notes above.
+				referredAss = Assembly.reflectionOnlyLoadFrom(reference)
+				# TODO: handle all the exceptions from Assembly.loadFrom
+			else
+				if File.exists(reference)
+					# try current directory
+					referredAss = Assembly.loadFrom(reference)
+				else
+					# TODO: the problem with -lib: in both Cobra and C# is that it has no effect on runtime,
+					# you must still register the DLLs in the GAC or copy them into the same dir as the .exe
+					# because the -lib: paths are not passed into executable.
+					# So should Cobra copy the .dll's into the target directory (if their paths are not in MONO_PATH)?
+					searchPaths = .options.getDefault('library-directory', List<of String>()) to List<of String>
+					# TODO: ?: searchPaths.add(Path.getDirectoryName(Assembly.getExecutingAssembly.location))  # try Cobra's directory - also should be added to .options.'library-directory' not to a local var
+					found = false
+					for searchPath in searchPaths
+						combinedPath = Path.combine(searchPath, reference)
+						if File.exists(combinedPath)
+							referredAss = Assembly.loadFrom(combinedPath)
+							found = true
+							break
+					if not found
+						# try system wide (GAC)
+						if reference.endsWith('.dll'), reference = reference[:-4]
+						referredAss = Utils.loadWithPartialName(reference)
+						reference += '.dll'  # restore to original value
+				# TODO: handle all the exceptions from Assembly.loadFrom
+			if referredAss
+				.readAssembly(referredAss, reference <> 'Cobra.Lang.dll')
+				# reassert the preconditions. there have been bugs in the past
+				assert reference.endsWith('.dll') or reference.endsWith('.exe')
+				assert reference not in ['.dll', '.exe']
+				.loadedReferences.add(reference)
+				return true
+			else
+				return false
 
 	def readAssembly(ass as Assembly)
 		.readAssembly(ass, false)
@@ -839,11 +869,14 @@ class Compiler
 			try
 				Node.setCompiler(this)
 				try
-					for _curModule in _modules
+					i = 0
+					while i < _modules.count  # new modules can be added, say by the UseDirective
+						_curModule = _modules[i]
 						try
 							_curModule.bindUse
 						catch ce as SourceException
 							.recordError(ce)
+						i += 1
 				finally
 					Node.setCompiler(nil)
 			finally

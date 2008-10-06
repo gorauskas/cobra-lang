@@ -320,13 +320,22 @@ class UseDirective
 		return _boundNameSpace.symbolForName(name)
 
 	def bindUse
+		_bindUse(false)
+
+	def _bindUse(didAutoLoad as bool)
 		curNS = .compiler.globalNS to ?
 		for name in _nameParts
 			curNS = curNS.subNameSpaceForName(name)
 			if curNS is nil
 				break
-		if curNS is nil
-			.throwError('Cannot locate namespace "[_fullName]".')  # TODO: include last valid namespace
+		if curNS is nil and not didAutoLoad
+			if _fullName.endsWith('.dll')
+				.compiler.warning(this, 'Do not end a namespace name in a "use" directive with ".dll".')
+			if .compiler.loadReference(_fullName + '.dll')
+				_bindUse(true)
+				return
+			else
+				.throwError('Cannot locate namespace "[_fullName]".')  # TODO: include last valid namespace
 		# TODO: this assertion can be re-established when Cobra reads DLLs
 		#assert curNS, 'last name=[name], dottedNames=[.dottedNames]'
 		_boundNameSpace = curNS
