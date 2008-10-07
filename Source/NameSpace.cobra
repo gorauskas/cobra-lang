@@ -292,22 +292,30 @@ class UseDirective
 	var _nameParts as List<of String>
 	var _boundNameSpace as NameSpace?
 	var _fullName as String
+	var _fileName as String
 	var _didBindUse as bool
 
 	def init(token as IToken, nameParts as List<of String>)
+		.init(token, nameParts, '')
+
+	def init(token as IToken, nameParts as List<of String>, fileName as String?)
 		base.init(token)
 		_nameParts = nameParts
 		# CC: can't use String.join because it takes the parts as an array instead of IEnumerable<of String>. add that as an extension method. (well, could use .toArray)
 		_fullName = Utils.join('.', nameParts)
+		_fileName = fileName ? ''
 
 	def addMinFields
 		base.addMinFields
 		.addField('fullName', _fullName)
 		.addField('didBindUse', _didBindUse)
+		.addField('fileName', _fileName)
 
 	def addRefFields
 		base.addRefFields
 		.addField('boundNameSpace', _boundNameSpace)
+
+	get boundNameSpace from var
 
 	get didBindUse from var
 
@@ -326,16 +334,26 @@ class UseDirective
 		curNS = .compiler.globalNS to ?
 		for name in _nameParts
 			curNS = curNS.subNameSpaceForName(name)
-			if curNS is nil
-				break
+			if curNS is nil, break
 		if curNS is nil and not didAutoLoad
-			if _fullName.endsWith('.dll')
-				.compiler.warning(this, 'Do not end a namespace name in a "use" directive with ".dll".')
-			if .compiler.loadReference(_fullName + '.dll')
-				_bindUse(true)
-				return
+			if _fileName <> ''
+				if .compiler.loadReference(_fileName + '.dll')
+					_bindUse(true)
+					if .boundNameSpace is nil
+						.throwError('Cannot find namespace "[_fullName]" in library "[_fileName]".')
+					return
+				else
+					.throwError('Cannot find library file "[_fileName]".')
 			else
-				.throwError('Cannot locate namespace "[_fullName]".')  # TODO: include last valid namespace
+				if _fullName.endsWith('.dll')
+					.throwError('Do not end a namespace name in a "use" directive with ".dll".')
+				if .compiler.loadReference(_fullName + '.dll')
+					_bindUse(true)
+					if .boundNameSpace is nil
+						.throwError('Cannot find namespace "[_fullName]" in loaded library "[_fullName]".')
+					return
+				else
+					.throwError('Cannot find namespace "[_fullName]".')  # TODO: include last valid namespace
 		# TODO: this assertion can be re-established when Cobra reads DLLs
 		#assert curNS, 'last name=[name], dottedNames=[.dottedNames]'
 		_boundNameSpace = curNS

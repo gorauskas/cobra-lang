@@ -566,10 +566,24 @@ class Parser
 			id = .expect('ID')
 			names.add(id.text)
 			dot = .optional('DOT')
-			if not dot
-				break
+			if not dot, break
+		if .optional('FROM')
+			if .peek.which.startsWith('STRING_') and not .peek.which.startsWith('STRING_START')
+				fileName = .grab.value to String
+			else if .peek.which == 'ID'
+				fileNameParts = List<of String>()
+				while true
+					id = .expect('ID')
+					fileNameParts.add(id.text)
+					dot = .optional('DOT')
+					if not dot, break
+				fileName = Utils.join('.', fileNameParts)
+			else
+				.throwError('Expecting a file name (sans extension, with or without quotes) after "from".')
+			if fileName.endsWith('.dll') or fileName.endsWith('.exe')
+				.throwError('Do not include the extension in the file name.')
 		.endOfLine
-		return UseDirective(token, names)
+		return UseDirective(token, names, fileName)
 
 	var _syntaxForClassInheritanceMsg = 'The syntax for inheritance is to put "inherits BaseClass" on the following line, indented.'
 
