@@ -67,7 +67,9 @@ class NameSpace
 
 	get superNameSpace from var
 
-	get unifiedNameSpace from var  # TODO: add an ensure that the return value is nil or .isUnified
+	get unifiedNameSpace as NameSpace?
+		ensure result is nil or result.isUnified
+		return var
 
 	def addMinFields
 		base.addMinFields
@@ -80,6 +82,8 @@ class NameSpace
 		.addField('superNameSpace', _superNameSpace)
 		.addField('unifiedNameSpace', _unifiedNameSpace)
 
+	var _fullName as String? # TODO: put in .fullName property when that is supported
+
 	get fullName as String
 		ensure
 			not .isRoot implies .name in result
@@ -88,14 +92,15 @@ class NameSpace
 		body
 			if _superNameSpace is nil
 				return 'global'
-			# TODO: cache this
-			t = List<of String>()
-			ns = this to ?
-			while ns and not ns.isRoot
-				t.add(ns.name)
-				ns = ns._superNameSpace
-			t.reverse
-			return Utils.join('.', t)
+			if not _fullName
+				t = List<of String>()
+				ns = this to ?
+				while ns and not ns.isRoot
+					t.add(ns.name)
+					ns = ns._superNameSpace
+				t.reverse
+				_fullName = Utils.join('.', t)
+			return _fullName to !
 
 	def getOrMakeNameSpaceNamed(token as IToken, name as String) as NameSpace  # CC: same
 		"""
@@ -229,7 +234,7 @@ class NameSpace
 		base.addDecl(decl)
 		if decl inherits NameSpace
 			assert decl.superNameSpace is this
-			assert (.isUnified and decl.isUnified) or (not .isUnified and not decl.isUnified)  # TODO: uh, just change to ==
+			assert .isUnified == decl.isUnified
 			_subNameSpacesByName.add(decl.name, decl)  # TODO: add some require and ensure around the subNameSpaces
 			_subNameSpacesList.add(decl)
 		if decl inherits NameSpace
@@ -301,7 +306,6 @@ class UseDirective
 	def init(token as IToken, nameParts as List<of String>, fileName as String?)
 		base.init(token)
 		_nameParts = nameParts
-		# CC: can't use String.join because it takes the parts as an array instead of IEnumerable<of String>. add that as an extension method. (well, could use .toArray)
 		_fullName = Utils.join('.', nameParts)
 		_fileName = fileName ? ''
 
@@ -354,7 +358,7 @@ class UseDirective
 					return
 				else
 					.throwError('Cannot find namespace "[_fullName]".')  # TODO: include last valid namespace
-		# TODO: this assertion can be re-established when Cobra reads DLLs
-		#assert curNS, 'last name=[name], dottedNames=[.dottedNames]'
+		if not didAutoLoad
+			assert curNS, 'last name=[name]; [_nameParts]; [_fullName]; [_fileName]'
 		_boundNameSpace = curNS
 		_didBindUse = true
