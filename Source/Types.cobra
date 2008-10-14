@@ -1060,57 +1060,9 @@ class PrimitiveType
 		#	_systemAliasType.bindInt
 
 		if .compiler and _clrType
-			box = _box
-
 			meths = List<of Method>()
-			for methInfo in _clrType.getMethods(BindingFlags(DeclaredOnly, Static, Instance, Public))
-				if methInfo.isSpecialName, continue
-				params = methInfo.getParameters
-				if params and params.length
-					name = Utils.cobraNameForSharpMemberName(methInfo.name)
-					modifiers = List<of String>()
-					if methInfo.isStatic, modifiers.add('shared')
-					newParams = List<of Param>()
-					first = true
-					for nativeParam in params
-						if first
-							first = false
-							if params[0].parameterType == _clrType
-								# When the first arg of the shared method is the same type,
-								# then make an instance method that can be used directly on values of the type.
-								modifiers.remove('shared')
-								continue
-						param = Param(Token.empty.copy('ID', nativeParam.name), ClrTypeProxy(nativeParam.parameterType))
-						# TODO: get the following code over to the DLL scanning code
-						if nativeParam.parameterType.isByRef and not nativeParam.isOut
-							param.kind = Param.KindEnum.InOut
-						else if nativeParam.isOut
-							param.kind = Param.KindEnum.Out
-						newParams.add(param)
-					meth = Method(Token.empty, box, name, newParams, ClrTypeProxy(methInfo.returnType), nil, modifiers, AttributeList(), '')
-					if methInfo.isStatic
-						meth.sharedMethodBacking = _clrType.name + '.' + methInfo.name
-						if 'shared' in modifiers, meth.sharedMethodBackingIsAlias = true
-
-					overload = nil to MemberOverload?
-					other = box.declForName(name)
-					if other
-						if other inherits MemberOverload
-							overload = other
-						else if other inherits AbstractMethod or other inherits ProperDexer
-							overload = MemberOverload(other to BoxMember)
-							box.registerOverload(overload to !)
-						else
-							throw FallThroughException([box, meth, other])
-					else
-						assert box.declForName(name) is nil
-					if overload
-						overload.addMember(meth)
-					else
-						box.addDecl(meth)
-						
-					meths.add(meth)
-			box.bindInt
+			_installNativeMethodsFrom(_clrType to !, meths)
+			_box.bindInt
 			if false
 				# print out the methods
 				# useful for documentation
@@ -1127,6 +1079,54 @@ class PrimitiveType
 					objectMeths.sort(ref .compareMethodNames)
 					for meth in objectMeths
 						print '    [meth.cobraSourceSignature]'
+
+	def _installNativeMethodsFrom(clrType as Type, meths as List<of Method>)
+		box = _box
+		for methInfo in clrType.getMethods(BindingFlags(DeclaredOnly, Static, Instance, Public))
+			if methInfo.isSpecialName, continue
+			name = Utils.cobraNameForSharpMemberName(methInfo.name)
+			modifiers = List<of String>()
+			if methInfo.isStatic, modifiers.add('shared')
+			newParams = List<of Param>()
+			first = true
+			for nativeParam in methInfo.getParameters
+				if first
+					first = false
+					if methInfo.getParameters[0].parameterType == _clrType
+						# When the first arg of the shared method is the same type,
+						# then make an instance method that can be used directly on values of the type.
+						modifiers.remove('shared')
+						continue
+				param = Param(Token.empty.copy('ID', nativeParam.name), ClrTypeProxy(nativeParam.parameterType))
+				# TODO: get the following code over to the DLL scanning code
+				if nativeParam.parameterType.isByRef and not nativeParam.isOut
+					param.kind = Param.KindEnum.InOut
+				else if nativeParam.isOut
+					param.kind = Param.KindEnum.Out
+				newParams.add(param)
+			meth = Method(Token.empty, box, name, newParams, ClrTypeProxy(methInfo.returnType), nil, modifiers, AttributeList(), '')
+			if methInfo.isStatic
+				meth.sharedMethodBacking = _clrType.name + '.' + methInfo.name
+				if 'shared' in modifiers, meth.sharedMethodBackingIsAlias = true
+
+			overload = nil to MemberOverload?
+			other = box.declForName(name)
+			if other
+				if other inherits MemberOverload
+					overload = other
+				else if other inherits AbstractMethod or other inherits ProperDexer
+					overload = MemberOverload(other to BoxMember)
+					box.registerOverload(overload to !)
+				else
+					throw FallThroughException([box, meth, other])
+			else
+				assert box.declForName(name) is nil
+			if overload
+				overload.addMember(meth)
+			else
+				box.addDecl(meth)
+				
+			meths.add(meth)
 
 	def compareMethodNames(a as Method, b as Method) as int
 		return a.name.compareTo(b.name)
