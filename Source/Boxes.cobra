@@ -1184,7 +1184,6 @@ class Box
 		params = List<of Param>()
 		if paramInfos and paramInfos.length
 			for paramInfo in paramInfos
-				# TODO: out, inout (System.Runtime.InteropServices.OutAttribute). We're getting away with not doing this because Cobra is not yet doing error checking in CallExpr on out/inout args. that falls through to C#
 				isVari = false
 				for attr in paramInfo.getCustomAttributes(false)
 					if attr inherits ParamArrayAttribute
@@ -1192,7 +1191,12 @@ class Box
 						break
 				type = _memberTypeProxy(paramInfo.parameterType)
 				if isVari, type = VariTypeProxy(type)
-				params.add(Param(paramInfo.name, type))
+				param = Param(paramInfo.name, type)
+				if paramInfo.parameterType.isByRef and not paramInfo.isOut
+					param.kind = Param.KindEnum.InOut
+				else if paramInfo.isOut
+					param.kind = Param.KindEnum.Out
+				params.add(param)
 		return params
 
 	def _scanEvents
