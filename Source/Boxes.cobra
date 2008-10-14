@@ -34,7 +34,7 @@ class Box
 	var _testMethod as TestMethod?
 
 	var _clrType as Type?
-	var _needScanClrType as bool
+	var _needScanNativeType as bool
 	var _membersToUnNil as String?
 	var _defaultMemberName as String?
 		"""
@@ -56,18 +56,10 @@ class Box
 		_invariants = List<of Expr>()
 
 	def _initClrType(t as Type)
-		ensure .needScanClrType
+		ensure .needScanNativeType
 		_clrType = t
-		_needScanClrType = true
+		_needScanNativeType = true
 		_scanGenericArgs
-
-	def _scanClrType
-		"""
-		Subclasses should invoke base and then invoke the various _scanFoo methods that are appropriate for them.
-		"""
-		ensure not .needScanClrType
-		_needScanClrType = false
-		# print '<> _scanClrType for [.name] in [_parentNameSpace.fullName], class is [.getType.name]'
 
 	def addMinFields
 		base.addMinFields
@@ -182,7 +174,7 @@ class Box
 
 	pro membersToUnNil from var
 
-	get needScanClrType from var
+	get needScanNativeType from var
 	
 	get nestedBoxes as IEnumerable<of Box>
 		for decl in _declsInOrder
@@ -474,8 +466,8 @@ class Box
 		base._bindInh
 		.compiler.boxStack.push(this)
 		try
-			if _needScanClrType
-				_scanClrType
+			if _needScanNativeType
+				_scanNativeType
 			_bindBase
 			# structs, classes and interfaces can all have 0 or more interfaces they inherit/implement
 			if _baseInterfaceProxies.count <> _baseInterfaces.count  # otherwise, already done
@@ -536,8 +528,8 @@ class Box
 			if .isSystemObjectClass
 				.prepSystemObjectClass
 			errorCount = .compiler.errors.count
-			if _needScanClrType
-				_scanClrType
+			if _needScanNativeType
+				_scanNativeType
 			if _baseClass
 				_baseClass.bindInt
 			for interf in _baseInterfaces
@@ -675,7 +667,7 @@ class Box
 		_unNilReturnTypes(box)
 
 	def _unNilReturnTypes(box as Box)
-		assert not _needScanClrType
+		assert not _needScanNativeType
 		if box.membersToUnNil
 			for name in box.membersToUnNil.split
 				m = .declForName(name)  # using .memberForName here is unnecessary and could/would cause an infinite loop
@@ -969,342 +961,6 @@ class Box
 		return false
 
 
-	## Reading DLLs
-
-	def _scanIsNames
-		# TODO
-		_isNames.add('extern')  # to make the box like the ones that were in SystemInterfaces.cobra
-
-		# scan DefaultMemberAttribute for later use
-		for attr in _clrType.getCustomAttributes(true)
-			if attr inherits DefaultMemberAttribute
-				_defaultMemberName = attr.memberName  # this attribute names the indexer for the class
-				break
-
-	def _scanGenericArgs
-		if _clrType.isGenericType
-			for genArg in _clrType.getGenericArguments
-				_genericParams.add(GenericParam(genArg))
-
-	def _scanImplements
-		for interf in _clrType.getInterfaces
-			if _badRelatedType(interf)
-				continue
-			_baseInterfaceProxies.add(ClrTypeProxy(interf))
-
-	def _scanNestedTypes
-		for type in _clrType.getNestedTypes
-			if type.isClass
-				.addDecl(Class(type))
-			else if type.isInterface
-				.addDecl(Interface(type))
-			else if type.isEnum
-				.addDecl(EnumDecl(this, type, List<of String>(), ''))  # TODO: isNames; docString?
-			else if type.isValueType
-				.addDecl(Struct(type))
-			else if type.isAnsiClass
-				# The Enum class is an example that returns false for .isClass but true for .isAnsiClass
-				.addDecl(Class(type))
-			else
-				throw FallThroughException(type)
-			lastDecl = .declsInOrder[.declsInOrder.count-1] to dynamic
-			if (lastDecl to Object).getType.getProperty('ParentBox')  # CC: if lastDecl responds to (get parentBox as Box?)
-				lastDecl.parentBox = this
-			
-	def _scanFields
-		for fieldInfo in _clrType.getFields(BindingFlags(Instance, Static, DeclaredOnly, Public))
-			if fieldInfo.declaringType is not _clrType
-				continue
-			if fieldInfo.isPrivate
-				continue
-			if fieldInfo.isInitOnly or fieldInfo.isLiteral
-				# TODO: kind of weird to use properties
-				isNames = ['nonvirtual']
-				if fieldInfo.isPublic
-					isNames.add('public')
-				else
-					isNames.add('private')
-				if fieldInfo.isStatic
-					isNames.add('shared')
-				prop = Property(TokenFix.empty, this, Utils.cobraNameForSharpMemberName(fieldInfo.name), _memberTypeResultProxy(fieldInfo, fieldInfo.fieldType), isNames, AttributeList(), '')
-				prop.binaryName = fieldInfo.name
-				prop.makeGetPart(TokenFix.empty)
-				.addDecl(prop)
-			else
-				isNames = [if(fieldInfo.isPublic, 'public', 'protected')]  # private was guarded against above
-				if fieldInfo.isStatic
-					isNames.add('shared')
-				varr = BoxVar(TokenFix.empty, this, Utils.cobraNameForSharpMemberName(fieldInfo.name), _memberTypeResultProxy(fieldInfo, fieldInfo.fieldType), isNames, nil, nil, '')
-				varr.binaryName = fieldInfo.name
-				.addDecl(varr)
-
-	def _scanInitializers
-		for conInfo in _clrType.getConstructors  # TODO: get protected constructors
-			if conInfo.declaringType is not _clrType
-				continue
-			skip = false
-			for paramInfo in conInfo.getParameters
-				if _badRelatedType(paramInfo.parameterType)
-					skip = true
-					break
-			if skip
-				continue
-			params = _scanParams(conInfo.getParameters)
-			isNames = _isNamesForMethodInfo(conInfo)
-			attribs = _attribsForMethodInfo(conInfo)
-			docString = ''  # TODO: get doc string for class?
-			initer = Initializer(TokenFix.empty, this, params, isNames, attribs, docString)
-			overload as MemberOverload? = nil
-			other = .declForName('init')
-			if other
-				if other inherits MemberOverload
-					overload = other
-				else if other inherits AbstractMethod
-					overload = MemberOverload(other)
-					.registerOverload(overload to !)
-				else
-					throw FallThroughException([this, initer, other])
-			if overload
-				overload.addMember(initer)
-			else
-				.addDecl(initer)
-
-	def _scanProperties
-		for propInfo in _clrType.getProperties(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
-			if propInfo.declaringType is not _clrType
-				continue
-			if propInfo.name == _defaultMemberName and propInfo.getIndexParameters and propInfo.getIndexParameters.length
-				_scanIndexer(propInfo)
-				continue
-			if _badRelatedType(propInfo.propertyType)
-				continue
-			attribs = AttributeList()  # TODO:
-			docString = ''  # TODO: get doc string
-			# TODO: eventually the isNames need to be an the property part level (get or set) rather than the property level, like in C# and the CLR runtime
-			if propInfo.canRead
-				isNames = _isNamesForMethodInfo(propInfo.getGetMethod(true) to !)
-			else if propInfo.canWrite
-				isNames = _isNamesForMethodInfo(propInfo.getSetMethod(true) to !)
-			else
-				throw FallThroughException(propInfo)
-			prop = Property(TokenFix.empty, this, Utils.cobraNameForSharpMemberName(propInfo.name), _memberTypeResultProxy(propInfo, propInfo.propertyType), isNames, attribs, docString)
-			prop.binaryName = propInfo.name
-			if propInfo.canRead
-				prop.makeGetPart(TokenFix.empty)
-			if propInfo.canWrite
-				prop.makeSetPart(TokenFix.empty)
-			.addDecl(prop)
-
-	def _scanIndexer(propInfo as PropertyInfo)
-		for paramInfo in propInfo.getIndexParameters
-			if _badRelatedType(paramInfo.parameterType)
-				return
-		params = _scanParams(propInfo.getIndexParameters)
-		attribs = AttributeList()  # TODO:
-		docString = ''  # TODO: get doc string for class?
-		if propInfo.canRead
-			isNames = _isNamesForMethodInfo(propInfo.getGetMethod(true) to !)
-		else if propInfo.canWrite
-			isNames = _isNamesForMethodInfo(propInfo.getSetMethod(true) to !)
-		else
-			throw FallThroughException(propInfo)
-		indexer = Indexer(TokenFix.empty, this, r'[]', params, _memberTypeResultProxy(propInfo, propInfo.propertyType), isNames, attribs, docString)
-		overload as MemberOverload? = nil
-		other = .declForName(r'[]')
-		if other
-			if other inherits MemberOverload
-				overload = other
-			else if other inherits Indexer
-				overload = MemberOverload(other)
-				.registerOverload(overload to !)
-			else
-				throw FallThroughException([this, indexer, other])
-		if overload
-			overload.addMember(indexer)
-		else
-			.addDecl(indexer)
-
-	def _scanMethods
-		for methInfo in _clrType.getMethods(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
-			if methInfo.isSpecialName, continue
-			if methInfo.isPrivate, continue
-			if methInfo.declaringType is not _clrType, continue
-			skip = false
-			if _badRelatedType(methInfo.returnType)
-				skip = true
-			else
-				for paramInfo in methInfo.getParameters
-					if _badRelatedType(paramInfo.parameterType)
-						skip = true
-						break
-			if skip, continue
-			if methInfo.isGenericMethod or methInfo.isGenericMethodDefinition
-				# print 'xxx generic methInfo, [methInfo.isGenericMethod], [methInfo.isGenericMethodDefinition], [methInfo]'
-				if 'ConvertAll' in methInfo.toString  # TODO
-					continue
-			if '.' in methInfo.name
-				# TODO: these are mostly (maybe all) explicit implementations of interfaces
-				# print 'xxx dotted name: [methInfo]'
-				continue
-			name = Utils.cobraNameForSharpMemberName(methInfo.name)
-			if name == 'init'
-				# there is at least one of these: System.Runtime.Remoting.Messaging.MethodCall.init
-				# TODO: What to do? Change 'def init' to 'def .init' or 'def .ctor'? No quadruple underscores.
-				# or allow it in DLLs and use a different underlying name in the decl dict for initializers like the CLR name .ctor
-				continue
-			genericParams = List<of IType>()
-			for genArg in methInfo.getGenericArguments
-				genericParams.add(GenericParam(genArg))
-			params = _scanParams(methInfo.getParameters)
-			isNames = _isNamesForMethodInfo(methInfo)
-			attribs = _attribsForMethodInfo(methInfo)
-			docString = ''  # TODO: get doc string for class?
-			implementsTypeNode as ITypeProxy?  # TODO: explicit interface implementation?
-			method = Method(TokenFix.empty, this, name, genericParams, params, _memberTypeResultProxy(methInfo, methInfo.returnType), implementsTypeNode, isNames, attribs, docString)
-			method.binaryName = methInfo.name
-			overload as MemberOverload? = nil
-			other = .declForName(name)
-			if other
-				if other inherits MemberOverload
-					overload = other
-				else if other inherits AbstractMethod
-					overload = MemberOverload(other)
-					.registerOverload(overload to !)
-				else
-					throw FallThroughException([this, method, other])
-			if overload
-				overload.addMember(method)
-			else
-				.addDecl(method)
-
-	def _scanParams(paramInfos as ParameterInfo[]?) as List<of Param>
-		"""
-		Returns a list of Cobra parameters given a list of CLR Reflection ParameterInfos.
-		"""
-		params = List<of Param>()
-		if paramInfos and paramInfos.length
-			for paramInfo in paramInfos
-				isVari = false
-				for attr in paramInfo.getCustomAttributes(false)
-					if attr inherits ParamArrayAttribute
-						isVari = true
-						break
-				type = _memberTypeProxy(paramInfo.parameterType)
-				if isVari, type = VariTypeProxy(type)
-				param = Param(paramInfo.name, type)
-				if paramInfo.parameterType.isByRef and not paramInfo.isOut
-					param.kind = Param.KindEnum.InOut
-				else if paramInfo.isOut
-					param.kind = Param.KindEnum.Out
-				params.add(param)
-		return params
-
-	def _scanEvents
-		for eventInfo in _clrType.getEvents(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
-			if eventInfo.isSpecialName
-				continue
-			if eventInfo.declaringType is not _clrType
-				continue
-			if '.' in eventInfo.name
-				# TODO: these are mostly (maybe all) explicit implementations of interfaces
-				# print 'xxx dotted name: [methInfo]'
-				continue
-			name = Utils.cobraNameForSharpMemberName(eventInfo.name)
-			if eventInfo.getAddMethod  # Gtk.Object has such a beast (InternalDestroyed)
-				isNames = _isNamesForMethodInfo(eventInfo.getAddMethod to !)
-			else
-				isNames = List<of String>()
-# TODO:
-#			attribs = _attribsForMethodInfo(eventInfo)
-			attribs = AttributeList()
-			docString = ''  # TODO: get doc string for class?
-			evt = BoxEvent(TokenFix.empty, this, name, isNames, attribs, docString, ClrTypeProxy(eventInfo.eventHandlerType))
-			evt.binaryName = eventInfo.name
-			.addDecl(evt)
-
-	def _isNamesForMethodInfo(mi as MethodBase) as List<of String>
-		"""
-		Returns the Cobra "is names" such as ['public', 'nonvirtual'] that correspond to the properties of the CLR MethodInfo.
-		"""
-		isNames = List<of String>(8)
-		if mi.isAbstract
-			isNames.add('abstract')
-		if mi.isFamily
-			isNames.add('protected')
-		# TODO: isFamilyAndAssembly, isFamilyOrAssembly
-		if mi.isPrivate
-			isNames.add('private')
-		if mi.isPublic
-			isNames.add('public')
-		if mi.isStatic
-			isNames.add('shared')
-		if not mi.isVirtual
-			isNames.add('nonvirtual')
-		return isNames
-
-	def _attribsForMethodInfo(mi as MethodBase) as AttributeList
-		return AttributeList()  # TODO:
-
-	def _badRelatedType(t as Type?) as bool
-		"""
-		Returns true if the given type, which comes from a parameter or return value, is unsupported.
-		For example, it's not public or it's nested. Members with bad types are skipped when scanning DLLs.
-		"""
-		if t is nil
-			return false
-
-		# Need nested types for .controls is a subclass of Control. type Control+ControlCollection
-		if t.isNested and t.isNestedPrivate and not t.isGenericParameter  # TODO: need the generic param check?
-			return true
-
-		# FYI: MS .NET 2.0 (but not Mono 1.2.6) will return true for .isNotPublic for types are "by ref"
-		if t.isByRef # TODO: or t.isArray
-			return _badRelatedType(t.getElementType)
-		if t.isNotPublic or t.isNestedAssembly  # .isNestedAssembly should imply .isNotPublic but at least in System.Windows.Forms, on Novell Mono 1.2.6, Control+LayoutType reports .isNestedAssembly but not .isNotPublic
-			return true
-
-		return false
-
-	def _memberTypeProxy(clrType as Type?) as ITypeProxy
-		"""
-		Returns a type proxy for a member type such as a parameter type or method return type.
-		In CLR, reference types are nilable by default.
-		"""
-		if clrType is nil
-			return .compiler.voidType
-		else if clrType.isValueType
-			return ClrTypeProxy(clrType)
-		else
-			# TODO: for generic types, should look at constraints. if constraints don't dictate nilable or not, then need to treat type special during generic construction
-			return NilableTypeProxy(ClrTypeProxy(clrType))
-
-	def _memberTypeResultProxy(member as MemberInfo, clrType as Type?) as ITypeProxy
-		"""
-		Returns a type proxy for a member type such as a parameter type or method return type.
-		In CLR, reference types are nilable by default.
-		"""
-		if clrType is nil
-			return .compiler.voidType
-		else if clrType.isValueType
-			return ClrTypeProxy(clrType)
-		else if clrType.isValueType or clrType.isGenericParameter
-			return ClrTypeProxy(clrType)
-		else
-			notNull = false
-			for attr in member.getCustomAttributes(true)
-				# The idea below in using the type name is to try for some compatibility with other languages that might also mark things "NotNull"
-				# such as Eiffel, XC#, Spec#, etc. I haven't checked to see what degree of compatibility has been achieved.
-				name = attr.getType.name
-				if name == 'NotNull' or name == 'NotNullAttribute' 
-					notNull = true
-					break
-			# CC: could the above be a one-liner?
-			# notNull = for attr in member.getCustomAttributes(true) where attr.getType.name == 'NotNull' get one true
-			# notNull = any true for attr in member.getCustomAttributes(true) where attr.getType.name == 'NotNull'
-			t = ClrTypeProxy(clrType) to ITypeProxy
-			return if(notNull, t, NilableTypeProxy(t))
-
-
 class Class
 	is partial
 	inherits Box
@@ -1321,19 +977,6 @@ class Class
 		if clrType.baseType
 			_baseNode = ClrTypeProxy(clrType.baseType)
 		_initClrType(clrType)
-
-	def _scanClrType
-		base._scanClrType
-		_scanIsNames
-		_scanImplements
-		_scanNestedTypes
-		_scanFields
-		_scanInitializers
-		_scanProperties
-		_scanMethods
-		_scanEvents
-		# TODO: _scanEnums
-		# TODO: scan all other nested types
 
 	def addSubFields
 		base.addSubFields
@@ -1484,16 +1127,6 @@ class Interface
 		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(clrType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
 		_initClrType(clrType)
 
-	def _scanClrType
-		base._scanClrType
-		_scanIsNames
-		_scanImplements
-		_scanNestedTypes
-		_scanFields
-		_scanProperties
-		_scanMethods
-		_scanEvents
-
 	get englishName as String is override
 		return 'interface'
 
@@ -1530,17 +1163,6 @@ class Struct
 		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(clrType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
 		_initClrType(clrType)
 
-	def _scanClrType
-		base._scanClrType
-		_scanIsNames
-		_scanImplements
-		_scanNestedTypes
-		_scanFields
-		_scanInitializers
-		_scanProperties
-		_scanMethods
-		_scanEvents
-	
 	get englishName as String is override
 		return 'struct'
 
@@ -1847,23 +1469,6 @@ class Extension
 			break
 		_extendedBoxProxy = ClrTypeProxy(clrType)
 		(.compiler.curModule to AssemblyModule).addMustBindInh(this)
-
-	def _scanClrType
-		# this only for Cobra specific extensions. Example: class Extend_String_1939
-		base._scanClrType
-		_scanIsNames
-		#_scanImplements
-		#_scanNestedTypes
-		#_scanFields
-		#_scanInitializers
-		#_scanProperties
-		_scanMethods
-		#_scanEvents
-
-	def _scanParams(paramInfos as ParameterInfo[]?) as List<of Param>
-		# the first argument is implicit in an Extension
-		results = base._scanParams(paramInfos)
-		return results[1:]
 
 	get extendedBox from var
 
