@@ -56,6 +56,7 @@ class Compiler
 
 	var _globalNS as NameSpace
 	var _modules as List<of Module>
+	var _parsedModules as List<of Module>? # accumulated as files parsed
 	var _firstFileName as String?
 
 	var _curModule as Module?  # set during bindInt and bindImp
@@ -235,7 +236,7 @@ class Compiler
 		Related resources such as CobraLang.cs reside there.
 		"""
 		return Path.getDirectoryName(Assembly.getEntryAssembly.location) to !  # actually could be nil: if you stuck Cobra in the root dir, the .getDirectoryName docs say it will return nil
-
+		
 	def compileFilesNamed(paths as IList<of String>)
 		.compileFilesNamed(paths)
 
@@ -296,6 +297,7 @@ class Compiler
 		.options = options
 		bar = '----------------------------------------------------------------------------------------------------'
 		.parseFilesNamed(fileNames)
+
 		assert .modules.count
 		if verbose
 			.dumpModulesForTestify(resultsWriter, 'Modules after parsing')
@@ -329,6 +331,15 @@ class Compiler
 		.printMessages
 		print bar
 
+	def	_addRuntimeRef(opts as Options)
+		if not opts.containsKey('reference')
+			opts['reference'] = List<of String>()
+		refs = opts['reference'] to List<of String>
+		libName = 'Cobra.Lang.dll'
+		if libName not in refs
+			if .verbosity, print 'Adding reference to [libName]'
+			refs.add(libName)
+
 	def parseFilesNamed(filenames as IList<of String>) as List<of Module>
 		"""
 		Returns the modules for the newly parsed files.
@@ -344,21 +355,14 @@ class Compiler
 			embedRunTime = .options.boolValue('embed-run-time')
 
 			if not embedRunTime
-				# then reference it
-				if not .options.containsKey('reference')
-					.options['reference'] = List<of String>()
-				refs = .options['reference'] to List<of String>
-				libName = 'Cobra.Lang.dll'
-				if libName not in refs
-					if .verbosity, print 'Adding reference to [libName]'
-					refs.add(libName)
+				_addRuntimeRef(.options) # then reference runtime dll
 
 			Node.setCompiler(this)
 			try
 				if _modules.count == 0  # attempt at caching modules during testify. incomplete.
 					.writeSharpInfoClass
 					.readSystemTypes
-					.readAssemblyTypes
+					.readAssemblyTypes(.options)
 
 				if true # _modules.count == 0
 					path = Path.combine(.cobraExeDir, 'CobraInfo.cs')
@@ -379,6 +383,7 @@ class Compiler
 						filenames.insert(3, path)
 
 				modules = List<of Module>()
+				_parsedModules = modules
 				for filename in filenames
 					if filename.endsWith('.cs')
 						if _verbosity
@@ -407,8 +412,75 @@ class Compiler
 			else
 				assert modules.count
 				_modules.addRange(modules)
+				_parsedModules = nil
 			return modules
 
+	def augmentOptions(opts as Options)
+		"""
+		Update Options and accumulator lists generated from it with additional options settings.
+		  Used from inside parseFiles for args compilerDirective handling
+ 		"""
+		if .verbosity
+			print 'preAugment Options Dictionary'
+			.options.print
+
+		# special cases 
+		_fixupLibRefs(opts)
+		_fixupEmbedRunTime(opts) # need this after fixup libs
+
+		.options.combineNew(opts)
+		v = .options.getDefault('verbosity', 0) to int
+		if v > _verbosity, _verbosity = v
+		if .verbosity
+			print 'postAugment Options Dictionary'
+			.options.print
+
+	def _fixupEmbedRunTime(opts as Options)
+		# print 'before fixup', _parsedModules
+		if opts.boolValue('embed-run-time') <> .options.boolValue('embed-run-time')
+			if not opts.boolValue('embed-run-time') # changed true to false
+				# remove parsed rtSrc modules
+				for m in List<of Module>(_parsedModules)
+					if m.isCobraLibrary and not m.fileName.endsWith('.dll')
+						_parsedModules.remove(m)
+				_addRuntimeRef(opts)  # add ref to runtime dll
+			else
+				opts['embed-run-time'] = .options['embed-run-time']
+				# errchannel.throwError('Cannot switch -ert:no to -ert:yes in compilerDirective')
+				# To support this need to determine where/what recorded for Cobra.dll 
+				# ref,clear it out and insert rtl src to be parsed AFTER finish current file
+		# print 'after fixup', _parsedModules
+		
+	def _fixupLibRefs(opts as Options)
+		haveRefs = false
+		for key in ['library-directory', 'pkg', 'reference']
+			if opts.containsKey(key)
+				if key == 'reference'
+					references = opts.getDefaultLOStr('reference')
+					_fixupLibSuffix(references)
+				if not .options.containsKey(key)
+					.options[key] = List<of String>()
+				existList = .options[key] to List<of String>
+				augList = opts[key] to List<of String>
+				dupCount = 0
+				for item in augList
+					if item not in existList
+						if .verbosity, print 'Adding [key] "[item]"'
+						existList.add(item)
+					else
+						if .verbosity, print '[key] "[item]" already in options.[key]'
+						dupCount += 1 # augList.remove(item) <-- 2008-10-13 CE: what's that comment mean? (part of ticket:35)
+				if not haveRefs
+					haveRefs = key <> 'library-directory' and augList.count - dupCount > 0
+				.options.didSpecify(key) # so not overwrite when combine
+							
+		if haveRefs
+			.readAssemblyTypes(opts)
+			if .verbosity > 1
+				references = .options.getDefaultLOStr('reference')
+				_printRefs(references)
+		
+			
 	def runProcess as Process
 		"""
 		Returns a new Process with startInfo.fileName and p.startInfo.arguments set appropriately
@@ -601,33 +673,39 @@ class Compiler
 		t = System.Diagnostics.Process.getType
 		.readAssembly(t.assembly) # System.dll
 
-	def readAssemblyTypes
-		references = .options.getDefault('reference', List<of String>()) to List<of String>
-
-		# Excluding the extension can be problematic
+	def _fixupLibSuffix(references as List<of String>)
 		i = 0
 		for reference in List<of String>(references)
 			if not reference.endsWith('.dll') and not reference.endsWith('.exe')
 				reference += '.dll'
 				references[i] = reference
 			i += 1
+			
+	def _printRefs(references as List<of String>)
+		if references.count == 0
+			print 'No additional assembly references.'
+		else
+			print 'Final assembly reference list:'
+			i = 0
+			for refPath in references
+				print '[i]. [refPath]'
+				i += 1
+			
+	def readAssemblyTypes(options as Options)
+		references = options.getDefaultLOStr('reference')
+
+		# Excluding the extension can be problematic
+		_fixupLibSuffix(references)
 
 		# now that references are fixed, make a copy so that .options['references'] is not modified further
 		references = List<of String>(references)
 
-		if .options.containsKey('pkg')
-			for pkgName in .options['pkg'] to List<of String>
+		if options.containsKey('pkg')
+			for pkgName in options['pkg'] to List<of String>
 				references.addRange(.refsForPackage(pkgName))
 
-		if .verbosity > 1
-			if references.count == 0
-				print 'No additional assembly references.'
-			else
-				print 'Final assembly reference list:'
-				i = 0
-				for refPath in references
-					print '[i]. [refPath]'
-					i += 1
+		if .verbosity > 1 
+			_printRefs(references)
 
 		# Here be "reflectionOnlyLoad" code... which does not work on Mono 1.2.4
 		# The run-time error message says:

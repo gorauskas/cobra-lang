@@ -543,7 +543,7 @@ class Parser
 				.expect('EOL')
 				# TODO: throw AssertException(SourceSite sourceSite, object[] expressions, object thiss, object info)
 				assert false, IdentifierExpr(token, 'throw')
-			on 'number'
+			on 'number'   # TODO: fix this to work on a per-file basis
 				# number 'decimal' | 'float' | 'float32' | 'float64'
 				typeName = .grab
 				if typeName.text not in ['decimal', 'float', 'float32', 'float64']
@@ -551,6 +551,29 @@ class Parser
 				.expect('EOL')
 				comp = .typeProvider to? Compiler
 				if comp, comp.numberTypeName = typeName.text
+			on 'args'   # remaining tokens are cmdline args
+				# args -ref:foo.dll -target:exe
+				args = List<of String>()
+				token = .grab
+				argStr = token.text
+				endLast = token.colNum + token.length
+				while token.which <> 'EOL'
+					token = .grab
+					if endLast < token.colNum or token.which == 'EOL'
+						args.add(argStr)
+						argStr = token.text
+					else
+						argStr += token.text
+					endLast = token.colNum + token.length
+					
+				if not args.count 
+					.throwError('args directive needs at least one arg following.')
+					
+				comp = .typeProvider to? Compiler
+				# trace args
+				if comp
+					options = ArgParser.parseToOptions(args)
+					comp.augmentOptions(options)
 			else
 				.throwError('Unknown compiler directive.')
 
