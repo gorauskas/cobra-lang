@@ -1019,18 +1019,25 @@ class PrimitiveType
 	var _systemAliasProxy as ITypeProxy?
 		"""
 		Subclasses set this to a LibraryTypeProxy instead of ClrTypeProxy because, for example, the
-		ClrTypeProxy for the clr type System.Boolean would return BoolType instance! Then the
-		primitive type has a self reference when what it really wanted was the Struct instance for
-		System.Boolean.
+		ClrTypeProxy for the clr type System.Boolean would return a Cobra BoolType instance! Then
+		the primitive type would have a self reference when what it really wanted was the Struct
+		instance for System.Boolean.
 		"""
 
 	var _systemAliasType as IType?
+
+	var _clrType as Type?
+
+	var _box as Box?
+		# Holds the methods and properties that this primitive type supports.
 
 	def init
 		pass
 
 	def init(superType as IType?)
 		base.init(superType)
+
+	get clrType from var
 
 	get systemAliasProxy from var
 
@@ -1040,6 +1047,9 @@ class PrimitiveType
 		base._bindInh
 		if _superType is nil
 			_superType = .compiler.objectType
+		if .compiler  # will be nil during unit tests
+			_box = Class(Token.empty, '[.getType.name]_[.serialNum]', List<of IType>(), List<of String>(), AttributeList(), ClrTypeProxy(Object), List<of ITypeProxy>(), nil)
+			_box.bindInh
 	
 	def _bindInt
 		base._bindInt
@@ -1048,6 +1058,84 @@ class PrimitiveType
 		# causes an exception and isn't necessary:
 		#if _systemAliasType
 		#	_systemAliasType.bindInt
+
+		if .compiler and _clrType
+			box = _box
+
+			meths = List<of Method>()
+			for methInfo in _clrType.getMethods(BindingFlags(DeclaredOnly, Static, Instance, Public))
+				if methInfo.isSpecialName, continue
+				params = methInfo.getParameters
+				if params and params.length
+					name = Utils.cobraNameForSharpMemberName(methInfo.name)
+					modifiers = List<of String>()
+					if methInfo.isStatic, modifiers.add('shared')
+					newParams = List<of Param>()
+					first = true
+					for nativeParam in params
+						if first
+							first = false
+							if params[0].parameterType == _clrType
+								# When the first arg of the shared method is the same type,
+								# then make an instance method that can be used directly on values of the type.
+								modifiers.remove('shared')
+								continue
+						param = Param(Token.empty.copy('ID', nativeParam.name), ClrTypeProxy(nativeParam.parameterType))
+						# TODO: get the following code over to the DLL scanning code
+						if nativeParam.parameterType.isByRef and not nativeParam.isOut
+							param.kind = Param.KindEnum.InOut
+						else if nativeParam.isOut
+							param.kind = Param.KindEnum.Out
+						newParams.add(param)
+					meth = Method(Token.empty, box, name, newParams, ClrTypeProxy(methInfo.returnType), nil, modifiers, AttributeList(), '')
+					if methInfo.isStatic
+						meth.sharedMethodBacking = _clrType.name + '.' + methInfo.name
+						if 'shared' in modifiers, meth.sharedMethodBackingIsAlias = true
+
+					overload = nil to MemberOverload?
+					other = box.declForName(name)
+					if other
+						if other inherits MemberOverload
+							overload = other
+						else if other inherits AbstractMethod or other inherits ProperDexer
+							overload = MemberOverload(other to BoxMember)
+							box.registerOverload(overload to !)
+						else
+							throw FallThroughException([box, meth, other])
+					else
+						assert box.declForName(name) is nil
+					if overload
+						overload.addMember(meth)
+					else
+						box.addDecl(meth)
+						
+					meths.add(meth)
+			box.bindInt
+			if false
+				# print out the methods
+				# useful for documentation
+				print
+				print 'type', .name
+				sharedMeths = for meth in meths where meth.isShared
+				if sharedMeths.count
+					sharedMeths.sort(ref .compareMethodNames)
+					print '    shared'
+					for meth in sharedMeths
+						print '        [meth.cobraSourceSignature(false)]'
+				objectMeths = for meth in meths where not meth.isShared
+				if objectMeths.count
+					objectMeths.sort(ref .compareMethodNames)
+					for meth in objectMeths
+						print '    [meth.cobraSourceSignature]'
+
+	def compareMethodNames(a as Method, b as Method) as int
+		return a.name.compareTo(b.name)
+
+	def memberForName(name as String) as IMember?
+		member = base.memberForName(name)
+		if member is nil
+			member = _box.symbolForName(name, true)
+		return member
 
 	def isAssignableTo(type as IType) as bool
 		r = base.isAssignableTo(type)
@@ -1074,6 +1162,7 @@ class BoolType
 
 	def init
 		base.init
+		_clrType = .typeProvider.clrType('System.Boolean')
 		_systemAliasProxy = LibraryTypeProxy('System.Boolean')
 
 	get name as String is override
@@ -1084,9 +1173,6 @@ class CharType
 	is partial
 	inherits PrimitiveType
 
-	var _clrType as Type
-	var _box as Box?  # TODO: move this and related code up to PrimitiveType
-
 	def init
 		base.init
 		_clrType = .typeProvider.clrType('System.Char')
@@ -1094,33 +1180,6 @@ class CharType
 
 	get name as String is override
 		return 'char'
-
-	def _bindInh
-		base._bindInh
-		_box = Class(Token.empty, '[.getType.name]_[.serialNum]', List<of IType>(), List<of String>(), AttributeList(), ClrTypeProxy(Object), List<of ITypeProxy>(), nil)
-		_box.bindInh
-
-	def _bindInt
-		base._bindInt
-		for methInfo in _clrType.getMethods(BindingFlags(Static, DeclaredOnly, Public))
-			if methInfo.isSpecialName
-				continue
-			params = methInfo.getParameters
-			if params and params.length and params[0].parameterType == Char
-				# should be a member of char instances
-				if params.length == 1
-					# TODO: scan parameters and deal with overloads
-					meth = Method(Token.empty, _box, Utils.cobraNameForSharpMemberName(methInfo.name), List<of Param>(), ClrTypeProxy(methInfo.returnType), nil, List<of String>(), AttributeList(), '')
-					meth.sharedMethodBacking = 'char.' + methInfo.name
-					_box.addDecl(meth)
-					# print '[.name].[meth.name]'
-		_box.bindInt
-
-	def memberForName(name as String) as IMember?
-		member = base.memberForName(name)
-		if member is nil
-			member = _box.symbolForName(name, true)
-		return member
 
 	def isComparableTo(b as IType) as bool
 		r = base.isComparableTo(b)
@@ -1140,6 +1199,7 @@ class DecimalType
 
 	def init
 		base.init
+		_clrType = .typeProvider.clrType('System.Decimal')
 		_systemAliasProxy = LibraryTypeProxy('System.Decimal')
 
 	get name as String is override
@@ -1230,7 +1290,6 @@ class FloatType
 			Node.typeProvider = saveTP
 
 	var _size as int
-	var _clrType as Type
 
 	def init(size as int, superType as IType?)
 		require
@@ -1262,8 +1321,6 @@ class FloatType
 
 	def getHashCode as int is override
 		return .size.getHashCode
-
-	get clrType from var
 
 	get isDefaultFloatType as bool
 		return _size == 64
@@ -1344,7 +1401,6 @@ class IntType
 
 	var _signed as bool
 	var _size as int
-	var _clrType as Type
 
 	def init(signed as bool, size as int, superType as IType?)
 		require
@@ -1389,8 +1445,6 @@ class IntType
 	def getHashCode as int is override
 		code = if(.isSigned, -1, 1) * .size
 		return code.getHashCode
-
-	get clrType from var
 
 	get isDefaultIntType as bool
 		return _signed and _size == 32

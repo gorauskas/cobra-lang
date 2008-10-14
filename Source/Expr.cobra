@@ -486,7 +486,7 @@ class CallExpr
 				lrt = dotNode.left.receiverType
 				if lrt.isDynamic
 					type = .compiler.nilableDynamicType
-				else if lrt is .compiler.passThroughType or lrt inherits PrimitiveType  # TODO: lame: bailing out on PrimitiveType so float.parse() will work. See Tests\150-basics-two\510-number-parse.cobra
+				else if lrt is .compiler.passThroughType
 					if _name == 'toString'
 						type = .compiler.stringType
 					else
@@ -1299,8 +1299,25 @@ class MemberExpr
 			.binarySuperNode.type = .type  # the type of foo.bar is what bar returns. A MemberExpr is the "bar" part.
 			.binarySuperNode.receiverType = receiverType
 			
-			# check visibility: public, protected, private, internal
 			if _definition inherits BoxMember
+				# resolve overloads
+				if _definition inherits MemberOverload
+					for member in _definition.members
+						if member inherits AbstractMethod
+							if member.params.count == 0
+								_definition = member
+								didResolveOverload = true
+								break
+					if not didResolveOverload
+						for member in (_definition to MemberOverload).members  # CC: shouldn't need cast
+							if member inherits AbstractMethod
+								if member.params.count == 1 and member.params[0].type inherits VariType
+									_definition = member
+									didResolveOverload = true
+									break
+					if not didResolveOverload
+						.throwError('Could not find an overload for "[.name]" with zero arguments.')
+				# check visibility: public, protected, private, internal
 				if _definition.isPublic
 					pass
 				else if _definition.isProtected

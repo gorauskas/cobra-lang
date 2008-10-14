@@ -36,6 +36,7 @@ class BoxMember
 	var _testMethod as TestMethod?
 	var _matchingBaseMember as BoxMember?
 	var _sharedMethodBacking as String?
+	var _sharedMethodBackingIsAlias as bool
 	var _binaryName as String?
 
 	def init(token as IToken, parentBox as Box, name as String, isNames as List<of String>, attribs as AttributeList)
@@ -74,6 +75,8 @@ class BoxMember
 	pro overloadGroup from var
 
 	pro sharedMethodBacking from var
+
+	pro sharedMethodBackingIsAlias from var
 
 	pro testMethod from var
 
@@ -615,6 +618,30 @@ class AbstractMethod
 		.addField('ensurePart', _ensurePart)
 		.addField('locals', _locals)
 		.addField('stmts', _stmts)
+
+	def cobraSourceSignature as String
+		return .cobraSourceSignature(true)
+
+	def cobraSourceSignature(includeShared as bool) as String
+		sb = StringBuilder('def [.name]')
+		if .params.count > 0
+			sb.append('(')
+			sep = ''
+			for param in .params
+				sb.append('[sep][param.name] as ')
+				branch param.kind
+					on Param.KindEnum.Value, pass
+					on Param.KindEnum.InOut, sb.append('inout ')
+					on Param.KindEnum.Out, sb.append('out ')
+				sb.append('[param.type.name]')
+				sep = ', '
+			sb.append(')')
+		if not .resultType inherits VoidType
+			sb.append(' as [.resultType.name]')
+			if includeShared and .isShared
+				# TODO: other is names
+				sb.append(' is shared')
+		return sb.toString
 
 	get canHaveDetailedStackTrace as bool
 		return .parentBox.canHaveDetailedStackTrace and not .hasYieldStmt
