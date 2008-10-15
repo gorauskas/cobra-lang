@@ -1,0 +1,136 @@
+# Tests for multiarg assignment from list, array and method to local vars
+
+class MultiAssign
+	
+	def main is shared
+		ma = MultiAssign()
+		
+		ma.array	
+		ma.list
+		ma.dict
+		ma.nonMatchCount
+
+	def array
+		a, b = @[1, 2]  
+		assert a == 1
+		assert b == 2
+	
+		c, d, x = @['1', '2', '3']
+		assert c == '1'
+		assert d == '2'
+		assert x == '3'
+		
+		e, f, g = @[1, 'Two', c'3']
+		assert e == 1
+		assert f == 'Two'
+		assert g == c'3'
+		
+	def dict
+		# sorta interesting - resolves to a normal lookup by 0-offset 
+		# numeric key in order of given variables....
+		#x = {0:'a', 1:'b'}
+		#print x[0]
+
+		c, d, e = {0:'a', 1:'b', 2:'c', 3:'d'}
+		assert c == 'a'
+		assert d == 'b'
+		assert e == 'c'
+		# but if there's a key missing in the range -> KeyNotFoundException
+		
+		xdict = {0:'z', 1:'w', 3:'x'}
+		#for k in xdict.keys 
+		#	print k
+		#for v in xdict.values
+		#	print v
+		keysColl = for k in xdict.keys get k 
+		#print keysColl
+		f, g = keysColl
+		assert f == 0
+		assert g == 1
+		valsColl = for v in xdict.values get v 
+		h, i = valsColl
+		assert h == 'z'
+		assert i == 'w'
+		#print valsColl
+
+	def list
+		a, b = [1,2]  
+		assert a == 1
+		assert b == 2
+
+		d, e = .func3  
+		assert d == 'a'
+		assert e == 'b'
+		
+		# {:-)}
+		d1,d2 = .funcStr1
+		assert d1 == c'e'
+		assert d2 == c'h'
+		
+		ll = [21, 22]
+		f, g = ll
+		assert f == 21
+		assert g == 22
+
+		ii, s = [99, 'STR']
+		assert ii == 99
+		assert ii.getType is Int32
+		assert s == 'STR'
+	
+		ls = List<of String>()
+		ls.add("one")
+		ls.add("two")
+		ls.add("three")
+		s0, s1, s2 = ls
+		assert s0 == 'one'
+		assert s1 == 'two'
+		assert s2 == 'three'
+		
+	def nonMatchCount
+		a, b, c = [11, 12]
+		assert a == 11
+		assert b == 12
+		assert c == 0  # instantiated but unassigned
+
+		f, = [3, 4]
+		assert f == 3
+	
+		ls = List<of String>()
+		ls.add("one")
+		ls.add("two")
+		ls.add( "three")
+		s0, s1 = ls
+		assert s0 == 'one'
+		assert s1 == 'two'
+	
+		g, h = @['1','2','3']
+		assert g == '1'
+		assert h == '2'
+	
+		cd, dd = {0:'a', 1:'b', 3:'c'}
+		assert cd == 'a'
+		assert dd == 'b'
+		
+		l, m = @[1, 'Two', c'3']
+		assert l == 1
+		assert m == 'Two'
+
+		m = ''
+		c1 as Object = 'x'
+		l, m, n, c1 = @[1, 'Two', c'3']
+		
+		assert l == 1
+		assert m == 'Two'
+		assert n == c'3'
+		assert c1 == 'x'
+	
+		p, q, r = 'ab'
+		assert p == c'a'
+		assert q == c'b'
+		assert r == c'\0'
+		
+	def func3 as List<of String> is shared
+		return ['a', 'b', 'c', 'd', 'e']
+		
+	def funcStr1 as String is shared
+		return 'eh?'
