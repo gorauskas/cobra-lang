@@ -1,6 +1,13 @@
 class Box
 	is partial
 
+	get clrType as Type
+		"""
+		Returns the CLR System.Type boxed by the .nativeType.
+		Throws exception rather than return nil.
+		"""
+		return (.nativeType to ClrType).theClrType
+
 	def _scanNativeType
 		"""
 		Subclasses should invoke base and then invoke the various _scanFoo methods that are appropriate for them.
@@ -14,34 +21,35 @@ class Box
 		_isNames.add('extern')  # to make the box like the ones that were in SystemInterfaces.cobra
 
 		# scan DefaultMemberAttribute for later use
-		for attr in _clrType.getCustomAttributes(true)
+		for attr in .clrType.getCustomAttributes(true)
 			if attr inherits DefaultMemberAttribute
 				_defaultMemberName = attr.memberName  # this attribute names the indexer for the class
 				break
 
 	def _scanGenericArgs
-		if _clrType.isGenericType
-			for genArg in _clrType.getGenericArguments
-				_genericParams.add(GenericParam(genArg))
+		if .clrType.isGenericType
+			for genArg in .clrType.getGenericArguments
+				_genericParams.add(GenericParam(ClrType(genArg)))
 
 	def _scanImplements
-		for interf in _clrType.getInterfaces
+		for interf in .clrType.getInterfaces
 			if not _badRelatedType(interf)
 				_baseInterfaceProxies.add(ClrTypeProxy(interf))
 
 	def _scanNestedTypes
-		for type in _clrType.getNestedTypes
+		for type in .clrType.getNestedTypes
+			clrType = ClrType(type)
 			if type.isClass
-				.addDecl(Class(type))
+				.addDecl(Class(clrType))
 			else if type.isInterface
-				.addDecl(Interface(type))
+				.addDecl(Interface(clrType))
 			else if type.isEnum
-				.addDecl(EnumDecl(this, type, List<of String>(), ''))  # TODO: isNames; docString?
+				.addDecl(EnumDecl(this, clrType, List<of String>(), ''))  # TODO: isNames; docString?
 			else if type.isValueType
-				.addDecl(Struct(type))
+				.addDecl(Struct(clrType))
 			else if type.isAnsiClass
 				# The Enum class is an example that returns false for .isClass but true for .isAnsiClass
-				.addDecl(Class(type))
+				.addDecl(Class(clrType))
 			else
 				throw FallThroughException(type)
 			lastDecl = .declsInOrder[.declsInOrder.count-1] to dynamic
@@ -49,8 +57,8 @@ class Box
 				lastDecl.parentBox = this
 			
 	def _scanFields
-		for fieldInfo in _clrType.getFields(BindingFlags(Instance, Static, DeclaredOnly, Public))
-			if fieldInfo.declaringType is not _clrType
+		for fieldInfo in .clrType.getFields(BindingFlags(Instance, Static, DeclaredOnly, Public))
+			if fieldInfo.declaringType is not .clrType
 				continue
 			if fieldInfo.isPrivate
 				continue
@@ -76,8 +84,8 @@ class Box
 				.addDecl(varr)
 
 	def _scanInitializers
-		for conInfo in _clrType.getConstructors  # TODO: get protected constructors
-			if conInfo.declaringType is not _clrType
+		for conInfo in .clrType.getConstructors  # TODO: get protected constructors
+			if conInfo.declaringType is not .clrType
 				continue
 			skip = false
 			for paramInfo in conInfo.getParameters
@@ -107,8 +115,8 @@ class Box
 				.addDecl(initer)
 
 	def _scanProperties
-		for propInfo in _clrType.getProperties(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
-			if propInfo.declaringType is not _clrType
+		for propInfo in .clrType.getProperties(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
+			if propInfo.declaringType is not .clrType
 				continue
 			if propInfo.name == _defaultMemberName and propInfo.getIndexParameters and propInfo.getIndexParameters.length
 				_scanIndexer(propInfo)
@@ -162,10 +170,10 @@ class Box
 			.addDecl(indexer)
 
 	def _scanMethods
-		for methInfo in _clrType.getMethods(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
+		for methInfo in .clrType.getMethods(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
 			if methInfo.isSpecialName, continue
 			if methInfo.isPrivate, continue
-			if methInfo.declaringType is not _clrType, continue
+			if methInfo.declaringType is not .clrType, continue
 			skip = false
 			if _badRelatedType(methInfo.returnType)
 				skip = true
@@ -191,7 +199,7 @@ class Box
 				continue
 			genericParams = List<of IType>()
 			for genArg in methInfo.getGenericArguments
-				genericParams.add(GenericParam(genArg))
+				genericParams.add(GenericParam(ClrType(genArg)))
 			params = _scanParams(methInfo.getParameters)
 			isNames = _isNamesForMethodInfo(methInfo)
 			attribs = _attribsForMethodInfo(methInfo)
@@ -237,10 +245,10 @@ class Box
 		return params
 
 	def _scanEvents
-		for eventInfo in _clrType.getEvents(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
+		for eventInfo in .clrType.getEvents(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
 			if eventInfo.isSpecialName
 				continue
-			if eventInfo.declaringType is not _clrType
+			if eventInfo.declaringType is not .clrType
 				continue
 			if '.' in eventInfo.name
 				# TODO: these are mostly (maybe all) explicit implementations of interfaces

@@ -1,6 +1,49 @@
 use System.Reflection
 
 
+class NativeType
+	is abstract
+	"""
+	The abstract base class for a boxed native type of the platform being compiled to.
+
+	For generalizing the native types of a platform such as a CLR struct or a JVM class.
+	
+	This does *not* represent a Cobra IType descendant.
+	It just represents a "boxed" native type.
+	
+	This abstract class facilitates multiple backends for Cobra.
+	
+	Cobra code that is not platform specific should refer to NativeType rather than
+	CLR's System.Type or JVM's Class.
+	
+	TODO: Since this is being used to "box" native types, another approach could be to make this class an interface and use structs.
+	However, I'm not sure if the use of an interface for arguments and return types wouldn't just eliminate any struct pass-by-value efficiency anyway.
+	"""
+
+	get name as String is abstract
+		"""
+		Return the name of the type, sans namespace or package.
+		"""
+
+	get fullName as String is abstract
+		"""
+		Return the full name of the type including the namespace/package which may be empty if this type is in the global namespace.
+		TODO: ensure result.endsWith(.name)
+		"""
+
+	get isValueType as bool is abstract
+		"""
+		Return true if this is a value type such as a bool, int, float or struct.
+		"""
+
+	get baseType as NativeType? is abstract
+		"""
+		Return the native base type that this native type inherits from, if any.
+		Actually, native types should return the root Object class with the exception of the Object class.
+		TODO: Add contract to enforce above statement
+		"""
+
+
 interface ITypeProvider
 	"""
 	A type provider can provide essential types and serve as a place
@@ -549,13 +592,16 @@ class ClrTypeProxy
 				parts = name.split(c'`')
 				count = int.parse(parts[1]) to int
 				cobraName = parts[0] + '<of'
-				for i = 1 .. count
-					cobraName += ','
+				for i in count-1, cobraName += ','
 				cobraName += '>'
 				_cobraNameForSharpGenericNameCache[name] = cobraName
 				return cobraName
 
 	var _clrType as Type
+
+
+	def init(nativeType as NativeType)  # TODO: HACK
+		.init((nativeType to ClrType).theClrType)
 
 	def init(clrType as Type)
 		base.init
@@ -615,7 +661,7 @@ class ClrTypeProxy
 
 		# generic parameters
 		if clrType.isGenericParameter
-			return GenericParam(clrType)
+			return GenericParam(ClrType(clrType))
 
 		# compute type name
 		typeName = clrType.name

@@ -33,7 +33,7 @@ class Box
 	var _invariants as List<of Expr>
 	var _testMethod as TestMethod?
 
-	var _clrType as Type?
+	var _nativeType as NativeType?
 	var _needScanNativeType as bool
 	var _membersToUnNil as String?
 	var _defaultMemberName as String?
@@ -55,9 +55,9 @@ class Box
 		_overloads = List<of MemberOverload>()
 		_invariants = List<of Expr>()
 
-	def _initClrType(t as Type)
+	def _initNativeType(t as NativeType)
 		ensure .needScanNativeType
-		_clrType = t
+		_nativeType = t
 		_needScanNativeType = true
 		_scanGenericArgs
 
@@ -72,14 +72,13 @@ class Box
 		base.addRefFields
 		.addField('genericDef', _genericDef)
 		.addField('baseClass', _baseClass)
-		.addField('clrType', _clrType)
+		.addField('nativeType', .nativeType)
 
 	def addSubFields
 		base.addSubFields
 		.addField('genericParams', _genericParams)
 		.addField('baseInterfaces', _baseInterfaces)
 		.addField('baseInterfaceProxies', _baseInterfaceProxies)
-		.addField('clrType', _clrType)
 
 	def toTraceString as String
 		sb = StringBuilder('[.getType.name]([.name], [.serialNum], ')
@@ -91,7 +90,7 @@ class Box
 		if not .didBindInt
 			sb.append('not ')
 		sb.append('didBindInt, ')
-		sb.append('clrType=[.clrType]')
+		sb.append('nativeType=[.nativeType]')
 		sb.append(')')
 		return sb.toString
 
@@ -105,7 +104,7 @@ class Box
 	get baseInterfaceProxies from var
 
 	get canDeclNamesDifferOnlyByCase as bool is override
-		return _clrType is not nil
+		return .nativeType is not nil
 
 	get canHaveDetailedStackTrace as bool
 		"""
@@ -118,8 +117,6 @@ class Box
 		"""
 		# TODO: use a class level attribute instead of hard-coded names. DetailedStackTrace(false)
 		return .name not in @['CobraFrame', 'SourceSite']  # otherwise, stack overflow
-
-	get clrType from var
 
 	get constructedTypes as IDictionary<of String, Box>
 		"""
@@ -147,10 +144,10 @@ class Box
 		"""
 		ensure
 			.isSystemObjectClass implies result
-			result implies .clrType or (.genericDef and .genericDef.clrType)
-			not result implies .clrType is nil
+			result implies .nativeType or (.genericDef and .genericDef.nativeType)
+			not result implies .nativeType is nil
 		body
-			return _clrType or (_genericDef and _genericDef._clrType)
+			return _nativeType or (_genericDef and _genericDef._nativeType)
 		
 	get invariants from var
 
@@ -173,6 +170,8 @@ class Box
 		return .name == 'Type' and .parentNameSpace and .parentNameSpace.fullName == 'System'
 
 	pro membersToUnNil from var
+
+	get nativeType from var
 
 	get needScanNativeType from var
 	
@@ -281,7 +280,7 @@ class Box
 			_parentBox = newBox
 
 	get canAccessMemberForName as bool is override
-		return .didBindInh or (_clrType and (.compiler.isBindingInt or .compiler.isBindingImp))
+		return .didBindInh or (.nativeType and (.compiler.isBindingInt or .compiler.isBindingImp))
 
 	def extensionMemberFor(box as Box, name as String) as IMember?
 		# in the future, in support of C# 3.0, it will be necessary to implement this,
@@ -289,7 +288,7 @@ class Box
 		return nil
 
 	def memberForName(name as String) as IMember?
-		if _clrType
+		if .nativeType
 			_prepLibraryBox
 		else
 			.completeMemberConstructionIfNeeded
@@ -405,7 +404,7 @@ class Box
 	## IType
 
 	get innerType as IType? is override
-		if _clrType
+		if .nativeType
 			_prepLibraryBox
 		else
 			.completeMemberConstructionIfNeeded
@@ -510,7 +509,7 @@ class Box
 			if not _genericDef.didBindInt and not _genericDef.isBindingInt
 				_genericDef.bindInt
 			assert _genericDef.didBindInt or _genericDef.isBindingInt
-		if _clrType
+		if .nativeType
 			_prepLibraryBox
 		else if not .didBindInh
 			.bindInh
@@ -570,6 +569,7 @@ class Box
 			.compiler.boxStack.pop
 
 	def prepSystemObjectClass
+		# TODO: fix native
 		# Pretend .NET is a bit more OO, consistent and elegant.
 		# C#'s typeof(X) is X.getType in Cobra.
 		existing = .declForName('getType') to BoxMember
@@ -640,7 +640,7 @@ class Box
 		"""
 		DLL types get bindInh & bindInt only on demand. (Otherwise reading system DLLs slows things down.)
 		"""
-		require .clrType
+		require .nativeType
 		if _didPrep
 			return
 		_didPrep = true
@@ -787,7 +787,7 @@ class Box
 				assert not .didBindInt
 				.bindInh
 				assert not .didBindInt
-				if _clrType
+				if .nativeType
 					_prepLibraryBox
 					assert not .didBindInt or not .compiler.isBindingInh
 
@@ -810,10 +810,10 @@ class Box
 			argNames = Utils.join(',', for type in typeArgs get type.name)
 			t._name = '[.rootName]<of [argNames]>'
 			t._genericDef = this
-			t._clrType = nil  # The constructed type is really sourced from the generic def. Don't foster confusion with a reference to the original generic def's clr type (if there is one).
+			t._nativeType = nil  # The constructed type is really sourced from the generic def. Don't foster confusion with a reference to the original generic def's clr type (if there is one).
 			t.cloneCollections
 			# set the contructed type args immediately or its ancestors will get the original generic args during _bindInt:
-			for i = 0 .. typeArgs.count
+			for i in typeArgs.count
 				t._genericParams[i] = typeArgs[i]
 			assert t._constructedTypes is nil or t._constructedTypes.count == 0
 			if .didBindInt
@@ -972,11 +972,12 @@ class Class
 		base.init(token, name, paramList, isNames, attribs, implementsNodes, docString)
 		_baseNode = baseNode
 
-	def init(clrType as Type)
-		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(clrType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
-		if clrType.baseType
-			_baseNode = ClrTypeProxy(clrType.baseType)
-		_initClrType(clrType)
+	def init(nativeType as NativeType)
+		# TODO: fix native
+		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
+		if nativeType.baseType
+			_baseNode = ClrTypeProxy(nativeType.baseType to ClrType)  # TODO: fix native. Change to NativeTypeProxy
+		_initNativeType(nativeType)
 
 	def addSubFields
 		base.addSubFields
@@ -1004,12 +1005,6 @@ class Class
 
 	get isReference as bool is override
 		return true
-
-	get isSystemObjectClass as bool is override
-		return _clrType and _clrType.fullName == 'System.Object'
-
-	get isSystemTypeClass as bool is override
-		return _clrType and _clrType.fullName == 'System.Type'
 
 	get subclasses from var
 
@@ -1123,9 +1118,9 @@ class Interface
 	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, paramList, isNames, attribs, baseNodes, docString)
 
-	def init(clrType as Type)
-		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(clrType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
-		_initClrType(clrType)
+	def init(nativeType as NativeType)
+		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
+		_initNativeType(nativeType)
 
 	get englishName as String is override
 		return 'interface'
@@ -1159,9 +1154,9 @@ class Struct
 	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseName as String?, interfaceNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, paramList, isNames, attribs, interfaceNodes, docString)
 
-	def init(clrType as Type)
-		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(clrType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
-		_initClrType(clrType)
+	def init(nativeType as NativeType)
+		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
+		_initNativeType(nativeType)
 
 	get englishName as String is override
 		return 'struct'
@@ -1268,7 +1263,7 @@ class GenericParam
 	var _constraints as List<of GenericConstraint>
 	var _index as int
 	var _objectClass as Class?
-	var _clrType as Type?
+	var _nativeType as NativeType?
 
 	def init(name as String)
 		require name.length
@@ -1276,15 +1271,15 @@ class GenericParam
 		_name = name
 		_constraints = List<of GenericConstraint>()
 
-	def init(genArgType as Type)
+	def init(genArgType as NativeType)
 		.init(genArgType.name)
-		_clrType = genArgType
+		_nativeType = genArgType
 		# TODO: scan Constraints
 
 	get name as String is override
 		return _name
 
-	get clrType from var
+	get nativeType from var
 
 	get constraints from var
 
@@ -1459,15 +1454,15 @@ class Extension
 		_name = '(unnamed extension [.serialNum])'
 		_extendedBoxProxy = extendedBoxProxy
 
-	def init(clrType as Type)
+	def init(nativeType as NativeType)
 		# this only for Cobra specific extensions. Example: class Extend_String_FileName
-		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(clrType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
-		_initClrType(clrType)
+		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
+		_initNativeType(nativeType)
 		# the real extended type is not this type, but the type of the first argument of any method
-		for methInfo in clrType.getMethods
-			clrType = methInfo.getParameters[0].parameterType
+		for methInfo in .clrType.getMethods  # TODO: fix native. break this out to a method
+			nativeType = ClrType(methInfo.getParameters[0].parameterType)
 			break
-		_extendedBoxProxy = ClrTypeProxy(clrType)
+		_extendedBoxProxy = ClrTypeProxy(nativeType)
 		(.compiler.curModule to AssemblyModule).addMustBindInh(this)
 
 	get extendedBox from var
@@ -1483,7 +1478,7 @@ class Extension
 
 	def extensionMemberFor(box as Box, name as String) as IMember? is override
 		assert .didBindInh
-		if _clrType
+		if _nativeType
 			_prepLibraryBox
 		else
 			.completeMemberConstructionIfNeeded

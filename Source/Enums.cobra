@@ -8,8 +8,8 @@ class EnumDecl
 	var _attribs as AttributeList
 	var _storageTypeNode as ITypeProxy?
 	var _storageType as IType?
-	var _clrType as Type?
-	var _needScanClrType as bool
+	var _nativeType as NativeType?
+	var _needScanNativeType as bool
 
 	def init(parent as IParentSpace?, token as IToken, name as String, isNames as List<of String>, attribs as AttributeList, storageTypeNode as ITypeProxy?, docString as String, enumMembers as List<of EnumMember>)
 		base.init(parent, token, name, isNames, docString)
@@ -19,17 +19,17 @@ class EnumDecl
 			.addDecl(em)
 			em.enumDecl = this
 
-	def init(parent as IParentSpace?, clrType as Type, isNames as List<of String>, docString as String?)
-		base.init(parent, TokenFix.empty, clrType.name, isNames, docString)
+	def init(parent as IParentSpace?, nativeType as NativeType, isNames as List<of String>, docString as String?)
+		base.init(parent, TokenFix.empty, nativeType.name, isNames, docString)
 		_attribs = AttributeList()
-		_clrType = clrType
-		_storageTypeNode = ClrTypeProxy(Enum.getUnderlyingType(clrType))
-		_needScanClrType = true
+		_nativeType = nativeType
+		_storageTypeNode = ClrTypeProxy(Enum.getUnderlyingType((_nativeType to ClrType).theClrType))  # TODO: fix native
+		_needScanNativeType = true
 
 	def _scanClrType
 		# TODO: read attribs
-		_needScanClrType = false
-		clrType = _clrType to !
+		_needScanNativeType = false
+		clrType = (_nativeType to ClrType).theClrType # TODO: fix native
 		isByte = Enum.getUnderlyingType(clrType).name == 'Byte'
 		is64 = Enum.getUnderlyingType(clrType).name == 'Int64'
 		values = Enum.getValues(clrType)
@@ -72,7 +72,7 @@ class EnumDecl
 			return base.isUsed
 		set
 			base.isUsed = value
-			if _needScanClrType
+			if _needScanNativeType
 				_scanClrType
 
 	get typeForIdentifier as IType is override
@@ -87,7 +87,7 @@ class EnumDecl
 		if _storageTypeNode
 			_storageType = _storageTypeNode.realType
 			# TODO: give error if _storageType is not some kind of int or char or whatever is legal
-		if _needScanClrType
+		if _needScanNativeType
 			_scanClrType
 
 	def _bindImp is override
@@ -101,7 +101,7 @@ class EnumDecl
 		return nil
 
 	def memberForName(name as String) as IMember?
-		if _needScanClrType
+		if _needScanNativeType
 			_scanClrType
 		m = base.memberForName(name)
 		if m is nil
