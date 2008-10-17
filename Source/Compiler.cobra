@@ -482,25 +482,34 @@ class Compiler
 		
 			
 	def runProcess as Process
+		return .runProcess(nil, nil)
+		
+	def runProcess(exeName as String?, argList as List<of String>?) as Process
 		"""
 		Returns a new Process with startInfo.fileName and p.startInfo.arguments set appropriately
-		for the produced executable and the current options.
+		for the produced executable and the current options and any provided argsList.
 		"""
-		# TODO: support args to the program with a - or -- separator
 		p = Process()
+		baseExeFileName = exeName ? .baseExeFileName
+		fullExeFileName = exeName ? .fullExeFileName
 		branch .platform
 			on PlatformEnum.Microsoft
-				p.startInfo.fileName = .baseExeFileName
+				p.startInfo.fileName = baseExeFileName
 			on PlatformEnum.Novell
 				p.startInfo.fileName = 'mono'
 				args = ''
 				# mono also needs --debug when running
 				if .options.getDefault('debug', '') not in ['', '-']
 					args += '--debug '
-				args += '"[.fullExeFileName]"'
+				args += '"[fullExeFileName]"'
 				p.startInfo.arguments = args
 			else
 				throw FallThroughException(.platform)
+                                
+		if argList and argList.count 
+			args = p.startInfo.arguments ? '' 
+			args += Utils.join(' ', argList) 
+			p.startInfo.arguments = args 				
 		return p
 
 	##
@@ -751,7 +760,7 @@ class Compiler
 				print ' |', line
 			return refs
 
-		parts = output.replace('-r:', '\0').split(c'\0')
+		parts = output.replace('-ref:', '\0').split(c'\0')
 		for part in parts
 			if part.trim <> '', refs.add(part.trim)
 		

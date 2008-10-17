@@ -199,7 +199,7 @@ class CommandLine
 		},
 		{
 			'name': 'reference',
-			'synonyms': ['r'], # TODO: lose 'r' ->'Ref', 'R', something else
+			'synonyms': ['ref'], 
 			'isAccumulator': true,
 			'description': 'Add a DLL reference.',
 			'args': 'Some.dll',
@@ -218,9 +218,17 @@ class CommandLine
 #			'args': ':Qualified.Type.Name',
 #		},
 		{
-			'name': 'run',  # TODO: Synonym 'r' after change 'reference' switch
+			'name': 'run',  	# this is a switch only   
+			'synonyms': ['r'], 
 			'description': 'Runs the Cobra program. This is the default behavior if specify any Cobra source files.',
 			'type': 'main',
+		},
+		{
+			'name': 'run-args',
+			'synonyms': ['-'],  # '--'
+			'description': 'Remaining args are to be passed to executable.',
+			'eg':          '-- arg1 arg2 arg3',
+			'type': 'args-list',
 		},
 		{
 			'name': 'sharp-compiler',
@@ -485,7 +493,14 @@ class CommandLine
 		if .options.boolValue('compile')  # maybe changed by compiler directive
 			return
 
-		p = c.runProcess
+		exeFileName as String? = nil
+		runArgs	= .options.getDefaultLOStr('run-args')
+		# TODO: what's this?
+		# exeArgs = .options.getDefaultLOStr('exe-args')
+		# if exeArgs.count
+		#	exeFileName = exeArgs[0]
+		#   runArgs = exeArgs[1:]
+		p = c.runProcess(exeFileName, runArgs)
 		if _verbosity >= 1
 			print 'Running: [p.startInfo.fileName] [p.startInfo.arguments]'
 			print .verboseLineSeparator
@@ -635,10 +650,11 @@ class ArgParser
 			valueStr = 'no-value'
 			fileList = List<of String>()
 			mainOptions = List<of String>()
+			argn = 0
 			for arg in args
-				if not arg.trim.length
-					continue
-					
+				argn += 1  # offset next arg after current
+				if not arg.trim.length, continue
+
 				isOption = arg.startsWith(optionPrefix)
 				if isOption
 					name = _getOptionParts(arg, optionPrefix, out valueStr)
@@ -649,10 +665,14 @@ class ArgParser
 						continue
 						
 					value = _processToValue(name, valueStr, spec, mainOptions)
+					if value == 'args-list'
+						value = args[argn:]
 					if value is nil
 						_error('Cannot process value "[valueStr]" for option "[name]".')
 					valueDict[name] = value to !
 					didSpecify[name] = true
+					if spec['type'] to String == 'args-list'
+						break   # absorbed remainder of args
 				else # not isOption
 					if _optsOnly
 						_error("Filenames are not allowed here, All the args provided must be '-' prefixed options")
@@ -691,6 +711,8 @@ class ArgParser
 		"""
 		while arg.startsWith(optionPrefix)
 			arg = arg[1:]
+		if not arg.length # '--'
+			arg = 'run-args'
 		return arg
 				
 	def splitOpt(arg as String) as IList<of String>
@@ -799,6 +821,8 @@ class ArgParser
 			on 'main'
 				mainOptions.add(name)
 				value = true
+			on 'args-list'  # remainder of args are for execution of exe file 
+				value = 'args-list'
 			else
 				value = _interpretValue(valueStr, spec)
 		return value
@@ -953,7 +977,7 @@ class ArgParser
 		print '  cobra <options> <command> <path(s)>'
 		print '    * commands that operate on path(s) are:'
 		print '      -compile ... Compile only. Also, -c'
-		print '      -run ....... Run the program (compile if necessary).'
+		print '      -run ....... Run the program (compile if necessary). Also -r (Default)'
 		print '      -test ...... Run the unit tests of a library.'
 		print '      -document .. Document the program (partial compilation). Also, -doc'
 		print ''
