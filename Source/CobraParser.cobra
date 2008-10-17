@@ -351,6 +351,13 @@ class Parser
 		else
 			return nil
 
+	def optionalStringLiteral as IToken?
+		"""
+		Gets a token if it matches one of the string literals,
+		not including strings with substitution expressions such as STRING_START_SINGLE.
+		"""
+		return .optional('STRING_SINGLE', 'STRING_DOUBLE', 'STRING_RAW_SINGLE', 'STRING_RAW_DOUBLE', 'STRING_NOSUB_SINGLE', 'STRING_NOSUB_DOUBLE')
+
 	def oneOrMore(which as String)
 		"""
 		Consumes the expected token and any other additional contiguous ones.
@@ -543,6 +550,18 @@ class Parser
 				.expect('EOL')
 				# TODO: throw AssertException(SourceSite sourceSite, object[] expressions, object thiss, object info)
 				assert false, IdentifierExpr(token, 'throw')
+			on 'error'
+				# emit an error message
+				msg = '%% error directive'
+				if .optionalStringLiteral
+					msg = .last.value to String
+				.throwError(msg)
+			on 'warning'
+				# emit a warning
+				msg = '%% warning directive'
+				if .optionalStringLiteral
+					msg = .last.value to String
+				_warning(msg)
 			on 'number'   # TODO: fix this to work on a per-file basis
 				# number 'decimal' | 'float' | 'float32' | 'float64'
 				typeName = .grab
