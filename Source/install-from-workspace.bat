@@ -1,2 +1,2 @@
 @cls
-@Snapshot\cobra -debug InstallFromWorkspace.cobra
+@Snapshot\cobra -debug -ert:yes InstallFromWorkspace.cobra
