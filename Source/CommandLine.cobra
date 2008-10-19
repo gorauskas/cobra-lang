@@ -28,6 +28,7 @@ class CommandLine
 	"""
 
 	get versionString as String is shared
+		ensure Utils.countChars(result, c'.') == 2
 		# Can't just take CobraCore.versionDescription as is, because that will be the one from Snapshot,
 		# not the current Source directory. And Snapshot can be a final release such as '0.7.4' for a
 		# period of time where this Cobra source represents an svn-post-RELEASE.
@@ -113,6 +114,13 @@ class CommandLine
 			'description': 'Specify an editor and command line options to invoke if there is a compile-time error. Use underscore (_) for space in the specification. Can also set via COBRA_EDITOR environment variable (in which case spaces work fine).',
 			'example': ['uedit32_FILE/LINE', 'mate_FILE_-l_LINE'],
 			'args': 'editor_spec_with_FILE_LINE',
+		},
+		{
+			'name': 'extra-source',
+			'type': 'string',
+			'args': 'SOURCE',
+			'description': 'Add extra source code to be compiled with the rest. Generally used only internally by the compiler.',
+			'developer-only': 'yes',
 		},
 		{
 			'name': 'document',
@@ -538,6 +546,16 @@ class CommandLine
 		_options['target'] = 'lib'
 		_options['include-tests'] = false  # TODO: including tests in a DLL tends to cause problems. it might be because tests are triggered by type initializers. this needs investigation
 		_options['embed-run-time'] = true  # because the runtime is what we're building!
+
+		# embed the version
+		version = .versionString
+		assert Utils.countChars(version, c'.') == 2  # ex: '0.8.0'
+		if ' ' in version or 'post' in version  # ex: '0.8.0 post'
+			# 'post' versions have a fourth version component of 1, as opposed to 0
+			version = version.split[0] + '.1'   # ex: 0.8.0.1
+			assert Utils.countChars(version, c'.') == 3
+		_options.addExtraUse('use System.Reflection')
+		_options.addExtraSource("assembly\n\thas AssemblyVersion('[version]')\n")
 		.doCompile(List<of String>(), true, false, false)
 
 
@@ -1156,3 +1174,15 @@ class Options
 
 	get buildStandardLibrary as bool
 		return .boolValue('build-standard-library')
+
+	def addExtraUse(useSource as String)
+		es = .getDefault('extra-source', '') to String
+		useSource = useSource.trim
+		if not useSource in es
+			es = useSource + '\n' + es
+		this['extra-source'] = es
+
+	def addExtraSource(source as String)
+		es = .getDefault('extra-source', '') to String
+		es = es + source + '\n'
+		this['extra-source'] = es
