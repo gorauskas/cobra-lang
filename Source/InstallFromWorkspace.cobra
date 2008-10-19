@@ -1,0 +1,447 @@
+"""
+InstallFromWorkspace.cobra
+
+WARNING: Not tested on Mono or on Mac/Linux/Unix yet.
+
+This program installs Cobra onto your system out of the workspace. It's a great
+convenience for users who only grab the workspace to get the very latest
+version of Cobra (e.g., they are not developing on the compiler). But even for
+developers, it's convenient to "snapshot" the compiler for your system when
+desired.
+
+Why not a .bat file? Won't run on Mac, Linux, etc.
+
+Why not a bash script? Won't run on Windows-sans-cygwin.
+
+
+TO RUN
+
+	On Windows
+	
+		Update, if desired:
+		> cd \path\to\Workspace
+		> svn up
+		
+		Get into the Source:
+		> cd Source
+	
+		Use the batch file:
+		> install-from-workspace
+
+	On Mac, Linux, etc.
+
+		Update, if desired:
+		$ cd /path/to/Workspace
+		$ svn up
+		
+		Get into the Source:
+		$ cd Source
+		
+		Use the script:
+		$ install-from-workspace
+
+
+	The installer prints "Success!" at the end, if successful.
+	Otherwise you will see an error message.
+	
+	It's safe to run the installer more than once.
+	
+	The installer does not change any workspace files that are under source code control.
+	
+	To test the installation, try invoking Cobra from *outside* the workspace.
+
+
+ASSUMPTIONS
+
+	* This program is run in the Workspace\Source directory.
+
+	* This program is run by Snapshot\cobra.exe. *NOT* .\cobra.exe
+
+	* The current Cobra compiler in Source\ will report a -version equal to the
+	  last released version plus optional additional text. If the last release
+	  was "0.8.0" then the new release should be "0.8.0 post".
+
+	* The current Cobra compiler in Source\ will have three components to its
+	  base version *number*. Form: x.y.z  Example: 0.8.0
+
+
+TODO
+
+	[ ] Test on Mac / Mono 2.0
+
+	[ ] Create an install log
+
+	[ ] Various "TODO" items in the source itself
+
+"""
+
+use System.Diagnostics
+use System.Text.RegularExpressions
+
+
+class InstallFromWorkspace
+
+	def main is shared
+		InstallFromWorkspace().run
+
+	var _snapshotCompilerPath as String?
+	var _lastCommand as String?
+	var _baseVersion as String?       # ex: '0.8.0'
+	var _baseDir as String?           # ex: 'C:\Cobra', '/usr/local/cobra'
+	var _versionDir as String?        # ex: 'C:\Cobra\Cobra-0.8.0-post', '/usr/local/cobra/Cobra-0.8.1-post'
+	var _cobraCommandPath as String?  # ex: 'C:\Cobra\bin\cobra.bat', '/usr/local/cobra/bin/cobra'
+
+
+	def run
+		print
+		print 'The Cobra Programming Language'
+		print 'Install From Workspace'
+		print
+		print 'Working...'
+		print
+		.verifyInWorkspace
+		.locateSnapshotCompiler
+		.buildCobraCompiler
+		.getBaseVersion
+		.buildCobraLibrary
+		.verifyNewlyBuiltCobra
+		.installCobraLibraryToGAC
+		.copyFilesToInstallDirectory
+		.verifyNewlyInstalledCobra
+		.cleanUpWorkspace
+		.installInPath
+		print
+		print 'Success!'
+
+
+	## Self utils
+		
+	get isRunningOnUnix as bool
+		"""
+		Returns true if the current process is running on Unix/Posix/Linux/BSD/etc.
+		"""
+		platform = Environment.osVersion.platform to int
+		return platform in [4, 128] # http://www.mono-project.com/FAQ:_Technical
+
+	get lastCommand from var
+
+	get slash as char
+		return Path.directorySeparatorChar
+
+	def error(msg)
+		print '** ERROR:', msg
+		Environment.exit(1)
+		print 'Exiting from error.'
+
+	def warning(msg)
+		print '** WARING:', msg
+
+
+	## File system
+
+	def copyContents(source as String, target as String)
+		print 'copy from:', source
+		print '       to:', target
+		.copyContents(DirectoryInfo(source), DirectoryInfo(target))
+
+	def copyContents(source as DirectoryInfo, target as DirectoryInfo)
+		if not target.exists, target.create
+		for sourceFile in source.getFiles
+			sourceFile.copyTo(Path.combine(target.fullName, sourceFile.name), true)
+		for sourceSubDir in source.getDirectories
+			targetSubDir = target.createSubdirectory(sourceSubDir.name)
+			.copyContents(sourceSubDir, targetSubDir)
+
+	def deleteDir(dir as String)
+		if Directory.exists(dir)
+			print 'del dir  :', dir
+			_unReadOnly(dir)
+			Directory.delete(dir, true)  # true = recursive
+
+	def _unReadOnly(dirName as String)
+		_unReadOnly(DirectoryInfo(dirName))
+
+	def _unReadOnly(dir as DirectoryInfo)
+		# print 'checking -', dir
+		for file in dir.getFiles
+			if sharp'file.Attributes & FileAttributes.ReadOnly'
+				# print 'changing -', file
+				file.attributes = sharp'file.Attributes & ~FileAttributes.ReadOnly'
+				# file.attributes = file.attributes & ~FileAttributes.ReadOnly
+		for subDir in dir.getDirectories
+			_unReadOnly(subDir)	
+
+	def findAndDeleteDir(baseDir as String, findDir as String)
+		.findAndDeleteDir(DirectoryInfo(baseDir), findDir)
+
+	def findAndDeleteDir(baseDir as DirectoryInfo, findDir as String)
+		for sourceSubDir in baseDir.getDirectories
+			if sourceSubDir.name == findDir
+				.deleteDir(sourceSubDir.fullName)
+			else
+				.findAndDeleteDir(sourceSubDir, findDir)
+
+	def requireDir(dir as String)		
+		if Directory.exists(dir)
+			print 'found dir:', dir
+		else
+			print 'make dir :', dir
+			Directory.createDirectory(dir)
+
+	def startStage(description as String)
+		print '====', description
+		print
+
+
+	## Running external commands
+
+	def runCommand(command as String, args as String) as String
+		return .runCommand(command, args, true)
+
+	def runCommand(command as String, args as String, displayOutput as bool) as String
+		process as Process?
+		output = .runCommand(command, args, out process, displayOutput)
+		if process.exitCode, .error('Exit code from above command: [process.exitCode]')
+		return output
+
+	def runCommand(command as String, args as String, process as out Process?) as String
+		return .runCommand(command, args, out process, true)
+
+	def runCommand(command as String, args as String, process as out Process?, displayOutput as bool) as String
+		"""
+		Runs the given external command with the given args.
+		Sets the process to the instance of Process created for this purpose.
+		Returns the output, which is also displayed if displayOutput is true.
+		Does not check process.exitCode.
+		"""
+		print 'run: [command] [args]'
+		p = Process()
+		p.startInfo.fileName = command
+		p.startInfo.arguments = args
+		output = CobraCore.runAndCaptureAllOutput(p).trim
+		process = p
+		if displayOutput
+			for line in output.replace('\r', '').split(c'\n')
+				print '     [line]'
+			print
+		return output
+
+	def runCobra(args as String) as String
+		"""
+		Runs the Cobra compiler.
+		Prints the output and returns it.
+		If Cobra gives an error, calls .error.
+		"""
+		process as Process?
+		output = .runCobra(args, out process)
+		if process.exitCode, .error('Exit code from above command: [process.exitCode]')
+		return output
+
+	def runCobra(args as String, process as out Process?) as String
+		"""
+		Runs the Cobra compiler.
+		Creates and "returns" the Process instance via the `process` argument.
+		Prints the output and returns it.
+		This does not exit on any errors. Check the process yourself.
+		"""
+		_lastCommand = _snapshotCompilerPath + ' ' + args
+		return .runCommand(_snapshotCompilerPath to !, args, out process)
+
+
+	## Stages
+
+	def verifyInWorkspace
+		.startStage('Verify running in workspace')
+		msg = 'The current directory does not appear to be a workspace. This program is for installing from the workspace.'
+		if not File.exists('Compiler.cobra'), .error(msg)
+		if not Directory.exists('Snapshot'), .error(msg)
+
+	def locateSnapshotCompiler
+		.startStage('Locate and test Cobra Snapshot compiler')
+		_snapshotCompilerPath = 'Snapshot[.slash]cobra.exe'
+		if not File.exists(_snapshotCompilerPath)
+			.error('Cannot locate [_snapshotCompilerPath].')
+		_snapshotCompilerPath = Path.getFullPath(_snapshotCompilerPath)
+		output = .runCobra('-about')
+		assert 'The Cobra Programming Language' in output
+		assert 'Copyright' in output
+		assert 'Usage' in output
+
+	def buildCobraCompiler
+		.startStage('Build new Cobra compiler')
+		.runCobra('-compile -turbo -ert:yes -files:files-to-compile.text')
+
+	def getBaseVersion
+		.startStage('Retrieve Cobra base version number')
+		# It's called "base version" because it doesn't include any text after the numbers
+		# "0.8.0 post release" --> "0.8.0"
+		output = .runCobra('-version')
+		re = Regex(r'\d+\.\d+\.\d+')
+		reMatch = re.match(output)
+		if reMatch.success
+			assert reMatch.index == 0
+			assert reMatch.value
+			_baseVersion = reMatch.value
+		else
+			.error('Could not extract base version number.')
+
+	def buildCobraLibrary
+		.startStage('Build Cobra standard library')
+		# TODO: add assembly attr for version number [_baseVersion].1
+		.runCobra('-bsl -turbo Cobra.Lang[.slash]AssemblyAttrs.cobra -key-file:CobraGAC.snk')
+
+	def verifyNewlyBuiltCobra
+		.startStage('Verify newly built Cobra compiler')
+		.runCobra('-about')
+		msg = 'Cannot run hello.cobra with new compiler.'
+		output = .runCobra('-ert:no hello')
+		if not output.startsWith('Hello'), .error(msg)
+		output = .runCobra('-ert:yes hello')
+		if not output.startsWith('Hello'), .error(msg)
+		output = .runCobra('hello')
+		if not output.startsWith('Hello'), .error(msg)
+
+	def installCobraLibraryToGAC
+		.startStage('Install Cobra standard library to the GAC')
+
+		# TODO: is there a better way to install to the GAC than running the external gacutil program?
+		# TODO: if not, what's the most robust way to locate it in the file system?
+
+		gacutil = 'gacutil'
+		p = Process()
+		p.startInfo.fileName = gacutil
+		p.startInfo.arguments = '-silent'
+		output = ''
+		try
+			output = CobraCore.runAndCaptureAllOutput(p)
+			found = true
+		catch exc as Exception
+			if 'cannot find the file' not in exc.message
+				throw
+		
+		if not found
+			# try to find the gacutil
+			print 'Searching for gacutil...'
+			gacutil = 'gacutil.exe'
+			dir = r'\Program Files\Microsoft.NET\SDK\v2.0\bin'
+			for drive in Directory.getLogicalDrives
+				if drive.endsWith('\\'), drive = drive[:-1]
+				if drive.endsWith(':'),  drive = drive[:-1]
+				if drive <= 'B', continue
+				path = '[drive]:[dir][.slash][gacutil]'
+				if File.exists(path)
+					print 'found:', path
+					gacutil = path
+					found = true
+					break
+
+		if not found
+			.error('Cannot locate a gacutil. Maybe you can try again using the "Visual Studio Command Prompt".')
+
+		print
+		.runCommand(gacutil, '-i Cobra.Lang.dll -f')
+
+		output = .runCommand(gacutil, '-l Cobra.Lang')
+
+		if 'Cobra.Lang, Version=' not in output
+			.error('Cannot see Cobra.Lang in the gacutil output to list it above.')
+		# TODO: verify the version number: Cobra.Lang, Version=0.0.1.0
+
+		print
+
+	def copyFilesToInstallDirectory
+		.startStage('Copy files to install directory')
+		slash = .slash
+		default = if(.isRunningOnUnix, '/usr/local/cobra', r'C:\Cobra')
+		# TODO: prompt the user for the location
+		_baseDir = baseDir = default
+
+		.requireDir(baseDir)
+		
+		versionDir = '[baseDir][slash]Cobra-[_baseVersion]-post'
+		.deleteDir(versionDir)
+		.requireDir(versionDir)
+		_versionDir = versionDir
+
+		# TODO: readme file?
+		parent = Path.getFullPath('..')
+		for dir in ['HowTo', 'Reusables', 'Samples', 'Supplements']
+			.copyContents('[parent][slash][dir]', '[versionDir][slash][dir]')
+
+		versionBinDir = '[versionDir][slash]bin'
+		.requireDir(versionBinDir)
+		print 'copy  bin: [versionBinDir]'
+		for fileName in 'cobra.exe Cobra.Lang.dll CobraLang.cobra CobraLang.cs styles-cobra-doc.css styles-exception-report.css styles-output-html.css SystemInterfaces.cobra'.split
+			File.copy(fileName, '[versionBinDir][slash][fileName]')
+
+		# delete _svn or .svn from the installation directory
+		.findAndDeleteDir(versionDir, '_svn')
+		.findAndDeleteDir(versionDir, '.svn')
+
+		# create cobra.bat / cobra for invoking the latest version
+		baseBinDir = '[baseDir][slash]bin'
+		.requireDir(baseBinDir)
+		if .isRunningOnUnix
+			_cobraCommandPath = '[baseBinDir][slash]cobra'
+			print 'writing  :', _cobraCommandPath
+			using f = File.createText(_cobraCommandPath)
+				f.writeLine("'[versionDir][slash]bin[slash]cobra.exe' $*")
+			.runCommand('chmod', "a+x '[_cobraCommandPath]'")
+		else
+			_cobraCommandPath = '[baseBinDir][slash]cobra.bat'
+			print 'writing  :', _cobraCommandPath
+			using f = File.createText(_cobraCommandPath)
+				f.writeLine('@"[versionDir][slash]bin[slash]cobra.exe" %*')
+		print
+		
+		# record "svn info" in the installation directory
+		output = .runCommand('svn', 'info', false)
+		svnInfo = '[versionDir][slash]svn_info.text'
+		print 'writing  :', svnInfo
+		print
+		File.writeAllText(svnInfo, output)
+
+	def verifyNewlyInstalledCobra
+		.startStage('Verify newly installed Cobra compiler')
+		output = .runCommand(_cobraCommandPath, '-about', true)
+		if not output.startsWith('The Cobra Programming Language')
+			.error('Cannot run the installed Cobra with -about')
+		output = .runCommand(_cobraCommandPath, '-ert:yes hello', true)
+		if not output.startsWith('Hello')
+			.error('Cannot run the installed Cobra on "hello.cobra"')
+
+	def cleanUpWorkspace
+		.startStage('Clean up workspace')
+		.runCobra('-compile -debug -files:files-to-compile.text')
+		.runCobra('-bsl -debug')
+
+	def installInPath
+		.startStage('Install "cobra" into a system path directory')
+		commandName = if(.isRunningOnUnix, 'cobra', 'cobra.bat')
+		slash = .slash
+		paths = (Environment.getEnvironmentVariable('PATH') ? '').split(Path.pathSeparator)
+		for commandDir in paths
+			# print 'checking path:', commandDir
+			commandPath = '[commandDir][slash][commandName]'
+			if File.exists(commandPath)
+				print 'found in PATH:', commandPath
+				found = true
+				break
+		print
+		baseBinDir = '[_baseDir][slash]bin'
+		if found
+			if commandPath == '[baseBinDir][slash][commandName]'
+				print 'Your PATH already contains [baseBinDir]'
+				print 'so you can invoke "cobra" from any directory.'
+			else
+				print 'copy from:', _cobraCommandPath
+				print '       to:', commandPath
+				File.copy(_cobraCommandPath, commandPath, true)
+				print
+				print 'The existing "cobra" in your path has been replaced'
+				print 'with the new one.'
+		else
+			# TODO: on unix, attempt to install in /usr/local/bin or /usr/bin if they exist and are in the path
+			print 'The Cobra compiler is not in your PATH. To remedy you can:'
+			print '1. Add [Path.getDirectoryName(_cobraCommandPath)] to your PATH'
+			print '2. Copy [_cobraCommandPath] to any directory in your PATH'
