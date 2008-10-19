@@ -191,6 +191,8 @@ class InstallFromWorkspace
 	def startStage(description as String)
 		print '====', description
 		print
+		# this installer relies on there being no directory changes
+		assert Environment.currentDirectory.endsWith('Source')
 
 
 	## Running external commands
@@ -215,6 +217,7 @@ class InstallFromWorkspace
 		Does not check process.exitCode.
 		"""
 		print 'run: [command] [args]'
+		_lastCommand = command + ' ' + args
 		p = Process()
 		p.startInfo.fileName = command
 		p.startInfo.arguments = args
@@ -226,26 +229,34 @@ class InstallFromWorkspace
 			print
 		return output
 
-	def runCobra(args as String) as String
+	def runSnapshotCobra(args as String) as String
 		"""
 		Runs the Cobra compiler.
 		Prints the output and returns it.
 		If Cobra gives an error, calls .error.
 		"""
 		process as Process?
-		output = .runCobra(args, out process)
-		if process.exitCode, .error('Exit code from above command: [process.exitCode]')
+		output = .runSnapshotCobra(args, out process)
+		if process.exitCode, .error('Exit code from running SnapshotCobra: [process.exitCode]')
 		return output
 
-	def runCobra(args as String, process as out Process?) as String
+	def runSnapshotCobra(args as String, process as out Process?) as String
 		"""
 		Runs the Cobra compiler.
 		Creates and "returns" the Process instance via the `process` argument.
 		Prints the output and returns it.
 		This does not exit on any errors. Check the process yourself.
 		"""
-		_lastCommand = _snapshotCompilerPath + ' ' + args
 		return .runCommand(_snapshotCompilerPath to !, args, out process)
+
+	def runSourceCobra(args as String) as String
+		process as Process?
+		output = .runSourceCobra(args, out process)
+		if process.exitCode, .error('Exit code from running Source Cobra: [process.exitCode]')
+		return output
+
+	def runSourceCobra(args as String, process as out Process?) as String
+		return .runCommand('cobra.exe', args, out process)
 
 
 	## Stages
@@ -261,21 +272,22 @@ class InstallFromWorkspace
 		_snapshotCompilerPath = 'Snapshot[.slash]cobra.exe'
 		if not File.exists(_snapshotCompilerPath)
 			.error('Cannot locate [_snapshotCompilerPath].')
-		_snapshotCompilerPath = Path.getFullPath(_snapshotCompilerPath)
-		output = .runCobra('-about')
+		# Not needed; clutters the output; tends to obscure when the Snapshot is being used;
+		# _snapshotCompilerPath = Path.getFullPath(_snapshotCompilerPath)
+		output = .runSnapshotCobra('-about')
 		assert 'The Cobra Programming Language' in output
 		assert 'Copyright' in output
 		assert 'Usage' in output
 
 	def buildCobraCompiler
 		.startStage('Build new Cobra compiler')
-		.runCobra('-compile -turbo -ert:yes -files:files-to-compile.text')
+		.runSnapshotCobra('-compile -turbo -ert:yes -files:files-to-compile.text')
 
 	def getBaseVersion
 		.startStage('Retrieve Cobra base version number')
 		# It's called "base version" because it doesn't include any text after the numbers
 		# "0.8.0 post release" --> "0.8.0"
-		output = .runCobra('-version')
+		output = .runSourceCobra('-version')
 		re = Regex(r'\d+\.\d+\.\d+')
 		reMatch = re.match(output)
 		if reMatch.success
@@ -287,18 +299,18 @@ class InstallFromWorkspace
 
 	def buildCobraLibrary
 		.startStage('Build Cobra standard library')
-		# TODO: add assembly attr for version number [_baseVersion].1
-		.runCobra('-bsl -turbo Cobra.Lang[.slash]AssemblyAttrs.cobra -key-file:CobraGAC.snk')
+		# must build the library using the Source cobra.exe, not the Snapshot
+		.runSourceCobra('-bsl -turbo Cobra.Lang[.slash]AssemblyAttrs.cobra -key-file:Cobra.Lang[.slash]Cobra.Lang.snk')
 
 	def verifyNewlyBuiltCobra
 		.startStage('Verify newly built Cobra compiler')
-		.runCobra('-about')
+		.runSourceCobra('-about')
 		msg = 'Cannot run hello.cobra with new compiler.'
-		output = .runCobra('-ert:no hello')
+		output = .runSourceCobra('-ert:no hello')
 		if not output.startsWith('Hello'), .error(msg)
-		output = .runCobra('-ert:yes hello')
+		output = .runSourceCobra('-ert:yes hello')
 		if not output.startsWith('Hello'), .error(msg)
-		output = .runCobra('hello')
+		output = .runSourceCobra('hello')
 		if not output.startsWith('Hello'), .error(msg)
 
 	def installCobraLibraryToGAC
@@ -412,8 +424,8 @@ class InstallFromWorkspace
 
 	def cleanUpWorkspace
 		.startStage('Clean up workspace')
-		.runCobra('-compile -debug -files:files-to-compile.text')
-		.runCobra('-bsl -debug')
+		.runSnapshotCobra('-compile -debug -files:files-to-compile.text')
+		.runSourceCobra('-bsl -debug')
 
 	def installInPath
 		.startStage('Install "cobra" into a system path directory')
