@@ -84,8 +84,10 @@ class InstallFromWorkspace
 	def main is shared
 		InstallFromWorkspace().run
 
-	var _snapshotCompilerPath as String?
 	var _lastCommand as String?
+
+	var _snapshotCompilerPath as String?
+	var _gacutil as String?
 	var _baseVersion as String?       # ex: '0.8.0'
 	var _baseDir as String?           # ex: 'C:\Cobra', '/usr/local/cobra'
 	var _versionDir as String?        # ex: 'C:\Cobra\Cobra-0.8.0-post', '/usr/local/cobra/Cobra-0.8.1-post'
@@ -101,6 +103,7 @@ class InstallFromWorkspace
 		print
 		.verifyInWorkspace
 		.locateSnapshotCompiler
+		.locateGacUtil
 		.buildCobraCompiler
 		.getBaseVersion
 		.buildCobraLibrary
@@ -279,6 +282,45 @@ class InstallFromWorkspace
 		assert 'Copyright' in output
 		assert 'Usage' in output
 
+	def locateGacUtil
+		.startStage('Locate gacutil.exe')
+		gacutil = 'gacutil'
+		p = Process()
+		p.startInfo.fileName = gacutil
+		p.startInfo.arguments = '-silent'
+		try
+			CobraCore.runAndCaptureAllOutput(p)
+			found = true
+		catch exc as Exception
+			if 'cannot find the file' not in exc.message
+				throw
+		
+		if not found
+			# try to find the gacutil
+			print 'Searching for gacutil...'
+			gacutil = 'gacutil.exe'
+			dirs = [
+				r'\Program Files\Microsoft.NET\SDK\v2.0\bin',        # VS 2005 / SDK .NET 2.0
+				r'\Program Files\Microsoft SDKs\Windows\v6.0A\bin',  # VS 2008
+			]
+			for dir in dirs
+				for drive in Directory.getLogicalDrives
+					drive = drive[:1]  # normalize to just one character
+					if drive <= 'B', continue
+					path = '[drive]:[dir][.slash][gacutil]'
+					if File.exists(path)
+						print 'found:', path
+						print
+						gacutil = path
+						found = true
+						break
+				if found, break
+
+		if not found
+			.error('Cannot locate a gacutil. Maybe you can try again using the "Visual Studio Command Prompt" or ".NET SDK Command Prompt".')
+
+		_gacutil = gacutil
+
 	def buildCobraCompiler
 		.startStage('Build new Cobra compiler')
 		.runSnapshotCobra('-compile -turbo -ert:yes -files:files-to-compile.text')
@@ -319,45 +361,9 @@ class InstallFromWorkspace
 		# TODO: is there a better way to install to the GAC than running the external gacutil program?
 		# TODO: if not, what's the most robust way to locate it in the file system?
 
-		gacutil = 'gacutil'
-		p = Process()
-		p.startInfo.fileName = gacutil
-		p.startInfo.arguments = '-silent'
-		output = ''
-		try
-			output = CobraCore.runAndCaptureAllOutput(p)
-			found = true
-		catch exc as Exception
-			if 'cannot find the file' not in exc.message
-				throw
-		
-		if not found
-			# try to find the gacutil
-			print 'Searching for gacutil...'
-			gacutil = 'gacutil.exe'
-			dirs = [
-				r'\Program Files\Microsoft.NET\SDK\v2.0\bin',        # VS 2005 / SDK .NET 2.0
-				r'\Program Files\Microsoft SDKs\Windows\v6.0A\bin',  # VS 2008
-			]
-			for dir in dirs
-				for drive in Directory.getLogicalDrives
-					drive = drive[:1]  # normalize to just one character
-					if drive <= 'B', continue
-					path = '[drive]:[dir][.slash][gacutil]'
-					if File.exists(path)
-						print 'found:', path
-						gacutil = path
-						found = true
-						break
-				if found, break
+		.runCommand(_gacutil, '-i Cobra.Lang.dll -f')
 
-		if not found
-			.error('Cannot locate a gacutil. Maybe you can try again using the "Visual Studio Command Prompt" or ".NET SDK Command Prompt".')
-
-		print
-		.runCommand(gacutil, '-i Cobra.Lang.dll -f')
-
-		output = .runCommand(gacutil, '-l Cobra.Lang')
+		output = .runCommand(_gacutil, '-l Cobra.Lang')
 
 		if 'Cobra.Lang, Version=' not in output
 			.error('Cannot see Cobra.Lang in the gacutil output to list it above.')
