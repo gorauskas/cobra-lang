@@ -38,7 +38,7 @@ TO RUN
 		$ cd Source
 		
 		Use the script:
-		$ install-from-workspace
+		$ sudo ./install-from-workspace
 
 
 	The installer prints "Success!" at the end, if successful.
@@ -226,10 +226,10 @@ class InstallFromWorkspace
 		p.startInfo.arguments = args
 		output = CobraCore.runAndCaptureAllOutput(p).trim
 		process = p
-		if displayOutput
+		if displayOutput and output <> ''
 			for line in output.replace('\r', '').split(c'\n')
-				print '     [line]'
-			print
+				print '   : [line]'
+		print
 		return output
 
 	def runSnapshotCobra(args as String) as String
@@ -269,6 +269,8 @@ class InstallFromWorkspace
 		msg = 'The current directory does not appear to be a workspace. This program is for installing from the workspace.'
 		if not File.exists('Compiler.cobra'), .error(msg)
 		if not Directory.exists('Snapshot'), .error(msg)
+		print 'Verified.'
+		print
 
 	def locateSnapshotCompiler
 		.startStage('Locate and test Cobra Snapshot compiler')
@@ -291,6 +293,7 @@ class InstallFromWorkspace
 		try
 			CobraCore.runAndCaptureAllOutput(p)
 			found = true
+			print 'found in system PATH'
 		catch exc as Exception
 			if 'cannot find the file' not in exc.message
 				throw
@@ -310,7 +313,6 @@ class InstallFromWorkspace
 					path = '[drive]:[dir][.slash][gacutil]'
 					if File.exists(path)
 						print 'found:', path
-						print
 						gacutil = path
 						found = true
 						break
@@ -320,6 +322,7 @@ class InstallFromWorkspace
 			.error('Cannot locate a gacutil. Maybe you can try again using the "Visual Studio Command Prompt" or ".NET SDK Command Prompt".')
 
 		_gacutil = gacutil
+		print
 
 	def buildCobraCompiler
 		.startStage('Build new Cobra compiler')
@@ -408,15 +411,16 @@ class InstallFromWorkspace
 			_cobraCommandPath = '[baseBinDir][slash]cobra'
 			print 'writing  :', _cobraCommandPath
 			using f = File.createText(_cobraCommandPath)
-				f.writeLine("'[versionDir][slash]bin[slash]cobra.exe' $*")
+				f.writeLine('#!/bin/sh')
+				f.writeLine('exec mono "[versionDir][slash]bin[slash]cobra.exe" "$@"')
 			.runCommand('chmod', "a+x '[_cobraCommandPath]'")
 		else
 			_cobraCommandPath = '[baseBinDir][slash]cobra.bat'
 			print 'writing  :', _cobraCommandPath
 			using f = File.createText(_cobraCommandPath)
 				f.writeLine('@"[versionDir][slash]bin[slash]cobra.exe" %*')
-		print
-		
+			print
+
 		# record "svn info" in the installation directory
 		output = .runCommand('svn', 'info', false)
 		svnInfo = '[versionDir][slash]svn_info.text'
@@ -444,6 +448,7 @@ class InstallFromWorkspace
 		slash = .slash
 		paths = (Environment.getEnvironmentVariable('PATH') ? '').split(Path.pathSeparator)
 		for commandDir in paths
+			if commandDir == '.', continue  # skip the 'cobra' in the <workspace>/Source directory
 			# print 'checking path:', commandDir
 			commandPath = '[commandDir][slash][commandName]'
 			if File.exists(commandPath)
