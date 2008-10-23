@@ -30,9 +30,11 @@ class EnumDecl
 		# TODO: read attribs
 		_needScanNativeType = false
 		clrType = (_nativeType to ClrType).theClrType # TODO: fix native
-		isByte = Enum.getUnderlyingType(clrType).name == 'Byte'
-		is64 = Enum.getUnderlyingType(clrType).name == 'Int64'
-		values = Enum.getValues(clrType)
+		isByte  = Enum.getUnderlyingType(clrType).name == 'Byte'
+		is64    = Enum.getUnderlyingType(clrType).name == 'Int64'
+		isU32   = Enum.getUnderlyingType(clrType).name == 'UInt32'
+		isU64   = Enum.getUnderlyingType(clrType).name == 'UInt64'
+		values  = Enum.getValues(clrType)
 		i = 0
 		for name in Enum.getNames(clrType)
 			value = values.getValue(i)
@@ -44,6 +46,16 @@ class EnumDecl
 					intValue = int.parse((value to Int64).toString)
 				catch OverflowException
 					intValue = 999  # CC: omg. but probably doesn't affect anything. we're reading the DLL here, not creating one
+			else if isU32
+				try
+					intValue = int.parse((value to UInt32).toString)
+				catch OverflowException
+					intValue = 2147483647
+			else if isU64
+				try
+					intValue = int.parse((value to UInt64).toString)
+				catch OverflowException
+					intValue = 2147483647
 			else
 				intValue = value to int
 			member = EnumMember(name, intValue)
@@ -86,16 +98,15 @@ class EnumDecl
 		for attrib in .attributes, attrib.bindInt
 		if _storageTypeNode
 			_storageType = _storageTypeNode.realType
-			# TODO: give error if _storageType is not some kind of int or char or whatever is legal
+			if not _storageType.isDescendantOf(.compiler.anyIntType)
+				.throwError('The enumeration storage type must be a primitive integer type such as int8, uint8, int16, uint16, int, uint, int64 or uint64.')
 		if _needScanNativeType
 			_scanClrType
 
 	def _bindImp is override
 		base._bindImp
 		for attrib in .attributes, attrib.bindImp
-		# TODO: can this be removed? since the storage type is always something primitive like 'int', there should be no need for enum to give it .bindImp
-		if _storageType
-			_storageType.bindImp
+		# the storage type is always a primitive type like `int` so no _bindImp is necessary
 
 	def extensionMemberFor(box as Box, name as String) as IMember?
 		return nil
