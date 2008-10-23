@@ -834,7 +834,17 @@ class EnumDecl
 		sw.write('enum [_name]')
 		storageType = _storageType
 		if storageType and storageType is not .compiler.intType
-			sw.write(' [storageType.sharpRef]')
+			# Cannot say UInt64 because:
+			# C# error: Type byte, sbyte, short, ushort, int, uint, long, or ulong expected
+			st = storageType to IntType
+			branch st.size
+				on  8, t = 'byte'
+				on 16, t = 'short'
+				on 32, t = 'int'
+				on 64, t = 'long'
+				else, throw FallThroughException(st)
+			if not st.isSigned, t = 'u' + t
+			sw.write(' : [t]')
 		sw.write(' {\n')
 		sw.indent
 		sep = ''
