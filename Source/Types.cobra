@@ -1604,6 +1604,46 @@ class UnspecifiedType
 
 extend IType
 
+	def isDynamicOrPassThrough as bool
+		return this inherits DynamicType or this inherits PassThroughType
+
+	def isNilableAndDescendantOf(otherType as IType) as bool
+		return this inherits NilableType and ((this to NilableType).theWrappedType).isDescendantOf(otherType)
+
+	def isSequenceLike as bool
+		"""
+		Returns true if the receiver is like a sequence, such as being an actual array, list, string, or a nilable version thereof.
+		The dynamic type will also return true because at compile-time, dynamic is considered to be like everything.
+		Requires Node.getCompiler
+		"""
+		type = this
+		if type inherits NilableType
+			return type.theWrappedType.isSequenceLike
+		# TODO: check for ISliceable which would have a .getSlice
+		tp = Node.getCompiler  # 'tp' for 'type provider'
+		if type.isDescendantOf(tp.stringType)
+			return true
+		# if type.isDescendantOf(tp.arrayType)
+		if type inherits ArrayType
+			return true
+		if type.isDescendantOf(tp.ilistType)
+			return true
+		genericList = tp.listOfType
+		if type.isDescendantOf(genericList)
+			return true
+		if type inherits Box
+			if type.genericDef is genericList
+				return true
+		genericIList = tp.ilistOfType
+		if type.isDescendantOf(genericIList)
+			return true
+		if type inherits Box
+			if type.genericDef is genericIList
+				return true
+		if type.isDynamic
+			return true
+		return false
+
 	def isDictionaryLike as bool
 		"""
 		Returns true if the receiver is like a dictionary, such as being an actual dictionary type or a nilable version thereof.
@@ -1613,7 +1653,7 @@ extend IType
 		type = this
 		if type inherits NilableType
 			return type.theWrappedType.isDictionaryLike
-		tp = Node.getCompiler  # TODO? expand ITypeProvider to cover idictionaryType, dictionaryOfType, idictionaryOfType
+		tp = Node.getCompiler  # 'tp' for 'type provider' # TODO? expand ITypeProvider to cover idictionaryType, dictionaryOfType, idictionaryOfType
 		if type.isDescendantOf(tp.idictionaryType)
 			return true
 		genericDict = tp.dictionaryOfType
@@ -1634,16 +1674,12 @@ extend IType
 
 
 class TypeUtil
+	"""
+	If the utility involves primarily one instance of IType, or an instance of IType is the logical
+	"receiver" of a message, then add the utility method to "extend IType" above.
+	"""
 	
-	# TODO: should be interface extension on IType
-
 	shared
-
-		def isDynamicOrPassThrough(t as IType) as bool
-			return t inherits DynamicType or t inherits PassThroughType
-
-		def isNilableAndDescendantOf(t1 as IType, t2 as IType) as bool
-			return t1 inherits NilableType and ((t1 to NilableType).theWrappedType).isDescendantOf(t2)
 
 		def dictionaryOf(genericParams as List<of IType>, typeArgs as IList<of IType>) as Dictionary<of GenericParam, IType>
 			"""

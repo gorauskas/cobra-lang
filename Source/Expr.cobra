@@ -181,33 +181,6 @@ class Expr
 		body
 			base._bindImp
 
-	def _isSequence(type as IType) as bool
-		if type inherits NilableType
-			return _isSequence(type.theWrappedType to passthrough)
-		# TODO: check for ISliceable which would have a .getSlice
-		if type.isDescendantOf(.compiler.stringType)
-			return true
-		# if type.isDescendantOf(.compiler.arrayType)
-		if type inherits ArrayType
-			return true
-		if type.isDescendantOf(.compiler.ilistType)
-			return true
-		genericList = .compiler.listOfType
-		if type.isDescendantOf(genericList)
-			return true
-		if type inherits Box
-			if type.genericDef is genericList
-				return true
-		genericIList = .compiler.ilistOfType
-		if type.isDescendantOf(genericIList)
-			return true
-		if type inherits Box
-			if type.genericDef is genericIList
-				return true
-		if type.isDynamic
-			return true
-		return false
-
 	def _suggestionsMessage(suggs as List<of String>) as String
 		"""
 		Shared by MemberExpr, CallExpr and IdentifierExpr to give suggestions in an error message about an unknown member.
@@ -798,7 +771,7 @@ class ForExpr
 		base._bindImp
 		_what.bindImp  # bind first because it may be needed for type inference
 		whatType = _what.type to !
-		if not whatType.isDescendantOf(.compiler.enumerableType) and not _isSequence(whatType)  # TODO: can probably drop _isSequence
+		if not whatType.isDescendantOf(.compiler.enumerableType) and not whatType.isSequenceLike  # TODO: can probably drop .isSequenceLike
 			.throwError('Cannot enumerate values of type "[whatType.name]". You can enumerate anything enumerable (IEnumerable, IList, arrays, strings, etc.).')
 		_var = .bindVar(_nameExpr)
 		if _nameExpr.definition
@@ -1738,7 +1711,7 @@ class SliceExpr
 		catch ne as NodeException
 			.compiler.recordError(ne)
 		success
-			if not _isSequence(_target.type to !)
+			if not _target.type.isSequenceLike
 				.throwError('Cannot slice values of type "[_target.type.name]". You can slice strings, arrays, IList and IList<of>.')
 		if _start
 			try
