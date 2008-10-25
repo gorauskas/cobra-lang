@@ -1990,10 +1990,28 @@ class Parser
 	def forStmtBeginning as Stmt
 		"""
 		numeric    for int x = 0 up to n step 2
-		enumerable for Customer cust in customers
+		enumerable for cust as Customer in customers
+		           for k, v in dict
+		           for i, j, k in listOfThrees
 		"""
 		token = .expect('FOR')
 		varr = .nameExpr
+		if .optional('COMMA')     # forStmt multiarg    for v1,... 
+			args = .commaSepNameIds(['IN' ,'EOL'])
+			if .last.which <> 'IN'
+				.throwError("Comma separated nameId list in forStatement needs to terminate with an IN token ('in')")
+			if args.count == 0  # "for v1, in ..."  single multiarg variable 
+				.undo  # 'in' token
+				return .forStmt(token, varr)
+			else
+				args.insert(0, varr)
+				what = .expression
+				name = 'forEnumVar[what.serialNum]'  # will get made more unique by For Stmt 
+				nameToken = token.copy('ID', name)
+				varr = IdentifierExpr(nameToken, name)
+				return ForEnumerableStmt(token, varr, args, what, .block)
+
+		# forStmt single variable assign - for v {in,=} ...
 		peek = .peek.which
 		if peek=='ASSIGN'
 			return .oldNumericForStmt(token, varr)
@@ -2703,7 +2721,7 @@ class Parser
 		# id, [id,]... = <expr>
 		args = .commaSepIds(['ASSIGN', 'EOL'])
 		if .last.which <> 'ASSIGN'
-			.throwError("Comma separated multiArg identifier list needs to end with an assignment ('=')")
+			.throwError('Comma separated identifier list needs to end with an assignment ("=").')
 		assignTkn = .last
 		rhs = .expression
 		return .multiArgBlock(assignTkn, args, rhs)
@@ -2745,20 +2763,7 @@ class Parser
 			idxExpr = IndexExpr(token.copy('LBRACKET', r'['), tmpIdn, exprs)
 			stmts.add(AssignExpr(assignTkn, assignTkn.which, id , idxExpr))
 			count += 1
-		#return BlockStmt(token.copy('INDENT', ''), stmts)	
-		# if prefer exception when nArgs > nRHSExprs Uncomment above line and lose lines below 
-		tryBlock = BlockStmt(token.copy('INDENT',''), stmts)		
-		catchBlocks = List<of CatchBlock>()
-		catchStmts = List<of Stmt>()
-		catchStmts.add(PassStmt(token.copy('PASS', 'pass')))
-		catchBlock = BlockStmt(token.copy('INDENT',''), catchStmts)
-		catchType = TypeIdentifier(token.copy('ID', 'IndexOutOfRangeException'))
-		catchBlocks.add(CatchBlock(token.copy('CATCH', 'catch'), catchType, catchBlock))
-		# 'IndexOutOfRangeException' for Arrays and Strings 
-		catchType = TypeIdentifier(token.copy('ID', 'ArgumentOutOfRangeException'))
-		catchBlocks.add(CatchBlock(token.copy('CATCH', 'catch'), catchType, catchBlock))
-		# 'ArgumentOutOfRangeException' for others, probably something else yet to find
-		return TryStmt(token.copy('TRY', 'try'), tryBlock, catchBlocks, nil, nil)
+		return BlockStmt(token.copy('INDENT', ''), stmts)	
 
 	def callExpr as Expr
 		"""
@@ -2862,16 +2867,21 @@ class Parser
 			expectSep = true
 		return exprs
 		
-	def commaSepIds(terminators as IList<of String>) as List<of Expr>
+	def commaSepNameIds(terminators as IList<of String>) as List<of Expr>
+		return _commaSepLValues(terminators, true)
+
+	def	 commaSepIds(terminators as IList<of String>) as List<of Expr>
+		return _commaSepLValues(terminators, false)
+			
+	def _commaSepLValues(terminators as IList<of String>, expectingNameIds as bool ) as List<of Expr>
 		"""
+		pickup comma sep stream of Identifiers or NameIds 
 		Example source
 			... idexpr, TERMINATOR
 			... idexpr, idexpr ...  TERMINATOR
 			... idexpr, idexpr, ... TERMINATOR
 		Returns
-			A list of Identifier Expressions ([DotExpr] IdentifiersExpr) 
-		Notes
-			The terminator token is consumed, but can be examined with .last.
+			A list of Identifier Expressions ([DotExpr] IdentifiersExpr) or NameIds 
 		"""
 		expectSep = false
 		sep = 'COMMA'
@@ -2887,7 +2897,10 @@ class Parser
 				break
 			.newOpStack
 			try
-				exprs.add(.idExpression(0, nil))
+				if expectingNameIds
+					exprs.add(.nameExpr)
+				else
+					exprs.add(.idExpression(0,nil))
 			finally
 				.delOpStack
 			expectSep = true
@@ -3452,8 +3465,6 @@ class Parser
 			if token.which == 'DOT'
 				state=1
 			else if token.which == 'ID'
-				if not (token.text[0] == '_' or Utils.startsWithLowerLetter(token.text))
-					break
 				state = 2
 			else if token.which == 'COMMA' 
 				match = state == 2 # comma after [.]ID

@@ -1602,6 +1602,37 @@ class UnspecifiedType
 		return true
 
 
+extend IType
+
+	def isDictionaryLike as bool
+		"""
+		Returns true if the receiver is like a dictionary, such as being an actual dictionary type or a nilable version thereof.
+		The dynamic type will also return true because at compile-time, dynamic is considered to be like everything.
+		Requires Node.getCompiler
+		"""
+		type = this
+		if type inherits NilableType
+			return type.theWrappedType.isDictionaryLike
+		tp = Node.getCompiler  # TODO? expand ITypeProvider to cover idictionaryType, dictionaryOfType, idictionaryOfType
+		if type.isDescendantOf(tp.idictionaryType)
+			return true
+		genericDict = tp.dictionaryOfType
+		if type.isDescendantOf(genericDict)
+			return true
+		if type inherits Box
+			if type.genericDef is genericDict
+				return true
+		genericIDict = tp.idictionaryOfType
+		if type.isDescendantOf(genericIDict)
+			return true
+		if type inherits Box
+			if type.genericDef is genericIDict
+				return true
+		if type.isDynamic
+			return true
+		return false
+
+
 class TypeUtil
 	
 	# TODO: should be interface extension on IType

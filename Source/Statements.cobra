@@ -521,19 +521,28 @@ class ForEnumerableStmt
 
 	var _what as Expr
 	var _varNumber as int
+	var _multiArgs as List<of Expr>?		# actually contains NameExprs
 
 	def init(token as IToken, varr as NameExpr, what as Expr, block as BlockStmt)
 		base.init(token, varr, block)
 		_what = what
 
+	def init(token as IToken, varr as NameExpr, args as List<of Expr>, what as Expr, block as BlockStmt)
+		# multiArg assignment in for stmt
+		.init(token, varr, what, block)
+		_multiArgs = args
+		
 	def addSubFields
 		base.addSubFields
 		.addField('_what', _what)
 		.addField('_varNumber', _varNumber)
+		.addField('_multiArgs', _multiArgs)
 
 	get what from var
 	
 	get varNumber from var
+	
+	get multiArgs from var
 	
 	def _bindImp
 		_what.bindImp
@@ -545,10 +554,60 @@ class ForEnumerableStmt
 			base._bindImp  # just to pass the assertion that base._bindImp was invoked
 		else
 			_var = .bindVar(_varExpr)
+			if _multiArgs
+				_unpackMultiArgStmts
 			base._bindImp
 			_varNumber = .compiler.curBox.makeNextPrivateSerialNumber
 			_block.bindImp
-
+		
+	def _unpackMultiArgStmts
+		"""
+		Handle expansion of statements for multiArg variables in for statements: 
+		for k, v in <dict>  # becomes
+			for varExpr_uniq in <dict>
+				k = varExpr_uniq.key
+				v = varExpr_uniq.value
+		and 
+		for a, b, c in <IEnumerable (of triplets in this case)> becomes
+			for varExpr_uniq in <IEnumerable>
+				a = varExpr_uniq[0]
+				b = varExpr_uniq[1]
+				c = varExpr_uniq[2]
+		with rest of block following				
+		"""
+		stmts = List<of Stmt>()
+		varName = _varExpr.name # "[_varExpr.name]_[.serialNum]"
+		token = _token.copy
+		count = 0
+		if .what.type.isDictionaryLike
+			# assume enumerator will return KeyValue so cant have other than 2 multiargs
+			if _multiArgs.count <> 2
+				.throwError('Cannot have other than two multiarg variables in a for statement as assignment targets from a Dictionary')
+			kvRHS = ['key', 'value']
+			for id in _multiArgs
+				forVar    = IdentifierExpr(token.copy('ID', varName), varName)
+				rhsToken  = token.copy('ID', kvRHS[count])
+				keyOrVal  = MemberExpr(rhsToken )
+				kvExpr    = BinaryOpExpr.make(token.copy('DOT', '.'), 'DOT', forVar, keyOrVal) # forVar.{key,value}
+				assignTkn = token.copy('ASSIGN', '=')
+				# print id.toCobraSource, '=', kvExpr.toCobraSource
+				stmts.add(AssignExpr(assignTkn, assignTkn.which, id, kvExpr))  # id = forVar.{key,value}
+				count += 1
+		else  # enumeration, each item of which is matching count sequence
+			# TODO: ? Add check varName.count <> multArgs.count throw RTException
+			for id in _multiArgs
+				intToken = token.copy('INTEGER_LIT', '[count]')
+				intToken.value = count
+				countIntLit = IntegerLit(intToken)
+				exprs = List<of Expr>()
+				exprs.add(countIntLit)
+				forVar = IdentifierExpr(token.copy('ID', varName), varName)
+				idxExpr = IndexExpr(token.copy('LBRACKET', r'['), forVar, exprs)  # forVar[count]
+				assignTkn = token.copy('ASSIGN', '=')
+				stmts.add(AssignExpr(assignTkn, assignTkn.which, id, idxExpr))  
+				count += 1
+		_block.stmts.insertRange(0, stmts)
+	
 	def inferredType as IType? is override
 		assert _what.type
 		return _what.type.innerType
