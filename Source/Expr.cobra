@@ -1426,6 +1426,19 @@ class PostCallExpr
 		for arg in _args, if arg.willChangeVar, return true
 		return false
 
+	def replaceChild(find as INode, replace as INode) as bool
+		# Because _bindImp invokes .bindImp directly on the .right of an AssignExpr argument,
+		# the base class thinks this PostCallExpr is the super node and fails to find a child to replace.
+		# The real super node is the AssignExpr whose .bindImp was skipped because it's not
+		# a true AssignExpr--it's just syntax for init'ing properties during instance creation.
+		r = base.replaceChild(find, replace)
+		if not r
+			for arg in .args
+				if arg inherits AssignExpr
+					r = arg.replaceChild(find, replace)
+					if r, break
+		return r
+
 	def _bindImp is override
 		base._bindImp
 		expr = .expr
