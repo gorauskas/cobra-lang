@@ -662,68 +662,68 @@ class AbstractMethod
 		else
 			return base.replaceChild(find, replace)
 
+	def bindInt as INode
+		.compiler.codeMemberStack.push(this)
+		try
+			return base.bindInt
+		finally
+			.compiler.codeMemberStack.pop
+		
 	def _bindInt is override
+		assert .compiler.codeMemberStack.peek is this
 		base._bindInt
-		# TODO: cleanup. try pushing this to .bindInt
-		.compiler.codeMemberStack.push(this)
-		try
-			assert .parentBox.didUnNilReturnTypes
-			for param in _params
-				param.bindInt
-			if _returnType is nil
-				if _returnTypeNode
-					_returnType = _returnTypeNode.realType
-				else
-					_returnType = .compiler.voidType
-				assert _returnType, _returnTypeNode
-			if _requirePart is nil and .willRequire
-				_requirePart = RequirePart(this)
-			if _requirePart
-				_requirePart.bindInt
-			if _ensurePart is nil and .willEnsure
-				_ensurePart = EnsurePart(this)
-			if _ensurePart
-				_ensurePart.bindInt
-		finally
-			.compiler.codeMemberStack.pop
+		assert .parentBox.didUnNilReturnTypes
+		for param in _params, param.bindInt
+		if _returnType is nil
+			if _returnTypeNode, _returnType = _returnTypeNode.realType
+			else, _returnType = .compiler.voidType
+			assert _returnType, _returnTypeNode
+		if _requirePart is nil and .willRequire, _requirePart = RequirePart(this)
+		if _requirePart, _requirePart.bindInt
+		if _ensurePart is nil and .willEnsure, _ensurePart = EnsurePart(this)
+		if _ensurePart, _ensurePart.bindInt
 
-	def _bindImp is override
-		base._bindImp
+	def bindImp as dynamic
 		.compiler.codeMemberStack.push(this)
 		try
-			.computeMatchingBaseMember  # cannot currently go in .bindInt because it uses .memberForName which triggers other things like generic construction completion
-			if .matchingBaseMember and 'override' in .isNames and 'private' in .matchingBaseMember.isNames
-				.recordError('Cannot override the base member which is declared "private".')
-			for param in _params
-				param.bindImp
-			for local in _locals
-				local.bindImp
-			if _requirePart
-				_requirePart.bindImp
-			if _ensurePart and _returnType and _returnType is not .compiler.voidType
-				_sharpResultVarName = '_lh_result'
-			else
-				_sharpResultVarName = ''
-			_curStmtIndex = 0
-			for stmt in _stmts.toArray
-				try
-					stmt.bindImp
-					stmt.afterStatementBindImp  # to let expressions know when they are used as statements
-				catch ne as NodeException
-					.compiler.recordError(ne)
-				_curStmtIndex += 1
-			for param in _params
-				assert param.ifInheritsStack.count == 0
-			if _ensurePart
-				_ensurePart.bindImp
-			if _requirePart
-				_requirePart.checkConnectToken
-			if _ensurePart
-				_ensurePart.checkConnectToken
-			.checkForUnmarkedOverrideOrNew  # have to do this after statements bindImp since using base can add `override`
-			.checkForUnusedVariables
+			return base.bindImp
 		finally
 			.compiler.codeMemberStack.pop
+		
+	def _bindImp is override
+		assert .compiler.codeMemberStack.peek is this
+		base._bindImp
+		.computeMatchingBaseMember  # cannot currently go in .bindInt because it uses .memberForName which triggers other things like generic construction completion
+		if .matchingBaseMember and 'override' in .isNames and 'private' in .matchingBaseMember.isNames
+			.recordError('Cannot override the base member which is declared "private".')
+		for param in _params
+			param.bindImp
+		for local in _locals
+			local.bindImp
+		if _requirePart
+			_requirePart.bindImp
+		if _ensurePart and _returnType and _returnType is not .compiler.voidType
+			_sharpResultVarName = '_lh_result'
+		else
+			_sharpResultVarName = ''
+		_curStmtIndex = 0
+		for stmt in _stmts.toArray
+			try
+				stmt.bindImp
+				stmt.afterStatementBindImp  # to let expressions know when they are used as statements
+			catch ne as NodeException
+				.compiler.recordError(ne)
+			_curStmtIndex += 1
+		for param in _params
+			assert param.ifInheritsStack.count == 0
+		if _ensurePart
+			_ensurePart.bindImp
+		if _requirePart
+			_requirePart.checkConnectToken
+		if _ensurePart
+			_ensurePart.checkConnectToken
+		.checkForUnmarkedOverrideOrNew  # have to do this after statements bindImp since using base can add `override`
+		.checkForUnusedVariables
 
 	var _didComputeMatchingBaseMember = true
 	
@@ -1013,16 +1013,10 @@ class Method
 	## Binding
 
 	def _bindInt is override
-		.compiler.codeMemberStack.push(this)
-		try
-			assert .compiler.codeMemberStack.peek is this
-			for param in _genericParams
-				param.bindInt
-			base._bindInt
-			if .name == '__init__'
-				.compiler.warning(this, 'Initializers are named "init" with no surrounding underscores.')
-		finally
-			.compiler.codeMemberStack.pop
+		assert .compiler.codeMemberStack.peek is this
+		for param in _genericParams, param.bindInt
+		base._bindInt
+		if .name == '__init__', .compiler.warning(this, 'Initializers are named "init" with no surrounding underscores.')
 
 	def _bindImp is override
 		numErrors = .compiler.errors.count
