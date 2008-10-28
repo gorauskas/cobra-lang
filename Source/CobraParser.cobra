@@ -663,15 +663,15 @@ class Parser
 		if name[0] not in _uppercaseLetters
 			.throwError('Class names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 
-		params = .declGenericParams(token)
-		name = .nameForDeclGenericParams(token, params)
+		genericParams = .declGenericParams(token)
+		name = .nameForDeclGenericParams(token, genericParams)
 
 		.indent
 
 		isNames = .isDeclNames
 		attribs = .hasAttribs
 
-		.genericConstraints(token, params)
+		.genericConstraints(token, genericParams)
 
 		baseNode as ITypeProxy?
 		if .optional('INHERITS')
@@ -687,15 +687,14 @@ class Parser
 				if .peek.which=='EOL'
 					.grab
 					break
-				if expectComma
-					.expect('COMMA')
+				if expectComma, .expect('COMMA')
 				interfaceName = .typeId  # using .typeId since interface could be qualified (Foo.Bar) or a generic like IEnumerable<of T>
 				interfaceNames.add(interfaceName)
 				expectComma = true
 
 		docString = .docString
 
-		theClass = Class(token, name, .makeList(List<of IType>(), params) to List<of IType>, isNames, attribs, baseNode, interfaceNames, docString)
+		theClass = Class(token, name, .makeList<of IType>(genericParams), isNames, attribs, baseNode, interfaceNames, docString)
 
 		# TODO when supporting nested classes, look at the _boxStack and set a back pointer here
 		_boxStack.push(theClass)
@@ -705,15 +704,16 @@ class Parser
 
 		return theClass
 
-	def makeList(t as System.Collections.IList, u as System.Collections.IList) as System.Collections.IList
+	def makeList<of TOut>(inList as System.Collections.IList) as List<of TOut>
 		# This feels awkward as hell, but it's a .NET typing thing, not a Cobra thing.
 		# I need List<of GenericParam> in the my local code for declaring generics, but the various box inits need to accept List<of IType>
 		# TODO: remove this somehow. Maybe Cobra could have a promotion feature:
 		# List<of IType>(params promote to IEnumerable<of IType>)
 		# "promote to" works for generics where the new promo type has parameter types that are the same or ancestors to the original parameter types *and* ... ???
-		for item in u
-			t.add(item)
-		return t
+		outList = List<of TOut>()
+		for item in inList
+			outList.add(item to TOut)
+		return outList
 
 	def hasAttribs as AttributeList
 		attribs = AttributeList()
@@ -856,7 +856,7 @@ class Parser
 		# TODO: can an interface be nested in another interface?
 		docString = .docString
 
-		theInterface = Interface(token, name, .makeList(List<of IType>(), params) to List<of IType>, isNames, attribs, baseNames, docString)
+		theInterface = Interface(token, name, .makeList<of IType>(params), isNames, attribs, baseNames, docString)
 
 		_boxStack.push(theInterface)
 #		.isNamesStack = Stack(str)
@@ -907,7 +907,7 @@ class Parser
 
 		docString = .docString
 
-		theStruct = Struct(token, name, .makeList(List<of IType>(), params) to List<of IType>, isNames, attribs, baseName, interfaceNames, docString)
+		theStruct = Struct(token, name, .makeList<of IType>(params), isNames, attribs, baseName, interfaceNames, docString)
 
 		# TODO when supporting nested classes, look at the boxStack and set a back pointer here
 		_boxStack.push(theStruct)
@@ -1008,27 +1008,24 @@ class Parser
 
 	def genericConstraints(token as IToken, params as List<of GenericParam>)
 		while .optional('WHERE')
-			if token.which<>'OPEN_GENERIC'
-				.throwError('Unexpected where clause for non-generic class.')
+			if token.which <> 'OPEN_GENERIC'
+				.throwError('Unexpected where clause for non-generic declaration.')
 			paramName = .expect('ID').value
+			# CC: found = find param in params where param.name == paramName
 			found = false
 			for param in params
-				if param.name==paramName
+				if param.name == paramName
 					found = true
 					break
-			if not found
-				.throwError('Unknown generic parameter "[paramName]".')
-			if param.constraints.count
-				.throwError('Already specified constraints for "[paramName]".')
+			if not found, .throwError('Unknown generic parameter "[paramName]".')
+			if param.constraints.count, .throwError('Already specified constraints for "[paramName]".')
 			.expect('MUST')
 			.expect('BE')
 			expectComma = false
 			while true
-				if expectComma
-					.expect('COMMA')
+				if expectComma, .expect('COMMA')
 				param.constraints.add(.genericConstraint)
-				if .optional('EOL')
-					break
+				if .optional('EOL'), break
 				expectComma = true
 
 	def genericConstraint as GenericConstraint
@@ -1258,9 +1255,9 @@ class Parser
 		if opener.which not in ['ID', 'OPEN_CALL', 'OPEN_GENERIC'] and not opener.isKeyword
 			.throwError('Encountered [opener.which] when expecting an identifier.')
 		if opener.which == 'OPEN_GENERIC'
-			genericParams = .makeList(List<of IType>(), .declGenericParams(opener)) to List<of IType>
+			genericParams = .declGenericParams(opener)
 		else
-			genericParams = List<of IType>()
+			genericParams = List<of GenericParam>()
 		name = opener.value to String
 		curBox = .curBox
 		if name == curBox.name or name.capped == curBox.name
@@ -1308,16 +1305,15 @@ class Parser
 		if _noMoreSpecs()  
 			# No additional specs like attributes, contracts or body
 			nothingMore = true
-			if not hasIsNames
-				isNames = List<of String>(_isNamesStack)
+			if not hasIsNames, isNames = List<of String>(_isNamesStack)
 			attribs = AttributeList()
 			implementsType = nil to ITypeProxy?
 			docString = '' to ?
 		else
 			# parse additional method declaration
 			nothingMore = false
-			if not hasIsNames
-				isNames = .isDeclNames
+			if not hasIsNames, isNames = .isDeclNames
+			.genericConstraints(opener, genericParams)
 			attribs = .hasAttribs
 			implementsType = if(.optional('IMPLEMENTS'), .typeId, nil)
 			if implementsType
@@ -1332,7 +1328,7 @@ class Parser
 				.throwError('Cannot specify `implements` for an initializer.')
 			method = Initializer(token, .curBox, params, isNames, attribs, docString)
 		else
-			method = Method(token, .curBox, name, genericParams, params, returnType, implementsType, isNames, attribs, docString)
+			method = Method(token, .curBox, name, .makeList<of IType>(genericParams), params, returnType, implementsType, isNames, attribs, docString)
 		if nothingMore
 			if not 'abstract' in isNames and not curBox inherits Interface
 				.throwError('Missing method body for "[name]".')

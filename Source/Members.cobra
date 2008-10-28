@@ -664,6 +664,7 @@ class AbstractMethod
 
 	def _bindInt is override
 		base._bindInt
+		# TODO: cleanup. try pushing this to .bindInt
 		.compiler.codeMemberStack.push(this)
 		try
 			assert .parentBox.didUnNilReturnTypes
@@ -1012,11 +1013,16 @@ class Method
 	## Binding
 
 	def _bindInt is override
-		for param in _genericParams
-			param.bindInt
-		base._bindInt
-		if .name == '__init__'
-			.compiler.warning(this, 'Initializers are named "init" with no surrounding underscores.')
+		.compiler.codeMemberStack.push(this)
+		try
+			assert .compiler.codeMemberStack.peek is this
+			for param in _genericParams
+				param.bindInt
+			base._bindInt
+			if .name == '__init__'
+				.compiler.warning(this, 'Initializers are named "init" with no surrounding underscores.')
+		finally
+			.compiler.codeMemberStack.pop
 
 	def _bindImp is override
 		numErrors = .compiler.errors.count
