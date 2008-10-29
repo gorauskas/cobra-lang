@@ -294,29 +294,49 @@ class InstallFromWorkspace
 			CobraCore.runAndCaptureAllOutput(p)
 			found = true
 			print 'found in system PATH'
-		catch exc as Exception
-			if 'cannot find the file' not in exc.message
-				throw
+		catch FileNotFoundException
+			pass
+		catch ComponentModel.Win32Exception
+			pass
 		
 		if not found
 			# try to find the gacutil
 			print 'Searching for gacutil...'
 			gacutil = 'gacutil.exe'
+
 			dirs = [
-				r'\Program Files\Microsoft.NET\SDK\v2.0\bin',        # VS 2005 / SDK .NET 2.0
-				r'\Program Files\Microsoft SDKs\Windows\v6.0A\bin',  # VS 2008
+				r'Microsoft.NET\SDK\v2.0\bin',        # VS 2005 / SDK .NET 2.0
+				r'Microsoft SDKs\Windows\v6.0A\bin',  # VS 2008
+				r'Microsoft Visual Studio 8\SDK\v2.0\Bin',
 			]
+
+			# search %ProgramFiles% (which can differ internationally)
+			programFilesDir = Environment.getFolderPath(Environment.SpecialFolder.ProgramFiles)
 			for dir in dirs
-				for drive in Directory.getLogicalDrives
-					drive = drive[:1]  # normalize to just one character
-					if drive <= 'B', continue
-					path = '[drive]:[dir][.slash][gacutil]'
-					if File.exists(path)
-						print 'found:', path
-						gacutil = path
-						found = true
-						break
-				if found, break
+				path = '[programFilesDir]\\[dir][.slash][gacutil]'
+				print 'checking:', path
+				if File.exists(path)
+					print 'found:', path
+					gacutil = path
+					found = true
+					break
+				# else, print path
+
+			if not found
+				for dir in dirs
+					# search drives for X:\Program Files\...
+					for drive in Directory.getLogicalDrives
+						drive = drive[:1]  # normalize to just one character
+						if drive <= 'B', continue
+						path = '[drive]:\\Program Files\\[dir][.slash][gacutil]'
+						print 'checking:', path
+						if File.exists(path)
+							print 'found:', path
+							gacutil = path
+							found = true
+							break
+						# else, print path
+					if found, break
 
 		if not found
 			.error('Cannot locate a gacutil. Maybe you can try again using the "Visual Studio Command Prompt" or ".NET SDK Command Prompt".')
@@ -422,11 +442,16 @@ class InstallFromWorkspace
 			print
 
 		# record "svn info" in the installation directory
-		output = .runCommand('svn', 'info', false)
-		svnInfo = '[versionDir][slash]svn_info.text'
-		print 'writing  :', svnInfo
+		try 
+			output = .runCommand('svn', 'info', false)
+		catch ex as SystemException
+			# user could be on TortoiseSVN
+			print 'svn is not installed or it is not in the PATH. ' + ex.message
+		success
+			svnInfo = '[versionDir][slash]svn_info.text'
+			print 'writing  :', svnInfo
+			File.writeAllText(svnInfo, output)
 		print
-		File.writeAllText(svnInfo, output)
 
 	def verifyNewlyInstalledCobra
 		.startStage('Verify newly installed Cobra compiler')
