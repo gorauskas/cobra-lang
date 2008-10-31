@@ -555,11 +555,19 @@ class ForEnumerableStmt
 		else
 			_var = .bindVar(_varExpr)
 			if _multiArgs
+				_validateMultiArgs
 				_unpackMultiArgStmts
 			base._bindImp
 			_varNumber = .compiler.curBox.makeNextPrivateSerialNumber
 			_block.bindImp
 		
+	def _validateMultiArgs
+		n = 1
+		for arg in _multiArgs
+			if not (arg inherits IdentifierExpr or arg inherits AsExpr)
+				.throwError('Item "[arg.toCobraSource]" of comma-separated list is not an identifier or identifier-as-type.')
+			n += 1		
+
 	def _unpackMultiArgStmts
 		"""
 		Handle expansion of statements for multiArg variables in for statements: 
@@ -1375,3 +1383,94 @@ class YieldReturnStmt
 			# TODO: can there just be "yield return"?
 			pass
 		curCodeMember.hasYieldStmt = true
+
+
+class MultiTargetAssignStatement
+	is partial
+	inherits Stmt
+	"""
+	Handle atatement of form 
+		a, b[,...] = <List>
+	Gets turned into a sequence of assignExpr.
+		a = <List>[0]
+		b = <List>[1]
+
+	TODO: support a, b[,...] = <Enumerable> 
+	TODO: support a, b[,...] = <KeyValuePair|DictionaryEntry>
+	TODO: support a, b[,...] = c,d[,...] form
+	"""
+	var _targets as List<of Expr> # Lvalues
+	var _source as Expr 		# evaluate to IList/Array/String or otherwise indexable by int
+	var _block as BlockStmt?	# the rewritten/expanded code
+	
+	def init(opToken as IToken, args as List<of Expr>, rhs as Expr)
+		base.init(opToken)
+		assert opToken.which == 'ASSIGN'
+		_targets = args
+		_source = rhs
+		
+	def addSubFields
+		base.addSubFields
+		.addField('targets', _targets)
+		.addField('source', _source)
+		.addField('block', _block)
+
+	get targets from var
+
+	get source from var
+
+	get block from var
+
+	def _writeBlock
+		"""
+		Construct expanded assignment block for a multi target assignment.
+		if fewer targets than exprs in _source - extra exprs (silently) ignored
+		TODO: give error when rvalues are too many
+		if more targets than exprs in _source 	- will emit runtime exception
+			above differ fm python - both give errors
+		Unchecked assumptions; 
+			source is int indexable (x[n]) - c# compiler pick up
+		Assignment block contains
+			lh_mt_serno = <source>
+			id0 = lh_mt_serno[0] # id0 is contents of targets[0]
+			id1 = lh_mt_serno[1] # id1 is contents of targets[1]
+				(... repeated for number of items in targets specifying ids (lvalues))
+		"""
+		stmts = List<of Stmt>()
+		assignTkn = .lastToken  # the one we stored in init
+		serNo = .compiler.curBox.makeNextPrivateSerialNumber
+		tmpName = 'lh_mt_[serNo]'  # lh=local handler, mt = multiTarget
+		ttoken = .lastToken.copy('XXX', 'xxx')  # invalid template token for copying
+		idToken = ttoken.copy('ID', tmpName)
+		
+		tmpId = IdentifierExpr(idToken, idToken.text)
+		s = AssignExpr(assignTkn, assignTkn.which, tmpId, _source) 
+		stmts.add(s)  
+
+		count = 0
+		for id in _targets
+			intToken = ttoken.copy('INTEGER_LIT', '[count]')
+			intToken.value = count
+			countIntLit = IntegerLit(intToken)
+			exprs = List<of Expr>()
+			exprs.add(countIntLit)
+			tmpIdn = IdentifierExpr(ttoken.copy('ID', tmpName), tmpName)
+			idxExpr = IndexExpr(ttoken.copy('LBRACKET', r'['), tmpIdn, exprs)
+			stmts.add(AssignExpr(assignTkn, assignTkn.which, id, idxExpr))
+			count += 1
+		_block = BlockStmt(ttoken.copy('INDENT', ''), stmts)	
+
+	def _isLValue(id as Expr) as bool
+		# TODO: push to Expr.isLValue. probably require .didBindImp
+		# TODO: for DotExpr and IndexExpr check if there is a setter
+		# TODO: for MemberExpr check that its a setter property or visible var (not a method)
+		return id inherits IdentifierExpr or id inherits DotExpr or id inherits IndexExpr
+
+	def _bindImp
+		base._bindImp
+		for target in _targets
+			if not _isLValue(target)
+				.throwError('"[target.toCobraSource]" is not an assignable lvalue (identifier, var, property or indexer).')
+		# TODO: check _source supports an int indexer ??
+		_writeBlock
+		_block.bindImp

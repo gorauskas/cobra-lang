@@ -1883,12 +1883,10 @@ class Parser
 				else
 					if .looksLikeType(0) and .looksLikeVarNameIsNext(1)
 						.throwError('The correct local variable syntax is "name as Type" or "name = initValue". Try "[.peek(1).text] as [.peek(0).text]."')
-					if .looksLikeMultiArgIsNext
-						s = .multiArgAssign 
-					else
-						s = .expression
-						s.afterParserRecognizesStatement
-							
+					s = .expression
+					s.afterParserRecognizesStatement
+					if .optional('COMMA')
+						s = .multiTargetAssign(s to Expr)
 		if expectEOL
 			if .verbosity>=5
 				print '<> last statement start token=[token]'
@@ -1992,8 +1990,8 @@ class Parser
 		"""
 		token = .expect('FOR')
 		varr = .nameExpr
-		if .optional('COMMA')     # forStmt multiarg    for v1,... 
-			args = .commaSepNameIds(['IN' ,'EOL'])
+		if .optional('COMMA')  # forStmt multiarg for v1,... in 
+			args = .commaSepExprsPartial(['IN' ,'EOL'], 'IN')
 			if .last.which <> 'IN'
 				.throwError("Comma separated nameId list in forStatement needs to terminate with an IN token ('in')")
 			if args.count == 0  # "for v1, in ..."  single multiarg variable 
@@ -2713,54 +2711,16 @@ class Parser
 				else
 					throw
 
-	def multiArgAssign as Stmt
-		# id, [id,]... = <expr>
-		args = .commaSepIds(['ASSIGN', 'EOL'])
+	def multiTargetAssign(arg0 as Expr) as Stmt
+		# id, |[id,]... = <expr>
+		args = .commaSepExprsPartial(['ASSIGN', 'EOL'], 'ASSIGN')
+		args.insert(0, arg0)
 		if .last.which <> 'ASSIGN'
-			.throwError('Comma separated identifier list needs to end with an assignment ("=").')
-		assignTkn = .last
+			.throwError('Comma-separated assignment targets must end with "=", or this is a general syntax error.')
+		assignTkn = .last to !
 		rhs = .expression
-		return .multiArgBlock(assignTkn, args, rhs)
-	
-	def multiArgBlock(assignTkn as IToken?, args as List<of Expr>, rhs as Expr) as Stmt
-		"""
-		Construct expanded assignment block for a multi arg assignment.
-		if less args than exprs in rhs - extra exprs (silently) ignored
-		if more args than exprs in rhs  - additional args are (silently) ignored (not changed)
-			above differ fm python - both give errors
-		Unchecked assumptions; 
-			rhs is indexable (x[n] == IList) - c# compiler pick up
-		Assignment block contains
-			try
-				tmpId = <rhsExpr>
-				id0 = tmpId[0] # id is contents of args[0]
-				id1 = tmpId[1] # id is contents of args[0]
-					(... repeated for number of items in args specifying ids)
-			catch ArgumentOutOfRangeException
-				pass	
-		"""
-		stmts = List<of Stmt>()
-		tmpName = 'lh_ma_[rhs.serialNum]'
-		token = assignTkn.copy('XXX', 'xxx')  # invalid token template for copying
-		idToken = token.copy('ID', tmpName)
+		return MultiTargetAssignStatement(assignTkn, args, rhs)
 		
-		tmpId = IdentifierExpr(idToken, idToken.text)
-		s = AssignExpr(assignTkn, assignTkn.which, tmpId, rhs) 
-		stmts.add(s)  
-
-		count = 0
-		for id in args
-			intToken = token.copy('INTEGER_LIT', '[count]')
-			intToken.value = count
-			countIntLit = IntegerLit(intToken)
-			exprs = List<of Expr>()
-			exprs.add(countIntLit)
-			tmpIdn = IdentifierExpr(token.copy('ID', tmpName), tmpName)
-			idxExpr = IndexExpr(token.copy('LBRACKET', r'['), tmpIdn, exprs)
-			stmts.add(AssignExpr(assignTkn, assignTkn.which, id , idxExpr))
-			count += 1
-		return BlockStmt(token.copy('INDENT', ''), stmts)	
-
 	def callExpr as Expr
 		"""
 		Syntax:
@@ -2812,6 +2772,17 @@ class Parser
 		expr.argumentLabel = label
 		return expr
 
+	def commaSepExprsPartial(terminators as IList<of String>, binOpBrk as String) as List<of Expr>
+		# As commaSepExprs but setup to break out of middle of binOpExpression on terminating token
+		assert _binaryOpPrec.containsKey(binOpBrk)
+		realPrec = _binaryOpPrec[binOpBrk]
+		_binaryOpPrec[binOpBrk] = -1  # reset precedence to exit expression parser when hit this op
+		try
+			exprs = .commaSepExprs(terminators)
+		finally
+			_binaryOpPrec[binOpBrk] = realPrec
+		return exprs
+			
 	def commaSepExprs(terminator as String) as List<of Expr>
 		return .commaSepExprs([terminator], false, false)
 
@@ -2862,108 +2833,6 @@ class Parser
 				.delOpStack
 			expectSep = true
 		return exprs
-		
-	def commaSepNameIds(terminators as IList<of String>) as List<of Expr>
-		return _commaSepLValues(terminators, true)
-
-	def	 commaSepIds(terminators as IList<of String>) as List<of Expr>
-		return _commaSepLValues(terminators, false)
-			
-	def _commaSepLValues(terminators as IList<of String>, expectingNameIds as bool ) as List<of Expr>
-		"""
-		pickup comma sep stream of Identifiers or NameIds 
-		Example source
-			... idexpr, TERMINATOR
-			... idexpr, idexpr ...  TERMINATOR
-			... idexpr, idexpr, ... TERMINATOR
-		Returns
-			A list of Identifier Expressions ([DotExpr] IdentifiersExpr) or NameIds 
-		"""
-		expectSep = false
-		sep = 'COMMA'
-		exprs = List<of Expr>()
-		while true
-			if .peek.which in terminators
-				.grab
-				break
-			if expectSep
-				.expect(sep)
-			if .peek.which in terminators
-				.grab
-				break
-			.newOpStack
-			try
-				if expectingNameIds
-					exprs.add(.nameExpr)
-				else
-					exprs.add(.idExpression(0,nil))
-			finally
-				.delOpStack
-			expectSep = true
-		return exprs
-
-	def idExpression(precedence as int, left as Expr?) as Expr
-		# Expression tree walker for Identifier or DotExpr Identifier Stream 
-		# This method and next are simplified versions of expression and expression2
-		# this code has to deal with scanning for tokens fo an expression that may be an identifier 
-		# (and to stop on anything else)
-		if left is nil
-			left = .idExpression2
-		while true
-			peek = .peek.which
-			# get precedence (and detect non-binary operators)
-			binaryOpPrec = Utils.getSI(_binaryOpPrec, peek, -1)
-			if peek <> 'DOT'    # DOT is the only binary op allowed in Id stream
-				break	
-
-			opToken = .grab
-			op = opToken.which
-			assert _binaryOpPrec.containsKey(op)
-			_leftStack.push(left to !)
-			.opStack.push(op)
-			try
-				# get the right hand side of a binary operator expression
-				prec = if(OperatorSpecs.rightAssoc.containsKey(op), binaryOpPrec, binaryOpPrec+1)
-				if op == 'DOT' and .peek and .peek.isKeyword
-					# support foo.bar where bar is a keyword. Ex: foo.this
-					right = MemberExpr(.grab) to Expr
-				else
-					right = .idExpression(prec, nil)
-					left = DotExpr(opToken, op, left, right, false)
-			finally
-				.opStack.pop
-				_leftStack.pop
-		assert left
-		return left to !
-		
-	def idExpression2 as Expr
-		peekToken = .peek
-		peek = peekToken.which
-		if peek=='DOT'		# leading dot
-			token = .grab
-			.opStack.push('DOT')
-			try
-				peekToken = .peek
-				peek = peekToken.which
-				if peek=='ID' or peekToken.isKeyword
-					memberToken = .idOrKeyword
-					expr = MemberExpr(memberToken) to Expr
-				else
-					.throwError('Syntax error after "." Expecting variable Id ')
-			finally
-				.opStack.pop
-			return BinaryOpExpr.make(token to !, 'DOT', ThisLit(token), expr)
-		else if peek=='ID'
-			return .identifierExpr
-		else if .opStack.count and .opStack.peek=='DOT' and .peek.isKeyword
-			return .identifierExpr
-			
-		msg = 'Expecting an Id expression.'
-		if peekToken.isKeyword
-			msg += ' "[peekToken.text]" is a reserved keyword that is not expected here.'
-		.throwError(msg)
-		assert false
-		return ThisLit(token)  # To shut c# compiler up re paths without return values - notreached
 		
 	def forExpr as ForExpr
 		"""
@@ -3438,37 +3307,16 @@ class Parser
 		token = .peek(peekAhead)
 		if token.which == 'ID'
 			return Utils.startsNonLower(token.value to String)
-		if token.isKeyword and token.text in ['bool', 'char', 'decimal', 'int', 'uint', 'float', 'number']
-			return true
-		return false
+		return .isOneOfKeywords(token, ['bool', 'char', 'decimal', 'int', 'uint', 'float', 'number'])
 
 	def looksLikeVarNameIsNext(peekAhead as int) as bool
 		token = .peek(peekAhead)
 		return token is not nil and token.which=='ID' and Utils.startsWithLowerLetter(token.text)
-
-	def looksLikeMultiArgIsNext as bool
-		"""
-		peek ahead for ID (local or instance variable) COMMA or 
-		{DOT, ID}... (memberVar) COMMA
-		"""
-		state = 0
-		peekAhead =0
-		match = false
-		while not match
-			token = .peek(peekAhead)
-			if token is nil
-				break
-			if token.which == 'DOT'
-				state=1
-			else if token.which == 'ID'
-				state = 2
-			else if token.which == 'COMMA' 
-				match = state == 2 # comma after [.]ID
-			else
-				break
-			peekAhead += 1
-		return match
-
+		
+	def isOneOfKeywords(nToken as IToken?, keywords as List<of String>) as bool
+		token = nToken to !
+		return token.isKeyword and token.text in keywords
+		
 	def recordError(msg as String) as ParserException
 		return .recordError(.last, msg)
 
