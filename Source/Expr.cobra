@@ -2067,30 +2067,40 @@ class UnaryOpExpr
 
 	def _bindImp is override
 		base._bindImp
-		_expr.bindImp
-		if _type is nil
-			_type = _expr.type
-		branch _op
-			on 'MINUS'
-				_type = _expr.type
-			on 'PLUS'
-				_type = _expr.type
-			on 'TILDE'
-				_type = _expr.type
+		op = .op
+		expr = _expr
+		expr.bindImp
+		if _type is nil, _type = _expr.type
+		branch op
+			on 'MINUS', _type = expr.type
+			on 'PLUS',  _type = expr.type
+			on 'TILDE', _type = expr.type
 			on 'NOT'
-				if _expr.type is not .compiler.boolType
-					_expr = TruthExpr(_expr, this).bindAll to TruthExpr
+				if expr.type is not .compiler.boolType
+					_expr = TruthExpr(expr, this).bindAll to TruthExpr
 					_type = .compiler.boolType
 			else
-				throw FallThroughException(_op)
+				throw FallThroughException(op)
+
+		if op in ['MINUS', 'PLUS']  # TODO: 'TILDE' for ints?
+			if expr inherits AtomicLiteral
+				if expr.isNumeric
+					token = expr.token.copy
+					branch op
+						on 'PLUS',  pass
+						on 'MINUS', token.value = -(token.value to dynamic)
+						else, throw FallThroughException(op)
+					nodeType = expr.getType
+					expr = nodeType(token).bindAll to Expr
+					_transformTo(expr)
 
 	def toCobraSource as String is override
 		branch _op
 			on 'MINUS', op = '-'
-			on 'PLUS', op = '+'
+			on 'PLUS',  op = '+'
 			on 'TILDE', op = '~'
-			on 'NOT', op = 'not '
-			else: throw FallThroughException(_op)
+			on 'NOT',   op = 'not '
+			else, throw FallThroughException(_op)
 		return op + _expr.toCobraSource
 
 
@@ -2115,6 +2125,13 @@ class AtomicLiteral
 	def init(token as IToken)
 		base.init(token)
 		_text = token.text
+
+	get isNumeric as bool
+		"""
+		Returns true if the literal is numeric such that + and - could apply to it.
+		The default implementation returns false.
+		"""
+		return false
 
 	def bindImp as dynamic is override
 		base.bindImp
@@ -2181,6 +2198,9 @@ class DecimalLit
 		base.init(token)
 		_value = token.value to decimal
 
+	get isNumeric as bool is override
+		return true
+
 	def _bindImp is override
 		base._bindImp
 		_type = .compiler.decimalType
@@ -2197,6 +2217,11 @@ class FractionalLit
 		base.init(token)
 		_value = token.value to decimal
 
+	get isNumeric as bool is override
+		return true
+
+	get value from var
+
 	def _bindImp is override
 		base._bindImp
 		_type = .compiler.numberType
@@ -2212,6 +2237,9 @@ class FloatLit
 		require token.value inherits float
 		base.init(token)
 		_value = token.value to float
+
+	get isNumeric as bool is override
+		return true
 
 	def _bindImp is override
 		base._bindImp
@@ -2232,6 +2260,9 @@ class IntegerLit
 	def init(token as IToken, value as int)
 		base.init(token)
 		_value = value
+
+	get isNumeric as bool is override
+		return true
 
 	get value from var
 
