@@ -1532,12 +1532,18 @@ class Parser
 			varName = '_' + name
 		else
 			varName = .expect('ID').text
-		possibleVarDef = .curBox.declForName(varName)
-		if possibleVarDef is nil
-			.throwError('There is no variable named "[varName]" to match the property "[name]".')
-		if not possibleVarDef inherits BoxVar
-			.throwError('A property can only cover for variables. [varName] is a [possibleVarDef]')
-		varDef = possibleVarDef to BoxVar
+		declVarType = if(.optional('AS'), .typeId, nil)
+		if declVarType
+			varDef = BoxVar(token, .curBox, varName, declVarType, List<of String>(_isNamesStack), nil, nil, 'Automatic backing var for property "[name]".')
+			.curBox.addDecl(varDef)
+		else
+			possibleVarDef = .curBox.declForName(varName)
+			if possibleVarDef is nil
+				.throwError('There is no variable named "[varName]" to match the property "[name]".')
+			if possibleVarDef inherits BoxVar
+				varDef = possibleVarDef
+			else
+				.throwError('A property can only cover for variables. [varName] is a [possibleVarDef]')  # TODO: .englishName?
 		if .curBox inherits Interface
 			.throwError('Cannot use the "from" form of a property inside an interface declaration.')
 		if .peek.which == 'IS'
