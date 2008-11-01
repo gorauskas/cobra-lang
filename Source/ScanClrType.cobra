@@ -1,3 +1,124 @@
+class Compiler
+	is partial
+
+	def readAssembly(ass as Assembly)
+		.readAssembly(ass, false)
+
+	def readAssembly(ass as Assembly, skipCobra as bool)
+		"""
+		Reads the contents of an assembly (.DLL) so that they are accessible to the program.
+		In other words, this method reads libraries.
+		"""
+		verbosity = .verbosity
+		if verbosity
+			print 'Reading assembly:  [ass] at [ass.location]'  # extra space lines up with 'Loading reference:'
+		namespaceQualNameToNameSpaceObject = Dictionary<of String, NameSpace>()
+		module = AssemblyModule(ass, .globalNS)
+		_curModule = module
+		try
+			_modules.add(module)
+			skipCobra = false
+			for type in ass.getExportedTypes
+				if skipCobra and type.namespace and (type.namespace == 'Cobra' or type.namespace.startsWith('Cobra.'))
+					# this is a huge hack to get around the repetition of the Cobra run-time support which gets embedded in both programs and libraries
+					# TODO: this should go away
+					continue
+# delme or at least don't run on .NET
+#				if '__CompilerGenerated' in type.name  # TODO: does that work in .NET?
+#					continue
+				if type.isNested or type.declaringType
+					# these will be scanned by Box._scanNestedTypes
+					# print '### skipping [type.name] in [type.namespace]. isNested=[type.isNested], declaringType=[type.declaringType]'
+					continue
+				typeNamespace = type.namespace
+				if typeNamespace is nil or typeNamespace.length == 0
+					# happens for classes etc. that are not declared in a namespace
+					curNameSpace = module.topNameSpace
+				else
+					namespaceName = typeNamespace to !
+					if namespaceQualNameToNameSpaceObject.containsKey(namespaceName)
+						curNameSpace = namespaceQualNameToNameSpaceObject[namespaceName]
+					else
+						curNameSpace = module.topNameSpace
+						for name in typeNamespace.split(c'.')
+							curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(Token.empty, name)
+							assert not curNameSpace.isUnified
+						namespaceQualNameToNameSpaceObject[namespaceName] = curNameSpace
+				if verbosity >= 4
+					print '  Reading type [type.name] in namespace "[namespaceName]"'
+				clrType = ClrNativeType(type)
+				if type.isClass
+					if type.name.startsWith('Extend_') and Utils.countChars(type.name, c'_') >= 2
+						curNameSpace.addDecl(Extension(clrType))
+					else
+						curNameSpace.addDecl(Class(clrType))
+				else if type.isInterface
+					curNameSpace.addDecl(Interface(clrType))
+				else if type.isEnum
+					curNameSpace.addDecl(EnumDecl(curNameSpace, clrType, List<of String>(), ''))  # TODO: isNames; docString?
+				else if type.isValueType
+					curNameSpace.addDecl(Struct(clrType))
+				else if type.isAnsiClass
+					# The Enum class is an example that returns false for .isClass but true for .isAnsiClass
+					curNameSpace.addDecl(Class(clrType))
+				else
+					throw FallThroughException(type)
+		finally
+			_curModule = nil
+
+	def fixNilableMemberSigs
+		# TODO: this really needs to go in a separate file that the compiler reads each time
+
+		# TODO: look to see if what the Spec# team put together can be leveraged instead of recreating all this work!
+		# fix up member sigs regarding nilable
+		# hard coded below. TODO: read from a Cobra config file
+		_fix('System.Object', 'toString getType memberwiseClone')
+			# ^ regarding .toString, not technically true, but common enough and life is too painful when the return type is nilable
+		_fix('System.Console', 'out')
+		_fix('System.String', 'padLeft padRight replace substring toLower toUpper trim')
+		_fix('System.Type', 'assembly name toString')
+			# namespace can return nil if the Type is a generic parameter
+		_fix('System.Environment', 'commandLine currentDirectory newLine version')
+		_fix('System.Exception', 'message')
+		_fix('System.Collections.Generic.IEnumerable<of>', r'getEnumerator')
+		_fix('System.Collections.Generic.IList<of>', r'[] getRange toArray')
+		_fix('System.Collections.Generic.List<of>', r'[]')
+		_fix('System.Collections.Generic.IDictionary<of,>', r'[] keys values')
+		_fix('System.Collections.Generic.Dictionary<of,>', r'[]')
+		_fix('System.Collections.Generic.KeyValuePair<of,>', r'key value')
+		_fix('System.IO.File', 'create createText open openRead openText openWrite readAllBytes readAllLines readAllText')
+		_fix('System.IO.FileSystemInfo', 'name fullName')
+		_fix('System.IO.TextWriter', 'newLine')
+		_fix('System.IO.Path', 'combine getFullPath')
+			# getDirectoryName does return String?
+			# getFileName does return String?
+			# TODO: Add something like CobraUtils.getDirectoryName and .getFileName that return String instead
+		# args: System.IO.Path.combine(arg1 as String, arg2 as String) as String
+		_fix('System.Text.StringBuilder', 'toString')
+		_fix('System.Text.RegularExpressions.Regex', 'match replace')
+		_fix('System.Diagnostics.Process', 'processName')
+		_fix('System.Reflection.Assembly', 'getEntryAssembly getExecutingAssembly location')
+		_fix('System.Reflection.MemberInfo', 'name')
+		_fix('System.Reflection.FieldInfo', 'fieldType')
+		_fix('System.Reflection.ParameterInfo', 'parameterType')
+		_fix('System.Reflection.PropertyInfo', 'propertyType')
+
+		# TODO: I don't think sigs outside the "standard lib" can be specified
+		# HttpUtility.htmlEncode htmlDecode urlEncode urlDecode
+
+		# TODO: shouldn't need the following. see comment in _fixSubs
+		_fix('System.IO.StringWriter', 'toString')
+
+	def _fix(className as String, memberNames as String)
+		type = .libraryType(className) to ?
+		if type is nil
+			print 'WARNING: Cannot find [className].'  # TODO: make a real warning
+		else if type inherits Box
+			type.membersToUnNil = memberNames
+		else
+			print 'WARNING: Cannot fix [className] which is not a class/struct/interface. (type=[type])'  # TODO: make a real warning
+
+
 class Box
 	is partial
 
