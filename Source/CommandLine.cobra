@@ -22,6 +22,7 @@ class OptionSpec
 	var _isAccumulator = false
 	var _hasDefault = false
 	var _default = ''
+	var _choices = List<of String>()
 
 	get isUnpacked from var
 
@@ -31,6 +32,7 @@ class OptionSpec
 
 	get type as String
 		require .isUnpacked
+		ensure result in ['accumulator', 'args-list', 'bool', 'int', 'main', 'menu', 'string']
 		return _type
 
 	get synonyms from var
@@ -44,6 +46,11 @@ class OptionSpec
 	get default from var
 		"""
 		Check .hasDefault before using this property for anything useful.
+		"""
+
+	get choices from var
+		"""
+		The choices for options that are type 'menu'.
 		"""
 			
 	def isOptionSpecRestrictionViolated as bool
@@ -65,6 +72,7 @@ class OptionSpec
 				this['type'] = _type = 'accumulator'
 			else
 				this['type'] = 'string'
+		assert _type in ['accumulator', 'args-list', 'bool', 'int','main', 'menu', 'string']
 		if .containsKey('synonyms')
 			for syn in this['synonyms']
 				_synonyms.add(syn)
@@ -73,9 +81,14 @@ class OptionSpec
 		if .containsKey('isAccumulator')
 			_isAccumulator = this['isAccumulator'] to bool
 		if .containsKey('default')
-			_default = this['default'] to String
+			_default = this['default']
 			_hasDefault = true
+		if .containsKey('choices')
+			for choice in this['choices']
+				_choices.add(choice)
 		_isUnpacked = true
+		assert .type=='menu' implies .choices.count > 0
+		assert .choices.count <> 0 implies .type == 'menu'
 
 
 class CommandLineOptionSpecs
@@ -432,7 +445,12 @@ class CommandLine
 		return _verbosity
 
 	def parseArgs(args as IList<of String>, options as out OptionValues?, paths as out List<of String>?)
-		_argParser.parseArgs(args, out options, out paths)
+		try
+			_argParser.parseArgs(args, out options, out paths)
+		catch ape as ArgParseException
+			options = nil
+			paths = nil
+			.error(ape.message)
 		_verbosity = _argParser.verbosity
 		CobraMain.willTimeIt = _argParser.willTimeIt
 		
@@ -803,6 +821,13 @@ class CommandLine
 		
 	
 
+class ArgParseException
+	inherits Exception
+
+	def init(msg as String)
+		base.init(msg)
+
+
 class ArgParser
 	"""
 	Parse command line arguments into a dictionary of recognized OptionValues and a list of paths.
@@ -906,7 +931,11 @@ class ArgParser
 					if value == 'args-list'
 						value = args[argn:]
 					if value is nil
-						_error('Cannot process value "[valueStr]" for option "[name]".')
+						errMsg = 'Cannot parse value "[valueStr]" for option "[name]".'
+						branch spec.type
+							on 'bool', errMsg += ' Possible values include yes, no, y, n, true, false, t, f, 1, 0, + and -.'
+							on 'menu', errMsg += ' Possible values are [Utils.join(", ", " and ", spec.choices)].'
+						_error(errMsg)
 					valueDict[name] = value to !
 					didSpecify[name] = true
 					if spec.type == 'args-list'
@@ -1147,7 +1176,7 @@ class ArgParser
 			on 'menu'
 				if valueStr.length==0
 					value = nil
-				if not (spec['choices'] to System.Collections.IList).contains(valueStr)
+				if not valueStr in spec.choices
 					value = nil
 				else
 					value = valueStr
@@ -1162,10 +1191,7 @@ class ArgParser
 			throw FormatException()
 		
 	def _error(msg as String)
-		if msg.length
-			print 'cobra: error: [msg]'
-			print 'Run Cobra without options to get full usage information.'
-		Environment.exit(1)
+		throw ArgParseException(msg)
 
 
 
