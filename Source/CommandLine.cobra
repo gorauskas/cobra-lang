@@ -5,36 +5,106 @@ Cobra Command Line Program (compiler and more)
 use System.Diagnostics
 
 
-class CommandLine
+class OptionSpec
+	inherits Dictionary<of String, dynamic>
 	"""
-	The main options that control the command line's behavior are:
-		run
-		test
-		compile
-		testify
-		help
+	Represents a specific, named command line option specification.
 
-	"testify" is private to the implementor of Cobra.
-
-	"run" is the default if none are specified and at least one path is provided.
-
-	If no arguments are passed at all, "help" becomes the default.
-
-	You need to put at least one dash in front of an option. Also, you can leave
-	out the ".cobra" extension if you like. For example:
-
-		cobra -compile foo bar
-
+	In addition to being a dictionary containing the original raw specification key+value pairs,
+	several convenient properties and methods are provided such as .name, .type and .hasDefault.
 	"""
 
-	get versionString as String is shared
-		ensure Utils.countChars(result, c'.') == 2
-		# Can't just take CobraCore.versionDescription as is, because that will be the one from Snapshot,
-		# not the current Source directory. And Snapshot can be a final release such as '0.7.4' for a
-		# period of time where this Cobra source represents an svn-post-RELEASE.
-		return '0.8.0 post-release'
+	var _isUnpacked = false	
+	var _name = ''
+	var _type = 'unknown'
+	var _synonyms = List<of String>()
+	var _description = 'No description.'
+	var _isAccumulator = false
+	var _hasDefault = false
+	var _default = ''
 
-	var _rawOptionSpecs = [
+	get isUnpacked from var
+
+	get name as String
+		require .isUnpacked
+		return _name
+
+	get type as String
+		require .isUnpacked
+		return _type
+
+	get synonyms from var
+
+	get description from var
+
+	get isAccumulator from var
+	
+	get hasDefault from var
+	
+	get default from var
+		"""
+		Check .hasDefault before using this property for anything useful.
+		"""
+			
+	def isOptionSpecRestrictionViolated as bool
+		"""
+		Returns true if the option spec has a 'restriction' key and the check against that restriction is true.
+		"""
+		if .containsKey('restriction')
+			branch this['restriction'] to String
+				on 'mono-only'
+					return not CobraCore.isRunningOnMono
+		return false
+
+	def unpack
+		_name = this['name'] to String
+		try
+			_type = this['type'] to String
+		catch KeyNotFoundException
+			if .containsKey('isAccumulator') and this['isAccumulator'] to bool
+				this['type'] = _type = 'accumulator'
+			else
+				this['type'] = 'string'
+		if .containsKey('synonyms')
+			for syn in this['synonyms']
+				_synonyms.add(syn)
+		if .containsKey('description')
+			_description = this['description']
+		if .containsKey('isAccumulator')
+			_isAccumulator = this['isAccumulator'] to bool
+		if .containsKey('default')
+			_default = this['default'] to String
+			_hasDefault = true
+		_isUnpacked = true
+
+
+class CommandLineOptionSpecs
+	"""
+	Returns the command line option specifications, via .specsList, as a List of OptionSpec.
+	Also, the raw option specifications are contained and maintained in this class.
+	"""
+
+	var _specs = List<of OptionSpec>()
+
+	def init
+		for rawSpec in _rawCommandLineOptionSpecs
+			spec = OptionSpec()
+			if rawSpec inherits Dictionary<of String, Object>
+				for key in rawSpec.keys, spec[key] = rawSpec[key]
+			else if rawSpec inherits Dictionary<of String, String>
+				for key in rawSpec.keys, spec[key] = rawSpec[key]
+			else
+				throw FallThroughException(rawSpec.getType)
+			spec.unpack
+			_specs.add(spec)
+
+	def specsList as List<of OptionSpec>
+		"""
+		Returns the option specs in the order they were declared.
+		"""
+		return _specs
+
+	var _rawCommandLineOptionSpecs = [
 		{
 			'name': 'about',
 			'description': 'Print the name, copyright, etc. but no usage.',
@@ -111,6 +181,7 @@ class CommandLine
 		},
 		{
 			'name': 'editor',
+			'type': 'string',
 			'description': 'Specify an editor and command line options to invoke if there is a compile-time error. Use underscore (_) for space in the specification. Can also set via COBRA_EDITOR environment variable (in which case spaces work fine).',
 			'example': ['uedit32_FILE/LINE', 'mate_FILE_-l_LINE'],
 			'args': 'editor_spec_with_FILE_LINE',
@@ -297,16 +368,46 @@ class CommandLine
 		},
 		{
 			'name': 'version',
-			'description': 'Print just the version number ([.versionString]).',
+			'description': 'Print just the version number.', # ([.versionString]).',
 			'type': 'main',
 		},
 	]
+
+
+class CommandLine
+	"""
+	The main options that control the command line's behavior are:
+		run
+		test
+		compile
+		testify
+		help
+
+	"testify" is private to the implementor of Cobra.
+
+	"run" is the default if none are specified and at least one path is provided.
+
+	If no arguments are passed at all, "help" becomes the default.
+
+	You need to put at least one dash in front of an option. Also, you can leave
+	out the ".cobra" extension if you like. For example:
+
+		cobra -compile foo bar
+
+	"""
+
+	get versionString as String is shared
+		ensure Utils.countChars(result, c'.') == 2
+		# Can't just take CobraCore.versionDescription as is, because that will be the one from Snapshot,
+		# not the current Source directory. And Snapshot can be a final release such as '0.7.4' for a
+		# period of time where this Cobra source represents an svn-post-RELEASE.
+		return '0.8.0 post-release'
 		
 
 	var _startTime as DateTime
 	var _verbosity = 0
 
-	var _options = Options()
+	var _options = OptionValues()
 	var _pathList as List<of String>?
 	var _htmlWriter as HtmlWriter?
 
@@ -315,7 +416,7 @@ class CommandLine
 
 	def init
 		_startTime = DateTime.now
-		_argParser = ArgParser(.versionString, _rawOptionSpecs)
+		_argParser = ArgParser(.versionString, nil)
 
 	get compiler from var
 
@@ -323,15 +424,14 @@ class CommandLine
 
 	get verboseLineSeparator as String
 		w = Console.bufferWidth
-		if w < 20
-			w = 80
+		if w < 20, w = 80
 		w -= 1
 		return String(c'-', w)
 
 	get verbosity as int
 		return _verbosity
 
-	def parseArgs(args as IList<of String>, options as out Options?, paths as out List<of String>?)
+	def parseArgs(args as IList<of String>, options as out OptionValues?, paths as out List<of String>?)
 		_argParser.parseArgs(args, out options, out paths)
 		_verbosity = _argParser.verbosity
 		CobraMain.willTimeIt = _argParser.willTimeIt
@@ -530,11 +630,123 @@ class CommandLine
 			Environment.exit(1)
 
 	def doHelp
-		_argParser.doHelp   # CC: multiline string
+		.doAbout
+		print ''
+		print 'Usage:'
+		print ''
+		print '  cobra <options> <filename>'
+		print '    * run filename'
+		print '    * compile if needed'
+		print '    * .cobra extension is optional'
+		print ''
+		print '  cobra <options> <command> <path(s)>'
+		print '    * commands that operate on path(s) are:'
+		print '      -compile ... Compile only. Also, -c'
+		print '      -run ....... Run the program (compile if necessary). Also -r (Default)'
+		print '      -test ...... Run the unit tests of a library.'
+		print '      -document .. Document the program (partial compilation). Also, -doc'
+		print ''
+		print '  cobra <options> <command>'
+		print '    * standalone commands are:'
+		print '      -help ...... Print full help information.'
+		print '      -about ..... Print name, copyright, etc. no usage.'
+		print '      -version ... Print just the version number ([.versionString]).'
+		print ''
+		print '  <options> can be:'
+
+		# print options from their specs (but not the main ones which are covered above)
+		leftMarginStr = '        '
+		width = _calcWidth()
+		for spec in CommandLineOptionSpecs().specsList
+			if spec.containsKey('type') and spec['type']=='main' # CC: spec.get('main', '')
+				continue
+			if spec.containsKey('developer-only') and spec['developer-only'] to bool and not Utils.isDevMachine
+				continue
+			if spec.isOptionSpecRestrictionViolated
+				continue
+			print
+			print '    -[spec["name"]]' stop
+			if spec.containsKey('args')
+				if spec.hasDefault
+					lbracket = r'['
+					print '[lbracket]:[spec["args"]]]' stop
+				else
+					print ':[spec["args"]]' stop
+			else if spec['type']=='bool'
+				print r'[:no|yes]' stop
+			if spec.hasDefault
+				print '  default is [spec.default]' stop
+			print
+			if spec.synonyms.count
+				print '    ' stop
+				sep = ''
+				for syn in spec.synonyms
+					print '[sep]-[syn]' stop
+					sep = ', '
+				print
+			s = spec.description
+			while s.length
+				if s.length < width
+					print '[leftMarginStr][s]'
+					s = ''
+				else
+					# TODO: bug in here for narrow widths. try "width = 20" to reproduce
+					j = width+1
+					if j >= s.length
+						j = s.length - 1
+					while j > 0 and s[j] <> ' '
+						j -= 1
+					if j
+						sub = s.substring(0, j)
+						s = if(s.length, s.substring(j+1), '')
+						print '[leftMarginStr][sub]'
+			if spec.containsKey('example')
+				if spec['example'] inherits System.Collections.IList
+					first = true
+					for example in spec['example'] to System.Collections.IList
+						if first, print '[leftMarginStr]Examples: ' stop
+						else,     print '[leftMarginStr]          ' stop
+						print '-[spec["name"]]:[example]'
+						first = false
+				else
+					print '[leftMarginStr]Example: -[spec["name"]]:[spec["example"]]'
+			if spec.containsKey('eg') # verbatim example line
+				print '[leftMarginStr]e.g. [spec["eg"]]'
 
 	def doAbout
-		_argParser.doAbout
+		# CC: multiline string
+		print
+		print 'The Cobra Programming Language [.versionString]'
+		print 'Copyright (C) 2003-[DateTime.now.year] by Cobra Language LLC.  All Rights Reserved.'
+		print ''
+		print 'On the web:  http://Cobra-Language.com/'
+		print 'License:     http://www.opensource.org/licenses/mit-license.php'
+		print 'Source:      http://cobra-language.com/source/'
+		print 'Support:     http://cobra-language.com/trac/cobra/wiki/UserSupport'
+		print
+		print 'Usage:       cobra -h'
 
+	def _calcWidth as int
+		leftMargin = 8
+		try
+			consoleWidth = Console.windowWidth
+		catch IOException
+			# 2008-04-11, When redirecting output, MS .NET 2.0 throws IOException while Novell Mono 1.9 returns 0
+			consoleWidth = 0
+		if consoleWidth < 1
+			try
+				consoleWidth = Console.bufferWidth
+			catch IOException
+				consoleWidth = 0
+		totalWidth = consoleWidth - 2
+		if totalWidth < 0, 	totalWidth = 0
+		if totalWidth == 0, totalWidth = 78
+		else if totalWidth < 20, totalWidth = 20
+		assert totalWidth > 0
+		width = totalWidth - leftMargin
+		assert width > 0
+		return width
+		
 	def doVersion
 		print .versionString
 
@@ -593,9 +805,7 @@ class CommandLine
 
 class ArgParser
 	"""
-	Class for handling parsing of cmdline string arguments into a set of recognised 
-	Options and a list of paths.
-	Provides documentation display (help, about) printed output as well
+	Parse command line arguments into a dictionary of recognized OptionValues and a list of paths.
 	"""
 
 	var _self as ArgParser? is shared
@@ -608,9 +818,9 @@ class ArgParser
 	get verbosity from var
 	get willTimeIt from var
 
-	var _optionSpecs as List<of Dictionary<of String, Object>>
+	var _optionSpecs as List<of OptionSpec>
 
-	var	_specDict as Dictionary<of String, Dictionary<of String, Object>>
+	var	_specDict as Dictionary<of String, OptionSpec>
 		# will contain keys for all spec names and their synonyms
 
 	var _synToName as Dictionary<of String, String>
@@ -618,39 +828,27 @@ class ArgParser
 
 	var _synList as List<of String>
 
-	def init(version as String, rawOptionSpecs)
+	def init(version as String, optionSpecs as List<of OptionSpec>?)
 		_versionString = version
 		# prep the option specs
-		_optionSpecs = List<of Dictionary<of String, Object>>()
-		for specObj in rawOptionSpecs
-			# since some _optionSpecs are Dictionary<of String, Object> and others are
-			# Dictionary<of String, String> then _optionSpecs ends up being
-			# Dictionary<of String, Object>
-
-			if specObj inherits Dictionary<of String, Object>
-				d = specObj
-			else if specObj inherits Dictionary<of String, String>
-				d = Dictionary<of String, Object>()
-				for key in specObj.keys
-					d[key] = specObj[key]
-			else
-				throw FallThroughException(specObj.getType)
-			_optionSpecs.add(d)
-
-		_specDict = Dictionary<of String, Dictionary<of String, Object>>()
+		if optionSpecs
+			_optionSpecs = List<of OptionSpec>(optionSpecs)
+		else
+			_optionSpecs = CommandLineOptionSpecs().specsList
+		_specDict = Dictionary<of String, OptionSpec>()
 		_synToName = Dictionary<of String, String>()
 		_synList = List<of String>()
 		_initSynonyms
 		_self = this
-		
-	def parseToOptions(args as IList<of String>) as Options is shared
+
+	def parseToOptions(args as IList<of String>) as OptionValues is shared
 		"""
 		Reuse ArgParser to parse some additional string option args. Files are not allowed 
-		Can be used only after ArgParser has already been constructed providing OptionSpecs
+		Can be used only after ArgParser has already been constructed providing CommandLineOptionSpecs
 		Return new set of Options from given args list
 		"""
 		assert _self , 'ArgParser.init must have been called sometime before using ArgParse.parseToOptions()'
-		opts = Options()
+		opts = OptionValues()
 		paths = List<of String>()
 		# TODO: mark which opts as unusable in this context and filter out
 		_self._optsOnly = true
@@ -660,7 +858,7 @@ class ArgParser
 			opts.print
 		return opts
 		
-	def parseArgs(args as IList<of String>, options as out Options?, paths as out List<of String>?)
+	def parseArgs(args as IList<of String>, options as out OptionValues?, paths as out List<of String>?)
 		"""
 		Parse command line arguments: options and files.
 		The `args` should include only the arguments and not the executable/program name.
@@ -668,15 +866,15 @@ class ArgParser
 		_optsOnly = false
 		_parseArgs(args, out options, out paths)
 		
-	def _parseArgs(args as IList<of String>, options as out Options?, paths as out List<of String>?)
+	def _parseArgs(args as IList<of String>, options as out OptionValues?, paths as out List<of String>?)
 		ensure
 			options
 			paths
 		body
 			optionPrefix = '-'
 			if not args.count
-				options = Options()
-				options.add('help', true)
+				options = OptionValues()
+				options.add('about', true)
 				paths = List<of String>()
 				return
 
@@ -697,9 +895,10 @@ class ArgParser
 				isOption = arg.startsWith(optionPrefix)
 				if isOption
 					name = _getOptionParts(arg, optionPrefix, out valueStr)
+					assert name.trim <> ''
 					spec = _specDict[name]
 
-					if _isAccumulatorOpt(spec)
+					if spec.isAccumulator
 						_accumulateOptValue(name, valueStr, valueDict, didSpecify)
 						continue
 						
@@ -710,7 +909,7 @@ class ArgParser
 						_error('Cannot process value "[valueStr]" for option "[name]".')
 					valueDict[name] = value to !
 					didSpecify[name] = true
-					if spec['type'] to String == 'args-list'
+					if spec.type == 'args-list'
 						break   # absorbed remainder of args
 				else # not isOption
 					if _optsOnly
@@ -730,7 +929,7 @@ class ArgParser
 			_unpackOptions(valueDict, fileList)	
 
 			# set the out parameters
-			options = Options(valueDict)
+			options = OptionValues(valueDict)
 			options.setSpecified(didSpecify)
 			paths = fileList
 			_computeArgImplications(options to !)
@@ -738,9 +937,9 @@ class ArgParser
 	def _getOptionParts(arg as String, optionPrefix as String, valueStr as out String) as String
 		arg = .fixOptionArg(arg, optionPrefix)	
 		# CC: name, valueStr = .splitOpt(arg)
-		l = .splitOpt(arg) 
-		name = l[0]
-		valueStr = l[1]
+		parts = .splitOpt(arg) 
+		name = parts[0]
+		valueStr = parts[1]
 		name = .validateOptionName(name)
 		return name			
 
@@ -750,10 +949,10 @@ class ArgParser
 		"""
 		while arg.startsWith(optionPrefix)
 			arg = arg[1:]
-		if not arg.length # '--'
+		if not arg.length  # '--'
 			arg = 'run-args'
 		return arg
-				
+
 	def splitOpt(arg as String) as IList<of String>
 		"""
 		Split option into name and valueStr
@@ -778,33 +977,20 @@ class ArgParser
 		# assert valueStr.length  # not valid. an option could be cleared out like: -editor:"" 
 		return [name, valueStr]	
 		
-	def isOptionSpecRestrictionViolated(optionSpec as Dictionary<of String, Object>) as bool
-		"""
-		Returns true if the option spec has a 'restriction' key and the check against that restriction is true.
-		"""
-		if optionSpec.containsKey('restriction')
-			branch optionSpec['restriction'] to String
-				on 'mono-only'
-					return not CobraCore.isRunningOnMono
-		return false
-			
 	def _initSynonyms
 		"""
 		Init supporting data structures for handling option synonyms		
 		"""		
-		for d in _optionSpecs
-			if .isOptionSpecRestrictionViolated(d)
+		for spec in _optionSpecs
+			if spec.isOptionSpecRestrictionViolated
 				continue
-			_specDict[d['name'] to String] = d
-			if d.containsKey('synonyms')
-				syns = d['synonyms'] to System.Collections.IList
-				for syn as String in syns
+			_specDict[spec.name] = spec
+			if spec.synonyms.count
+				for syn in spec.synonyms
 					assert not _specDict.containsKey(syn)
-					_specDict[syn] = d
-					_synToName[syn] = d['name'] to String
+					_specDict[syn] = spec
+					_synToName[syn] = spec.name
 					_synList.add(syn)
-			if not d.containsKey('type')
-				d.add('type', 'string')
 			
 	def validateOptionName(name as String) as String
 		"""
@@ -812,17 +998,16 @@ class ArgParser
 		to an option name; return the canonical name for the option/synonym
 		"""
 		require name.trim <> ''
+		ensure result.trim <> ''
 		name = Utils.getSS(_synToName to passthrough, name, name) to !
+		assert name.trim <> ''
 		if not _specDict.containsKey(name)
 			msg = 'No such option "[name]".'
 			if name.contains('=')
 				msg += ' If you meant to specify an option value, use colon (:) instead of equals (=).'
 			_error(msg)
-		return name		
+		return name
 		
-	def _isAccumulatorOpt(spec as Dictionary<of String,Object>) as bool
-		return Utils.getSB(spec to passthrough, 'isAccumulator', false)
-			
 	def _accumulateOptValue(name as String, valueStr as String,
 			valueDict as Dictionary<of String, Object>,
 			didSpecify as Dictionary<of String, bool>)
@@ -832,8 +1017,7 @@ class ArgParser
 		else
 			valueDict[name] = [valueStr]
 			didSpecify[name] = true
-		
-			
+
 	def _fixupDebug(valueStr as String) as String?
 		if valueStr == 'pdbonly' or valueStr == 'full'
 			return valueStr
@@ -849,15 +1033,14 @@ class ArgParser
 	
 	def _processToValue(name as String,  
 						valueStr as String, 
-						spec as Dictionary<of String, Object>,
+						spec as OptionSpec,
 						mainOptions as List<of String>) as dynamic?
 		value as dynamic? = 'no-value'
 	
 		if name == 'debug' 		# special case
 			return _fixupDebug(valueStr)
 		
-		t = spec['type'] to String
-		branch t
+		branch spec.type
 			on 'main'
 				mainOptions.add(name)
 				value = true
@@ -866,7 +1049,6 @@ class ArgParser
 			else
 				value = _interpretValue(valueStr, spec)
 		return value
-				
 
 	def _handleSynonyms(valueDict as Dictionary<of String, Object>)
 		for syn in _synList
@@ -875,14 +1057,13 @@ class ArgParser
 				valueDict.remove(syn)
 			
 	def _addInDefaults(valueDict as Dictionary<of String, Object>)
-		for d in _optionSpecs
-			defaultName = d['name'] to String
-			if not valueDict.containsKey(defaultName) and d.containsKey('default')
-				defaultValue = _interpretValue(d['default'] to String, d) to !
+		for spec in _optionSpecs
+			if not valueDict.containsKey(spec.name) and spec.hasDefault
+				defaultValue = _interpretValue(spec.default, spec) to !
 				if .verbosity
-					print 'Setting option "[defaultName]" to default value [defaultValue].'
-				valueDict[defaultName] = defaultValue
-		
+					print 'Setting option "[spec.name]" to default value [defaultValue].'
+				valueDict[spec.name] = defaultValue
+
 	def _unpackOptions(valueDict as Dictionary<of String, Object>, fileList as List<of String>)	
 		"""
 		Unpack certain options (verbosity and timeit) into specific class fields, 
@@ -895,11 +1076,11 @@ class ArgParser
 			valueDict['timeit'] = true
 		if valueDict.containsKey('timeit')
 			_willTimeIt = valueDict['timeit'] to bool
-			
+
 		if valueDict.containsKey('files')
 			fileNamesList = valueDict['files'] to System.Collections.IList
-			_processFilesFile( fileNamesList, fileList)
-				
+			_processFilesFile(fileNamesList, fileList)
+
 	def _processFilesFile(fileNamesList as IList, fileList as List<of String>)
 		"""
 		Treat entries in fileNamesList as names of files containing filenames to compile, 
@@ -914,7 +1095,7 @@ class ArgParser
 					_processAsFile(line, fileList, nil)
 			catch IOException
 				_error('Cannot open file "[fileName]".')
-			
+
 	def _processAsFile(arg as String, fileList as List<of String>, errHint as String?)
 		"""
 		Validate arg as filename and on success add into fileList
@@ -926,13 +1107,9 @@ class ArgParser
 		else if Directory.exists(arg)
 			fileList.add(arg)
 		else 
-			msg = 'Cannot find "[arg]" as a file.'
-			if errHint 
-				msg += errHint
-			_error(msg)
-			
+			_error('Cannot find "[arg]" as a file.' + (errHint?''))
 
-	def _computeArgImplications(options as Options)
+	def _computeArgImplications(options as OptionValues)
 		if options.getDefault('target', '') == 'lib' and not options.isSpecified('compile')
 			options['compile'] = true
 		if options.getDefault('debug', '') not in ['', '0', '-'] and not options.isSpecified('debugging-tips')
@@ -945,9 +1122,9 @@ class ArgParser
 			options['include-traces'] = false
 			options['optimize'] = true
 			
-	def _interpretValue(valueStr as String, spec as Dictionary<of String, Object>) as dynamic?
+	def _interpretValue(valueStr as String, spec as OptionSpec) as dynamic?
 		value as dynamic?
-		branch spec['type'] to String
+		branch spec.type
 			on 'main'
 				throw InvalidOperationException('This method does not handle the main type.')
 			on 'bool'
@@ -984,121 +1161,6 @@ class ArgParser
 		else
 			throw FormatException()
 		
-	def _calcWidth as int
-		leftMargin = 8
-		try
-			consoleWidth = Console.windowWidth
-		catch IOException
-			# 2008-04-11, When redirecting output, MS .NET 2.0 throws IOException while Novell Mono 1.9 returns 0
-			consoleWidth = 0
-		if consoleWidth < 1
-			try
-				consoleWidth = Console.bufferWidth
-			catch IOException
-				consoleWidth = 0
-		totalWidth = consoleWidth - 2
-		if totalWidth < 0, 	totalWidth = 0
-		if totalWidth == 0, totalWidth = 78
-		else if totalWidth < 20, totalWidth = 20
-		assert totalWidth > 0
-		width = totalWidth - leftMargin
-		assert width > 0
-		return width
-		
-	def doHelp
-		.doAbout
-		print ''
-		print 'Usage:'
-		print ''
-		print '  cobra <options> <filename>'
-		print '    * run filename'
-		print '    * compile if needed'
-		print '    * .cobra extension is optional'
-		print ''
-		print '  cobra <options> <command> <path(s)>'
-		print '    * commands that operate on path(s) are:'
-		print '      -compile ... Compile only. Also, -c'
-		print '      -run ....... Run the program (compile if necessary). Also -r (Default)'
-		print '      -test ...... Run the unit tests of a library.'
-		print '      -document .. Document the program (partial compilation). Also, -doc'
-		print ''
-		print '  cobra <options> <command>'
-		print '    * standalone commands are:'
-		print '      -help ...... Print full help information.'
-		print '      -about ..... Print name, copyright, etc. no usage.'
-		print '      -version ... Print just the version number ([.versionString]).'
-		print ''
-		print '  <options> can be:'
-
-		# print options from their specs (but not the main ones which are covered above)
-		leftMarginStr = '        '
-		width = _calcWidth()
-		for spec in _optionSpecs
-			if spec.containsKey('type') and spec['type']=='main' # CC: spec.get('main', '')
-				continue
-			if spec.containsKey('developer-only') and spec['developer-only'] to bool and not Utils.isDevMachine
-				continue
-			if .isOptionSpecRestrictionViolated(spec)
-				continue
-			print
-			print '    -[spec["name"]]' stop
-			if spec.containsKey('args')
-				if spec.containsKey('default')
-					lbracket = r'['
-					print '[lbracket]:[spec["args"]]]' stop
-				else
-					print ':[spec["args"]]' stop
-			else if spec['type']=='bool'
-				print r'[:no|yes]' stop
-			if spec.containsKey('default')
-				print '  default is [spec['default']]' stop
-			print
-			if spec.containsKey('synonyms')
-				print '    ' stop
-				sep = ''
-				for syn as String in spec['synonyms'] to System.Collections.IList
-					print '[sep]-[syn]' stop
-					sep = ', '
-				print
-			s = spec['description'] to String
-			while s.length
-				if s.length < width
-					print '[leftMarginStr][s]'
-					s = ''
-				else
-					# TODO: bug in here for narrow widths. try "width = 20" to reproduce
-					j = width+1
-					if j >= s.length
-						j = s.length - 1
-					while j > 0 and s[j] <> ' '
-						j -= 1
-					if j
-						sub = s.substring(0, j)
-						s = if(s.length, s.substring(j+1), '')
-						print '[leftMarginStr][sub]'
-			if spec.containsKey('example')
-				if spec['example'] inherits System.Collections.IList
-					first = true
-					for example in spec['example'] to System.Collections.IList
-						if first, print '[leftMarginStr]Examples: ' stop
-						else,     print '[leftMarginStr]          ' stop
-						print '-[spec["name"]]:[example]'
-						first = false
-				else
-					print '[leftMarginStr]Example: -[spec["name"]]:[spec["example"]]'
-			if spec.containsKey('eg') # verbatim example line
-				print '[leftMarginStr]e.g. [spec["eg"]]'
-
-	def doAbout
-		# CC: multiline string
-		print 'The Cobra Programming Language [.versionString]'
-		print 'Copyright (C) 2003-[DateTime.now.year] by Cobra Language LLC.  All Rights Reserved.'
-		print ''
-		print 'On the web:  http://Cobra-Language.com/'
-		print 'License:     See Cobra/Docs/License.text'
-		# TODO: print '             http://Cobra-Language.com/Docs/License.text'
-		print 'Usage:       cobra -h'
-
 	def _error(msg as String)
 		if msg.length
 			print 'cobra: error: [msg]'
@@ -1135,7 +1197,7 @@ class HtmlWriter
 			_isWritingHtml = false
 
 
-class Options
+class OptionValues
 	inherits Dictionary<of String, Object>
 
 	var _isSpecified = Dictionary<of String, bool>()  # CC: could just be a Set
@@ -1180,12 +1242,12 @@ class Options
 
 	# CC: def getDefault<of T>(key as String, value as T) as T ...
 
-	def combine(options as Options)
+	def combine(options as OptionValues)
 		if options is not this
 			for key in options.keys
 				this[key] = options[key]
 
-	def combineNew(options as Options)
+	def combineNew(options as OptionValues)
 		if options is not this
 			for key in options.keys 
 				if not .isSpecified(key)
