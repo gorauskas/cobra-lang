@@ -51,6 +51,7 @@ class Compiler
 	var _serialNum as int
 	var _verbosity as int
 	var _options as OptionValues
+	var _commandLineArgParser as ArgParser?
 	var _willPrintSuccessMsg = true
 	var _htmlWriter as HtmlWriter?
 
@@ -152,6 +153,8 @@ class Compiler
 	get modules from var
 
 	pro options from var
+
+	pro commandLineArgParser from var
 
 	pro willPrintSuccessMsg from var
 
@@ -388,7 +391,9 @@ class Compiler
 				# implement -extra-source option
 				extraSource = .options.getDefault('extra-source', '').trim to String
 				if extraSource <> ''
+					# CC: parser = Parser(verbosity=_verbosity, typeProvider=this, warningRecorder=this, errorRecorder=this, globalNS=_globalNS, parseCommandLineArgs=ref .parseCommandLineArgsCallBack)
 					parser = Parser(verbosity=_verbosity, typeProvider=this, warningRecorder=this, errorRecorder=this, globalNS=_globalNS)
+					parser.parseCommandLineArgs = ref .parseCommandLineArgsCallBack
 					module = parser.parseSource('_ch_cobra-extra-source.cobra', extraSource)  # ch = compiler helper
 					modules.add(module)
 
@@ -402,6 +407,7 @@ class Compiler
 						parser.typeProvider = this
 						parser.warningRecorder = this
 						parser.errorRecorder = this
+						parser.parseCommandLineArgs = ref .parseCommandLineArgsCallBack
 						parser.globalNS = _globalNS
 						# @@ TODO: assert _globalNS is parser.nameSpaceStack[0]
 						try
@@ -421,6 +427,20 @@ class Compiler
 				_modules.addRange(modules)
 				_parsedModules = nil
 			return modules
+
+	def parseCommandLineArgsCallBack(args as IList<of String>, isAvailable as out bool) as String?
+		"""
+		This is the call back for implementing the `args` directive as encountered in the Parser.
+		"""
+		if .commandLineArgParser
+			isAvailable = true
+			try
+				.augmentOptions(.commandLineArgParser.parseToOptions(args))
+			catch ape as ArgParseException
+				return ape.message
+		else
+			isAvailable = false
+		return nil
 
 	def augmentOptions(opts as OptionValues)
 		"""

@@ -51,6 +51,17 @@ class Parser
 
 	"""
 
+	sig ParseCommandLineArgsSig(args as IList<of String>, isAvailable as out bool) as String?
+/#
+CC: bug in Cobra parser where putting a doc string after a sig causes problems.
+		"""
+		The delegate is used to implement the 'args' compiler directive.
+		It should set isAvailable.
+		If isAvailable, it should return nil on success, or an error message.
+		Otherwise, it should return nil.
+		"""
+#/
+
 	test
 		p = Parser()
 		p.globalNS = NameSpace(Token.empty, '(global)')
@@ -110,6 +121,8 @@ class Parser
 
 	var _typeProvider as ITypeProvider?
 
+	var _parseCommandLineArgs as ParseCommandLineArgsSig?
+
 	# TODO: do this with a callback/delegate instead of this bullshit Java-style interface technique
 	var _warningRecorder as IWarningRecorder?
 	var _errorRecorder as IErrorRecorder?
@@ -125,6 +138,13 @@ class Parser
 	pro verbosity from var
 
 	pro typeProvider from var
+
+	pro parseCommandLineArgs from var
+		"""
+		The delegate is used to implement the 'args' compiler directive.
+		If none is provided and the 'args' directive is encountered, an error is generated.
+		See also: ParseCommandLineArgsSig
+		"""
 
 	pro globalNS as NameSpace
 		get
@@ -587,12 +607,19 @@ class Parser
 					
 				if not args.count 
 					.throwError('args directive needs at least one arg following.')
-					
-				comp = .typeProvider to? Compiler
-				# trace args
-				if comp
-					options = ArgParser.parseToOptions(args)
-					comp.augmentOptions(options)
+
+				isAvailable = false
+				if .parseCommandLineArgs
+					# trace args
+					parseCommandLineArgs = .parseCommandLineArgs
+					# errorMsg = parseCommandLineArgs(args, out isAvailable) -- error: COBRA INTERNAL ERROR / NullReferenceException / Object reference not set to an instance of an object.
+					if true
+						errorMsg = '' to ?
+						sharp'errorMsg = parseCommandLineArgs(args, out isAvailable)'
+						CobraCore.noOp(parseCommandLineArgs)
+					if isAvailable, if errorMsg, .throwError(errorMsg)
+				if not isAvailable
+					.throwError('Cannot set command line arguments from directive because no arguments parser is available.')
 			else
 				.throwError('Unknown compiler directive.')
 
