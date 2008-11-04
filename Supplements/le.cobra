@@ -11,6 +11,13 @@ Also, can convert to dos or unix line endings.
 This is a console/command-line utility.
 
 Run with -h for usage help.
+
+Notes
+
+ * The program looks at the extension of a file to determine if it is text or binary. While this is
+   less technically accurate than examining file contents and also requires the extension lists to
+   be occasionally augmented, it is very efficient--many files do not have to be opened.
+
 """
 
 use System.Text.RegularExpressions
@@ -24,99 +31,151 @@ enum Action
 
 class LineEndings
 
+	var _excludeNamesSpec   = '.svn _svn'
+	var _binExtensionsSpec  = 'dll doc exe pdb mdb gif png pyc pyo jpg jpeg snk tif tiff xls'
+	var _textExtensionsSpec = 'bat c cobra config cpp cs css dif diff h htm html kv m patch py sh sql svg text txt xhtml xml'
+
+	var _excludeNamesCache   = List<of String>()
+	var _binExtensionsCache  = List<of String>()
+	var _textExtensionsCache = List<of String>()
+
 	var _action as Action
 
 	var _crLfRegEx = Regex(r'\r\n')
 	var _notCrLfRegEx = Regex(r'[^\r]\n')
 
-	var _exts = Dictionary<of String, bool>()  # should be Set
+	var _exts = Set<of String>()
 
-	get excludeNames as List<of String>
-		return List<of String>('.svn _svn'.split)
+	get excludeNames as IList<of String>
+		if not _excludeNamesCache.count
+			_excludeNamesCache = List<of String>(_excludeNamesSpec.split)
+		return _excludeNamesCache
 
-	get binExtensions as List<of String>
-		return List<of String>('dll doc exe pdb mdb gif png pyc pyo jpg jpeg snk tif tiff xls'.split)
+	get binExtensions as IList<of String>
+		if not _binExtensionsCache.count
+			_binExtensionsCache = List<of String>(_binExtensionsSpec.split)
+		return _binExtensionsCache
 
-	get textExtensions as List<of String>
-		return List<of String>('bat c cobra config cpp cs css dif diff h htm html kv m patch py sh sql svg text txt xhtml xml'.split)
+	get textExtensions as IList<of String>
+		if not _textExtensionsCache.count
+			_textExtensionsCache = List<of String>(_textExtensionsSpec.split)
+		return _textExtensionsCache
 
 	def main is shared
-		LineEndings().run
+		LineEndings().run(CobraCore.commandLineArgs)
 
 	def printHelp
-		print 'This program always starts with the current directory and descends into subdirectories.'
-		print 'The program source contains names to ignore (.svn/_svn) and extension types (text vs. binary).'
+		print 'le <option> \[<paths>]'
 		print
-		print 'With -r or -report, information is printed and no actions are taken.'
-		print 'With -to-unix, files that are detected with DOS endings are rewritten.'
-		print 'With -to-dos, files that are detected with UNIX endings are rewritten.'
+		print '  -r or -report: information is printed and no actions are taken.'
+		print '  -to-unix: files that are detected with DOS endings are rewritten.'
+		print '  -to-dos: files that are detected with UNIX endings are rewritten.'
+		print
+		print 'You can specify one or more files or directories after the option.'
+		print 'Or if you specify none, then the currect directory is processed.'
+		print 'Directories are always processed recursively.'
+		print
+		print 'The program source contains names to ignore (.svn/_svn) and '
+		print 'extension types (text vs. binary).'
+		print
 
-	def run
+	def reset
+		_action = Action.None
+		_exts.clear
+		_excludeNamesCache.clear
+		_binExtensionsCache.clear
+		_textExtensionsCache.clear
+
+	def run(args as List<of String>)
+		require args.count > 0  # first arg is program name/path
 		print 'Line Endings'
 		print
-		_action = Action.None
-		args = CobraCore.commandLineArgs
+		.reset
 		if args.count == 1
 			.printHelp
 			return
-		else if args.count == 2
-			arg = args[1]
-			branch arg
-				on '-h' or '-help' or '--help'
-					.printHelp
-					return
-				on '-r' or '-report'
-					_action = Action.None
-				on '-to-unix'
-					_action = Action.ToUnix
-				on '-to-dos'
-					_action = Action.ToDos
-				else
-					print 'Unknown option. Try -h'
-					return
-		else
-			print 'Too many arguments. Try -h'
+		arg = args[1]
+		branch arg
+			on '-h' or '-help' or '--help'
+				.printHelp
+				return
+			on '-r' or '-report'
+				_action = Action.None
+			on '-to-unix'
+				_action = Action.ToUnix
+			on '-to-dos'
+				_action = Action.ToDos
+			else
+				print 'Unknown option. Try -h'
+				return
+		assert args.count >= 2
+		if args.count == 2
+			args.add('.')  # current directory
+
+		# CC:
+		# paths, badPaths = for arg in args[2:] splitby Directory.exists(arg) or File.exists(arg)
+		# kind of like:
+		# paths = for arg in args[2:] where Directory.exists(arg) or File.exists(arg)
+
+		paths = List<of String>()
+		for arg in args[2:]
+			if File.exists(arg)
+				paths.add(arg)
+			else if Directory.exists(arg)
+				paths.add(arg)
+			else
+				print 'Unknown path:', arg
+				return
+
 		if true
 			print 'Action: ' stop
 			branch _action
 				on Action.None,   print 'Report'
 				on Action.ToUnix, print 'Convert line endings to Unix'
 				on Action.ToDos,  print 'Convert line endings to DOS/Windows'
-		print
-		.scanDir('.')
-		if true
-			exts = List<of String>(_exts.keys)
-			exts.sort
-			print 'Extensions found: ' stop
-			for ext in exts
-				print '[ext] ' stop
 			print
 
+		.scanPaths(paths)
+		.summarizeExtensions
+
+	def scanPaths(paths as IList<of String>)
+		for path in paths
+			# print 'scanning:', path
+			if Directory.exists(path)
+				.scanDir(path)
+			else if File.exists(path)
+				.scanFile(path)
+			else
+				print 'warning: cannot find:', path
+	
 	def scanDir(path as String)
 		assert not path.endsWith('.svn')
-		excludeNames = .excludeNames
-		binExts = .binExtensions
-		textExts = .textExtensions
 		dirInfo = DirectoryInfo(path)
 		for fi in dirInfo.getFiles
-			if fi.name in excludeNames, continue
-			ext = (fi.extension ? '').toLower
-			if ext.startsWith('.'), ext = ext[1:]
-			_exts[ext] = true
-			if ext in binExts
-				print 'skipping bin file      : [fi]'
-			else if ext in textExts or ext == ''
-				# In practice, I find that files without extensions are text files.
-				# Usually captured text output from a command or a shell script.
-				type = .lineEndingsType(fi)
-				pad = if(type=='dos', ' ', '')
-				print 'found text file ([type]) [pad]: [fi]'
-				.act(type, fi)
-			else
-				print 'unknown file type      : "[ext]" for [fi]'
+			.scanFile(fi)
 		for di in dirInfo.getDirectories
-			if di.name in excludeNames, continue
+			if di.name in .excludeNames, continue
 			.scanDir(di.fullName)
+			
+	def scanFile(path as String)
+		.scanFile(FileInfo(path))
+
+	def scanFile(fi as FileInfo)
+		if fi.name in .excludeNames, return
+		ext = (fi.extension ? '').toLower
+		if ext.startsWith('.'), ext = ext[1:]
+		_exts.add(ext)
+		if ext in .binExtensions
+			print 'skipping bin file      : [fi]'
+		else if ext in .textExtensions or ext == ''
+			# In practice, I find that files without extensions are text files.
+			# Usually captured text output from a command or a shell script.
+			type = .lineEndingsType(fi)
+			pad = if(type=='dos', ' ', '')
+			print 'found text file ([type]) [pad]: [fi]'
+			.act(type, fi)
+		else
+			print 'unknown file type      : "[ext]" for [fi]'
 
 	def lineEndingsType(fi as FileInfo) as String
 		ensure result in ['unix', 'dos', 'both', '?']
@@ -166,3 +225,11 @@ class LineEndings
 				File.delete(fi.fullName)
 				File.move(newName, fi.fullName)
 				print '                         Converted'
+
+	def summarizeExtensions
+		exts = List<of String>(_exts)
+		exts.sort
+		print 'Extensions found: ' stop
+		for ext in exts
+			print '[ext] ' stop
+		print
