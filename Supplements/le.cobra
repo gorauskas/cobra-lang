@@ -1,0 +1,155 @@
+#!/usr/bin/env cobra
+
+use System.Text.RegularExpressions
+
+
+enum Action
+	None
+	ToUnix
+	ToDos
+
+
+class LineEndings
+
+	var _action as Action
+
+	var _crLfRegEx = Regex(r'\r\n')
+	var _notCrLfRegEx = Regex(r'[^\r]\n')
+
+	var _exts = Dictionary<of String, bool>()  # should be Set
+
+	get excludeNames as List<of String>
+		return List<of String>('.svn _svn'.split)
+
+	get binExtensions as List<of String>
+		return List<of String>('dll doc exe pdb mdb gif png pyc pyo jpg jpeg snk tif tiff xls'.split)
+
+	get textExtensions as List<of String>
+		return List<of String>('bat c cobra config cpp cs css dif diff h htm html kv m patch py sh sql svg text txt xhtml xml'.split)
+
+	def main is shared
+		LineEndings().run
+
+	def printHelp
+		print 'This program always starts with the current directory and descends into subdirectories.'
+		print 'The program source contains names to ignore (.svn/_svn) and extension types (text vs. binary).'
+		print
+		print 'With -r or -report, information is printed and no actions are taken.'
+		print 'With -to-unix, files that are detected with DOS endings are rewritten.'
+		print 'With -to-dos, files that are detected with UNIX endings are rewritten.'
+
+	def run
+		print 'Line Endings'
+		print
+		_action = Action.None
+		args = CobraCore.commandLineArgs
+		if args.count == 1
+			.printHelp
+			return
+		else if args.count == 2
+			arg = args[1]
+			branch arg
+				on '-h' or '-help' or '--help'
+					.printHelp
+					return
+				on '-r' or '-report'
+					_action = Action.None
+				on '-to-unix'
+					_action = Action.ToUnix
+				on '-to-dos'
+					_action = Action.ToDos
+				else
+					print 'Unknown option. Try -h'
+					return
+		else
+			print 'Too many arguments. Try -h'
+		if true
+			print 'Action: ' stop
+			branch _action
+				on Action.None,   print 'Report'
+				on Action.ToUnix, print 'Convert line endings to Unix'
+				on Action.ToDos,  print 'Convert line endings to DOS/Windows'
+		print
+		.scanDir('.')
+		if true
+			exts = List<of String>(_exts.keys)
+			exts.sort
+			print 'Extensions found: ' stop
+			for ext in exts
+				print '[ext] ' stop
+			print
+
+	def scanDir(path as String)
+		assert not path.endsWith('.svn')
+		excludeNames = .excludeNames
+		binExts = .binExtensions
+		textExts = .textExtensions
+		dirInfo = DirectoryInfo(path)
+		for fi in dirInfo.getFiles
+			if fi.name in excludeNames, continue
+			ext = (fi.extension ? '').toLower
+			if ext.startsWith('.'), ext = ext[1:]
+			_exts[ext] = true
+			if ext in binExts
+				print 'skipping bin file      : [fi]'
+			else if ext in textExts or ext == ''
+				# In practice, I find that files without extensions are text files.
+				# Usually captured text output from a command or a shell script.
+				type = .lineEndingsType(fi)
+				pad = if(type=='dos', ' ', '')
+				print 'found text file ([type]) [pad]: [fi]'
+				.act(type, fi)
+			else
+				print 'unknown file type      : "[ext]" for [fi]'
+		for di in dirInfo.getDirectories
+			if di.name in excludeNames, continue
+			.scanDir(di.fullName)
+
+	def lineEndingsType(fi as FileInfo) as String
+		ensure result in ['unix', 'dos', 'both', '?']
+		text = File.readAllText(fi.fullName)
+		match = _crLfRegEx.match(text)
+		if match.success
+			matchText = match.groups[0].value
+			assert matchText == '\r\n'
+			# print 'DOS ([CobraCore.toTechString(matchText)])'
+			isDos = true
+		else
+			isDos = false
+		match = _notCrLfRegEx.match(text)
+		if match.success
+			matchText = match.groups[0].value
+			assert matchText.length == 2
+			assert matchText[0] <> '\r'
+			assert matchText[1] == '\n'
+			# print 'Unix ([CobraCore.toTechString(matchText)])'
+			isUnix = true
+		else
+			isUnix = false
+		if isDos and isUnix, return 'both'
+		if isDos, return 'dos'
+		if isUnix, return 'unix'
+		return '?'
+
+	def act(type as String, fi as FileInfo)
+		text as String?
+		branch _action
+			on Action.None
+				pass
+			on Action.ToUnix
+				if type not in ['unix', '?']
+					text = File.readAllText(fi.fullName)
+					text = text.replace('\r', '')
+			on Action.ToDos
+				if type not in ['dos', '?']
+					text = File.readAllText(fi.fullName)
+					text = text.replace('\r', '').replace('\n', '\r\n')
+		if text
+			suffix = '-convert-line-endings-' + DateTime.now.toString('yyyy-MM-dd')
+			assert ' ' not in suffix
+			newName = fi.fullName + suffix
+			if true
+				File.writeAllText(newName, text)
+				File.delete(fi.fullName)
+				File.move(newName, fi.fullName)
+				print '                         Converted'
