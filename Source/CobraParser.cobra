@@ -2751,8 +2751,14 @@ CC: bug in Cobra parser where putting a doc string after a sig causes problems.
 		if .last.which <> 'ASSIGN'
 			.throwError('Comma-separated assignment targets must end with "=", or this is a general syntax error.')
 		assignTkn = .last to !
-		rhs = .expression
-		return MultiTargetAssignStatement(assignTkn, args, rhs)
+		rhs as Expr? = .expression
+		if .optional('COMMA')
+			rhsList = .commaSepExprs('EOL')
+			assert .last.which=='EOL'
+			.undo  # need EOL
+			rhsList.insert(0, rhs)
+			rhs = nil
+		return MultiTargetAssignStatement(assignTkn, args, rhs, rhsList)
 		
 	def callExpr as Expr
 		"""

@@ -1383,53 +1383,138 @@ class YieldReturnStmt
 			# TODO: can there just be "yield return"?
 			pass
 		curCodeMember.hasYieldStmt = true
-
-
+		
 class MultiTargetAssignStatement
 	is partial
 	inherits Stmt
 	"""
-	Handle atatement of form 
-		a, b[,...] = <List>
-	Gets turned into a sequence of assignExpr.
-		a = <List>[0]
-		b = <List>[1]
-
+	Handle statements of form 
+		a,[b,...] = <List-Generating-Expr>
+	or
+		a,[b,...] = <expr>,[<expr>,...]
+	Gets turned into various sequences of assignExpr.
+		tmp = <List-Generating-Expr>
+		a = tmp[0]
+		b = tmp[1]
+		...
+		a = <expr>
+		b = <expr>
+		...
 	TODO: support a, b[,...] = <Enumerable> 
 	TODO: support a, b[,...] = <KeyValuePair|DictionaryEntry>
-	TODO: support a, b[,...] = c,d[,...] form
 	"""
+
 	var _targets as List<of Expr> # Lvalues
-	var _source as Expr 		# evaluate to IList/Array/String or otherwise indexable by int
-	var _block as BlockStmt?	# the rewritten/expanded code
+	var _source as Expr?          # evaluate to IList/Array/String or otherwise indexable by int
+	var _rvals as List<of Expr>?  # list of source expressions
+	var _block as BlockStmt?      # the rewritten/expanded code
 	
-	def init(opToken as IToken, args as List<of Expr>, rhs as Expr)
+	def init(opToken as IToken, args as List<of Expr>, rhs as Expr?, rhsList as List<of Expr>?)
 		base.init(opToken)
 		assert opToken.which == 'ASSIGN'
+		assert (rhs or rhsList) and not (rhs and rhsList) # either but not both
 		_targets = args
 		_source = rhs
+		_rvals = rhsList
 		
 	def addSubFields
 		base.addSubFields
 		.addField('targets', _targets)
 		.addField('source', _source)
+		.addField('rvals', _rvals)
 		.addField('block', _block)
 
 	get targets from var
 
 	get source from var
 
+	get rvals from var
+
 	get block from var
 
-	def _writeBlock
+	def _bindImp
+		assert _source or _rvals
+		base._bindImp
+		for target in _targets
+			if not _isLValue(target)
+				.throwError('"[target.toCobraSource]" is not an assignable lvalue (identifier, var, property or indexer).')
+		if _rvals
+			if _targets.count <> _rvals.count
+				.throwError('The number of targets ([_targets.count]) must be the same as the number of expressions ([_rvals.count]) assigned to them')
+			#If rvals are all safe to assign (no rerefs) we can do the simplest thing and turn 
+			# them into a sequence of individual assignments. 	i.e a,b = 1,2  or a,b = c,d   cases
+			# If not, we need to turn the rvals list into a literal list, pinning the current values,
+			# and do the expansion on the list as a single item  i.e  a,b = b,a -> a,b = [b,a] 
+			if _isSafeToSimpleAssign()
+				_writeBlockForList
+			else
+				_source = ListLit(.lastToken.copy('LBRACKET', r'['), _rvals)
+		if _source
+			#TODO: chk _source supports an int indexer  somehow...
+			#if not .can_be_indexed_by_int_indexer(_source) 
+			#	.throwError(r"rhs expression [_source.toCobraSource] must support being indexed by an integer offset (e.g rhs[0]")
+			_writeBlockForItem
+				
+		_block.bindImp
+		
+	def _isLValue(id as Expr) as bool
+		# TODO: push to Expr.isLValue. probably require .didBindImp
+		# TODO: for DotExpr and IndexExpr check if there is a setter
+		# TODO: for MemberExpr check that its a setter property or visible var (not a method)
+		return id inherits IdentifierExpr or id inherits DotExpr or id inherits IndexExpr
+		
+	def _isSafeToSimpleAssign as bool
+		# conservatively we just presume its safe if the rvals list is all Literals
+		if all for e in _rvals get e inherits Literal
+			return true 
+		# or if identifiers in rvals are not also in target
+		if _disjointIdentifierLists() 
+			return true
+		# There are possibly others but above expected to be most common usage	
+		# TODO: expand this for more wide ranging simple assignment e.g MemberExprs non matching
+		return false
+
+	def _disjointIdentifierLists as bool
+		# Specifically all of targets list are IdentifierExprs and rvals are Literals, DotExprs, 
+		# MemberExprs or Indentifiers and any Identifiers are not also in target list
+		tnames = Set<of String>()
+		for t in _targets
+			if t inherits IdentifierExpr or t inherits AsExpr
+				tnames.add((t to NameExpr).name)	
+			else
+				return false
+		if all for e in _rvals get e inherits Literal or e inherits DotExpr or e inherits MemberExpr or _
+				(e inherits IdentifierExpr and (e to IdentifierExpr).name not in tnames) 
+			return true	
+		return false
+		
+	def _writeBlockForList
 		"""
-		Construct expanded assignment block for a multi target assignment.
+		Construct expanded assignment block for a multi target assignment from a list of expressions.
+		Assignment block contains
+			id0 = rvals[0] # id0 is contents of targets[0]
+			id1 = rvals[1] # id1 is contents of targets[1]
+				(... repeated for number of items in targets specifying ids (lvalues))
+		"""
+		assert _targets.count == _rvals.count
+		stmts = List<of Stmt>()
+		assignTkn = .lastToken  # the one we stored in init
+		count = 0
+		for id in _targets
+			expr = _rvals[count]
+			stmts.add(AssignExpr(assignTkn, assignTkn.which, id, expr))
+			count += 1
+		_block = BlockStmt(.lastToken.copy('INDENT', ''), stmts)	
+
+	def _writeBlockForItem
+		"""
+		Construct expanded assignment block for a multi target assignment from a single source expression.
 		if fewer targets than exprs in _source - extra exprs (silently) ignored
 		TODO: give error when rvalues are too many
 		if more targets than exprs in _source 	- will emit runtime exception
 			above differ fm python - both give errors
 		Unchecked assumptions; 
-			source is int indexable (x[n]) - c# compiler pick up
+			source is int indexable (x[n]) - c# compiler pick up currently
 		Assignment block contains
 			lh_mt_serno = <source>
 			id0 = lh_mt_serno[0] # id0 is contents of targets[0]
@@ -1459,18 +1544,3 @@ class MultiTargetAssignStatement
 			stmts.add(AssignExpr(assignTkn, assignTkn.which, id, idxExpr))
 			count += 1
 		_block = BlockStmt(ttoken.copy('INDENT', ''), stmts)	
-
-	def _isLValue(id as Expr) as bool
-		# TODO: push to Expr.isLValue. probably require .didBindImp
-		# TODO: for DotExpr and IndexExpr check if there is a setter
-		# TODO: for MemberExpr check that its a setter property or visible var (not a method)
-		return id inherits IdentifierExpr or id inherits DotExpr or id inherits IndexExpr
-
-	def _bindImp
-		base._bindImp
-		for target in _targets
-			if not _isLValue(target)
-				.throwError('"[target.toCobraSource]" is not an assignable lvalue (identifier, var, property or indexer).')
-		# TODO: check _source supports an int indexer ??
-		_writeBlock
-		_block.bindImp
