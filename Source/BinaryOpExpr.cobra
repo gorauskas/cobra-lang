@@ -49,7 +49,7 @@ class BinaryOpExpr
 				on 'ASSIGN'
 					return AssignExpr(opToken, op, left, right)
 				on 'DOT'
-					return DotExpr(opToken, op, left, right, false)
+					return DotExpr(opToken, op, left, right)
 				on 'INHERITS' or 'IMPLEMENTS'
 					return InheritsExpr(opToken, op, left, right)
 				on 'IN' or 'NOTIN'
@@ -563,37 +563,26 @@ class DotExpr
 	is partial
 	inherits BinaryOpExpr
 	implements IPotentialTypeExpr
+	"""
+	When creating a DotExpr, set .isImplicit to true if the original expression did not actually
+	contain a dot (.), but only implied it. For example: `_foo()`
+	"""
 
 	var _dotRightExpr as IDotRightExpr
-	var _isImplicit as bool
 
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		require
 			op == 'DOT'
 			right inherits IDotRightExpr 
 		body
-			.init(opToken, op, left, right, false)
-
-	def init(opToken as IToken, op as String, left as Expr, right as Expr, isImplicit as bool)
-		require
-			op == 'DOT'
-			right inherits IDotRightExpr 
-		body
 			base.init(opToken, op, left, right)
 			_dotRightExpr = right to IDotRightExpr
-			_isImplicit = isImplicit
 
 	get dotRight as IDotRightExpr
 		"""
 		Returns .right but with the more narrow type of IDotRightExpr.
 		"""
 		return _dotRightExpr
-
-	pro isImplicit from var
-		"""
-		True if the original expression did not actually contain a dot (.), but only implied it.
-		For example: `_foo()`
-		"""
 
 	def _bindImp
 		base._bindImp
@@ -698,7 +687,7 @@ class InExpr
 		if not .hasError and not _right.type.isDynamic
 			# try to use right.contains(left)
 			# this is more direct and offers speed up on some classes like Set
-			contains = DotExpr(.token, 'DOT', _right, CallExpr(.token, 'contains', List<of Expr>([_left]), true))
+			contains = DotExpr(.token, 'DOT', _right, CallExpr(.token, 'contains', List<of Expr>([_left]), true, isImplicit=true))
 			try
 				contains.bindImp
 			catch SourceException

@@ -35,36 +35,31 @@ class AbstractLocalVar
 
 	var _type as IType?
 	var _typeNode as ITypeProxy?
-	var _isImplicit as bool
 	var _isTracked as bool
 	var _ifInheritsStack = Stack<of IType>()
 	var _isAssignedTo as bool
 	var _sharpName as String
 	var _useSharpNameStack = Stack<of String>()  # for if-inherits
 
-	def init(token as IToken, type as IType, isImplicit as bool)
+	def init(token as IToken, type as IType)
 		base.init(token, token.text)
 		_type = type
 		assert not _type inherits NameSpace  # TODO: can remove with NameSpace is no longer an IType
-		_init(isImplicit)
+		_init
 
-	def init(token as IToken, typeNode as ITypeProxy, isImplicit as bool)
+	def init(token as IToken, typeNode as ITypeProxy)
 		base.init(token, token.text)
 		_typeNode = typeNode
-		_init(isImplicit)
+		_init
 
 	def init(name as String, typeNode as ITypeProxy)
-		.init(name, typeNode, false)
-
-	def init(name as String, typeNode as ITypeProxy, isImplicit as bool)
 		base.init(name)
 		_typeNode = typeNode
-		_init(isImplicit)
+		_init
 
-	def _init(isImplicit as bool)
-		_isImplicit = isImplicit
+	def _init
 		_isTracked = false
-		if _isImplicit
+		if .isImplicit
 			sharpPrefix = ''
 		else if Utils.isSharpKeyWord(.name)
 			sharpPrefix = '@'  # C# supports @ as a valid first character for identifiers to escape those that are keywords
@@ -79,16 +74,12 @@ class AbstractLocalVar
 
 	pro isAssignedTo from var
 
-	get isImplicit from var
-
 	pro isTracked from var
 
 	get useSharpNameStack from var
 
 	def addMinFields
 		base.addMinFields
-		if _isImplicit
-			.addField('isImplicit', _isImplicit)
 		.addField('isTracked', _isTracked)
 
 	def addRefFields
@@ -175,22 +166,13 @@ class Param
 	var _kind as KindEnum
 
 	def init(token as IToken, type as IType)
-		.init(token, type, false)
+		base.init(token, type)
 
 	def init(token as IToken, typeNode as ITypeProxy)
-		.init(token, typeNode, false)
-
-	def init(token as IToken, type as IType, isImplicit as bool)
-		base.init(token, type, isImplicit)
-
-	def init(token as IToken, typeNode as ITypeProxy, isImplicit as bool)
-		base.init(token, typeNode, isImplicit)
+		base.init(token, typeNode)
 
 	def init(name as String, typeNode as ITypeProxy)
 		base.init(name, typeNode)
-
-	def init(name as String, typeNode as ITypeProxy, isImplicit as bool)
-		base.init(name, typeNode, isImplicit)
 
 	get englishName as String is override
 		return 'parameter'
@@ -226,16 +208,10 @@ class LocalVar
 	inherits AbstractLocalVar
 
 	def init(token as IToken, type as IType)
-		.init(token, type, false)
+		base.init(token, type)
 
 	def init(token as IToken, typeNode as ITypeProxy)
-		.init(token, typeNode, false)
-
-	def init(token as IToken, type as IType, isImplicit as bool)
-		base.init(token, type as IType, isImplicit)
-
-	def init(token as IToken, typeNode as ITypeProxy, isImplicit as bool)
-		base.init(token, typeNode, isImplicit)
+		base.init(token, typeNode)
 
 	def addMinFields
 		base.addMinFields
@@ -253,7 +229,8 @@ class ResultVar
 	"""
 
 	def init(token as IToken, codePart as AbstractMethod)
-		base.init(_makeToken(token, codePart), codePart.resultType, true)
+		base.init(_makeToken(token, codePart), codePart.resultType)
+		.isImplicit = true
 		_sharpName = codePart.sharpResultVarName
 
 	def _makeToken(token as IToken, codePart as AbstractMethod) as IToken is shared
