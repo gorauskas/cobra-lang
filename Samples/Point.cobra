@@ -1,0 +1,93 @@
+"""
+Point.cobra
+
+This sample library class demonstrates numerous Cobra features including
+unit tests, contracts, properties, overrides, etc. in fairly small,
+easy-to-understand classes.
+
+You can run the test cases for this (and also test compile) like so:
+
+cobra -test Point.cobra
+
+Or build this into a Point.dll libary like so:
+
+cobra -t:lib -c Point.cobra
+
+Upon final delivery, you may wish to turn on optimizations while removing
+asserts, contracts and unit tests. You can do these individually or
+all in one fell swoop with the -turbo option:
+
+cobra -t:lib -turbo -c Point.cobra
+
+See cobra -h for more information.
+"""
+
+class Point
+	"""
+	An immutable point in 2D space with integer coordinates.
+	
+	Because points are immutable they can be put in sets and used as keys in dictionaries.
+	"""
+
+	test
+
+		p1 = Point(1, 2)
+		assert p1.x == 1 and p1.y == 2
+		assert p1.isPositive and not p1.isZero
+		assert p1.toString == 'Point(1, 2)'
+
+		p2 = p1.movedBy(3, 4)
+		assert p2.x == 4 and p2.y == 6
+		assert p1 <> p2
+		
+		p3 = Point(1, 2)
+		assert p1 == p3
+
+		assert Point.zero.isZero
+
+		points = {p1, p2, p3}  # a Set
+		# but p1 and p3 are not unique so:
+		assert points.count == 2
+		assert p1 in points and p2 in points and p3 in points
+
+	shared
+
+		var _zero = Point(0, 0)
+	
+		get zero as Point
+			"""
+			Returns the zero point, (0, 0).
+			This is cached and slightly faster than creating a new point every time.
+			"""
+			return _zero
+	
+	def init(x as int, y as int)
+		ensure .x == x and .y == y
+		_x, _y = x, y
+	
+	get x from var as int
+	
+	get y from var as int
+	
+	get isPositive as bool
+		return .x > 0 and .y > 0
+
+	get isZero as bool
+		return .x == 0 and .y == 0
+
+	def movedBy(dx as int, dy as int) as Point
+		ensure result.x == .x+dx and result.y == .y+dy
+		return Point(_x+dx, _y+dy)
+
+	def toString as String is override
+		return '[.getType.name]([.x], [.y])'
+
+	def equals(other as Object?) as bool is override
+		if this is other, return true
+		if other inherits Point
+			return .x == other.x and .y == other.y
+		else
+			return false
+
+	def getHashCode as int is override
+		return .x ^ .y
