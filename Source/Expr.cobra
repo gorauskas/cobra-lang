@@ -678,7 +678,6 @@ class CallExpr
 					.throwError('Argument [i+1] of method "[_name]" expects a non-nilable type ([param.type.name]), but the call is supplying a nilable type ([arg.type.name]).')
 				else
 					.throwError('Argument [i+1] of method "[_name]" expects type [param.type.name], but the call is supplying type [arg.type.name].')
-	# end of _bindImp helpers
 		
 	def toCobraSource as String is override
 		sb = StringBuilder()
@@ -1509,7 +1508,13 @@ class PostCallExpr
 					_hasKeywordArg = true
 					if not arg.left inherits IdentifierExpr
 						.recordError('General purpose assignments are not allowed as arguments. Assignment syntax can only be used for keyword arguments.')
-					# TODO: check property name
+					if not expr.receiverType.isDynamicOrPassThrough
+						propertyName = (arg.left to IdentifierExpr).name
+						if expr.memberForName(propertyName) is nil
+							suggs = .expr.suggestionsForBadMemberName(propertyName)
+							isBoxAccess = expr inherits IdentifierExpr and (expr to IdentifierExpr).definition inherits Box  # like "Console.writeLine" where the receiver is a literal class or struct reference
+							whoseTypeIs = if(isBoxAccess, '', ' whose type is "[expr.receiverType.name]"')
+							.recordError('Cannot find a definition for "[propertyName]" in "[expr.toCobraSource]"[whoseTypeIs].[_suggestionsMessage(suggs)]')
 					arg.right.bindImp  # 'x=y' has special treatment in arguments
 				else
 					if _hasKeywordArg
