@@ -199,6 +199,29 @@ class Expr
 			sugg = ''
 		return sugg
 
+	def whoseTypeIsMessage as String
+		"""
+		Returns a suffix for member-not-found error messages.
+		Returns ' whose type is "[.receiverType.name]"'
+		Overridden by IdentifierExpr to return '' when accessing types.
+		"""
+		return ' whose type is "[.receiverType.name]"'
+	
+	def throwCannotFindMemberError(receiverExpr as Expr, memberName as String)
+		__throwOrRecordCannotFindMemberError(receiverExpr, memberName, 1)
+
+	def recordCannotFindMemberError(receiverExpr as Expr, memberName as String)
+		__throwOrRecordCannotFindMemberError(receiverExpr, memberName, 2)
+
+	def __throwOrRecordCannotFindMemberError(receiverExpr as Expr, memberName as String, throwOrRecord as int) is nonvirtual
+		require throwOrRecord in [1, 2]
+		suggs = _suggestionsMessage(receiverExpr.suggestionsForBadMemberName(memberName))
+		errorMsg = 'Cannot find a definition for "[memberName]" in "[receiverExpr.toCobraSource]"[receiverExpr.whoseTypeIsMessage].[suggs]'
+		branch throwOrRecord
+			on 1, .throwError(errorMsg)
+			on 2, .recordError(errorMsg)
+			else, throw FallThroughException(throwOrRecord)
+
 
 interface IPotentialTypeExpr
 	inherits IExpr
@@ -505,11 +528,7 @@ class CallExpr
 				else
 					type = .compiler.passThroughType
 			else
-				left = dotNode.left
-				suggs = left.suggestionsForBadMemberName(_name)
-				isBoxAccess = left inherits IdentifierExpr and (left to IdentifierExpr).definition inherits Box  # like "Console.writeLine" where the receiver is a literal class or struct reference
-				whoseTypeIs = if(isBoxAccess, '', ' whose type is "[left.receiverType.name]"')
-				.throwError('Cannot find a definition for "[_name]" in "[left.toCobraSource]"[whoseTypeIs].[_suggestionsMessage(suggs)]')
+				.throwCannotFindMemberError(dotNode.left, _name)
 		else
 			if not possibleDefinition.isCallable
 				.throwError('Cannot call "[_name]" because it is a "[possibleDefinition.englishName]".')
@@ -956,6 +975,13 @@ class IdentifierExpr
 	def toCobraSource as String is override
 		return _name
 
+	def whoseTypeIsMessage as String
+		"""
+		Customized to return '' for boxes.
+		"""
+		# TODO: should cover other types like `int`. maybe that's a TypeExpr?
+		return if(.definition inherits Box, '', base.whoseTypeIsMessage)
+
 
 class IfExpr
 	is partial
@@ -1281,10 +1307,7 @@ class MemberExpr
 				if .binarySuperNode.left.receiverType.isDynamic
 					_type = .compiler.nilableDynamicType
 					return
-				suggs = .binarySuperNode.left.suggestionsForBadMemberName(_name)
-				isBoxAccess = left inherits IdentifierExpr and (left to IdentifierExpr).definition inherits Box  # like "Console.writeLine" where the receiver is a literal class or struct reference
-				whoseTypeIs = if(isBoxAccess, '', ' whose type is "[left.receiverType.name]"')
-				.throwError('Cannot find a definition for "[_name]" in "[left.toCobraSource]"[whoseTypeIs].[_suggestionsMessage(suggs)]')
+				.throwCannotFindMemberError(left, _name)
 			assert _definition
 			if _definition inherits IType
 				effectiveType as IType = .compiler.typeType  # namespace, class, interface
@@ -1310,13 +1333,13 @@ class MemberExpr
 			.binarySuperNode.receiverType = receiverType
 			
 			if _definition inherits BoxMember
-				_bindImpBoxMember(_definition, isBoxAccess, left)			# resolve overloads
+				_bindImpBoxMember(_definition, left)  # resolve overloads
 			else
 				# TODO: type access like enum, class, delegate
 				pass
 		assert _type
 
-	def _bindImpBoxMember(defn as BoxMember, isBoxAccess as bool, left as Expr)
+	def _bindImpBoxMember(defn as BoxMember, left as Expr)
 		# resolve overloads
 		if defn inherits MemberOverload
 			for member in defn.members
@@ -1339,12 +1362,10 @@ class MemberExpr
 			pass
 		else if defn.isProtected
 			if not .compiler.curBox.isDescendantOf(defn.parentBox)
-				whoseTypeIs = if(isBoxAccess, '', ' whose type is "[left.receiverType.name]"')
-				.throwError('Cannot access protected "[_name]" in "[left.toCobraSource]"[whoseTypeIs].')
+				.throwError('Cannot access protected "[_name]" in "[left.toCobraSource]"[left.whoseTypeIsMessage].')
 		else if defn.isPrivate
 			if not .compiler.curBox is defn.parentBox
-				whoseTypeIs = if(isBoxAccess, '', ' whose type is "[left.receiverType.name]"')
-				.throwError('Cannot access private "[_name]" in "[left.toCobraSource]"[whoseTypeIs].')
+				.throwError('Cannot access private "[_name]" in "[left.toCobraSource]"[left.whoseTypeIsMessage].')
 		else if defn.isInternal
 			# TODO
 			pass
@@ -1508,13 +1529,10 @@ class PostCallExpr
 					_hasKeywordArg = true
 					if not arg.left inherits IdentifierExpr
 						.recordError('General purpose assignments are not allowed as arguments. Assignment syntax can only be used for keyword arguments.')
-					if not expr.receiverType.isDynamicOrPassThrough
+					else if not expr.receiverType.isDynamicOrPassThrough
 						propertyName = (arg.left to IdentifierExpr).name
 						if expr.memberForName(propertyName) is nil
-							suggs = .expr.suggestionsForBadMemberName(propertyName)
-							isBoxAccess = expr inherits IdentifierExpr and (expr to IdentifierExpr).definition inherits Box  # like "Console.writeLine" where the receiver is a literal class or struct reference
-							whoseTypeIs = if(isBoxAccess, '', ' whose type is "[expr.receiverType.name]"')
-							.recordError('Cannot find a definition for "[propertyName]" in "[expr.toCobraSource]"[whoseTypeIs].[_suggestionsMessage(suggs)]')
+							.recordCannotFindMemberError(expr, propertyName)
 					arg.right.bindImp  # 'x=y' has special treatment in arguments
 				else
 					if _hasKeywordArg
