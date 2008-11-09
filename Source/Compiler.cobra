@@ -284,6 +284,7 @@ class Compiler
 		.bindInt
 		if stopAfterBindInt, return  # in support of the -doc option
 		.bindImp
+		.writeSourceCodeCorrections
 		.writeSharp
 		if writeTestInvocation
 			.writeSharpTestInvocation
@@ -1098,6 +1099,51 @@ class Compiler
 
 
 	##
+	## Source Code Corrections
+	##
+
+	var _sourceCorrections = Dictionary<of String, Dictionary<of int, List<of Replacement>>>()
+		"""
+		The first key of type String is filename.
+		The second key of type int is line number.
+		"""
+
+	def correctSource(token as IToken, replace as String)
+		if not _sourceCorrections.containsKey(token.fileName)
+			_sourceCorrections[token.fileName] = Dictionary<of int, List<of Replacement>>()
+		file = _sourceCorrections[token.fileName]
+		if not file.containsKey(token.lineNum)
+			file[token.lineNum] = List<of Replacement>()
+		file[token.lineNum].add(Replacement(token.colNum, token.text, replace))
+
+	def writeSourceCodeCorrections
+		# TODO: this doesn't properly handle when the replacements are a different length than the
+		# original next, but then this isn't needed right now since the only type of correction
+		# being done is case correction
+		v = .verbosity
+		for fileName, lineToReplacements in _sourceCorrections
+			if v, print 'Correcting source:', fileName
+			lineNums = List<of int>(lineToReplacements.keys)
+			lineNums.sort
+			lines = File.readAllLines(fileName)
+			for lineNum in lineNums
+				for rep in lineToReplacements[lineNum]
+					assert rep.oldText.length == rep.newText.length  # see TODO above
+					if v >= 2, print 'Correct: Line [lineNum], Column [rep.colNum], Old "[rep.oldText]", New "[rep.newText]"'
+					i = lineNum - 1
+					line = lines[i]
+					# print line
+					oldLen = line.length
+					col = rep.colNum - 1
+					lines[i] = line[:col] + rep.newText + line[col+rep.oldText.length:]
+					# print lines[i]
+					assert lines[i].length == oldLen
+			try
+				File.writeAllLines(fileName, lines)
+			catch exc as Exception
+				.warning(CobraWarning(fileName, nil, 'Cannot write source code corrections due to: [exc.message] ([exc.getType.name]).'))
+	
+	##
 	## Important system library types
 	##
 
@@ -1526,6 +1572,20 @@ class SharpCompilationMessage
 
 	get lineNum as int is override
 		return _lineNum to !
+
+
+class Replacement
+
+	def init(colNum as int, oldText as String, newText as String)
+		_colNum = colNum
+		_oldText = oldText
+		_newText = newText
+	
+	get colNum from var as int
+	
+	get oldText from var as String
+	
+	get newText from var as String
 
 
 class TestCompiler

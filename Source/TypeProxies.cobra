@@ -484,17 +484,27 @@ class TypeIdentifier
 
 	def _resolveType as IType is override
 		# don't need to check "basic types" like int, bool, etc. here. the parser does those.
-		if Utils.isCapped(_name)
-			symbol = .compiler.symbolForName(.name, true, false)  # nested enum and class types are capped and can be members of the current class
+		name = .name
+		if Utils.isCapped(name)
+			symbol = .compiler.symbolForName(name, true, false)  # nested enum and class types are capped and can be members of the current class
 		else
 			symbol = nil
 		if symbol is nil
-			sugg = ''
-			if not Utils.isCapped(_name)
-				sugg = _name.capped
-				other = .compiler.symbolForName(sugg, true, false)
-				sugg = if(other, ' Try "[sugg]".', '')
-			.throwError('Cannot find type for "[_name]".[sugg]')
+			correctCase = .compiler.options.boolValue('correct-case')
+			if correctCase
+				if not Utils.isCapped(name)
+					# not very sophisticated, but catches 'string', 'object', etc.
+					name = name.capped
+					symbol = .compiler.symbolForName(name, true, false)
+					if symbol is not nil
+						.compiler.correctSource(.token, name)
+			if symbol is nil
+				sugg = ''
+				if not Utils.isCapped(_name)
+					sugg = name.capped
+					other = .compiler.symbolForName(sugg, true, false)
+					sugg = if(other, ' Try "[sugg]". Also, consider the -correct-case option (see cobra -h for details).', '')
+				.throwError('Cannot find type for "[_name]".[sugg]')
 		if symbol inherits ITypeProxy
 			return symbol.realType
 		else
