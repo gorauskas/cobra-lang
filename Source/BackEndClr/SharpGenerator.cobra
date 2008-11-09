@@ -15,6 +15,14 @@ class Compiler
 	var _fullExeFileName as String = ''
 	var _moduleFileName_to_sharpToCobraLineNum as Dictionary<of String, Dictionary<of int, int>?>?
 
+	def generateCode(writeTestInvocation as bool)
+		.writeSharp
+		if writeTestInvocation
+			.writeSharpTestInvocation
+			.compileSharp('/main:RunTests')
+		else
+			.compileSharp
+
 	def writeSharp
 		Node.setCompiler(this)
 		try
@@ -347,7 +355,6 @@ class Compiler
 			print '   lineNum = [lineNum]'
 			print '   sharpToCobraLineNum = [CobraCore.toTechString(map)]'
 			return map[lineNum]
-
 
 
 ##
@@ -1240,12 +1247,12 @@ class Extension
 	get sharpKeyWord as String is override
 		return 'class'  # because the extension is always housed in a C# class
 
-	var _sharpName as String?
+	var _backEndName as String?
 	
 	get sharpName as String is override
-		if not _sharpName
-			_sharpName = if(.nativeType, .nativeType.name, 'Extend_[.extendedBox.sharpNameComponent]_[Utils.toIdentifier(Path.getFileNameWithoutExtension(.compiler.curModule.fileName) to !)]')
-		return _sharpName to !
+		if not _backEndName
+			_backEndName = if(.nativeType, .nativeType.name, 'Extend_[.extendedBox.sharpNameComponent]_[Utils.toIdentifier(Path.getFileNameWithoutExtension(.compiler.curModule.fileName) to !)]')
+		return _backEndName to !
 
 	get sharpThis as String is override
 		return '_lh_this'
@@ -1270,7 +1277,7 @@ class Extension
 interface IVar
 	is partial
 
-	get useSharpNameStack as Stack<of String>
+	get useBackEndNameStack as Stack<of String>
 
 	get sharpAssignmentNames as List<of String>?
 		"""
@@ -1283,19 +1290,19 @@ class AbstractLocalVar
 	is partial
 
 	get sharpAssignmentNames as List<of String>
-		return [_sharpName]
-		# return List<of String>(_useSharpNameStack)
+		return [_backEndName]
+		# return List<of String>(_useBackEndNameStack)
 
 	get sharpName as String is override
 		if _ifInheritsStack.count
 			if _type.isReference
-				return '(([_ifInheritsStack.peek.sharpRef])[_sharpName])'
+				return '(([_ifInheritsStack.peek.sharpRef])[_backEndName])'
 			else
 				# could it be a subclass? no. value types are structs and cannot be subclassed so this must be `if i` where `i` is nullable struct
 				return '[.name].Value'  # Nullable<of T>.Value
 		else
-			return _sharpName
-		# return _useSharpNameStack.peek to !
+			return _backEndName
+		# return _useBackEndNameStack.peek to !
 
 
 class Param
@@ -1330,7 +1337,7 @@ class ResultVar
 	is partial
 
 	get sharpName as String is override
-		return _sharpName
+		return _backEndName
 
 
 ##
@@ -1432,26 +1439,26 @@ class BoxEvent
 class BoxVar
 	is partial
 
-	var _useSharpNameStack as Stack<of String>
+	var _useBackEndNameStack as Stack<of String>
 
-	get useSharpNameStack from var
+	get useBackEndNameStack from var
 
 	get sharpAssignmentNames as List<of String>
-		return [_sharpName]
-		# return List<of String>(_useSharpNameStack)
+		return [_backEndName]
+		# return List<of String>(_useBackEndNameStack)
 
 	get sharpName as String is override
 		if _ifInheritsStack.count
 			if _type.isReference
-				return '(([_ifInheritsStack.peek.sharpRef])[_sharpName])'
+				return '(([_ifInheritsStack.peek.sharpRef])[_backEndName])'
 			else
 				# could it be a subclass? no. value types are structs and cannot be subclassed so this must be `if i` where `i` is nullable struct
-				return '[_sharpName].Value'  # Nullable<of T>.Value
+				return '[_backEndName].Value'  # Nullable<of T>.Value
 		else
 			return .name
-		# return _useSharpNameStack.peek to !
+		# return _useBackEndNameStack.peek to !
 
-	get _sharpName as String
+	get _backEndName as String
 		name = .name
 		if not name.startsWith('_')
 			name = name.capped
@@ -1462,7 +1469,7 @@ class BoxVar
 		.writeSharpAttribs(sw)
 		.writeSharpIsNames(sw)
 		sw.write(_type.sharpRef)
-		sw.write(' [_sharpName]')
+		sw.write(' [_backEndName]')
 		if _initExpr
 			sw.write(' = ')
 			_initExpr.writeSharpDef(sw)
@@ -1472,7 +1479,7 @@ class BoxVar
 class AbstractMethod
 	is partial
 
-	var _sharpResultVarName = ''
+	var _backEndResultVarName = ''
 
 	get sharpGenericParams as String
 		"""
@@ -1481,7 +1488,7 @@ class AbstractMethod
 		ensure ' ' not in result
 		return ''
 
-	get sharpResultVarName from var
+	get backEndResultVarName from var
 
 	def writeSharpDef(sw as SharpWriter)
 		base.writeSharpDef(sw)
@@ -1519,8 +1526,8 @@ class AbstractMethod
 							# but it should be something less hackish, like an attribute
 							sharpInit = 'DateTime.Today'
 						sw.write('[param.sharpName] = [sharpInit];')
-				if _sharpResultVarName.length  # set in _bindImp
-					sw.write('[_returnType.sharpRef] [_sharpResultVarName]')
+				if _backEndResultVarName.length  # set in _bindImp
+					sw.write('[_returnType.sharpRef] [_backEndResultVarName]')
 					if _returnType.sharpInit.length
 						sw.write('= [_returnType.sharpInit]')
 					sw.write(';\n')
@@ -1605,8 +1612,8 @@ class AbstractMethod
 			oldExpr.writeSharpAssignment(sw)
 
 	def writeSharpEnsureArgs(sw as SharpWriter)
-		if .sharpResultVarName.length
-			sw.write('[.sharpResultVarName]')
+		if .backEndResultVarName.length
+			sw.write('[.backEndResultVarName]')
 			sep = [',']
 		else
 			sep = ['']
@@ -1625,8 +1632,8 @@ class AbstractMethod
 			sep[0] = ', '
 
 	def writeSharpEnsureParamDecls(sw as SharpWriter)
-		if .sharpResultVarName.length
-			sw.write('[.resultType.sharpRef] [.sharpResultVarName]')
+		if .backEndResultVarName.length
+			sw.write('[.resultType.sharpRef] [.backEndResultVarName]')
 			sep = [',']
 		else
 			sep = ['']
@@ -2298,13 +2305,13 @@ class BlockStmt
 			#typeName = _ifInheritsType.sharpRef
 			#newName = '_lh_' + _ifInheritsVar.name + '_' + _ifInheritsType.sharpNameComponent
 			#sw.write('[typeName] [newName] = ([typeName])[_ifInheritsVar.sharpName];\n')
-			#_ifInheritsVar.useSharpNameStack.push(newName)
+			#_ifInheritsVar.useBackEndNameStack.push(newName)
 			ifInheritsCount = _ifInheritsVar.ifInheritsStack.count  # AssignExpr could pop our _ifInheritsType. We detect that with the count.
 			_ifInheritsVar.ifInheritsStack.push(_ifInheritsType)
 		for stmt in _stmts
 			stmt.writeSharpStmt(sw)
 		if _ifInheritsVar and _ifInheritsVar.ifInheritsStack.count > ifInheritsCount
-			#_ifInheritsVar.useSharpNameStack.pop
+			#_ifInheritsVar.useBackEndNameStack.pop
 			_ifInheritsVar.ifInheritsStack.pop
 		if close
 			sw.dedent
@@ -2643,9 +2650,9 @@ class RaiseStmt
 class ReturnStmt
 	is partial
 
-	var _sharpResultVarName as String?
+	var _backEndResultVarName as String?
 
-	pro sharpResultVarName from var
+	pro backEndResultVarName from var
 
 	def writeSharpDef(sw as SharpWriter)
 		base.writeSharpDef(sw)
@@ -2654,8 +2661,8 @@ class ReturnStmt
 		if willEnsure
 			sw.write('_lh_canEnsure = true;\n')
 		if _expr
-			if willEnsure and _sharpResultVarName and _sharpResultVarName.length
-				sw.write('return [_sharpResultVarName]=')
+			if willEnsure and _backEndResultVarName and _backEndResultVarName.length
+				sw.write('return [_backEndResultVarName]=')
 				_expr.writeSharpDefInContext(sw)
 				sw.write(';\n')
 			else
@@ -2863,10 +2870,10 @@ class YieldReturnStmt
 		if willEnsure
 			sw.write('_lh_canEnsure = true;\n')
 		if _expr
-			sharpResultVarName = .compiler.curCodeMember.sharpResultVarName
-			if willEnsure and sharpResultVarName.length
+			backEndResultVarName = .compiler.curCodeMember.backEndResultVarName
+			if willEnsure and backEndResultVarName.length
 				# TODO: resolve yield return with ensure
-				# sw.write('yield return [sharpResultVarName]=')
+				# sw.write('yield return [backEndResultVarName]=')
 				# so for now:
 				sw.write('yield return ')
 				_expr.writeSharpDefInContext(sw)
@@ -4515,3 +4522,39 @@ class AssemblyDecl
 
 	def writeSharpTestInvocation(sw as SharpWriter)
 		pass
+
+
+##
+## Misc items
+##
+
+class BackEndUtils
+
+	shared
+
+		var _backEndKeyWordList = 'abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using virtual void volatile while'.split
+
+		# CC: should be a Set, not a Dictionary:
+		var _backEndKeyWordSet = Set<of String>()
+
+		def isBackEndKeyWord(word as String) as bool
+			"""
+			Returns true if the given word is a keyword in C# 2.0.
+			"""
+			require
+				word.length
+			test
+				assert .isBackEndKeyWord('object')
+				assert .isBackEndKeyWord('if')
+				assert not .isBackEndKeyWord('total')
+			body
+				if _backEndKeyWordSet.count == 0
+					for word in _backEndKeyWordList
+						_backEndKeyWordSet.add(word)
+				return word in _backEndKeyWordSet
+
+		def backEndNameForLocalVarName(name as String) as String
+			if .isBackEndKeyWord(name)
+				return '@' + name  # C# supports @ as a prefix to escape identifiers
+			else
+				return name

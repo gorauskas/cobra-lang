@@ -38,8 +38,8 @@ class AbstractLocalVar
 	var _isTracked as bool
 	var _ifInheritsStack = Stack<of IType>()
 	var _isAssignedTo as bool
-	var _sharpName as String
-	var _useSharpNameStack = Stack<of String>()  # for if-inherits
+	var _backEndName as String
+	var _useBackEndNameStack = Stack<of String>()  # for if-inherits
 
 	def init(token as IToken, type as IType)
 		base.init(token, token.text)
@@ -60,13 +60,10 @@ class AbstractLocalVar
 	def _init
 		_isTracked = false
 		if .isImplicit
-			sharpPrefix = ''
-		else if Utils.isSharpKeyWord(.name)
-			sharpPrefix = '@'  # C# supports @ as a valid first character for identifiers to escape those that are keywords
+			_backEndName = .name
 		else
-			sharpPrefix = ''
-		_sharpName = sharpPrefix + .name
-		_useSharpNameStack.push(_sharpName)
+			_backEndName = BackEndUtils.backEndNameForLocalVarName(.name)
+		_useBackEndNameStack.push(_backEndName)
 
 	get englishName as String is abstract
 
@@ -76,7 +73,7 @@ class AbstractLocalVar
 
 	pro isTracked from var
 
-	get useSharpNameStack from var
+	get useBackEndNameStack from var
 
 	def addMinFields
 		base.addMinFields
@@ -231,7 +228,7 @@ class ResultVar
 	def init(token as IToken, codePart as AbstractMethod)
 		base.init(_makeToken(token, codePart), codePart.resultType)
 		.isImplicit = true
-		_sharpName = codePart.sharpResultVarName
+		_backEndName = codePart.backEndResultVarName
 
 	def _makeToken(token as IToken, codePart as AbstractMethod) as IToken is shared
 		token = token.copy
