@@ -391,6 +391,19 @@ class AugAssignMathExpr
 	def _bindImp
 		base._bindImp
 		# TODO: does NumericPromoExpr cover everything we need?
+		# C# and other languages use += and -= on delegates and events, but Cobra does not.
+		if .left.type inherits MethodSig
+			# TODO: error
+			pass
+		else if .left.type.isDescendantOf(.compiler.delegateType)
+			# TODO: distinguish between events and delegates
+			leftSource = .left.toCobraSource
+			rightSource = .right.toCobraSource
+			if not .right inherits RefExpr, rightSource = 'ref ' + rightSource
+			branch .op
+				on 'PLUS_EQUALS',  .throwError('Cannot use "+=". Use "listen [leftSource], [rightSource]" for events and "[leftSource] = Delegate.combine([leftSource], [rightSource])" for delegates.')
+				on 'MINUS_EQUALS', .throwError('Cannot use "-=". Use "ignore [leftSource], [rightSource]" for events and "[leftSource] = Delegate.remove([rightSource])" for delegates.')
+				else, .throwError('Cannot use the operator "[.token.text]" on events or delegates.')
 
 
 class AugAssignBitwiseExpr
