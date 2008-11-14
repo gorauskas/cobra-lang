@@ -9,6 +9,15 @@ interface IExpr
 	This is mainly used for categorization.
 	To see what really makes an expression, see the Expr class.
 	"""
+
+	get definition
+		"""
+		Returns the definition corresponding to this expression.
+		Dynamically typed.
+		Returns nil by default.
+		Not all expressions have definitions.
+		"""
+
 	def toCobraSource as String
 
 
@@ -55,11 +64,15 @@ class Expr
 	def addRefFields is override
 		base.addRefFields
 		.addField('type', _type)
+		if .definition, .addField('definition', .definition)
 
 	pro argumentLabel from var
 		"""
 		Indicates the label for an argument such as 'out' or 'inout'.
 		"""
+
+	get definition
+		return nil
 
 	get willChangeVar as bool
 		"""
@@ -263,17 +276,16 @@ class NameExpr
 		base.addMinFields
 		.addField('name', _name)
 
-	def addRefFields
-		base.addRefFields
-		.addField('definition', _definition)
+	get definition is override
+		return _definition
 
-	get definition from var
+	get namedDefinition from _definition
 
 	get name from var
 
 	def memberForName(name as String) as IMember? is override
 		or require
-			.definition
+			.namedDefinition
 		body
 			return _definition.typeForReceiver.memberForName(name)
 
@@ -364,7 +376,7 @@ class CallExpr
 	var _genericArgTypes as List<of IType>?
 	var _args as List<of Expr>
 	var _hasParens as bool
-	var _definition as INamedNode?
+	var _definition as INamedNode?  # TODO: could tighten this down to IMember right?s
 
 	def init(token as IToken, name as String, args as List<of Expr>, hasParens as bool)
 		.init(token, name, nil, args, hasParens as bool)
@@ -380,10 +392,6 @@ class CallExpr
 	def addMinFields is override
 		base.addMinFields
 		.addField('name', _name)
-
-	def addRefFields is override
-		base.addRefFields
-		.addField('definition', _definition)
 
 	def addSubFields is override
 		base.addSubFields
@@ -413,7 +421,10 @@ class CallExpr
 	get args from var
 		has Subnodes
 
-	get definition from var
+	get definition is override
+		return _definition
+
+	get memberDefinition from _definition
 
 	get member as IMember?
 		return _definition to? IMember
@@ -483,6 +494,8 @@ class CallExpr
 			_type = type
 		assert _type, _definition
 		if .args.count == 0 and .hasParens
+			# TODO:
+			# if .definition inherits BoxMember and .definition.isMethod and not dotNode.isImplicit
 			if (.definition inherits Method or .definition inherits MemberOverload) and not dotNode.isImplicit
 				.compiler.warning(this, 'Unnecessary parentheses. You can remove them.')
 		else
@@ -740,14 +753,14 @@ class EnumCallExpr
 	get args from var
 		has Subnodes
 	
-	get definition from var
+	get definition is override
+		return _definition
+
+	get enumDefinition from _definition
 	
 	get hasError as bool is override
-		if base.hasError
-			return true
-		for arg in _args
-			if arg.hasError
-				return true
+		if base.hasError, return true
+		for arg in _args, if arg.hasError, return true
 		return false
 
 	def toCobraSource as String is override
@@ -827,7 +840,7 @@ class ForExpr
 		_var = .bindVar(_nameExpr)
 		if _nameExpr.definition
 			if _nameExpr.definition inherits IVar
-				_var = _nameExpr.definition to IVar
+				_var = _nameExpr.definition
 			else
 				.throwError('Expecting a variable not a [_nameExpr.definition.getType.name].')  # TODO: what's the best way to report what was found?
 		else
@@ -1070,7 +1083,10 @@ class IndexExpr
 		.addField('target', _target)
 		.addField('args', _args)
 
-	get definition from var
+	get definition is override
+		return _definition
+
+	get memberDefinition from _definition
 
 	get target from var
 
@@ -1261,14 +1277,13 @@ class MemberExpr
 		.addField('name', _name)
 		.addField('isReference', _isReference)
 
-	def addRefFields is override
-		base.addRefFields
-		.addField('definition', _definition)
-
 	get args as List<of Expr>
 		return List<of Expr>()
 
-	get definition from var
+	get definition is override
+		return _definition
+
+	get memberDefinition from _definition
 
 	pro isReference from var
 		"""
@@ -1328,7 +1343,6 @@ class MemberExpr
 			_type = effectiveType
 			# TODO: there should be a subclass of BinaryOpExpr called DotExpr and it should do the following work and maybe even the work above.
 			# TODO: _receiverType = receiverType
-			.binarySuperNode.definition = _definition  # TODO: is this needed?
 			.binarySuperNode.type = .type  # the type of foo.bar is what bar returns. A MemberExpr is the "bar" part.
 			.binarySuperNode.receiverType = receiverType
 			
@@ -1516,12 +1530,11 @@ class PostCallExpr
 
 		expr = expr.bindImp
 
-		if expr inherits IdentifierExpr
-			if expr.definition inherits EnumDecl
-				enumCall = EnumCallExpr(.token, expr.name, .args, expr.definition to EnumDecl).bindImp
-				_type = enumCall.type to IType
-				_transformTo(enumCall)
-				return					
+		if expr.definition inherits EnumDecl
+			enumCall = EnumCallExpr(.token, expr.toCobraSource, .args, expr.definition to EnumDecl).bindImp  # CC: axe cast
+			_type = enumCall.type to IType
+			_transformTo(enumCall)
+			return
 
 		for arg in .args
 			try
@@ -1677,11 +1690,11 @@ class RefExpr
 		if _expr inherits DotExpr
 			right = _expr.right
 			if right inherits MemberExpr
-				if right.definition inherits AbstractMethod or right.definition inherits MemberOverload
-					right.isReference = true
-				else if right.definition is nil
+				if right.definition is nil
 					# happens from error recovery such as: obj = BadClassName() ... ref obj.foo
 					pass
+				else if right.definition inherits AbstractMethod or right.definition inherits MemberOverload
+					right.isReference = true
 				else
 					.throwError('Only methods can be referenced, not [right.definition.englishName].')
 			else if right inherits CallExpr
@@ -1692,10 +1705,10 @@ class RefExpr
 			if _expr.definition inherits AbstractMethod
 				pass
 			else
-				.throwError('Only methods can be referenced, not [Utils.pluralize((_expr.definition to dynamic).englishName)].')
+				.throwError('Only methods can be referenced, not [Utils.pluralize(_expr.definition.englishName)].')
 		else
 			.throwError('Unexpected reference. Refer to methods after `ref` or remove `ref`.')
-		_type = .compiler.passThroughType # TODO: Set a real type such as .libraryType('System.Delegate')
+		_type = .compiler.passThroughType # TODO: Set a real type such as .compiler.delegateType
 		# TODO: need to do something more sophisticated like overriding: 	def canBeAssignedTo(type as IType) as bool
 
 	def toCobraSource as String is override

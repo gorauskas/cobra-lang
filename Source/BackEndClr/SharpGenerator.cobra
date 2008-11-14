@@ -3119,7 +3119,7 @@ class IdentifierExpr
 			# the only definition that has no parentNameSpace in practice is IVar
 			if not sharpName.startsWith('typeof')
 				# maybe parentNameSpace could be moved up in the interface definitions
-				pn = (.definition to dynamic).parentNameSpace
+				pn = .definition.parentNameSpace
 				if pn, sharpName = pn.sharpQualifier + sharpName
 
 				# handle the case of "X.X" where namespace and class are both called "X".
@@ -3131,11 +3131,11 @@ class IdentifierExpr
 
 	get sharpName as String
 		assert .didBindImp
-		assert .definition
+		assert .namedDefinition
 		assert not .type inherits UnspecifiedType
 		if .superNode inherits DotExpr
 			assert this is not (.superNode to DotExpr).right  # should be a CallExpr or MemberExpr instead
-		defi = .definition
+		defi = .namedDefinition
 		if .isTypeReference
 			# C# often requires typeof(Foo) instead of just plain Foo
 			superNode = .superNode
@@ -3150,7 +3150,7 @@ class IdentifierExpr
 	get sharpAssignmentNames as List<of String>?
 		require
 			.didBindImp
-			.definition
+			.namedDefinition
 		body
 			if _definition inherits IVar
 				return _definition.sharpAssignmentNames
@@ -3159,7 +3159,7 @@ class IdentifierExpr
 
 	def writeSharpDefForBreakdown(sw as SharpWriter)
 		sharpName = .sharpName
-		if .isKindOf(.compiler.typeType) and .definition inherits IType and 'typeof(' not in sharpName
+		if .isKindOf(.compiler.typeType) and .namedDefinition inherits IType and 'typeof(' not in sharpName
 			sw.write('typeof([.sharpName])')
 		else
 			base.writeSharpDefForBreakdown(sw)
@@ -3391,7 +3391,7 @@ class PostCallExpr
 				.writeSharpArgs(sw)
 				sw.write(')')
 			else if isDynamic
-				defi = (expr to dynamic).definition
+				defi = expr.definition
 				assert not defi inherits Box, expr  # TODO: just curious
 				what = if(defi inherits IType, 'typeof([defi.sharpName])', defi.sharpName to String)
 				if defi inherits IVar
@@ -3973,8 +3973,8 @@ class AssignExpr
 		_right.writeSharpDefInContext(sw)
 		# handle the case where a type got backed up because of assignment inside of an if-inherits
 		if _backUpIfInheritsStack
-			assert (_left to dynamic).definition inherits IVar
-			(_left to dynamic).definition.ifInheritsStack = Stack<of IType>(_backUpIfInheritsStack)
+			assert _left.definition inherits IVar
+			_left.definition.ifInheritsStack = Stack<of IType>(_backUpIfInheritsStack)
 
 
 class NumericPromoExpr
@@ -4326,7 +4326,7 @@ class DotExpr
 			writeThis = true
 			if _left inherits ThisLit
 				if _right inherits CallExpr
-					defi = _right.definition
+					defi = _right.memberDefinition
 					if defi inherits IMember
 						writeThis = not defi.isShared
 					else
@@ -4334,7 +4334,7 @@ class DotExpr
 						# throw FallThroughException({'right': _right, 'defi': defi})
 						throw FallThroughException(defi)
 				else if _right inherits MemberExpr
-					writeThis = not _right.definition.isShared
+					writeThis = not _right.memberDefinition.isShared
 			else if .curCodeMember inherits Initializer and _right inherits IDotRightExpr and (_right to IDotRightExpr).name == 'init' and _left inherits ThisOrBaseLit
 				# Well, in practice this doesn't really happen because Constructer.innerWriteSharpDef usurps the code gen for base calls
 				Stmt.inInitCall = true
@@ -4415,7 +4415,7 @@ class ToQExpr
 		if right inherits TypeExpr
 			t = right.containedType to !
 		else if right inherits IdentifierExpr
-			t = right.definition to IType
+			t = right.namedDefinition to IType
 		else
 			throw FallThroughException(t)
 		# TODO?: t = t.realType

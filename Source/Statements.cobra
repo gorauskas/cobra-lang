@@ -87,7 +87,7 @@ class Stmt
 		else if ve inherits AsExpr
 			ve.bindImp
 			assert ve.definition
-			varr = ve.definition to AbstractLocalVar
+			varr = ve.definition
 		else
 			throw FallThroughException(ve)
 		return varr to !
@@ -384,7 +384,7 @@ class ForStmt
 		_varExpr.bindImp
 		if _varExpr.definition
 			if _varExpr.definition inherits IVar
-				_var = _varExpr.definition to IVar
+				_var = _varExpr.definition
 			else
 				.throwError('Expecting a variable not a [_varExpr.definition.getType.name].')  # TODO: what's the best way to report what was found?
 		else
@@ -676,7 +676,7 @@ class IfStmt
 			if cond inherits InheritsExpr
 				left = cond.left
 				if left inherits IdentifierExpr
-					leftVar = left.definition
+					leftVar = left.namedDefinition
 					if leftVar inherits IVar  # if-inherits smarts only work on variables
 						# if x inherits Y ...
 						if (right = cond.right) inherits IPotentialTypeExpr
@@ -688,7 +688,7 @@ class IfStmt
 						_trueStmts.setIfInherits(leftVar, leftVar.ifInheritsStack.peek)
 				else if left inherits AssignExpr
 					if left.left inherits IdentifierExpr
-						leftVar = (left.left to IdentifierExpr).definition
+						leftVar = left.left.definition
 						if leftVar inherits IVar
 							# if (x = expr) inherits Y ...
 							if (right = cond.right) inherits IPotentialTypeExpr
@@ -701,7 +701,7 @@ class IfStmt
 				# check for an if-not-nil
 				if cond inherits TruthExpr
 					if cond.expr inherits IdentifierExpr
-						leftVar = (cond.expr to IdentifierExpr).definition
+						leftVar = cond.expr.definition
 						leftType = leftVar.typeForIdentifier
 						if leftType inherits NilableType or (leftType.isReference and leftType is not .compiler.objectType)
 							# if x ...
@@ -716,7 +716,7 @@ class IfStmt
 						# TODO: also handle "if nil is not x"
 						# TODO? "if not x is nil"  "if nil is not x"
 						notNil = true
-						leftVar = (cond.left to IdentifierExpr).definition
+						leftVar = cond.left.definition
 			if notNil
 				if leftVar inherits IVar
 					if leftVar.type inherits WrappedType
@@ -903,7 +903,7 @@ class RaiseStmt
 			expr = _exprs[0]
 			if expr inherits DotExpr
 				right = expr.dotRight
-				defi = (right to dynamic).definition
+				defi = right.definition
 				if defi inherits BoxEvent
 					_definition = defi
 					_name = defi.name
@@ -1218,24 +1218,14 @@ class ThrowStmt
 						if defin responds to (def isDescendantOf(t as IType))
 							augment = 'Try instantiating it with parentheses such as "[_expr.toCobraSource]()".'
 #/
-					try
-						defin = (_expr to dynamic).definition
-					catch UnknownMemberException
-						defin = nil
-					try
-						if defin.isDescendantOf(exceptionType)
-							augment = 'Try instantiating it with parentheses such as "[_expr.toCobraSource]()".'
-					catch UnknownMemberException
-						pass
+					defin = _expr.definition
+					if defin inherits IType and defin.isDescendantOf(exceptionType)
+						augment = 'Try instantiating it with parentheses such as "[_expr.toCobraSource]()".'
 					if augment == ''
 						augment = 'Also, this type does not inherit from Exception.'
 					.throwError('Cannot throw a type. [augment]')
 				else
-					try
-						defin = (_expr to dynamic).definition
-					catch UnknownMemberException
-						defin = nil
-					if defin inherits BoxEvent
+					if _expr.definition inherits BoxEvent
 						reason = 'it is an event, not an exception. Either throw an exception or use "raise" on the event instead of "throw"'
 					else
 						reason = 'it does not inherit from Exception'

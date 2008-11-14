@@ -72,7 +72,6 @@ class BinaryOpExpr
 	var _op as String
 	var _left as Expr
 	var _right as Expr
-	var _definition as IMember?
 
 	def init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken)
@@ -87,8 +86,6 @@ class BinaryOpExpr
 	get left from var
 
 	get right from var
-
-	pro definition from var
 
 	get hasError as bool
 		if base.hasError, return true
@@ -160,10 +157,6 @@ class BinaryOpExpr
 				append = '.'
 			.throwError('There is no type for the right hand side of "[.token.text]"[append] [sugg]')
 
-	def addRefFields
-		base.addRefFields
-		.addField('definition', _definition)
-
 	def addSubFields
 		base.addSubFields
 		.addField('op', _op)
@@ -197,8 +190,7 @@ class AbstractAssignExpr
 		if .compiler.willTrackLocals
 			if _left inherits NameExpr
 				_trackLocal = _left.definition inherits AbstractLocalVar
-				if _trackLocal
-					_trackName  = _left.definition.name
+				if _trackLocal, _trackName = _left.namedDefinition.name
 
 
 class AssignExpr
@@ -231,7 +223,7 @@ class AssignExpr
 		right = _right
 		assert right.type
 		if left inherits IdentifierExpr
-			if left.definition is nil
+			if left.namedDefinition is nil
 				# type inference
 				assert right.type
 				if right.type is .compiler.passThroughType  # TODO: ? change to unspecifiedType
@@ -258,7 +250,7 @@ class AssignExpr
 		if not right.canBeAssignedTo(left.type to !)
 			okay = false
 			if left inherits IdentifierExpr
-				if (defi = left.definition) inherits IVar
+				if (defi = left.namedDefinition) inherits IVar
 					if defi.attemptAssignmentOf(right.type to !)
 						_backUpIfInheritsStack = List<of IType>(defi.ifInheritsStack)  # will need this later for code gen
 						okay = true
@@ -269,25 +261,20 @@ class AssignExpr
 
 	def checkAfterBindImp
 		base.checkAfterBindImp
-		if _left inherits IdentifierExpr
-			assert _left.definition
-			if _left.definition inherits Param
-				if _right inherits IdentifierExpr
-					if _right.definition inherits BoxVar
-						# the exception to this warning is when the statement is guarded by an if which references the _left.definition, as in: if param is nil; param = _param
-						# TODO: this has a test case that generates no warnings. so the cobra test cases should probably barf on unexpected warnings
-						isException = false
-						if .parent inherits BlockStmt and (.parent to BlockStmt).parent inherits IfStmt
-							ifStmt = (.parent to BlockStmt).parent to IfStmt
-							if (bop = ifStmt.cond) inherits BinaryOpExpr
-								if (bop.left inherits NameExpr) and (bop.left to NameExpr).definition is _left.definition
-									isException = true
-								if (bop.right inherits NameExpr) and (bop.right to NameExpr).definition is _right.definition
-									isException = true
-						if not isException
-							leftName = (_left.definition to Param).name
-							rightName = (_right.definition to BoxVar).name
-							.compiler.warning(this, 'Setting a parameter ("[leftName]") to a class variable ("[rightName]") is often a mistake. You may want to reverse the assignment.')
+		if not .hasError and _left.definition inherits Param
+			if _right.definition inherits BoxVar
+				# the exception to this warning is when the statement is guarded by an if which references the _left.definition, as in: if param is nil; param = _param
+				# TODO: this has a test case that generates no warnings. so the cobra test cases should probably barf on unexpected warnings
+				isException = false
+				if .parent inherits BlockStmt and (.parent to BlockStmt).parent inherits IfStmt
+					ifStmt = (.parent to BlockStmt).parent to IfStmt
+					if (bop = ifStmt.cond) inherits BinaryOpExpr
+						if bop.left.definition is _left.definition, isException = true
+						else if bop.right.definition is _right.definition, isException = true
+				if not isException
+					leftName = _left.definition.name
+					rightName = _right.definition.name
+					.compiler.warning(this, 'Setting a parameter ("[leftName]") to a class variable ("[rightName]") is often a mistake. You may want to reverse the assignment.')
 
 
 class NumericPromoExpr
@@ -591,6 +578,13 @@ class DotExpr
 			base.init(opToken, op, left, right)
 			_dotRightExpr = right to IDotRightExpr
 
+	get definition is override
+		"""
+		The definition of a DotExpr is the definition of its .right which will be
+		a CallExpr or MemberExpr (via the interface IDotRightExpr).
+		"""
+		return .right.definition
+
 	get dotRight as IDotRightExpr
 		"""
 		Returns .right but with the more narrow type of IDotRightExpr.
@@ -617,7 +611,7 @@ class DotExpr
 				_contextType = _type
 		else if not _left.hasError and not _right.hasError
 			if _left inherits IdentifierExpr  # TODO: seems flawed. The error below should take place if left is a DotExpr
-				if _left.definition inherits Box # CC: combine with above if statement
+				if _left.namedDefinition inherits Box # CC: combine with above if statement
 					if _dotRightExpr.member is not nil and not _dotRightExpr.member.isShared  # when _dotRightExpr.member is nil, it's a nested type
 						if _dotRightExpr.name == 'init'
 							# hack to support Application.init in ../HowTo/390-GTK.cobra
@@ -633,9 +627,9 @@ class DotExpr
 				# A.B where A and B are namespaces or types
 				_transformTo(TypeExpr(.token, .definition to IType).bindImp)
 			else if (right = .right) inherits CallExpr
-				if right.definition implements IType
+				if right.memberDefinition implements IType
 					# A.B.C() where C is a type such as a class or struct
-					te = TypeExpr(.token, right.definition to IType)
+					te = TypeExpr(.token, right.memberDefinition to IType)
 					te.bindImp
 					pc = PostCallExpr(right.token, te, right.args)
 					pc.bindImp
@@ -667,8 +661,8 @@ class DotExpr
 	get potentialType as IType?
 		# overridden to return the type this dotted expr represents in those cases when it does represent a type
 		assert .didBindImp
-		if _definition inherits IType
-			return _definition
+		if .definition inherits IType
+			return .definition
 		else
 			return nil
 
@@ -762,23 +756,19 @@ class InheritsExpr
 						okay = false
 					if not okay
 						.compiler.warning(this, 'The expression (of type "[leftType.name]") is never of type "[.right.toCobraSource]".')
-		if (right = .right) inherits IdentifierExpr  # TODO: change to IPotentialTypeExpr and make a test case first
-			defi = right.definition
-			if defi
-				if defi inherits Class
-					if .op <> 'INHERITS'
-						.throwError('Use the "inherits" operator when testing objects against classes.')
-				else if defi inherits Struct
-					if .op <> 'INHERITS'
-						.throwError('Use the "inherits" operator when testing objects against structs.')
-				else if defi inherits Interface
-					pass
-					#if .op <> 'IMPLEMENTS'
-					#	.throwError('Use the "implements" operator when testing objects against interfaces.')
-				else if defi inherits GenericParam
-					pass
-				else
-					.throwError('Cannot test "[.op.toLower]" against a [(defi to dynamic).englishName].')
+		defi = .right.definition
+		if defi inherits Class
+			if .op <> 'INHERITS', .throwError('Use the "inherits" operator when testing objects against classes.')
+		else if defi inherits Struct
+			if .op <> 'INHERITS', .throwError('Use the "inherits" operator when testing objects against structs.')
+		else if defi inherits Interface
+			# got annoying:
+			# if .op <> 'IMPLEMENTS', .throwError('Use the "implements" operator when testing objects against interfaces.')
+			pass
+		else if defi inherits GenericParam
+			pass
+		else if defi
+			.throwError('Cannot test "[.op.toLower]" against a [defi.englishName].')
 
 
 class AbstractToExpr
