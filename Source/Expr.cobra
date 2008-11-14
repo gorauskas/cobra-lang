@@ -369,6 +369,8 @@ class CallExpr
 		EnumCallExpr
 		DotExpr -- for _foo(args) --> ._foo(args)
 		PostCallExpr
+
+	A valid call expr may have a nil .definition because the receiver is dynamic.
 	"""
 
 	var _name as String
@@ -376,7 +378,7 @@ class CallExpr
 	var _genericArgTypes as List<of IType>?
 	var _args as List<of Expr>
 	var _hasParens as bool
-	var _definition as INamedNode?  # TODO: could tighten this down to IMember right?s
+	var _definition as IMember?
 
 	def init(token as IToken, name as String, args as List<of Expr>, hasParens as bool)
 		.init(token, name, nil, args, hasParens as bool)
@@ -444,7 +446,7 @@ class CallExpr
 				return
 
 		_bindImpArgs
-		definition as INamedNode?
+		definition as IMember?
 		type as IType?
 
 		if _definition is nil or _type is nil
@@ -455,7 +457,7 @@ class CallExpr
 				_type = .compiler.passThroughType
 				return  # TODO: I don't think I want a return here
 
-			definition = _inferDefinitionAndType(dotNode, definition, out type)
+			definition = _inferDefinitionAndType(dotNode, out type)
 			assert type
 			if definition inherits IType 	# Box, IVar or GenericParam
 				_transformToPostCallExprOnType(dotNode, definition)
@@ -528,7 +530,7 @@ class CallExpr
 		_type = enumCall.type to IType
 		transformTarget._transformTo(enumCall)
 
-	def _inferDefinitionAndType(dotNode as DotExpr, definition as INamedNode?, type as out IType?) as INamedNode?
+	def _inferDefinitionAndType(dotNode as DotExpr, type as out IType?) as IMember?
 		type = nil
 		possibleDefinition = dotNode.left.memberForName(_name)
 		if possibleDefinition is nil
@@ -545,9 +547,9 @@ class CallExpr
 		else
 			if not possibleDefinition.isCallable
 				.throwError('Cannot call "[_name]" because it is a "[possibleDefinition.englishName]".')
-			definition = possibleDefinition
+				
 			type = possibleDefinition.resultType
-		return definition		
+		return possibleDefinition
 
 	def _transformToPostCallExprOnType(dotNode, definition as IType?)
 		# for Foo.Bar() where Bar is a box/type
