@@ -555,7 +555,7 @@ interface IDotRightExpr
 	Implemented by MemberExpr and CallExpr.
 	"""
 	get name as String
-	get member as IMember?
+	get memberDefinition as IMember?
 	get args as List<of Expr>
 
 
@@ -612,7 +612,7 @@ class DotExpr
 		else if not _left.hasError and not _right.hasError
 			if _left inherits IdentifierExpr  # TODO: seems flawed. The error below should take place if left is a DotExpr
 				if _left.namedDefinition inherits Box # CC: combine with above if statement
-					if _dotRightExpr.member is not nil and not _dotRightExpr.member.isShared  # when _dotRightExpr.member is nil, it's a nested type
+					if _dotRightExpr.memberDefinition is not nil and not _dotRightExpr.memberDefinition.isShared  # when _dotRightExpr.memberDefinition is nil, it's a nested type
 						if _dotRightExpr.name == 'init'
 							# hack to support Application.init in ../HowTo/390-GTK.cobra
 							# a better hack would be to de the correct binding to the shared init method
@@ -620,7 +620,7 @@ class DotExpr
 						else
 							.throwError('Cannot access instance member "[_dotRightExpr.name]" on type "[_left.name]". Make the member "shared" or create an instance of the type.')
 			if _left inherits ThisOrBaseLit
-				if .curCodeMember and .curCodeMember.isShared and not _dotRightExpr.member.isShared  # .curCodeMember is nil when bind imp'ing on var init exprs like "var _x = someExpr"
+				if .curCodeMember and .curCodeMember.isShared and not _dotRightExpr.memberDefinition.isShared  # .curCodeMember is nil when bind imp'ing on var init exprs like "var _x = someExpr"
 					.throwError('Cannot access instance member "[_dotRightExpr.name]" from the current shared member. Make the member "shared" or create an instance of the type.')
 			# Check for qualified type such as Foo.Bar
 			if .definition implements IType and .type.isDescendantOf(.compiler.typeType)
@@ -635,14 +635,14 @@ class DotExpr
 					pc.bindImp
 					_transformTo(pc)
 			else
-				assert not _dotRightExpr.member inherits MemberOverload
+				assert not _dotRightExpr.memberDefinition inherits MemberOverload
 
 	def afterStatementBindImp
 		base.afterStatementBindImp
 		if not .hasError
 			# TODO: inheritance
 			# TODO: test on DLLs
-			member = _dotRightExpr.member
+			member = _dotRightExpr.memberDefinition
 			if member inherits MemberOverload
 				member = member.members[0]
 			if member inherits BoxMember
@@ -767,6 +767,8 @@ class InheritsExpr
 			pass
 		else if defi inherits GenericParam
 			pass
+		else if defi inherits IType  # int, decimal, etc.
+			if .op <> 'INHERITS', .throwError('Use the "inherits" operator when testing objects against structs.')
 		else if defi
 			.throwError('Cannot test "[.op.toLower]" against a [defi.englishName].')
 

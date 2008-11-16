@@ -4303,13 +4303,13 @@ class DotExpr
 		else
 			# Given Cobra "A.B.C()" where C is a class/type/struct, then the C# needs to be "new A.B.C()"
 			# (But stuff like this makes me wonder if the ASTs should be doing some transformations, like collapsing qualified types.)
-			if _dotRightExpr.member inherits BoxMember
-				backing = (_dotRightExpr.member to BoxMember).sharedMethodBacking
+			if _dotRightExpr.memberDefinition inherits BoxMember
+				backing = _dotRightExpr.definition.sharedMethodBacking
 				if backing
 					# example:  Cobra: c.isUpper   C#: char.IsUpper(c)
 					# also used for extension methods under .NET 2.0
 					sw.write(backing+'(')
-					if not (_dotRightExpr.member to BoxMember).sharedMethodBackingIsAlias  # guard against Cobra "decimal.parse('5.0')" --> C# "Decimal.Parse(decimal, "5.0")"
+					if not (_dotRightExpr.memberDefinition to BoxMember).sharedMethodBackingIsAlias  # guard against Cobra "decimal.parse('5.0')" --> C# "Decimal.Parse(decimal, "5.0")"
 						_left.writeSharpDef(sw, false)
 						sep = ', '
 					else
@@ -4325,10 +4325,7 @@ class DotExpr
 			# don't write 'this' for shared members
 			writeThis = true
 			if _left inherits ThisLit
-				if _right inherits CallExpr
-					writeThis = not _right.memberDefinition.isShared
-				else if _right inherits MemberExpr
-					writeThis = not _right.memberDefinition.isShared
+				writeThis = not _dotRightExpr.memberDefinition.isShared
 			else if .curCodeMember inherits Initializer and _right inherits IDotRightExpr and (_right to IDotRightExpr).name == 'init' and _left inherits ThisOrBaseLit
 				# Well, in practice this doesn't really happen because Constructer.innerWriteSharpDef usurps the code gen for base calls
 				Stmt.inInitCall = true
@@ -4406,16 +4403,8 @@ class ToQExpr
 		# x to? string  --> (x as String)
 		# x to? string? --> (x as String)
 		right = .right
-		if right inherits TypeExpr
-			t = right.containedType to !
-		else if right inherits IdentifierExpr
-			t = right.namedDefinition to IType
-		else
-			throw FallThroughException(t)
-		# TODO?: t = t.realType
-#		assert t inherits IType
-		if t inherits NilableType
-			t = t.theWrappedType
+		t = right.definition to IType
+		if t inherits NilableType, t = t.theWrappedType
 		typeSharpRef = t.sharpRef
 		if t.isReference
 			sw.write('(')
