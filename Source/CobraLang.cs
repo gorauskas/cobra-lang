@@ -621,20 +621,40 @@ static public class CobraImp {
 		return c!='\0';
 	}
 
+	static public bool IsTrue(char? c) {
+		return c!=null && c.Value!='\0';
+	}
+
 	static public bool IsTrue(int i) {
 		return i!=0;
+	}
+
+	static public bool IsTrue(int? i) {
+		return i!=null && i.Value!=0;
 	}
 
 	static public bool IsTrue(decimal d) {
 		return d!=0;
 	}
 
+	static public bool IsTrue(decimal? d) {
+		return d!=null && d.Value!=0;
+	}
+
 	static public bool IsTrue(float f) {
 		return f!=0;
 	}
 
+	static public bool IsTrue(float? f) {
+		return f!=null && f.Value!=0;
+	}
+
 	static public bool IsTrue(double d) {
 		return d!=0;
+	}
+
+	static public bool IsTrue(double? d) {
+		return d!=null && d.Value!=0;
 	}
 
 	static public bool IsTrue(string s) {
@@ -647,6 +667,15 @@ static public class CobraImp {
 		return c!=null;
 	}
 
+/*
+	static public bool IsTrue<T>(Nullable<T> x) where T : struct {
+		if (x == null)
+			return false;
+		else
+			return IsTrue(x.Value);  // would be nice if this respected overloads, but it doesn't. always calls IsTrue(object) which makes this method moot
+	}
+*/
+
 	static public bool IsTrue(object x) {
 		if (x==null)
 			return false;
@@ -658,6 +687,10 @@ static public class CobraImp {
 			return (char)x!='\0';
 		if (x is decimal)
 			return (decimal)x!=0;  // can't believe x.Equals(0) above doesn't work for decimal. *sigh*
+		if (x is double)
+			return (double)x!=0;
+		if (x is float)
+			return (float)x!=0;
 		return true;
 	}
 
