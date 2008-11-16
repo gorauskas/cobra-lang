@@ -1,6 +1,9 @@
 """
 Eventually this file will contain all C# code generation.
 In the future, you can expect (or contribute!) alternate code generators such as IL, JVM and Objective-C.
+
+There should be not use .throwError, or recording of warnings, etc. in this file.
+All of that happens during .bindFoo phases.
 """
 
 
@@ -3370,23 +3373,25 @@ class PostCallExpr
 					sw.write('new [expr.receiverType.sharpRef](')
 					.writeSharpArgs(sw)
 					sw.write(')')
-				else if expr.type inherits MethodSig or (expr.type inherits NilableType and (expr.type to NilableType).theWrappedType inherits MethodSig)
+				else if expr.type.isDescendantOf(.compiler.delegateType)
+					isMethodSig = true
+				else if expr.type inherits NilableType and (expr.type to NilableType).theWrappedType.isDescendantOf(.compiler.delegateType)
 					isMethodSig = true
 				else if expr.type.isSystemTypeClass or _type.isDynamic
 					isDynamic = true
 				else
-					assert false, expr  # TODO: .throwError
+					assert false, expr
 			else if expr inherits IndexExpr
-				if expr.type inherits MethodSig
+				if expr.type.isDescendantOf(.compiler.delegateType)
 					isMethodSig = true
 				else if expr.type.isSystemTypeClass or _type.isDynamic
 					isDynamic = true
 				else
-					assert false, expr  # TODO: .throwError
+					assert false, expr
 			else
-				assert false, expr  # TODO: .throwError
+				assert false, expr
 			if isMethodSig
-				expr.writeSharpDef(sw)
+				expr.writeSharpDef(sw, false)
 				sw.write('(')
 				.writeSharpArgs(sw)
 				sw.write(')')

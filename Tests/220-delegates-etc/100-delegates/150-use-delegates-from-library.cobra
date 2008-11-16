@@ -1,0 +1,44 @@
+# This test file does not demonstrate typical delegate use or event handling.
+# It just tests some technicalities of using delegates from libraries.
+
+use System.Reflection
+
+class Test
+
+	def main is shared
+		t = Test()
+		t.testDelegateFromLibrary
+		t.testDelegateFromLibraryWithReturnType
+
+	var _visited as int
+
+	def testDelegateFromLibrary
+		_visited = 0
+		e as EventHandler?
+		
+		if e, e(this, EventArgs())
+		assert _visited == 0
+		
+		e = ref .handleEvent
+		if e, e(this, EventArgs())
+		assert _visited == 1
+
+	def testDelegateFromLibraryWithReturnType
+		_visited = 0
+		e as ResolveEventHandler?
+
+		if e, e(this, ResolveEventArgs('x'))
+		assert _visited == 0
+
+		e = ref .resolve
+		if e
+			a = e(this, ResolveEventArgs('x'))  # use return type
+			assert a.getName.toString <> ''
+		assert _visited == 1
+
+	def handleEvent(sender as Object, args as EventArgs)
+		_visited += 1
+
+	def resolve(sender as Object, args as ResolveEventArgs) as Assembly?
+		_visited += 1
+		return Assembly.getExecutingAssembly

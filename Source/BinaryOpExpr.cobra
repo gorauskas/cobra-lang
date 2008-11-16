@@ -383,15 +383,21 @@ class AugAssignMathExpr
 			# TODO: error
 			pass
 		else if .left.type.isDescendantOf(.compiler.delegateType)
-			# TODO: distinguish between events and delegates
 			leftSource = .left.toCobraSource
 			rightSource = .right.toCobraSource
 			if not .right inherits RefExpr, rightSource = 'ref ' + rightSource
 			branch .op
-				on 'PLUS_EQUALS',  .throwError('Cannot use "+=". Use "listen [leftSource], [rightSource]" for events and "[leftSource] = Delegate.combine([leftSource], [rightSource])" for delegates.')
-				on 'MINUS_EQUALS', .throwError('Cannot use "-=". Use "ignore [leftSource], [rightSource]" for events and "[leftSource] = Delegate.remove([rightSource])" for delegates.')
-				else, .throwError('Cannot use the operator "[.token.text]" on events or delegates.')
-
+				on 'PLUS_EQUALS'
+					msg = 'Cannot use "+=". '
+					if .left.definition inherits BoxEvent, msg += 'Use "listen [leftSource], [rightSource]" for events.'
+					else, msg += 'Use "[leftSource] = Delegate.combine([leftSource], [rightSource])" for delegates.'
+				on 'MINUS_EQUALS'
+					msg = 'Cannot use "-=". '
+					if .left.definition inherits BoxEvent, msg += 'Use "ignore [leftSource], [rightSource]" for events.'
+					else, msg += 'Use "[leftSource] = Delegate.remove([rightSource])" for delegates.'
+				else
+					msg = 'Cannot use the operator "[.token.text]" on events or delegates.'
+			.throwError(msg)
 
 class AugAssignBitwiseExpr
 	is partial
