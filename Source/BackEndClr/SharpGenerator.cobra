@@ -3373,16 +3373,14 @@ class PostCallExpr
 					sw.write('new [expr.receiverType.sharpRef](')
 					.writeSharpArgs(sw)
 					sw.write(')')
-				else if expr.type.isDescendantOf(.compiler.delegateType)
-					isMethodSig = true
-				else if expr.type inherits NilableType and (expr.type to NilableType).theWrappedType.isDescendantOf(.compiler.delegateType)
+				else if expr.type.nonNil.isDescendantOf(.compiler.delegateType)
 					isMethodSig = true
 				else if expr.type.isSystemTypeClass or _type.isDynamic
 					isDynamic = true
 				else
 					assert false, expr
 			else if expr inherits IndexExpr
-				if expr.type.isDescendantOf(.compiler.delegateType)
+				if expr.type.nonNil.isDescendantOf(.compiler.delegateType)
 					isMethodSig = true
 				else if expr.type.isSystemTypeClass or _type.isDynamic
 					isDynamic = true
@@ -3867,7 +3865,7 @@ class ToNonNilableExpr
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
 		type = _expr.type
-		if type inherits NilableType and not (type to NilableType).theWrappedType.isReference
+		if type inherits NilableType and not type.nonNil.isReference
 			# ex: (x).Value
 			# ex: (obj.foo).Value
 			sw.write('(')
@@ -4409,7 +4407,7 @@ class ToQExpr
 		# x to? string? --> (x as String)
 		right = .right
 		t = right.definition to IType
-		if t inherits NilableType, t = t.theWrappedType
+		t = t.nonNil
 		typeSharpRef = t.sharpRef
 		if t.isReference
 			sw.write('(')

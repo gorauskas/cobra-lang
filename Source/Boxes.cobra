@@ -425,13 +425,9 @@ class Box
 							getEnum = member
 							break
 			rt = getEnum.resultType
-			if rt is .compiler.passThroughType
+			if rt.isDynamicOrPassThrough
 				return rt
-			if rt.isDynamic
-				return rt
-			if rt inherits NilableType
-				# nilable is not a concern; unwrap it:
-				rt = rt.theWrappedType
+			rt = rt.nonNil  # nilable is not a concern; unwrap it
 			if rt inherits Box and (rt to Box).isGeneric
 				# don't take the first argument of the result type -- that won't work for a nested type in a generic class, like ValueCollection, which gets the generic params of its parents
 				rt = rt.memberForName('current').resultType
@@ -687,8 +683,7 @@ class Box
 	def isAssignableTo(type as IType) as bool
 		r = base.isAssignableTo(type)
 		if not r
-			if type inherits NilableType
-				type = type.theWrappedType
+			type = type.nonNil
 			if type inherits PrimitiveType
 				if type.systemAliasType == this
 					return true  # example: this is Int32 and type is int

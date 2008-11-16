@@ -608,7 +608,7 @@ class CallExpr
 						score += 20
 					else if arg.canBeAssignedTo(param.type)
 						score += 10
-					else if arg.type inherits NilableType and (arg.type to NilableType).theWrappedType.isAssignableTo(param.type) 
+					else if arg.type.nonNil.isAssignableTo(param.type) 
 						# Cobra's code and data flow analysis sometimes leaves us with a nilable type that's not actually nil anymore
 						# due to an assignment, possibly wrapped in an if statement. Eventually this will be corrected, but for now
 						# compensate here.
@@ -705,7 +705,7 @@ class CallExpr
 					param.writeDeepString
 					print '<> param.type =', param.type
 					print '<> param.ifInheritsStack.count =', param.ifInheritsStack.count
-				if arg.type inherits NilableType and not param.type inherits NilableType and (arg.type to NilableType).theWrappedType.isAssignableTo(param.type)
+				if arg.type inherits NilableType and not param.type inherits NilableType and arg.type.nonNil.isAssignableTo(param.type)
 					.throwError('Argument [i+1] of method "[_name]" expects a non-nilable type ([param.type.name]), but the call is supplying a nilable type ([arg.type.name]).')
 				else
 					.throwError('Argument [i+1] of method "[_name]" expects type [param.type.name], but the call is supplying type [arg.type.name].')
@@ -1166,7 +1166,7 @@ class IndexExpr
 					arg.writeDeepString
 					print '<> param = ' stop
 					param.writeDeepString
-				if arg.type inherits NilableType and not param.type inherits NilableType and (arg.type to NilableType).theWrappedType.isAssignableTo(param.type)
+				if arg.type inherits NilableType and not param.type inherits NilableType and arg.type.nonNil.isAssignableTo(param.type)
 					.throwError('Argument [i+1] of indexer expects a non-nilable type ([param.type.name]), but the call is supplying a nilable type ([arg.type.name]).')
 				else
 					.throwError('Argument [i+1] of indexer expects type [param.type.name], but the call is supplying type [arg.type.name].')
@@ -1566,9 +1566,7 @@ class PostCallExpr
 
 		if _type is nil
 			assert expr.type is not nil
-			exprType = expr.type
-			if exprType inherits NilableType
-				exprType = exprType.theWrappedType
+			exprType = expr.type.nonNil
 			if exprType inherits MethodSig
 				_type = exprType.returnType
 			else if exprType.isDescendantOf(.compiler.delegateType)
@@ -1934,7 +1932,7 @@ class TruthExpr
 			_expr = BoolLit(_expr.token, false)
 			_expr.bindImp
 		else if type inherits NilableType
-			if type.theWrappedType inherits DynamicType
+			if type.nonNil inherits DynamicType
 				_treatment = Treatment.InvokeRuntime
 			else
 				_treatment = Treatment.CompareToNull
@@ -2882,7 +2880,7 @@ class ToNonNilableExpr
 	def _bindImp
 		base._bindImp
 		if (et = _expr.type) inherits NilableType
-			_type = et.theWrappedType
+			_type = et.nonNil
 		else
 			.compiler.warning(this, 'The given expression is already non-nilable so "to !" is redundant. You can remove it.') # TODO: needs test case
 			_type = _expr.type

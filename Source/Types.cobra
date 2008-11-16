@@ -322,6 +322,9 @@ class BasicLibraryType
 	def isStrictDescendantOf(t as IType) as bool
 		return this is not t and t.isSystemObjectClass
 
+	get nonNil as IType
+		return this
+
 	## Methods
 
 	def greatestCommonDenominatorWith(type as IType) as IType
@@ -513,6 +516,12 @@ interface IType
 		Returns true if this type can be compared to the given type via `is`, `is not`, `==` and `<>`.
 		"""
 
+	get nonNil as IType
+		"""
+		Returns the non-nil version of the receiver.
+		This is normally just the receiver itself, except in the case of NilableType.
+		"""
+
 	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType
 		"""
 		Makes a new generic type, if needed, using the given map from generic params to types.
@@ -615,8 +624,7 @@ class CobraType
 		return false
 
 	def isComparableTo(t as IType) as bool
-		if t inherits NilableType
-			t = t.theWrappedType
+		t = t.nonNil
 		compareTo = .memberForName('compareTo')
 		if compareTo and compareTo.isMethod and compareTo.resultType is .compiler.intType and t.isDescendantOf(this)
 			# TODO: check that the compareTo can take a `t` as an argument
@@ -626,11 +634,13 @@ class CobraType
 		return false
 
 	def isEquatableTo(t as IType) as bool
-		if t inherits NilableType
-			t = t.theWrappedType
+		t = t.nonNil
 		if .isAssignableTo(t) or t.isAssignableTo(this)
 			return true
 		return false
+
+	get nonNil as IType
+		return this
 
 	get requiresThis as bool
 		return false
@@ -1318,7 +1328,7 @@ class NilableType
 	def isAssignableTo(type as IType) as bool is override
 		if _wrappedType.isDynamic, return true
 		if type inherits PassThroughType, return true
-		if type inherits NilableType, return _wrappedType.isAssignableTo(type.theWrappedType)
+		if type inherits NilableType, return _wrappedType.isAssignableTo(type.nonNil)
 		return false
 
 	def isComparableTo(b as IType) as bool is override
@@ -1336,6 +1346,9 @@ class NilableType
 		else
 			return _wrappedType.isEquatableTo(b)
 
+	get nonNil as IType is override
+		return _wrappedType
+
 	def memberForName(name as String) as IMember? is override
 		return _wrappedType.memberForName(name)
 
@@ -1345,10 +1358,10 @@ class NilableType
 		if type inherits NilType
 			return this
 		if type inherits NilableType
-			if _wrappedType is type.theWrappedType
+			if _wrappedType is type.nonNil
 				return this
 			else
-				return NilableType(_wrappedType.greatestCommonDenominatorWith(type.theWrappedType))
+				return NilableType(_wrappedType.greatestCommonDenominatorWith(type.nonNil))
 		return NilableType(_wrappedType.greatestCommonDenominatorWith(type))
 
 
@@ -1366,12 +1379,9 @@ class NilType
 		return true
 
 	def isAssignableTo(type as IType) as bool is override
-		if this is type
-			return true
-		if type is .compiler.passThroughType
-			return true
-		if type inherits NilableType
-			return true
+		if this is type, return true
+		if type is .compiler.passThroughType, return true
+		if type inherits NilableType, return true
 		return false
 
 	def greatestCommonDenominatorWith(type as IType) as IType is override
@@ -1622,7 +1632,7 @@ extend IType
 		return this inherits DynamicType or this inherits PassThroughType
 
 	def isNilableAndDescendantOf(otherType as IType) as bool
-		return this inherits NilableType and ((this to NilableType).theWrappedType).isDescendantOf(otherType)
+		return this inherits NilableType and .nonNil.isDescendantOf(otherType)
 
 	def isSequenceLike as bool
 		"""
@@ -1632,7 +1642,7 @@ extend IType
 		"""
 		type = this
 		if type inherits NilableType
-			return type.theWrappedType.isSequenceLike
+			return type.nonNil.isSequenceLike
 		# TODO: check for ISliceable which would have a .getSlice
 		tp = Node.getCompiler  # 'tp' for 'type provider'
 		if type.isDescendantOf(tp.stringType)
@@ -1666,7 +1676,7 @@ extend IType
 		"""
 		type = this
 		if type inherits NilableType
-			return type.theWrappedType.isDictionaryLike
+			return type.nonNil.isDictionaryLike
 		tp = Node.getCompiler  # 'tp' for 'type provider' # TODO? expand ITypeProvider to cover idictionaryType, dictionaryOfType, idictionaryOfType
 		if type.isDescendantOf(tp.idictionaryType)
 			return true

@@ -295,14 +295,10 @@ class NumericPromoExpr
 		tpassthrough = .compiler.passThroughType
 		tstring = .compiler.stringType
 		cannotMix = false
-		leftType = _left.type
-		if leftType inherits NilableType
-			leftType = leftType.theWrappedType
-		rightType = _right.type
-		if rightType inherits NilableType
-			rightType = rightType.theWrappedType
+		leftType = _left.type.nonNil
+		rightType = _right.type.nonNil
 
-		tgcd = leftType.greatestCommonDenominatorWith(rightType to !)
+		tgcd = leftType.greatestCommonDenominatorWith(rightType)
 
 		if leftType.isDescendantOf(tint)
 			if rightType.isDescendantOf(tint)
@@ -382,7 +378,7 @@ class AugAssignMathExpr
 		if .left.type inherits MethodSig
 			# TODO: error
 			pass
-		else if .left.type.isDescendantOf(.compiler.delegateType)
+		else if .left.type.nonNil.isDescendantOf(.compiler.delegateType)
 			leftSource = .left.toCobraSource
 			rightSource = .right.toCobraSource
 			if not .right inherits RefExpr, rightSource = 'ref ' + rightSource
@@ -458,12 +454,8 @@ class BinaryMathExpr
 
 	def _bindImp # TODO: this is all messed up. does this get called? TODO: this is missing, so its not being run. resolve with base class: is override
 		base._bindImp
-		lt = _left.type
-		if lt inherits NilableType
-			lt = lt.theWrappedType
-		rt = _right.type
-		if rt inherits NilableType
-			rt = rt.theWrappedType
+		lt = _left.type.nonNil
+		rt = _right.type.nonNil
 		if lt is rt
 			assert _type == lt or (_type is .compiler.decimalType and _op=='SLASH')
 		else if lt.isDynamic or rt.isDynamic
@@ -730,17 +722,17 @@ class InheritsExpr
 				leftType = _left.type
 				if leftType
 					okay = true
-					if leftType inherits DynamicType or (leftType inherits NilableType and (leftType to NilableType).theWrappedType inherits DynamicType)
+					if leftType.isDynamic
 						pass
 					else if leftType.isDescendantOf(rightType)
 						.compiler.warning(this, 'The expression is always of type "[.right.toCobraSource]".')
 					else if rightType.isDescendantOf(leftType)
 						# ex: someShape inherits Circle
 						pass
-					else if leftType inherits NilableType and not rightType inherits NilableType and rightType.isStrictDescendantOf((leftType to NilableType).theWrappedType)
+					else if leftType inherits NilableType and not rightType inherits NilableType and rightType.isStrictDescendantOf(leftType.nonNil)
 						# ex: someNilableShape inherits Circle
 						pass
-					else if leftType inherits NilableType and not rightType inherits NilableType and (leftType to NilableType).theWrappedType.isDescendantOf(rightType)
+					else if leftType inherits NilableType and not rightType inherits NilableType and leftType.nonNil.isDescendantOf(rightType)
 						# ex: someNilableCircle inherits Shape
 						.compiler.warning(this, 'The expression will always be of type "[.right.toCobraSource]" when not nil. You can just check for not nil by removing "inherits [.right.toCobraSource]".')
 					else if rightType inherits Interface
@@ -822,10 +814,10 @@ class ToExpr
 		rightType = _rightTypeExpr.potentialType
 		if rightType
 			if _left.type inherits NilableType and not rightType inherits NilableType
-				if (_left.type to NilableType).theWrappedType is rightType
+				if _left.type.nonNil == rightType
 					.compiler.warning(this, 'The given expression is already a "[_rightTypeExpr.toCobraSource]", but nilable. You can just use "to !".')
 			else if not _left.type inherits NilableType and rightType inherits NilableType
-				if (rightType to NilableType).theWrappedType == _left.type
+				if rightType.nonNil == _left.type
 					.compiler.warning(this, 'The given expression is already a "[_left.type.name]", but not nilable. You can just use "to ?".')
 			else if _left.type == rightType
 				.compiler.warning(this, 'The given expression is already a "[_rightTypeExpr.toCobraSource]" so the typecast is redundant. You can remove it.')
@@ -867,7 +859,7 @@ class CoalesceExpr
 			_type = ptt
 		else if _left.type inherits NilableType and not _right.type inherits NilableType
 			# x ? y   ...where x can be nil, but y cannot
-			_type = (_left.type to NilableType).theWrappedType  # TODO: should be greatest common denominator between the two
+			_type = _left.type.nonNil  # TODO: should be greatest common denominator between the two
 		else
 			# the catch all case
 			_type = _left.type  # TODO: should be greatest common denominator between the two
@@ -893,7 +885,7 @@ class InverseCoalesceExpr
 # TODO?
 #		else if _right.type inherits NilableType and not _right.type inherits NilableType
 #			# x ? y   ...where x can be nil, but y cannot
-#			_type = _left.type.theWrappedType  # TODO: should be greatest common denominator between the two
+#			_type = _left.type.nonNil  # TODO: should be greatest common denominator between the two
 		else
 			# the catch all case
 			_type = _left.type  # TODO: should be greatest common denominator between the two
