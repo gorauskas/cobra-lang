@@ -1,0 +1,94 @@
+use System.Reflection
+
+
+namespace Cobra.Lang
+
+	class Visitor
+		is abstract
+		"""
+		The visitor design pattern is a way of separating an algorithm from an object structure upon
+		which it operates. This enables the addition of new operations to existing object structures
+		without modifying those structures. [1]
+	
+		This class implements the visitor pattern, but via reflection so as to not require that the
+		classes being visited implement any additional methods for "double dispatch". This approach
+		enables less coding and an even greater degree of modularity. It also enables visitation
+		directly on final classes, structs, library classes, etc. with no wrapper classes. [2]
+	
+		In order to leverage this class, you must create a concrete subclass.
+	
+		Subclasses must override .methodName and then simply implement visitation methods with that
+		name and the appropriate parameter types.
+	
+		When enumerating through subobjects, invoke .dispatch to get type specific dispatch.
+	
+		If you add a subclass to the class hierarchy that is being visited then you must either
+			(1) remember to implement a method in your visitor class for that specific type, or
+			(2) be content when a visitation method for one of its ancestor classes is invoked for it.
+	
+		If you look at the example much further below, you will get a better idea of what to do.
+		Another read of the notes after examining the example could be useful.
+	
+		Alternatives to the visitor pattern:
+	
+			* Class extensions. You could put multiple, related class extensions in the same file.
+			  A pro is that this can make the additional functionality feel like a natural part of the
+			  classes. A con is that state must be passed from method to method. Also, method signatures
+			  will have to be updated if additional state is added (unless state is grouped into a
+			  single context/container object). With the visitor pattern, the state can be stored in the
+			  instance of the visitor.
+	
+			* Partial classes. These have the same advantages of class extensions, but without the
+			  disadvantage of having to pass state around. However, the con is that this is not
+			  available if the classes are external to your project. For example, if the classes come
+			  from a library or you are writing a plugin for an application, then partial classes are
+			  not available. (Also, as of 2008-07-07, Cobra has not yet implemented partial classes.)
+	
+		References:
+	
+			[1] http://en.wikipedia.org/wiki/Visitor_pattern
+			[2] http://www.javaworld.com/javaworld/javatips/jw-javatip98.html
+	
+		Future:
+	
+			* Could add a 'strict' mode where if the argument type is not an exact match for the found
+			  method, an exception is raised. This would help when you don't desire that subclasses are
+			  silently handled as described above.
+		"""
+	
+		var _willCache = true
+		var _methods = Dictionary<of Type, MethodInfo>()
+		var _methodName as String
+		
+		def init
+			_methodName = .methodName
+			if _methodName[0].isLower
+				_methodName = _methodName[0].toUpper.toString + _methodName[1:]
+	
+		get methodName as String is abstract
+			"""
+			Returns the method name looked up in .dispatch.
+			"""
+			# ensure result.length > 0
+	
+		def dispatch(obj as Object?)
+			"""
+			Performs type specific dispatch on the given object.
+			A subclass can override this method to change the dispatch logic.
+			"""
+			if obj is nil, return
+			objType = obj.getType
+			methInfo as MethodInfo?
+			if _willCache, _methods.tryGetValue(objType, out methInfo)
+			if methInfo is nil
+				methInfo = .getType.getMethod(_methodName, @[objType])
+				if methInfo is nil
+					throw InvalidOperationException('Cannot find a method "[_methodName]" with arg type "[objType]"')
+				_methods[objType] = methInfo to !
+			methInfo.invoke(this, @[obj])  # would be nice to speed this up
+	
+		def dispatch(objects as System.Collections.IEnumerable)
+			"""
+			Performs type specific dispatch on each object in order.
+			"""
+			for obj in objects, .dispatch(obj)

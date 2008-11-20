@@ -539,7 +539,8 @@ class CommandLine
 
 	def doCompile(paths as List<of String>, willPrintSuccessMsg as bool, 
 					writeTestInvocation as bool, stopAfterBindInt as bool) as Compiler
-		oldPaths = List<of String>(paths)
+		sep = Path.directorySeparatorChar.toString
+		oldPaths = for path in paths get path.replace('\\', sep).replace('/', sep)
 		paths.clear
 		for path in oldPaths
 			if File.exists(path)
@@ -598,7 +599,6 @@ class CommandLine
 								print '    Command: [p.startInfo.fileName] [p.startInfo.arguments]'
 								print '    Exception: [exc]'
 							break
-
 		return c
 
 	def doDocument(paths as List<of String>) as Compiler
@@ -1121,18 +1121,28 @@ class ArgParser
 			fileNamesList = valueDict['files'] to System.Collections.IList
 			_processFilesFile(fileNamesList, fileList)
 
+	def readFilesFile(filesFilePath as String) as List<of String>
+		"""
+		Augments the list of files held by the arg parser with those passed in.
+		"""
+		paths = List<of String>()
+		_processFilesFile([filesFilePath], paths)
+		return paths
+
 	def _processFilesFile(fileNamesList as IList, fileList as List<of String>)
 		"""
 		Treat entries in fileNamesList as names of files containing filenames to compile, 
 		validate names and add into fileList
 		"""
 		for fileName as String in fileNamesList
+			baseDir = Path.getDirectoryName(fileName)
 			try
 				for line in File.readAllLines(fileName)
 					line = line.trim
 					if line.length==0 or line.startsWith('#')
 						continue
-					_processAsFile(line, fileList, nil)
+					# note that source files are relative to the location of the "files file"
+					_processAsFile(Path.combine(baseDir, line), fileList, nil)
 			catch IOException
 				_error('Cannot open file "[fileName]".')
 

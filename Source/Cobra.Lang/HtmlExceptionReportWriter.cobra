@@ -1,0 +1,344 @@
+use System.Reflection
+use System.Runtime.CompilerServices
+
+
+namespace Cobra.Lang
+
+	class HtmlExceptionReportWriter
+		inherits ExceptionReportWriter
+
+		var _tw as TextWriter?
+		var _dumpObjectCount as int
+		var _maxDumpObjectCount = 250
+	
+		def init
+			.maxDumpObjectCount = CobraCore.maxDumpObjectCount
+
+		get tw from var
+
+		pro maxDumpObjectCount from var
+			"""
+			Controls the maximum number of objects dumped  in the exception report.
+			Defaults to 250 which can easily result in a 5MB exception report.
+			"""
+
+		def writeReport(tw as TextWriter, exc as Exception?)
+			base.writeReport(tw, exc)
+			Console.out.writeLine
+
+		def writeReport(tw as TextWriter, exc as Exception?, frames as Stack<of CobraFrame>?) is override
+			# dump the most recent stack frames first since the HTML file will be displayed at the top in the browser
+		
+			_tw = tw
+			_dumpObjectCount = 0
+		
+			tw.writeLine('<html>')
+			tw.writeLine('<head>')
+			exePath = CobraCore.findCobraExe
+			if exePath
+				path = Path.combine(Path.getDirectoryName(exePath), 'styles-exception-report.css')
+				path = 'file://' + path.replace(Path.directorySeparatorChar, c'/')
+				tw.writeLine('<link href="[path]" rel=stylesheet type="text/css">')
+			tw.writeLine('<link href=styles-exception-report.css rel=stylesheet type="text/css">')
+			tw.writeLine('<meta http-equiv="content-type" content="text/html; charset=utf-8">')
+			tw.writeLine('</head>')
+			tw.writeLine('<body>')
+			tw.writeLine('<div class=sstHeading>Cobra Exception Report</div>')
+		
+			tw.writeLine('<div class=topLinks>')
+			tw.writeLine('<a href=http://Cobra-Language.com/>Cobra</a> &nbsp;')
+			tw.writeLine('<a href=http://Cobra-Language.com/downloads/>Downloads</a> &nbsp;')
+			tw.writeLine('<a href=http://Cobra-Language.com/docs/>Docs</a> &nbsp;')
+			tw.writeLine('<a href=http://Cobra-Language.com/how-to/>How To</a> &nbsp;')
+			tw.writeLine('<a href=http://Cobra-Language.com/samples/>Samples</a> &nbsp;')
+			tw.writeLine('<a href=http://CobraLang.BlogSpot.com/>Blog</a> &nbsp;')
+			tw.writeLine('<a href=http://Cobra-Language.com/forums/>Discussion</a> &nbsp;')
+			tw.writeLine('<a href=http://Cobra-Language.com/source/>Source</a> &nbsp;')
+			tw.writeLine('<a href=http://Cobra-Language.com/docs/contact/>Contact</a>')
+			tw.writeLine('</div>')
+
+			tw.writeLine('<div class=section>')
+			tw.writeLine('<div class=title>Header</div>')
+			tw.writeLine('<table class=keyValues border=0 cellpadding=1 cellspacing=1>')
+			if CobraCore.isRunningOnMono
+				# Mono 1.9 on Mac OS X 10.4 chokes so hard on ProcessName that it won't even throw an exception
+				name = ''
+			else
+				name = System.Diagnostics.Process.getCurrentProcess.processName
+			if name.endsWith('mono')
+				for part in Environment.commandLine.split(c' ')
+					if part.endsWith('.exe')
+						name = Path.getFileName(part) to !  # CC: method should have: ensure arg and arg.length implies result; um, that'll be awhile to both put in and interpret at compile time!
+						break
+			if name <> ''
+				_headerPair('Program', name)
+			_headerPair('When', DateTime.now)
+			_headerPair('Command Line', Environment.commandLine)
+			_headerPair('Current Directory', Environment.currentDirectory)
+			_headerPair('Machine Name', Environment.machineName)
+			_headerPair('Cobra', CobraCore.version)
+			_headerPair('CLR', Environment.version)
+			if Environment.workingSet to decimal  # CC: axe cast. workingSet is really C# 'long' or Cobra 'int64'
+				_headerPair('Working Set', Environment.workingSet)
+			tw.writeLine('</table>')
+			tw.writeLine('</div> <!-- section -->')
+		
+			objects = ObjectCatalog()
+		
+			if exc
+				tw.writeLine('<div class=section>')
+				tw.writeLine('<div class=title>Exception</div>')
+				objects.record(exc)
+				.dumpObjectAsHtml(objects.serialNumFor(exc), exc, objects)
+		
+			startingSerialNum = objects.minSerialNum
+			tw.writeLine('<div class=section>')
+			tw.writeLine('<div class=title>Stack Frames</div>')
+			if frames is nil
+				tw.writeLine('<p>There is no detailed stack trace. You can turn this on with "cobra -dst ..." and see significantly more information about the state of the program including the details of every argument and local variable. There is a performance cost, but the slowdown is likely worth it if you are unable to diagnose this problem.</p>')
+			else
+				if not frames.count
+					tw.writeLine('<p>No stack frames.</p>')
+				else
+					frameList = List<of CobraFrame>(frames)
+					frameList.reverse
+					tw.writeLine('<table class=stack border=0 cellpadding=2 cellspacing=0>')
+					i = 0
+					for frame in frameList
+						frame.dumpHtml(tw, i, objects, ref .willDumpHtmlFor)
+						i += 1
+					tw.writeLine('</table>')
+			tw.writeLine('</div> <!-- section -->')
+
+			tw.writeLine('<div class=section>')
+			tw.writeLine('<div class=title>Objects</div>')
+			serialNum = if(startingSerialNum > 0, startingSerialNum+1, objects.minSerialNum)
+			while objects.contains(serialNum) and _dumpObjectCount <= _maxDumpObjectCount
+				.dumpObjectAsHtml(serialNum, objects.objectFor(serialNum), objects)
+				serialNum += 1
+			tw.writeLine('</div> <!-- section -->')
+
+			tw.writeLine('</body>')
+			tw.writeLine('</html>')
+
+		def _headerPair(key as String, value as Object?)
+			key = .htmlEncode(key)
+			value ?= ''
+			value = .htmlEncode(value.toString)
+			.tw.writeLine('<tr class=keyValue> <td class=key> [key] </td> <td> &nbsp;=&nbsp; </td> <td class=value> [value] </td> </tr>')
+
+		def htmlEncode(obj as Object) as String
+			return CobraCore.htmlEncode(obj)
+
+		def htmlEncode(s as String) as String
+			return CobraCore.htmlEncode(s)
+
+		def htmlFormat(s as String) as Html
+			s = .htmlEncode(s)
+			# re = Regex(r'\n[ ]+', ...  # CC: ack, no delegates so can't get length
+			sb = StringBuilder(s.length*2)
+			state = 0
+			for c in s
+				branch state
+					on 0
+						sb.append(c)
+						if c == c'\n'
+							state = 1
+					on 1
+						if c == c' '
+							sb.append('&nbsp;')
+						else if c == c'\n'
+							sb.append(c)
+						else
+							sb.append(c)
+							state = 0
+			s = sb.toString
+			s = s.replace('\r', '').replace('\n', '<br>')
+			return Html(s)
+		
+		def willDumpHtmlFor(obj as Object?) as bool			
+			if obj is nil
+				return false
+			if obj inherits int
+				return false
+			# TODO: int64 and other int sizes
+			if obj inherits String, return false
+			if obj inherits decimal or obj inherits float, return false
+			if obj inherits bool or obj inherits char, return false
+			if obj inherits Html, return false
+			if obj inherits CobraDirectString, return false
+			if obj.getType.isEnum, return false
+			fullName = obj.getType.fullName
+			if fullName == 'System.Security.Policy.Evidence'  # 2007-07-11 CE: causes problems, at least on mono 1.2.4
+				return false
+			if fullName == 'System.IntPtr'  # not interesting. # TODO: skip any type that has zero properties and does not implement custom exception reporting
+				return false
+			return true
+
+		def willDumpHtmlForConservative(obj as Object?) as bool
+			if not .willDumpHtmlFor(obj), return false
+			if obj.getType.isNested, return false
+			if 'IEquatableOf' in obj.getType.name, return false
+			return true
+		
+		def dumpObjectAsHtml(serialNum as int, obj as Object, objects as ObjectCatalog?)
+			tw = .tw
+			if _dumpObjectCount % 10 == 0  # TODO: change 10 to a public property. value < 1 means not to write progress
+				Console.out.write('.')
+				Console.out.flush
+			_dumpObjectCount += 1
+			if objects
+				objects.record(obj)
+			tw.writeLine('<a name=Object[serialNum]></a>')
+			tw.writeLine('<table class=object border=0 cellpadding=0 cellspacing=0>')
+			tw.writeLine('<tr class=objectTitle> <td class=objectTitle colspan=2> [.htmlEncode(CobraCore.typeName(obj.getType))] &nbsp; <font size=-1>([serialNum])</font> </td> </tr>')
+			try
+				value = obj.toString to Object?
+			catch exc as Exception
+				value = 'Caught exception while reading value: [exc.toString]'
+			row = 1
+			if obj inherits IHasSourceSite
+				.writeObjectPair1(row, 'at', obj.sourceSite.htmlForAt)
+				row += 1
+			.writeObjectPair1(row, 'toString', .htmlFormat(value.toString))
+			propInfos = List<of PropertyInfo>(obj.getType.getProperties)
+			propInfos.sort(ref .comparePropertyInfoNames)  # CC: propInfos.sort(def(a as PropertyInfo, b as PropertyInfo)=a.name.compareTo(b.name))
+			for propInfo in propInfos
+				if propInfo.canRead and not propInfo.getGetMethod.isStatic and propInfo.name not in ['Clone', 'Copy', 'Item']
+					if propInfo.name == 'MetadataToken'  # problems on mono. http://bugzilla.ximian.com/show_bug.cgi?id=82161
+						value = '(SKIPPED)'
+					else
+						try
+							value = propInfo.getValue(obj, nil)
+						catch exc as Exception
+							value = .htmlFormat('Caught exception while reading value: [exc.toString]')
+						success
+							value = .htmlForValue(value, objects)
+					.writeObjectPair1(row%2+1, propInfo.name, value)
+					row += 1
+			extendMethod = obj.getType.getMethod('ExtendObjectTable')
+			if extendMethod
+				view = PrivateObjectViewForExceptionReport(this, row, objects)
+				extendMethod.invoke(obj, @[view])
+				i = view.rowNum
+			# TODO: ack! cannot do this until qualified type problems are fixed up
+			#if obj inherits System.Collections.IList
+			if obj.getType.name.startsWith('List`')
+				dobj = obj to dynamic
+				count = dobj.count to int
+				for j = 0 .. count
+					try
+						value = dobj[j]
+					catch exc as Exception
+						value = .htmlFormat('Caught exception while reading indexed value [j]: [exc.toString]')
+					success
+						value = .htmlForValue(value, objects)
+					.writeObjectPair1(i%2+1, r'[' + '[j]]', value)
+					i += 1
+			else if obj.getType.name.startsWith('Dictionary')  # TODO: use if implements/inherits
+				dobj = obj to dynamic
+				for key in dobj.keys
+					htmlKey as dynamic?
+					try
+						htmlKey = CobraCore.toTechString(key)
+					catch exc as Exception
+						htmlKey = .htmlFormat('Caught exception for toTechString(key): [exc.toString]')
+					success
+						htmlKey = .htmlEncode(htmlKey)
+					try
+						value = dobj[key]
+					catch exc as Exception
+						value = .htmlEncode('Caught exception while reading keyed value [htmlKey]: [exc.toString]')
+					success
+						value = .htmlForValue(value, objects)
+					.writeObjectPair1(i%2+1, r'[' + htmlKey + ']', value)
+					i += 1
+
+			tw.writeLine('</table>')
+
+		def comparePropertyInfoNames(a as PropertyInfo, b as PropertyInfo) as int
+			return a.name.compareTo(b.name)
+
+		def htmlForValue(value as dynamic?, objects as ObjectCatalog?) as dynamic
+			"""
+			Returns the .toTechString of the value, encoded for HTML.
+			Gracefully handles exceptions and also creates links to objects.
+			"""
+			if value inherits Html  # this feature is used by AssertException, but it's interesting that this would then make Html() objects less recognizable when they show up in the report as a normal part of the program that failed
+				return value
+			s as dynamic?
+			try
+				try
+					s = CobraCore.toTechString(value)
+				catch exc as Exception
+					s = .htmlFormat('Caught exception while converting value toTechString: [exc.toString]')
+				success
+					s = .htmlFormat(s to !)
+					if value and objects
+						willLink = false
+						if objects.contains(value to passthrough)
+							willLink = true
+						else if .willDumpHtmlForConservative(value) and objects
+							objects.record(value to passthrough)
+							willLink = true
+						if willLink
+							s = '<a class=objectDetails href=#Object[objects.serialNumFor(value to passthrough)]>[s]</a>'
+			catch topExc as SystemException  # for example, System.Security.Policy.Evidence as a dictionary key causes problems (at least on mono 1.2.4)
+				try
+					s = value.toString
+				catch toStringExc as Exception
+					s = '(htmlForValue: Exception during toString: [toStringExc];[Environment.newLine]Exception during processing: [topExc])'
+				success
+					s = '(htmlForValue: value=[s]; Exception during processing: [topExc])'
+				try
+					s = .htmlFormat(s to !)
+				catch Exception
+					pass  # forget it
+			return s to !
+	
+		def writeObjectPair1(i as int, key as String, valueHtml as Object?) is internal
+			require
+				i == 1 or i == 2
+				key.length
+			body
+				key = key[0].toString.toLower + key[1:]
+				key = .htmlEncode(key)
+				.writeObjectPair2(i, key, valueHtml)
+
+		def writeObjectPair2(i as int, preFormattedKey as String, valueHtml as Object?) is internal
+			require
+				i == 1 or i == 2
+				preFormattedKey.length
+			body
+				.tw.writeLine('<tr class=keyValue[i]> <td class=key[i]> [preFormattedKey] </td> <td class=value[i]> [valueHtml ? ''] </td> </tr>')
+
+	interface IObjectView
+		"""
+		TODO: document this
+		"""
+		
+		def addEntry(key as String, value as Object?)
+
+	class PrivateObjectViewForExceptionReport
+		is internal
+		implements IObjectView
+		
+		var _reportWriter as HtmlExceptionReportWriter
+		var _rowNum as int
+		var _objects as ObjectCatalog?
+		
+		def init(reportWriter as HtmlExceptionReportWriter, rowNum as int, objects as ObjectCatalog?)
+			_reportWriter = reportWriter
+			_rowNum = rowNum
+			_objects = objects
+		
+		get rowNum from var
+		
+		def addEntry(key as String, value as Object?)
+			key = _reportWriter.htmlEncode(key).replace('  ', '&nbsp;&nbsp;')  # the double space replace here works well with the indentation scheme used in AssertException
+			html = _reportWriter.htmlForValue(value, _objects)
+			_reportWriter.writeObjectPair2(_rowNum%2+1, key, html)
+			_rowNum += 1
+	
+	sig WillDumpHtmlForMethod(value as dynamic?) as bool
+
