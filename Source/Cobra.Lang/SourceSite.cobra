@@ -1,0 +1,87 @@
+namespace Cobra.Lang
+
+	class SourceSite
+		"""
+		A SourceSite instance captures the source location of a statement or expression, as in the
+		filename, line number, declaring class name, method name and run-time object. The Cobra
+		compiler generates SourceSite instances in various circumstances; for example, the `trace`
+		statement.
+		"""
+
+		var _fileName as String
+		var _lineNum as int
+		var _className as String
+		var _memberName as String
+		var _object as Object
+
+		def init(fileName as String, lineNum as int, className as String, memberName as String, obj as Object)
+			_fileName = fileName
+			_lineNum = lineNum
+			_className = className
+			_memberName = memberName
+			_object = obj
+
+		def toString as String is override
+			#fileName = CobraCore.toTechString(_fileName)
+			#className = CobraCore.toTechString(_className)
+			#memberName = CobraCore.toTechString(_memberName)
+			#obj = CobraCore.toTechString(_object)
+			#return '[.getType.name]([fileName], [_lineNum], [className], [memberName], [obj])'
+			return '[_fileName]:[_lineNum] in [_className].[_memberName] for object [CobraCore.toTechString(_object)]'
+
+		get fileName from var
+
+		get lineNum from var
+
+		get className from var
+
+		get memberName from var
+
+		get object from var
+
+		get runTimeClassName as String
+			return _object.getType.name
+
+		def oneLiner(sep as String) as String
+			return .oneLiner(sep, true)
+
+		def oneLiner(sep as String, willOutputDirectoryNames as bool) as String
+			test
+				si = SourceSite('Foo.cobra', 10, 'Object', 'bar', Object())
+				assert si.oneLiner('; ', true) == 'at Foo.cobra:10; in Object.bar'
+				si = SourceSite('Foo.cobra', 10, 'Foo', 'bar', Object())
+				assert si.oneLiner('; ', true) == 'at Foo.cobra:10; in Foo.bar; subclass Object'
+			body
+				sb = StringBuilder()
+				fileName = if(_fileName.length and not willOutputDirectoryNames, Path.getFileName(_fileName), _fileName)
+				sb.append('at [fileName]:[_lineNum][sep]in [_className].[_memberName]')
+				if not _object inherits Type
+					# I guess that condition would preclude reporting the subclass name in a trace statement in subclasses of Type
+					# But then those come with the system anyway (RuntimeType)
+					name = .runTimeClassName
+					if name <> _className
+						sb.append('[sep]subclass [name]')
+				return sb.toString
+
+		def htmlForAt as String
+			return .htmlForAtArgs(_fileName, _lineNum)
+
+		def htmlForAtArgs(fileName as String, lineNum as int) as String is shared
+			"""
+			Returns the HTML for the row labeled "at" in the Cobra Exception Report.
+			This will be an actual link if the environment variable COBRA_EDIT_LINK is set.
+			That's what enables clicking on sources in the report to jump to their location in a text editor.
+			"""
+			baseName = Path.getFileName(fileName)
+			dirName = Path.getDirectoryName(fileName)
+			if dirName <> ''
+				dirName = ' in ' + (dirName to !)
+			s = 'line [lineNum] of [baseName][dirName]'
+			editLink = Environment.getEnvironmentVariable('COBRA_EDIT_LINK')
+			if editLink
+				editLink = editLink.replace('FILE', fileName)  # TODO: url encode the file name
+				editLink = editLink.replace('LINE', lineNum.toString)
+				s = '<a href="[editLink]">[s]</a>'
+			return s
+
+			

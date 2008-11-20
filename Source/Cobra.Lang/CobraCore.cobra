@@ -1,0 +1,446 @@
+use System.Reflection
+
+
+namespace Cobra.Lang
+
+	class CobraCore
+
+		shared
+		
+			## Release info
+
+			get versionDescription as String
+				"""
+				Returns a textual description of the version such as "X.Y.Z" or "svn-post-X.Y.Z".
+				"""
+				return 'svn-post-[.version]'
+				# return .version.toString
+			
+			get isOfficialRelease
+				return false
+
+			get version as Version
+				return Version(0, 8, 0)
+
+			get releaseNum as int
+				return 25
+
+
+			## String Makers
+			
+			pro printStringMaker as StringMaker
+				"""
+				Used by `print` statements, string substitutions and .toPrintString methods.
+				"""
+				get
+					return CobraImp._printStringMaker
+				set
+					CobraImp._printStringMaker = value
+			
+			pro techStringMaker as StringMaker
+				"""
+				Used by `assert` failures, `trace` statements and .toTechString methods.
+				"""
+				get
+					return CobraImp._techStringMaker
+				set
+					CobraImp._techStringMaker = value
+
+
+			## Program stuff
+
+			get commandLineArgs as List<of String>
+				return List<of String>(Environment.getCommandLineArgs)
+
+			get exePath as String
+				"""
+				Returns the full path of the currently executing exe including directory, file name and extension.
+				Use `Path.getDirectoryName()` on this to get the directory containing the current exe.
+				"""
+				test
+					assert '.exe' in CobraCore.exePath
+				body
+					return Assembly.getEntryAssembly.location
+
+			get printDestination as TextWriter
+				"""
+				Returns the TextWriter that print statements currently print to.
+				This can change via the block version of the `print to` statement.
+				"""
+				return CobraImp.printDestination
+
+			def printDebuggingTips
+				print 'An unhandled exception has occurred.'
+				print
+				print 'Cobra debugging tips:'
+				print '    To get file name and line number information for the stack frames, use:'
+				print '        cobra -debug foo.cobra'
+				if CobraCore.isRunningOnMono
+					print '    If running the executable through "mono" then also use --debug (double dash):'
+					print '        mono --debug foo.exe ...'
+				print '    To get a post-mortem, HTML-formatted report with more details about your objects:'
+				print '        cobra -debug -exception-report foo.cobra'
+				print '    For even more information, try:'
+				print '        cobra -debug -exception-report -detailed-stack-trace foo.cobra'
+				print '    Or use the abbreviations:'
+				print '        cobra -d -er -dst foo.cobra'
+				# TODO: print '    See also: http://cobra-language.com/docs/debugging'
+				print
+			
+
+			## Reset
+			
+			def reset(printDestination as TextWriter)
+				"""
+				Resets the Cobra run-time support using the argument as the initial print destination on the "print to" stack.
+				This is occasionally needed in special circumstances such as running with Pex (http://research.microsoft.com/pex/).
+				"""
+				CobraImp.reset(printDestination)
+
+			def reset
+				"""
+				Resets the Cobra run-time support using Console.out.
+				"""
+				.reset(Console.out)
+			
+
+			## Tracer
+
+			var _tracer as Tracer?
+
+			pro tracer as Tracer
+				"""
+				The global Tracer object used by `trace` statements.
+				Via this property, you can set this to your own instance,
+				or access the tracer to read or write its properties.
+				To turn off tracing, for example, you can write `CobraCore.tracer.isActive = false`.
+				"""
+				get
+					if _tracer is nil
+						_tracer = Tracer()
+					return _tracer to !
+				set
+					_tracer = Tracer()
+
+
+			## Run Tests
+
+			def runAllTests
+				"""
+				Run all Cobra `test` sections in all assemblies using reflection to locate them.
+				"""
+				# start = DateTime.now
+				_runAllTests(Assembly.getEntryAssembly, Dictionary<of String, String>())
+				# duration = DateTime.now.subtract(start)
+				# trace duration
+
+			def _runAllTests(ass as Assembly, found as Dictionary<of String, String>)  # CC: found should be Set<of String>
+				name = ass.getName.toString
+				if found.containsKey(name)
+					return
+				found.add(name, name)
+				if _skipAssemblyNameForTesting(name)  # saves some time
+					return
+
+				# print 'Testing assembly:', ass
+				for type in ass.getExportedTypes
+					members = type.getMember('RunTestsIfNeeded')
+					if members and members.length and members[0] inherits MethodInfo
+						method = members[0] to MethodInfo
+						# trace type, method
+						if type.containsGenericParameters
+							# TODO: this is quite awful. tests in generic types are being skipped!
+							# potential solution 1: move type test out of the type into a "sister" type: private __FooTest
+							# potential solution 2: require a constructed type in Cobra: `test Foo<of int> ...` and then put that in a method attribute in the gen C# and use that type
+							continue
+						method.invoke(type, nil)
+
+				# traverse further assemblies
+				for assName in ass.getReferencedAssemblies
+					subAss = Assembly.load(assName)
+					_runAllTests(subAss to !, found)
+
+			var _skipPrefixes = @['System.', 'Mono.', 'mscorlib,', 'System,']
+
+			def _skipAssemblyNameForTesting(name as String) as bool
+				for prefix in _skipPrefixes
+					if name.startsWith(prefix)
+						return true
+				return false
+
+
+			## Detailed stack trace
+
+			pro maxStackFrames as int
+				"""
+				When detailed stack trace is on, this value limits the maximum stack depth before
+				Cobra will exit with a stack overflow error including a listing of the most
+				recent stack frames. The default value is 250. You can set to 0 to disable
+				stack overflow detection.
+				"""
+				get
+					return CobraImp._maxStackFrames
+				set
+					require value == 0 or value > 9
+					CobraImp._maxStackFrames = value
+
+			pro numLastMaxStackFrames as int
+				"""
+				When stack overflow is detected, this value gives the number of most recent stack frames that will be printed.
+				"""
+				get
+					return CobraImp._numLastMaxStackFrames
+				set
+					require value >= 2
+					CobraImp._numLastMaxStackFrames = value
+					
+			var _maxDumpObjectCount = 250
+	
+			pro maxDumpObjectCount from var
+				"""
+				Controls the maximum number of objects dumped  in the exception report.
+				Defaults to 250 which can easily result in a 5MB exception report.
+				"""
+
+			get hasDetailedStackTrace
+				return CobraImp.hasDetailedStackTrace
+
+			def handleUnhandledException(ex as Exception)
+				print
+				try
+					print 'Unhandled Exception: [ex]'
+				catch exc as Exception
+					print 'Unhandled Exception: CAUGHT EXCEPTION FOR [ex.getType.name].toString: [exc]'
+				fileName = 'cobra-exception-report.html'
+				print 'Writing exception report to [fileName]...'
+				using tw = File.createText(fileName)
+					HtmlExceptionReportWriter().writeReport(tw, ex)
+				print 'Wrote [fileName]'
+				envVarName = 'COBRA_OPEN_HTML_SST_COMMAND'
+				cmd = Environment.getEnvironmentVariable(envVarName)
+				if cmd
+					if cmd.trim.length
+						p = System.Diagnostics.Process()
+						p.startInfo.fileName = cmd
+						p.startInfo.arguments = fileName
+						p.startInfo.useShellExecute = false
+						p.start
+						print '[cmd] [fileName]'
+				else
+					print 'You can set the environment variable [envVarName]'
+					print 'to automatically open the exception report.'
+
+	
+			## Type names and tech strings
+
+			def typeName(t as Type) as String
+				return CobraImp.typeName(t)
+
+			def toTechString(x as Object?) as String
+				return CobraImp.toTechString(x)
+
+
+			## Will check control flags
+
+			# CC: make a public section/block here
+			var _willCheckInvariant = true
+				is public
+			var _willCheckRequire = true
+				is public
+			var _willCheckEnsure = true
+				is public
+			var _willCheckAssert = true
+				is public
+			var _willCheckNil = true
+				is public
+
+			pro willCheckInvariant from var
+			pro willCheckRequire from var
+			pro willCheckEnsure from var
+			pro willCheckAssert from var
+			pro willCheckNil from var
+
+			set willCheckAll as bool
+				.willCheckInvariant = value
+				.willCheckRequire = value
+				.willCheckEnsure = value
+				.willCheckAssert = value
+				.willCheckNil = value
+
+
+			## Finding cobra command line program
+
+			def runCobraExe(args as String, process as out System.Diagnostics.Process?) as String
+				"""
+				Runs cobra.exe with the given args, sets the process to the one created for cobra.exe and returns all output including stdio and stderr.
+				In addition to examining the output, you should be interested in process.exitCode which will be zero if there was no problems.
+				Uses CobraCore.findCobraExe and raises IOException if it cannot be found.
+				Uses CobraCore.runAndCaptureAllOutput(p) to run the process.
+				"""
+				cobraExePath = CobraCore.findCobraExe
+				if cobraExePath is nil or cobraExePath == ''
+					throw IOException('Cannot locate cobra.exe using CobraCore.findCobraExe. Consider invoking .findCobraExe with additional search paths and passing the result to .runCobraExe.')
+				return .runCobraExe(cobraExePath, args, out process)
+
+			def runCobraExe(cobraExePath as String, args as String, process as out System.Diagnostics.Process?) as String
+				require cobraExePath.length
+				p = System.Diagnostics.Process()
+				if CobraCore.isRunningOnMono
+					p.startInfo.fileName = 'mono'
+					p.startInfo.arguments = cobraExePath + ' ' + args
+				else
+					p.startInfo.fileName = cobraExePath
+					p.startInfo.arguments = args
+				# print '[p.startInfo.fileName] [p.startInfo.arguments]'
+				process = p
+				return CobraCore.runAndCaptureAllOutput(p)
+
+			def findCobraExe as String?
+				return .findCobraExe(nil)
+
+			def findCobraExe(extraPaths as IList<of String>?) as String?
+				"""
+				Finds cobra.exe on the current system by looking in various places:
+					* the current directory
+					* the directory where the current executable resides
+					* the path of the cobra.exe that produced the current executable
+					* the path of the COBRA environment variable
+					* the system PATH
+					* educated guesses like \WINDOWS\Program Files\Cobra\bin and /usr/local/bin
+					* the extraPaths argument
+				"""
+				# check previous cached result first
+				if _findCobraCache
+					return _findCobraCache
+				# check the current directory
+				path = _findCobraExe(Environment.currentDirectory)
+				if path
+					return path
+				# check the directory where the current executable resides
+				path = _findCobraExe(CobraCore.exePath)
+				if path
+					return path
+				# check for the cobra that created the current executable
+				if File.exists(CobraInfo.cobraPath)
+					return CobraInfo.cobraPath
+				# check COBRA environment variable
+				path = Environment.getEnvironmentVariable('COBRA') ? ''
+				if path <> ''
+					path = _findCobraExe(path)
+					if path
+						return path
+				# check the PATH
+				paths = (Environment.getEnvironmentVariable('PATH') ? '').split(Path.pathSeparator)
+				for sysPath in paths
+					path = _findCobraExe(sysPath)
+					if path
+						return path
+				# check common locations and extraPaths
+				morePaths = [
+					r'\WINDOWS\Program Files\Cobra\bin',
+					r'\Cobra\bin',
+					r'/usr/local/bin',
+					r'/usr/bin',
+					r'/bin',
+				]
+				if extraPaths
+					morePaths.addRange(extraPaths)
+				for path in morePaths
+					path = _findCobraExe(path)
+					if path
+						return path
+				# cannot find cobra.exe
+				return nil
+
+			def clearCobraExeCache
+				"""
+				The `findCobraExe` method caches its results for subsequent speed.
+				This method clears the cache in the event you need to do so.
+				"""
+				_findCobraCache = nil
+
+			var _findCobraCache as String?
+
+			def _findCobraExe(path as String) as String?
+				_findCobraCache = _findCobraExe(path, true)
+				return _findCobraCache
+
+			def _findCobraExe(path as String, firstTime as bool) as String?
+				if path <> CobraCore.exePath and path.endsWith('cobra.exe')
+					# ^ first condition guards against test cases like "invoke-cobra.exe" from endlessly invoking themselves
+					if File.exists(path)
+						return path
+					else
+						return nil
+				else if Directory.exists(path)
+					exe = Path.combine(path, 'cobra.exe')
+					if File.exists(exe)
+						return exe
+					exe = Path.combine(Path.combine(path, 'bin'), 'cobra.exe')
+					if File.exists(exe)
+						return exe
+					if firstTime
+						# check for a 'Cobra' subdirectory
+						return _findCobraExe(Path.combine(path, 'Cobra'), false)
+					else
+						return nil
+				else
+					return nil
+
+
+			## Other util
+			
+			var _isRunningOnMono as bool?
+			
+			get isRunningOnMono as bool
+				if _isRunningOnMono is nil
+					_isRunningOnMono = $sharp('Type.GetType("Mono.Runtime")') is not nil
+				return _isRunningOnMono to !
+				
+			def runAndCaptureAllOutput(process as System.Diagnostics.Process) as String
+				"""
+				Example:
+					p = System.Diagnostics.Process()
+					p.startInfo.fileName = 'some-program'
+					p.startInfo.arguments = 'foo bar baz'
+					output = CobraCore.runAndCaptureAllOutput(p)
+					trace p, p.exitCode, output
+				TODO: change to extension method on Process
+				"""
+				return CobraImp.runAndCaptureAllOutput(process)
+
+			def noOp(args as vari dynamic?) as dynamic?
+				"""
+				No operation. Primarily used in Cobra's own test suite to consume a local variable to avoid undesired warnings.
+				Takes any number of values and returns an undefined value of type `dynamic?` for maximum flexibility.
+				"""
+				return 0
+
+			var _htmlEncodes = @[['&', '&amp;'], ['<', '&lt;'], ['>', '&gt;'], ['"', '&quot;']]
+
+			def htmlEncode(obj as Object) as String
+				"""
+				Return the HTML encoded version of the given object.
+				Returns the contents of the object if it is an instance of Html.
+				This is useful to display a plain ASCII text string on a web page.
+				"""
+				if obj inherits Html
+					return obj.contents
+				else
+					return .htmlEncode(obj.toString)
+			
+			def htmlEncode(s as String) as String
+				"""
+				Return the HTML encoded version of the given string.
+				This is useful to display a plain ASCII text string on a web page.
+				"""
+				test
+					rw = HtmlExceptionReportWriter()
+					assert rw.htmlEncode('foo') == 'foo'
+					assert rw.htmlEncode('3 < 5') == '3 &lt; 5'
+				body
+					for code in _htmlEncodes
+						s = s.replace(code[0], code[1])
+					return s
+
+
