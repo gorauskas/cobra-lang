@@ -757,6 +757,23 @@ static public class CobraImp {
 		return results;
 	}
 
+	static public List<TOut> For<TIn, TOut>(IEnumerable list, ForGet<TIn, TOut> forGet) {
+		List<TOut> results = new List<TOut>();
+		foreach (TIn item in list)
+			results.Add(forGet(item));
+		return results;
+	}
+
+	static public List<TOut> For<TIn, TOut>(IEnumerable list, ForWhereGet<TIn, TOut> forWhereGet) {
+		List<TOut> results = new List<TOut>();
+		foreach (TIn item in list) {
+			TOut value;
+			if (forWhereGet(item, out value))
+				results.Add(value);
+		}
+		return results;
+	}
+
 	static private void ProcessGetSliceArgs(int count, ref int? start, ref int? stop, ref int? step) {
 		if (start==null)
 			start = 0;
