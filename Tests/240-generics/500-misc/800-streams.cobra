@@ -1,0 +1,80 @@
+"""
+See doc string for StreamType class in compiler.
+"""
+
+
+class Test
+
+	# as an uninitialized object var
+	var _stuff as Object*
+
+	def main is shared
+		Test().run
+
+	def init
+		# stream variables start out empty
+		count = 0
+		for x in _stuff
+			count += 1
+		assert count == 0
+
+	def run
+		# pass lists, sets and arrays to a stream parameter
+		assert .toList(['a', 'b']) == ['a', 'b']
+		assert .toList({'a'}) == ['a']
+		assert .toList('a b'.split to !) == ['a', 'b']
+
+		# a stream local
+		numbers as int* = [1, 2, 3]
+		count = 0
+		for i in numbers
+			assert i in {1, 2, 3}
+			count += 1
+		assert count == 3
+
+		# an uninitialized stream local
+		names as String*
+		count = 0
+		for n in names
+			count += 1
+		assert count == 0
+
+		# work with the stream object var
+		_stuff = [1, 'x']
+		count = 0
+		for x in _stuff
+			assert x in {1, 'x'}
+			count += 1
+		assert count == 2
+		
+		# identity and equality
+		a as int* = [1, 2, 3]
+		b as int* = [1, 2, 3]
+		assert a is not b
+		assert a == b
+
+		# for expr
+		assert [2, 3] == for i in a where i > 1
+		assert [2, 4, 6] == for i in a get i * 2
+		assert [4, 6] == for i in a where i > 1 get i * 2
+
+		# passing as arguments
+		.takeIntStream(a)
+		.takeIntEnumerableOf(a)
+		.takeEnumerable(a)
+		ie as IEnumerable<of int> = [1, 2, 3]
+		.takeIntStream(ie)
+		.takeIntEnumerableOf(ie)
+		.takeEnumerable(ie)
+
+	def toList(strings as String*) as List<of String>
+		return List<of String>(strings)
+
+	def takeIntStream(numbers as int*)
+		assert List<of int>(numbers).count > 0
+
+	def takeIntEnumerableOf(numbers as IEnumerable<of int>)
+		assert List<of int>(numbers).count > 0
+
+	def takeEnumerable(numbers as System.Collections.IEnumerable)
+		assert List<of int>(for n in numbers get n to int).count > 0

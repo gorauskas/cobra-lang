@@ -305,19 +305,22 @@ class BasicLibraryType
 		return _nativeType.name == 'Type'
 
 	def isAssignableTo(t as IType) as bool
-		return this is t or t.isSystemObjectClass
+		return this == t or t.isSystemObjectClass
 
 	def isComparableTo(t as IType) as bool
-		return this is t
+		return this == t
 
 	def isEquatableTo(t as IType) as bool
-		return this is t
+		return this == t
 
 	def isDescendantOf(t as IType) as bool
 		return this is t or t.isSystemObjectClass
 
 	get isReference as bool
 		return not _nativeType.isValueType
+
+	get isUninitializedForLocalVars as bool
+		return .isReference
 
 	def isStrictDescendantOf(t as IType) as bool
 		return this is not t and t.isSystemObjectClass
@@ -328,7 +331,7 @@ class BasicLibraryType
 	## Methods
 
 	def greatestCommonDenominatorWith(type as IType) as IType
-		if type is this
+		if type == this
 			return this
 		else
 			return .systemObjectType
@@ -506,6 +509,13 @@ interface IType
 		Return true if this type represents/is System.Type.
 		"""
 
+	get isUninitializedForLocalVars as bool
+		"""
+		Return true if a local var of this type is uninitialized without an explicit assignment.
+		The default implementation is typically: return .isReference
+		because non-nil reference types need an initial value.
+		"""
+
 	def isComparableTo(t as IType) as bool
 		"""
 		Returns true if this type can be compared to the given type via comparison operators such as `>`, `<=`, etc.
@@ -623,6 +633,9 @@ class CobraType
 	get isSystemTypeClass as bool
 		return false
 
+	get isUninitializedForLocalVars as bool
+		return .isReference
+
 	def isComparableTo(t as IType) as bool
 		t = t.nonNil
 		compareTo = .memberForName('compareTo')
@@ -635,6 +648,8 @@ class CobraType
 
 	def isEquatableTo(t as IType) as bool
 		t = t.nonNil
+		if this == t
+			return true
 		if .isAssignableTo(t) or t.isAssignableTo(this)
 			return true
 		return false
@@ -666,7 +681,7 @@ class CobraType
 		return this
 
 	def greatestCommonDenominatorWith(type as IType) as IType
-		if this is type
+		if this == type
 			return this
 		if type inherits NilableType
 			return type.greatestCommonDenominatorWith(this)
@@ -688,17 +703,13 @@ class CobraType
 		require
 			.typeProvider
 		body
-			if type is .typeProvider.passThroughType
-				return true
-			if type is .typeProvider.dynamicType
-				return true
-			if type is .typeProvider.objectType
-				return true
-			# TODO: remove this:
-			if type inherits GenericParam
-				return true
+			if this == type, return true
+			if type is .typeProvider.passThroughType, return true
+			if type is .typeProvider.dynamicType, return true
+			if type is .typeProvider.objectType, return true
+			if type inherits GenericParam, return true  # TODO: remove this:
 			# TODO: would this be needed if not for qualified types?
-			if type inherits WrappedType
+			if type inherits WrappedType  # TODO: I think this is wrong as it covers VariType and StreamType. It should only be non-nil
 				return .isAssignableTo(type.theWrappedType to passthrough) # CC: bug with if-inherits changes the parameter type
 			return .isDescendantOf(type)
 
@@ -706,24 +717,20 @@ class CobraType
 		"""
 		Returns true if this type is a subtype (direct or indirect) of type.
 		"""
-		if not .didBindInh
-			.bindInh
-		if this is type
-			return true
+		if not .didBindInh, .bindInh
+		if this == type, return true
 		curType = this to IType?
 		counter = 0
 		while true
-			if curType is type
-				return true
+			if curType == type, return true
 			curType = curType.superType
-			if curType is nil
-				break
+			if curType is nil, break
 			counter += 1
 			assert counter < 1000
 		return false
 
 	def isStrictDescendantOf(type as IType) as bool
-		if type is this
+		if type == this
 			return false
 		else
 			return .isDescendantOf(type)
@@ -1040,7 +1047,7 @@ class DynamicType
 		return this
 
 	def greatestCommonDenominatorWith(type as IType) as IType is override
-		if this is type
+		if this == type
 			return this
 		if type inherits NilableType
 			return NilableType(this)
@@ -1136,7 +1143,7 @@ class FloatType
 	get size from var
 
 	def isAssignableTo(type as IType) as bool
-		if type is this  # common case
+		if type == this  # common case
 			return true
 		if type inherits FloatType
 			if .size <= type.size
@@ -1269,7 +1276,7 @@ class IntType
 	get size from var
 
 	def isAssignableTo(type as IType) as bool
-		if type is this  # common case
+		if type == this  # common case
 			return true
 		if type is .typeProvider.decimalType
 			return true
@@ -1321,6 +1328,9 @@ class NilableType
 		# When T is a reference type then the Nullable<T> struct is holding a reference.
 		return _wrappedType.isReference
 
+	get isUninitializedForLocalVars as bool is override
+		return false  # because nil is fine for the default value
+
 	# TODO: I think the following is appropriate, but come up with a test case for it first.
 	#get innerType
 	#	return .wrappedType.innerType
@@ -1353,12 +1363,12 @@ class NilableType
 		return _wrappedType.memberForName(name)
 
 	def greatestCommonDenominatorWith(type as IType) as IType is override
-		if this is type
+		if this == type
 			return this
 		if type inherits NilType
 			return this
 		if type inherits NilableType
-			if _wrappedType is type.nonNil
+			if _wrappedType == type.nonNil
 				return this
 			else
 				return NilableType(_wrappedType.greatestCommonDenominatorWith(type.nonNil))
@@ -1379,13 +1389,13 @@ class NilType
 		return true
 
 	def isAssignableTo(type as IType) as bool is override
-		if this is type, return true
+		if this == type, return true
 		if type is .compiler.passThroughType, return true
 		if type inherits NilableType, return true
 		return false
 
 	def greatestCommonDenominatorWith(type as IType) as IType is override
-		if this is type
+		if this == type
 			return this
 		if type inherits NilableType
 			return type
@@ -1446,6 +1456,75 @@ class PassThroughType
 
 	def isAssignableTo(type as IType) as bool is override
 		return true
+
+
+class StreamType
+	is partial
+	inherits WrappedType
+	"""
+	- Streams are portable between backends, whereas .NET's IEnumerable<of> and JVM's Iterable<of> are not.
+	- Streams are two-way compatible with IEnumerable/Iterable:
+		- Streams can be used whereever a compatible IEnumerable/Iterable is expected.
+		- An IEnumerable/Iterable can be used whereever a compatible stream type is expected.
+		- The term "compatible" means the same inner type: int* is compatible with IEnumerable<of int>/Iterable<of int>, but not IEnumerable<of String>/Iterable<of String>
+	- Streams are an abstract type, so you cannot create them directly with a call on the type such as `int*()`. Instead, use a concrete class such as `List<of>` or `yield` results out of a method.
+	- Streams are defaulted to be empty rather than nil.
+	"""
+
+	var _box as Box?
+
+	def init(t as IType)
+		base.init(t)
+
+	get englishName as String is override
+		return 'stream of ' + _wrappedType.englishName
+
+	get box from var
+
+	get name as String is override
+		return _wrappedType.name + '*'
+
+	get isReference as bool is override
+		return true
+
+	get isUninitializedForLocalVars as bool is override
+		return false  # because streams get initialized to EmptyStream<of T> for convenience
+
+	get innerType as IType? is override
+		return .theWrappedType
+
+	def isAssignableTo(type as IType) as bool is override
+		return base.isAssignableTo(type)
+
+	def isComparableTo(b as IType) as bool is override
+		return base.isComparableTo(b)
+
+	def isDescendantOf(type as IType) as bool
+		return base.isDescendantOf(type) or .box.isDescendantOf(type)
+
+	def isEquatableTo(b as IType) as bool is override
+		return base.isEquatableTo(b)
+
+	def memberForName(name as String) as IMember? is override
+		return _box.memberForName(name)
+
+	def greatestCommonDenominatorWith(type as IType) as IType is override
+		return base.greatestCommonDenominatorWith(type)
+
+	def _bindInh
+		base._bindInh
+		if .compiler  # will be nil during unit tests
+			_box = .compiler.enumerableOfType.constructedTypeFor([.theWrappedType])
+			_box.bindInh
+			_superType = _box
+		else if _superType is nil  # TODO: is this really needed?
+			_superType = .compiler.objectType
+
+	def _bindInt
+		base._bindInt
+		# TODO: why do we have to do this?
+		if not .didBindInh
+			.bindInh
 
 
 class VoidType
@@ -1514,7 +1593,7 @@ class WrappedType
 		return _wrappedType
 
 	get innerType as IType? is override
-		return _wrappedType.innerType
+		return _wrappedType.innerType  # TODO: 2008-11-22, I think this should just be _wrappedType
 
 	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType is override
 		thisType = .getType
@@ -1559,7 +1638,7 @@ class ArrayType
 		return true
 
 	get name as String is override
-		return _wrappedType.name+r'[]'
+		return _wrappedType.name + r'[]'
 
 	def isAssignableTo(type as IType) as bool is override
 		if base.isAssignableTo(type)
@@ -1567,12 +1646,13 @@ class ArrayType
 		if type inherits ArrayType
 			if _wrappedType == type.theWrappedType
 				return true
+		if type inherits StreamType
+			return .isAssignableTo(type.box to !)
 		return false
 
 	def _bindInh
 		base._bindInh
-		ienum = .compiler.enumerableOfType
-		_superType = ienum.constructedTypeFor([.theWrappedType])
+		_superType = .compiler.enumerableOfType.constructedTypeFor([.theWrappedType])
 
 	def memberForName(name as String) as IMember?
 		member = base.memberForName(name)
