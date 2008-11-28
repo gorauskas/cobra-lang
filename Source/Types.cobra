@@ -707,8 +707,7 @@ class CobraType
 			if type is .typeProvider.passThroughType, return true
 			if type is .typeProvider.dynamicType, return true
 			if type is .typeProvider.objectType, return true
-			# TODO: would this be needed if not for qualified types?
-			if type inherits WrappedType  # TODO: I think this is wrong as it covers VariType and StreamType. It should only be non-nil
+			if type inherits NilableType
 				return .isAssignableTo(type.theWrappedType to passthrough) # CC: bug with if-inherits changes the parameter type
 			return .isDescendantOf(type)
 
@@ -1677,6 +1676,8 @@ class VariType
 	Not valid for non-parameters such as locals and class fields.
 	"""
 
+	var _ilistOf as Interface?  # TODO: does ArrayType need _ilistOf too?
+
 	def init(wrappedType as IType)
 		base.init(wrappedType)
 
@@ -1686,8 +1687,18 @@ class VariType
 	get innerType as IType? is override
 		return _wrappedType
 
+	def isEquatableTo(t as IType) as bool is override
+		# vari type inherits IList<of>
+		return base.isEquatableTo(t) or t.isDescendantOf(_ilistOf to !) or _ilistOf.isDescendantOf(t)
+
 	get name as String is override
 		return 'vari ' + _wrappedType.name
+
+	def _bindInt
+		base._bindInt
+		if .compiler  # will be nil during unit tests
+			_ilistOf = .compiler.ilistOfType.constructedTypeFor([.theWrappedType]) to Interface
+			_ilistOf.bindInh
 
 
 class UnspecifiedType
