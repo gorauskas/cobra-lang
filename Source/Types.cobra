@@ -1467,6 +1467,7 @@ class StreamType
 		- Streams can be used whereever a compatible IEnumerable/Iterable is expected.
 		- An IEnumerable/Iterable can be used whereever a compatible stream type is expected.
 		- The term "compatible" means the same inner type: int* is compatible with IEnumerable<of int>/Iterable<of int>, but not IEnumerable<of String>/Iterable<of String>
+	- However, compatibility does not mean that you can use the methods of IEnumerable or Iterable, since these vary between platforms.
 	- Streams are an abstract type, so you cannot create them directly with a call on the type such as `int*()`. Instead, use a concrete class such as `List<of>` or `yield` results out of a method.
 	- Streams are defaulted to be empty rather than nil.
 	"""
@@ -1506,7 +1507,12 @@ class StreamType
 		return base.isEquatableTo(b)
 
 	def memberForName(name as String) as IMember? is override
-		return _box.memberForName(name)
+		# return base.memberForName(name)  You cannot use the members of the underlying type which varies between platforms.
+		return base.memberForName(name)
+
+	def suggestionsForBadMemberName(name as String) as List<of String> is override
+		# See comment in .memberForName.
+		return List<of String>()
 
 	def greatestCommonDenominatorWith(type as IType) as IType is override
 		return base.greatestCommonDenominatorWith(type)
@@ -1519,12 +1525,6 @@ class StreamType
 			_superType = _box
 		else if _superType is nil  # TODO: is this really needed?
 			_superType = .compiler.objectType
-
-	def _bindInt
-		base._bindInt
-		# TODO: why do we have to do this?
-		if not .didBindInh
-			.bindInh
 
 
 class VoidType
