@@ -290,6 +290,60 @@ class NameExpr
 			return _definition.typeForReceiver.memberForName(name)
 
 
+class AnonymousMethodExpr
+	is partial
+	inherits Expr
+	implements HasAddStmt
+	"""
+	Also called "closures".
+	"""
+	
+	var _method as AnonymousMethod?
+	var _returnTypeProxy as ITypeProxy?
+
+	def init(token as IToken, params as List<of Param>, returnTypeProxy as ITypeProxy?)
+		base.init(token)
+		_params = params
+		_stmts = List<of Stmt>()
+		_returnTypeProxy = returnTypeProxy
+
+	get params from var as List<of Param>
+
+	get stmts from var as List<of Stmt>
+	
+	def addStmt(stmt as Stmt)
+		_stmts.add(stmt)
+
+	def addSubFields
+		base.addSubFields
+		.addField('params', .params)
+
+	get hasError as bool
+		return base.hasError or _method.hasError
+
+	get willChangeVar as bool is override
+		return base.willChangeVar
+
+	def toCobraSource as String is override
+		sb = StringBuilder('do(')
+		sep = ''
+		for param in .params
+			sb.append(sep)
+			#sb.append(param.toCobraSource)  # TODO
+			sb.append(param.name)
+			sep = ', '
+		sb.append(')')
+		return sb.toString
+
+	def _bindImp is override
+		base._bindImp
+		_method = AnonymousMethod(.token, .curCodeMember, .params, _returnTypeProxy, if(.curCodeMember.isShared, ['shared'], List<of String>()))
+		for stmt in .stmts, _method.addStmt(stmt)
+		_method.bindInt
+		_method.bindImp
+		_type = _method.resultType
+
+
 class AsExpr
 	is partial
 	inherits NameExpr
@@ -568,6 +622,7 @@ class CallExpr
 					arg.right.bindImp  # 'x=y' has special treatment in arguments
 				else
 					arg.bindImp
+					assert arg.didBindImp
 			catch ne as NodeException
 				ne.prefixMessage('For "[_name]" arg [num]: ')
 				.compiler.recordError(ne)

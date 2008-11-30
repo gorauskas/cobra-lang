@@ -485,9 +485,58 @@ class BoxVar
 			assert false, 'Cannot set the type of a ClassVar.'
 
 
+interface HasAddStmt
+	def addStmt(stmt as Stmt)
+
+
+class AnonymousMethod
+	is partial
+	inherits AbstractMethod
+	
+	def init(token as IToken, parentMethod as AbstractMethod, paramsList as List<of Param>, returnTypeNode as ITypeProxy?, isNames as List<of String>)
+		base.init(token, parentMethod.parentBox, parentMethod, '(anonymous method)', paramsList, isNames, AttributeList(), '')
+		_name = '(anonymous method [.serialNum])'
+		_returnTypeNode = returnTypeNode
+		for param in .params, param.isAnonymousParam = true
+
+	get englishName as String is override
+		return 'anonymous method'
+
+	get hasVariArgs as bool
+		return false
+
+	get isCallable as bool is override
+		return true
+
+	get isMethod as bool is override
+		return true
+
+	get shouldBeVirtual as bool is override
+		return false
+
+	def _bindInt is override
+		base._bindInt
+		if _returnTypeNode is nil
+			_returnType = .compiler.passThroughType  # TODO: infer return type from return statement like C# does
+
+	def _bindImp is override
+		base._bindImp
+		numErrors = .compiler.errors.count
+		base._bindImp
+		if .compiler.errors.count==numErrors and _returnType not in [.compiler.voidType, .compiler.passThroughType] and not .hasReturnStmt and not .hasYieldStmt and not .hasThrowStmt and not .isAbstract and not .parentBox.isExtern and not .parentBox inherits Interface
+			.throwError('Missing return statement for method "[_name]" which returns [_returnType.name].')
+		hasYield = false
+		for stmt in _stmts
+			if stmt inherits YieldStmt
+				hasYield = true
+				break
+		if hasYield, .throwError('Cannot yield inside an anonymous method.')
+
+
 class AbstractMethod
 	is abstract, partial
 	inherits BoxMember
+	implements HasAddStmt
 	"""
 	The abstract ancestor class for
 		Initializer
@@ -500,6 +549,7 @@ class AbstractMethod
 	Subclasses must set _params.
 	"""
 
+	var _parentMethod as AbstractMethod?
 	var _returnTypeNode as ITypeProxy?
 	var _returnType as IType?
 	var _requirePart as RequirePart?
@@ -514,8 +564,9 @@ class AbstractMethod
 	var _curStmtIndex as int  # to implement .replaceChild
 	var _isCompilerGenerated as bool
 
-	def init(token as IToken, box as Box, name as String, paramsList as List<of Param>, isNames as List<of String>, attribs as AttributeList, docString as String)
+	def init(token as IToken, box as Box, parentMethod as AbstractMethod?, name as String, paramsList as List<of Param>, isNames as List<of String>, attribs as AttributeList, docString as String)
 		base.init(token, box, name, isNames, attribs, docString)
+		_parentMethod = parentMethod
 		_params = paramsList
 		_oldExprs = List<of OldExpr>()
 		_locals = List<of LocalVar>()
@@ -544,6 +595,12 @@ class AbstractMethod
 
 	pro ensurePart from var
 
+	get parentMethod from var
+		"""
+		Anonymous methods have a .parentMethod.
+		In the future, there may be nested method declarations which will also then have a .parentMethod.
+		"""
+
 	get resultType as IType is override
 		or require
 			.didBindInt
@@ -557,14 +614,16 @@ class AbstractMethod
 		# TODO: should this use a dictionary lookup?
 		for local in _locals, if local.name==name, return local
 		for param in _params, if param.name==name, return param
-		return nil
+		if .parentMethod, return .parentMethod.findLocal(name)
+		else, return nil
 
 	def findLocalCI(name as String) as AbstractLocalVar?
 		name = name.toLower
 		# TODO: should this use a dictionary lookup?
 		for local in _locals, if local.name.toLower==name, return local
 		for param in _params, if param.name.toLower==name, 	return param
-		return nil
+		if .parentMethod, return .parentMethod.findLocalCI(name)
+		else, return nil
 
 	def addLocal(local as LocalVar)
 		require
@@ -677,7 +736,7 @@ class AbstractMethod
 		assert .compiler.codeMemberStack.peek is this
 		base._bindInt
 		assert .parentBox.didUnNilReturnTypes
-		for param in _params, param.bindInt
+		for param in _params, param.bindInt  # TODO: add error recovery
 		if _returnType is nil
 			if _returnTypeNode, _returnType = _returnTypeNode.realType
 			else, _returnType = .compiler.voidType
@@ -718,14 +777,10 @@ class AbstractMethod
 			catch ne as NodeException
 				.compiler.recordError(ne)
 			_curStmtIndex += 1
-		for param in _params
-			assert param.ifInheritsStack.count == 0
-		if _ensurePart
-			_ensurePart.bindImp
-		if _requirePart
-			_requirePart.checkConnectToken
-		if _ensurePart
-			_ensurePart.checkConnectToken
+		for param in _params, assert param.ifInheritsStack.count == 0
+		if _ensurePart, _ensurePart.bindImp
+		if _requirePart, _requirePart.checkConnectToken
+		if _ensurePart, _ensurePart.checkConnectToken
 		.checkForUnmarkedOverrideOrNew  # have to do this after statements bindImp since using base can add `override`
 		.checkForUnusedVariables
 
@@ -789,7 +844,7 @@ class Initializer
 	inherits AbstractMethod
 
 	def init(token as IToken, box as Box, paramsList as List<of Param>, isNames as List<of String>, attribs as AttributeList, docString as String)
-		base.init(token, box, 'init', paramsList, isNames, attribs, docString)
+		base.init(token, box, nil, 'init', paramsList, isNames, attribs, docString)
 		_isNames = isNames
 		_stmts = List<of Stmt>()
 
@@ -873,7 +928,7 @@ class Method
 		.init(token, box, name, List<of IType>(), paramsList, returnTypeNode, implementsTypeNode, isNames, attribs, docString)
 
 	def init(token as IToken, box as Box, name as String, genericParams as List<of IType>, paramsList as List<of Param>, returnTypeNode as ITypeProxy, implementsTypeNode as ITypeProxy?, isNames as List<of String>, attribs as AttributeList, docString as String)
-		base.init(token, box, name, paramsList, isNames, attribs, docString)
+		base.init(token, box, nil, name, paramsList, isNames, attribs, docString)
 		_genericParams = genericParams
 		_returnTypeNode = returnTypeNode
 		_implementsTypeNode = implementsTypeNode
@@ -1030,7 +1085,7 @@ class Method
 		if _implementsTypeNode
 			_implementsType = _implementsTypeNode.realType
 			# TODO: make sure the type is among the interfaces of the box
-		if .compiler.errors.count==numErrors and _returnType is not .compiler.voidType and not .hasReturnStmt and not .hasYieldStmt and not .hasThrowStmt and not .isAbstract and not .parentBox.isExtern and not .parentBox inherits Interface
+		if .compiler.errors.count==numErrors and _returnType not in [.compiler.voidType, .compiler.passThroughType] and not .hasReturnStmt and not .hasYieldStmt and not .hasThrowStmt and not .isAbstract and not .parentBox.isExtern and not .parentBox inherits Interface
 			.throwError('Missing return statement for method "[_name]" which returns [_returnType.name].')
 		# check for `return` and `yield` in the same method
 		if .resultType is not .compiler.voidType
@@ -1177,7 +1232,7 @@ class ProperDexerXetter
 	var _parent as ProperDexer
 
 	def init(token as IToken, parent as ProperDexer, isNames as List<of String>)
-		base.init(token, parent.parentBox, parent.name, List<of Param>(), isNames, AttributeList(), '')  # TODO: should be docString, right?
+		base.init(token, parent.parentBox, nil, parent.name, List<of Param>(), isNames, AttributeList(), '')  # TODO: should be docString, right?
 		_name = parent.name + '.' + .xetPartName  # CC: somewhat awkward. belongs in the base.init() call
 		_parent = parent
 

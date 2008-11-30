@@ -2698,7 +2698,7 @@ class ReturnStmt
 				sw.write(';\n')
 			else
 				sw.write('return ')
-				_expr.writeSharpDefInContext(sw)
+				_expr.writeSharpDefInContext(sw, false)
 				sw.write(';\n')
 		else
 			sw.write('return;\n')
@@ -2932,9 +2932,6 @@ class MultiTargetAssignStatement
 class Expr
 	is partial
 
-	def writeSharpDefInContext(sw as SharpWriter)
-		.writeSharpDefInContext(sw, true)
-
 	def needsContextCast as bool
 		"""
 		Returns true if this expression needs to be cast within its context.
@@ -2945,6 +2942,9 @@ class Expr
 		if type inherits IntType
 			if type.size < 32, return true
 		return false
+
+	def writeSharpDefInContext(sw as SharpWriter)
+		.writeSharpDefInContext(sw, true)
 
 	def writeSharpDefInContext(sw as SharpWriter, parens as bool)
 		"""
@@ -3019,6 +3019,28 @@ class AsExpr
 	def writeSharpStmt(sw as SharpWriter) is override
 		# this happens for declarations like "i as int"
 		sw.write('// [_name] as [_type.name]\n')
+
+
+class AnonymousMethodExpr
+	is partial
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		# note that C# delegates don't allow explicit return types
+		# C# always infers the return type from the return statement
+		sw.write('delegate')
+		if .params.count
+			sw.write('(')
+			sep = ''
+			for param in .params
+				sw.write(sep)
+				sw.write('[param.type.sharpRef] [param.sharpName]')
+				sep = ', '
+			sw.write(')')
+		_method.writeSharpImp(sw, false)  # writes { ... }
+
+	def writeSharpDefForBreakdown(sw as SharpWriter) is override
+		# .writeSharpDef(sw)
+		sw.write('new CobraDirectString("(anonymous method)")')
 
 
 class CallExpr

@@ -119,6 +119,8 @@ CC: bug in Cobra parser where putting a doc string after a sig causes problems.
 		A stack of stacks is needed for CallExpr's args.
 		"""
 
+	var _expectAnonymousMethodExprStack as Stack<of AnonymousMethodExpr>
+
 	var _typeProvider as ITypeProvider?
 
 	var _parseCommandLineArgs as ParseCommandLineArgsSig?
@@ -134,6 +136,7 @@ CC: bug in Cobra parser where putting a doc string after a sig causes problems.
 		_boxStack = Stack<of Box>()
 		_nameSpaceStack = Stack<of NameSpace>()
 		_codeParts = Stack<of AbstractMethod>()
+		_expectAnonymousMethodExprStack = Stack<of AnonymousMethodExpr>()
 
 	pro verbosity from var
 
@@ -1759,7 +1762,8 @@ CC: bug in Cobra parser where putting a doc string after a sig causes problems.
 		else
 			type = TypeProxy(_typeProvider.defaultType)
 			isMissingType = true
-		# note: isTypeless is currently used to generate a warning in .paramDecls above, but in the future it may also be needed for when parameter types are inferred for anon methods
+		# note: isMissingType is currently used to generate a warning in .paramDecls above
+		# and may be used for anonymous method parameter type inference at some point
 		return Param(token, type, isMissingType=isMissingType, kind=kind)
 
 
@@ -1844,14 +1848,17 @@ CC: bug in Cobra parser where putting a doc string after a sig causes problems.
 					_warning('More than 100 lines of code ([codePart.statements.count] toplevel statements) in method [fullName].') 
 				#print '[fullName.padLeft(50)]\t[nLines]\t[codePart.statements.count]'
 
-	def _statementsFor(codePart as AbstractMethod)
+	def _statementsFor(codePart as HasAddStmt)
 		"""
 		Utility method for .statementsFor.
 		"""
 		while .peek.which <> 'DEDENT'
 			stmt = .stmt
-			if stmt
-				codePart.addStmt(stmt)
+			if stmt, codePart.addStmt(stmt)
+			ame = if(_expectAnonymousMethodExprStack.count, _expectAnonymousMethodExprStack.pop, nil)
+			if ame
+				.expect('INDENT')
+				_statementsFor(ame)
 		.dedent
 
 	def stmt as Stmt?
@@ -2726,6 +2733,8 @@ CC: bug in Cobra parser where putting a doc string after a sig causes problems.
 			return .literalArray
 		else if peek=='LCURLY'
 			return .literalDictOrSet
+		else if peek in ['OPEN_DO', 'DO']
+			return .doExpr
 		else if peek=='OPEN_IF'
 			return .ifExpr
 		else if peek=='FOR'
@@ -2884,7 +2893,29 @@ CC: bug in Cobra parser where putting a doc string after a sig causes problems.
 				.delOpStack
 			expectSep = true
 		return exprs
-		
+	
+	def doExpr as AnonymousMethodExpr
+		"""
+		Example:
+			... do(int a, int b) ...
+				return a + b
+		Format:
+			... do(<params>) ...
+				<statements>
+		Notes:
+			The indented statements are not picked up here. Instead an AnonymousMethodExpr is pushed
+			on _expectAnonymousMethodExprStack which then triggers the consumption of the indented
+			statements in another part of the parser.
+		"""
+		require .peek.which in ['OPEN_DO', 'DO']
+		token = .grab
+		params = if(token.which == 'OPEN_DO', .paramDecls(true), List<of Param>())
+		returnTypeId = if(.optional('AS'), .typeId, nil)
+		# TODO: check for 'EQUALS' for lambdas
+		ame = AnonymousMethodExpr(token, params, returnTypeId)
+		_expectAnonymousMethodExprStack.push(ame)
+		return ame
+
 	def forExpr as ForExpr
 		"""
 		t = for x in stuff where x<0 get x*x
