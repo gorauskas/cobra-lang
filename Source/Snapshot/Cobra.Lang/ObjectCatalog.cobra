@@ -1,0 +1,67 @@
+namespace Cobra.Lang
+
+	class ObjectCatalog
+
+		test
+			cat = ObjectCatalog()
+			assert cat.maxSerialNum == 0
+
+			a = Object()
+			cat.record(a)
+			assert cat.maxSerialNum == 1000
+			assert cat.contains(a)
+			assert cat.serialNumFor(a) == 1000
+			assert cat.objectFor(1000) is a
+
+			b = Object()
+			cat.record(b)
+			assert cat.maxSerialNum == 1001
+			assert cat.serialNumFor(a) == 1000
+			assert cat.serialNumFor(b) == 1001
+			assert cat.objectFor(1000) is a
+			assert cat.objectFor(1001) is b
+
+		var _objectToSerialNum = Dictionary<of Object, int>()
+		var _serialNumToObject = Dictionary<of int, Object>()
+		var _minSerialNum = 0
+		var _maxSerialNum = 0
+
+		def init
+			pass
+
+		get minSerialNum from var
+		
+		get maxSerialNum from var
+
+		def contains(obj as Object) as bool
+			return _objectToSerialNum.containsKey(obj)
+
+		def contains(serialNum as int) as bool
+			return _serialNumToObject.containsKey(serialNum)
+
+		def record(obj as Object)
+			ensure .contains(obj)
+			if not _objectToSerialNum.containsKey(obj)
+				_maxSerialNum = _objectToSerialNum.count + 1000
+				_objectToSerialNum.add(obj, _maxSerialNum)
+				_serialNumToObject.add(_maxSerialNum, obj)
+				if _minSerialNum == 0
+					_minSerialNum = _maxSerialNum
+
+		def serialNumFor(obj as Object) as int
+			require
+				.contains(obj)
+			ensure
+				result >= 1000
+				.contains(result)
+			body
+				return _objectToSerialNum[obj]
+
+		def objectFor(serialNum as int) as Object
+			require
+				.contains(serialNum)
+			ensure 
+				.contains(result)
+			body
+				return _serialNumToObject[serialNum]
+

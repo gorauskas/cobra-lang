@@ -621,20 +621,40 @@ static public class CobraImp {
 		return c!='\0';
 	}
 
+	static public bool IsTrue(char? c) {
+		return c!=null && c.Value!='\0';
+	}
+
 	static public bool IsTrue(int i) {
 		return i!=0;
+	}
+
+	static public bool IsTrue(int? i) {
+		return i!=null && i.Value!=0;
 	}
 
 	static public bool IsTrue(decimal d) {
 		return d!=0;
 	}
 
+	static public bool IsTrue(decimal? d) {
+		return d!=null && d.Value!=0;
+	}
+
 	static public bool IsTrue(float f) {
 		return f!=0;
 	}
 
+	static public bool IsTrue(float? f) {
+		return f!=null && f.Value!=0;
+	}
+
 	static public bool IsTrue(double d) {
 		return d!=0;
+	}
+
+	static public bool IsTrue(double? d) {
+		return d!=null && d.Value!=0;
 	}
 
 	static public bool IsTrue(string s) {
@@ -647,6 +667,15 @@ static public class CobraImp {
 		return c!=null;
 	}
 
+/*
+	static public bool IsTrue<T>(Nullable<T> x) where T : struct {
+		if (x == null)
+			return false;
+		else
+			return IsTrue(x.Value);  // would be nice if this respected overloads, but it doesn't. always calls IsTrue(object) which makes this method moot
+	}
+*/
+
 	static public bool IsTrue(object x) {
 		if (x==null)
 			return false;
@@ -658,6 +687,10 @@ static public class CobraImp {
 			return (char)x!='\0';
 		if (x is decimal)
 			return (decimal)x!=0;  // can't believe x.Equals(0) above doesn't work for decimal. *sigh*
+		if (x is double)
+			return (double)x!=0;
+		if (x is float)
+			return (float)x!=0;
 		return true;
 	}
 
@@ -715,6 +748,23 @@ static public class CobraImp {
 	}
 
 	static public List<TOut> For<TIn, TOut>(IEnumerable<TIn> list, ForWhereGet<TIn, TOut> forWhereGet) {
+		List<TOut> results = new List<TOut>();
+		foreach (TIn item in list) {
+			TOut value;
+			if (forWhereGet(item, out value))
+				results.Add(value);
+		}
+		return results;
+	}
+
+	static public List<TOut> For<TIn, TOut>(IEnumerable list, ForGet<TIn, TOut> forGet) {
+		List<TOut> results = new List<TOut>();
+		foreach (TIn item in list)
+			results.Add(forGet(item));
+		return results;
+	}
+
+	static public List<TOut> For<TIn, TOut>(IEnumerable list, ForWhereGet<TIn, TOut> forWhereGet) {
 		List<TOut> results = new List<TOut>();
 		foreach (TIn item in list) {
 			TOut value;
@@ -1103,7 +1153,7 @@ static public class CobraImp {
 		} else {
 			// HACK. TODO. This needs to be generalized where extension methods can be registered with the dynamic binder. Will/does DLR have something like this?
 			if (methodName == "Swap" && obj is System.Collections.IList) {
-				Type extension = Type.GetType("Cobra.Lang.Extend_IList_CobraLang");
+				Type extension = Type.GetType("Cobra.Lang.Extend_IList_Extensions");
 				Type extendedType = typeof(System.Collections.IList); // this reference could be put with the extension using an attribute
 				return InvokeMethodFromExtension(extension, extendedType, obj, methodName, argsTypes, args);
 			}

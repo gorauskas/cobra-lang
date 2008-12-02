@@ -1,0 +1,84 @@
+#use System.Reflection
+#use System.Runtime.CompilerServices
+
+
+namespace Cobra.Lang
+
+	class Tracer
+		inherits Object
+		"""
+		Used to implement the trace statement.
+		"""
+
+		var _isActive = true
+		var _willAutoFlush = true
+		var _dest as TextWriter
+		var _separator = '; '
+		var _prefix = 'trace: '
+		var _willOutputDirectoryNames = false
+
+		def init
+			"""
+			Initializes the tracer with Console.out as the destination.
+			"""
+			.init(Console.out)
+
+		def init(dest as TextWriter)
+			base.init
+			_dest = dest
+
+		pro isActive from var
+			"""
+			When false, the `trace` methods will produce no output.
+			"""
+
+		pro willAutoFlush from var
+			"""
+			When true, `destination.flush` is invoked after every trace.
+			Defaults to `true`.
+			"""
+
+		pro willOutputDirectoryNames from var
+			"""
+			When true, full path names with directories are output.
+			Otherwise, only the base filename of a source file is output.
+			Defaults to `false`.
+			"""
+
+		pro destination from _dest
+			"""
+			The TextWriter where all trace output is sent to.
+			"""
+
+		pro separator from var
+			"""
+			The separator string used between items of both name/value pairs and source information.
+			Default is '; '.
+			"""
+
+		pro prefix from var
+			"""
+			The prefix string used at the beginning of every trace.
+			Default is 'trace: '.
+			"""
+
+		def trace(source as SourceSite)
+			if .isActive
+				print to _dest, '[.prefix][source.oneLiner(.separator, .willOutputDirectoryNames)]'
+				if .willAutoFlush
+					_dest.flush
+
+		def trace(source as SourceSite, nameValues as vari Object)
+			require nameValues.length % 2 == 0
+			if .isActive
+				_dest.write(.prefix)
+				sep = .separator
+				i = 0
+				while i < nameValues.length-1
+					name = nameValues[i] to String
+					value = CobraImp._techStringMaker.makeString(nameValues[i+1])
+					_dest.write('[name]=[value][sep]')
+					i += 2
+				_dest.writeLine(source.oneLiner(.separator, .willOutputDirectoryNames))
+				if .willAutoFlush
+					_dest.flush
