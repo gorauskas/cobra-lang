@@ -394,9 +394,30 @@ namespace Cobra.Lang
 			
 			get isRunningOnMono as bool
 				if _isRunningOnMono is nil
-					_isRunningOnMono = $sharp('Type.GetType("Mono.Runtime")') is not nil
+					_isRunningOnMono = sharp'Type.GetType("Mono.Runtime")' is not nil
 				return _isRunningOnMono to !
+
+			var _hasMonoVersionString as bool
+			var _monoVersionString as String?
 				
+			def monoVersionString as String?
+				"""
+				Returns a string such as "2.0" or "1.2.6" or nil if a version number cannot be determined (usually indicating that Mono is not present).
+				"""
+				if not _hasMonoVersionString
+					_hasMonoVersionString = true
+					mrt = sharp'Type.GetType("Mono.Runtime")' to Type?
+					if mrt
+						mi = mrt.getMethod('GetDisplayName', BindingFlags(Public, NonPublic, Static))
+						if mi
+							ret = mi.invoke(nil, nil)
+							if ret inherits String
+								s = ret.trim
+								if s.startsWith('Novell'), s = s.replace('Novell', '').trim
+								if s.startsWith('Mono'), s = s.replace('Mono', '').trim
+								_monoVersionString = s
+				return _monoVersionString
+		
 			def runAndCaptureAllOutput(process as System.Diagnostics.Process) as String
 				"""
 				Example:
