@@ -46,7 +46,7 @@ public class CobraDirectString : Object {
 }
 
 
-public class AssertException : Exception, IHasSourceSite {
+public class AssertException : Exception, IHasSourceSite, HasAppendNonPropertyKeyValues {
 
 	protected string     _fileName;
 	protected int        _lineNumber;
@@ -155,18 +155,18 @@ public class AssertException : Exception, IHasSourceSite {
 			} else {
 				string source = (string)_expressions[i];
 				object value = _expressions[i+1];
-				tree.AddEntry(source, value);
+				tree.AppendKeyValue(source, value);
 				i += 2;
 			}
 		}
 	}
 
-	public void ExtendObjectTable(IObjectView view) {
-		// Invoked by the Cobra Exception Report.
+	public void AppendNonPropertyKeyValues(HasAppendKeyValue target) {
+		// Invoked by the Cobra Exception Report and CobraMain-ObjectExplorer-WinForms
 		// By adding the expression breakdown as entries in the view,
 		// object values will be clickable which will lead to their own detailed view.
 		int indentLevel = 0;
-		view.AddEntry("expression breakdown:", new Html(""));
+		target.AppendKeyValue("expression breakdown:", new Html(""));
 		int i = 1;
 		while (i < _expressions.Length) {
 			object item = _expressions[i];
@@ -179,7 +179,7 @@ public class AssertException : Exception, IHasSourceSite {
 			} else {
 				string source = (string)_expressions[i];
 				object value = _expressions[i+1];
-				view.AddEntry(new String(' ', indentLevel*4)+source, value);
+				target.AppendKeyValue(new String(' ', indentLevel*4)+source, value);
 				i += 2;
 			}
 		}
