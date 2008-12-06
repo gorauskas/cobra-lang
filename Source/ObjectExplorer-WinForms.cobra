@@ -1,7 +1,7 @@
 """
 On the command line, use the following with your source files appended:
 
-cobra -r:System.Windows.Forms -r:System.Drawing ObjectExplorer-WinForms.cobra
+cobra -ref:System.Windows.Forms -ref:System.Drawing ObjectExplorer-WinForms.cobra
 
 See Cobra's CobraMain-ObjectExplorer-WinForms.cobra for an example of using this Object Explorer.
 """
@@ -17,16 +17,19 @@ class ObjectExplorer
 	"""
 	Shows a tree view of one or more objects on the right and their properties. By drilling down
 	in the tree view, you can explore an object graph. On the right, the details of the currently
-	selected object are provided.
+	selected object are provided in a property grid format.
 
 	Because a PropertyGrid is used on the right, you can actually modify the objects. For example,
 	you can drill down to UI -> Form and increase the font which will immediately affect form and
-	all its controls while you're using them. Likewise, with
-	
+	all its controls while you're using them. Likewise, with your own objects.
+
+	For an example use, see CobraMain-ObjectExplorer-WinForms.cobra.
+
 	TODO
 		[ ] Search for text anywhere in the object graph
 			[ ] This technically works now, but is crazy slow. Not to mention the level > 10 hack!
-		[ ] In the tree, show the elements of sets. Maybe that's an ICollection thing...
+		[-] In the tree, show the elements of sets. Maybe that's an ICollection thing...
+			May already be done. Just added ICollection today 2008-12-06.
 		[ ] Add a context menu to the textbox with commands: &Copy, Select &All, &Toggle String Literals.
 			The last alters _willShowPlainTextInTextBox
 		[ ] Change the path to a text field that can be copied and pasted
@@ -490,6 +493,8 @@ class ObjectExplorer
 		for kv in _keyValueContentOf(obj)
 			yield kv
 
+	var _keyValueContents = List<of KeyValuePair<of String, dynamic?>>()
+	
 	def _keyValueContentOf(obj as dynamic?) as IEnumerable<of List<of dynamic?>>
 		lb = c'['
 		if obj inherits System.Collections.IList
@@ -505,7 +510,8 @@ class ObjectExplorer
 				yield [propName, value, isGood]
 		else if obj inherits System.Collections.IDictionary
 			keys = System.Collections.ArrayList(obj.keys)
-			keys.sort
+			try, keys.sort
+			catch InvalidOperationException, pass
 			for dictKey in keys
 				propName = '[lb][CobraCore.toTechString(dictKey)]]'
 				value, isGood = nil, false
@@ -518,13 +524,22 @@ class ObjectExplorer
 				lb = c'['
 				yield [propName, value, isGood]
 		else if obj inherits System.Collections.ICollection
-#uu
 			items = for item in obj get item  # make a list
 			if obj.getType.isGenericType and obj.getType.getGenericTypeDefinition.name == 'Stack`1'  # TODO: name comparison feels hacky
 				items.reverse
-			for kv in _keyValueContentOf(items)  # recursive call on list
-				yield kv
-
+			for entry in _keyValueContentOf(items)  # recursive call on list
+				yield entry
+		if obj inherits HasAppendNonPropertyKeyValues
+			_keyValueContents.clear
+			_appendMode = 3
+			try
+				obj.appendNonPropertyKeyValues(this)
+				for kv in _keyValueContents
+					yield [kv.key, kv.value, true]
+			finally
+				_appendMode = 0
+				_keyValueContents.clear
+		
 	def comparePropInfo(a as PropertyInfo, b as PropertyInfo) as int
 		return a.name.toLower.compareTo(b.name.toLower)
 
@@ -571,6 +586,8 @@ class ObjectExplorer
 				item = ListViewItem(key)
 				item.subItems.add(CobraCore.toTechString(value))
 				_objectListView.items.add(item)
+			on 3
+				_keyValueContents.add(KeyValuePair<of String, dynamic?>(key, value))
 			else
 				throw FallThroughException(_appendMode)
 
