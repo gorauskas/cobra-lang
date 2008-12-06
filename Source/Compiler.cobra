@@ -460,8 +460,8 @@ class Compiler
 			.options.print
 
 		# special cases 
-		_fixupLibRefs(opts)
-		_fixupEmbedRunTime(opts) # need this after fixup libs
+		_fixLibRefs(opts)
+		_fixEmbedRunTime(opts) # need this after fix libs
 
 		.options.combineNew(opts)
 		v = .options.getDefault('verbosity', 0) to int
@@ -470,8 +470,8 @@ class Compiler
 			print 'postAugment Options Dictionary'
 			.options.print
 
-	def _fixupEmbedRunTime(opts as OptionValues)
-		# print 'before fixup', _parsedModules
+	def _fixEmbedRunTime(opts as OptionValues)
+		# print 'before fix embed-run-time', _parsedModules
 		if opts.boolValue('embed-run-time') <> .options.boolValue('embed-run-time')
 			if not opts.boolValue('embed-run-time') # changed true to false
 				# remove parsed rtSrc modules
@@ -484,15 +484,15 @@ class Compiler
 				# errchannel.throwError('Cannot switch -ert:no to -ert:yes in compilerDirective')
 				# To support this need to determine where/what recorded for Cobra.dll 
 				# ref,clear it out and insert rtl src to be parsed AFTER finish current file
-		# print 'after fixup', _parsedModules
+		# print 'after fix embed-run-time', _parsedModules
 		
-	def _fixupLibRefs(opts as OptionValues)
+	def _fixLibRefs(opts as OptionValues)
 		haveRefs = false
 		for key in ['library-directory', 'pkg', 'reference']
 			if opts.containsKey(key)
 				if key == 'reference'
-					references = opts.getDefaultLOStr('reference')
-					_fixupLibSuffix(references)
+					references = opts.getStringList('reference')
+					_fixLibSuffix(references)
 				if not .options.containsKey(key)
 					.options[key] = List<of String>()
 				existList = .options[key] to List<of String>
@@ -512,7 +512,7 @@ class Compiler
 		if haveRefs
 			.readAssemblyTypes(opts)
 			if .verbosity > 1
-				references = .options.getDefaultLOStr('reference')
+				references = .options.getStringList('reference')
 				_printRefs(references)
 		
 			
@@ -717,7 +717,7 @@ class Compiler
 		t = System.Diagnostics.Process.getType
 		.readAssembly(t.assembly) # System.dll
 
-	def _fixupLibSuffix(references as List<of String>)
+	def _fixLibSuffix(references as List<of String>)
 		i = 0
 		for reference in List<of String>(references)
 			if not reference.endsWith('.dll') and not reference.endsWith('.exe')
@@ -736,10 +736,10 @@ class Compiler
 				i += 1
 			
 	def readAssemblyTypes(options as OptionValues)
-		references = options.getDefaultLOStr('reference')
+		references = options.getStringList('reference')
 
 		# Excluding the extension can be problematic
-		_fixupLibSuffix(references)
+		_fixLibSuffix(references)
 
 		# now that references are fixed, make a copy so that .options['references'] is not modified further
 		references = List<of String>(references)
