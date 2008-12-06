@@ -259,12 +259,10 @@ class Box
 
 	def interfaceMemberForName(name as String) as IBoxMember?
 		m = .declForName(name)
-		if m
-			return m
+		if m, return m
 		for inter in _baseInterfaces
 			m = inter.interfaceMemberForName(name)
-			if m
-				break
+			if m, break
 		return m
 
 	def makeNextPrivateSerialNumber as int
@@ -1521,7 +1519,6 @@ class Extension
 	
 	def _bindInt
 		base._bindInt
-		# TODO: deal with overloads
 		sharpName = .sharpRef   # TODO: how to generalize this beyond CLR? idea: change .sharedMethodBacking to refer to a method instead of being a String
 		for decl in .declsInOrder
 			if decl inherits AbstractMethod
@@ -1532,6 +1529,17 @@ class Extension
 					decl.isNames.remove('virtual')
 					decl.isNames.add('nonvirtual')
 					decl.bindInt
+					# handle overloads
+					other = .extendedBox.declForName(decl.name)
+					if other
+						if other inherits MemberOverload
+							overload = other
+						else if other inherits AbstractMethod
+							overload = MemberOverload(other)
+							.extendedBox.registerOverload(overload)
+						else
+							throw FallThroughException([this, decl])
+						overload.addMember(decl)
 			else
 				decl.recordError('Extensions can only contain methods.')
 
