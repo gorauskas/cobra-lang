@@ -487,6 +487,10 @@ class ObjectExplorer
 				value = 'Caught during get: [exc.getType.name]: [exc.message]'
 			propName = .cobraMemberNameFor(propInfo.name)
 			yield [propName, value, isGood]
+		for kv in _keyValueContentOf(obj)
+			yield kv
+
+	def _keyValueContentOf(obj as dynamic?) as IEnumerable<of List<of dynamic?>>
 		lb = c'['
 		if obj inherits System.Collections.IList
 			for i in obj.count
@@ -513,6 +517,12 @@ class ObjectExplorer
 					value = 'Caught during IDictionary[propName]: [exc.getType.name]: [exc.message]'
 				lb = c'['
 				yield [propName, value, isGood]
+		else if obj inherits System.Collections.ICollection
+			items = for item in obj get item  # make a list
+			if obj.getType.isGenericType and obj.getType.getGenericTypeDefinition.name == 'Stack`1'  # TODO: name comparison feels hacky
+				items.reverse
+			for kv in _keyValueContentOf(items)  # recursive call on list
+				yield kv
 
 	def comparePropInfo(a as PropertyInfo, b as PropertyInfo) as int
 		return a.name.toLower.compareTo(b.name.toLower)
