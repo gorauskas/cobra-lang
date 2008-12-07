@@ -1353,15 +1353,17 @@ class YieldReturnStmt
 		if expr
 			_expr.bindImp
 			resultType = curCodeMember.resultType
-			if resultType is not .compiler.enumerableType and resultType is not .compiler.enumeratorType
+			if not resultType inherits StreamType and resultType <> .compiler.enumerableType and resultType <> .compiler.enumeratorType
 				okay = false
 				if resultType inherits Box
 					ienumerableOf = .compiler.enumerableOfType
 					ienumeratorOf = .compiler.enumeratorOfType
 					okay = not (resultType is not ienumerableOf and resultType is not ienumeratorOf and not resultType.isConstructionOf(ienumerableOf) and not resultType.isConstructionOf(ienumeratorOf))
 				if not okay
-					.throwError('Cannot yield unless the return type is an iterator type (IEnumerable or IEnumerator, generic or not). Try "IEnumerable<of [expr.type.name]>".')
-			if resultType inherits Box and (resultType to Box).isGeneric
+					.throwError('Cannot yield unless the return type is an iterator type. Try "[expr.type.name]*".')
+			if resultType inherits StreamType
+				elementType = resultType.innerType to !
+			else if resultType inherits Box and (resultType to Box).isGeneric
 				elementType = (resultType to Box).genericParams[0]
 			else
 				elementType = .compiler.objectType
