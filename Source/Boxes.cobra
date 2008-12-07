@@ -84,11 +84,9 @@ class Box
 		sb = StringBuilder('[.getType.name]([.name], [.serialNum], ')
 		if _genericParams.count
 			sb.append('genericParams=[CobraCore.toTechString(_genericParams)], ')
-		if not .didBindInh
-			sb.append('not ')
+		if not .didBindInh, sb.append('not ')
 		sb.append('didBindInh, ')
-		if not .didBindInt
-			sb.append('not ')
+		if not .didBindInt, sb.append('not ')
 		sb.append('didBindInt, ')
 		sb.append('nativeType=[.nativeType]')
 		sb.append(')')
@@ -233,8 +231,7 @@ class Box
 
 	get superType as IType? is override
 		or require true
-		if not .didBindInh
-			.bindInh
+		if not .didBindInh, .bindInh
 		assert .didBindInh
 		return _baseClass
 
@@ -477,9 +474,10 @@ class Box
 					catch ne as NodeException
 						hadBaseInterfaceError = ne to ?
 						.compiler.recordError(ne)
-			for box in .nestedBoxes
-				box.bindInh
 			_checkForInheritanceCycles(this, Stack<of Box>())
+			if _baseClass, _baseClass.bindInh
+			for interf in _baseInterfaces, interf.bindInh
+			for box in .nestedBoxes, box.bindInh
 		success
 			# trace this, hadBaseInterfaceError, .baseInterfaceProxies, .baseInterfaces
 			assert hadBaseInterfaceError or .baseInterfaceProxies.count == 0 or .baseInterfaceProxies.count == .baseInterfaces.count, [.baseInterfaceProxies.count, .baseInterfaces.count]
@@ -499,19 +497,21 @@ class Box
 			bases.pop
 
 	def bindInt as INode
-		# because DLL boxes get bindInh and bindInt on demand, check this:
-		if _genericDef
-			assert _genericDef is not this
-			if not _genericDef.didBindInt and not _genericDef.isBindingInt
-				_genericDef.bindInt
-			assert _genericDef.didBindInt or _genericDef.isBindingInt
-		if .nativeType
-			_prepLibraryBox
-		else if not .didBindInh
-			.bindInh
-		if _genericDef
-			assert _genericDef is not this
-			assert _genericDef.didBindInt or _genericDef.isBindingInt
+		if not .didBindInt and not .isBindingInt
+			assert .didBindInh
+			# because DLL boxes get bindInh and bindInt on demand, check this:
+			if _genericDef
+				assert _genericDef is not this
+				if not _genericDef.didBindInt and not _genericDef.isBindingInt
+					_genericDef.bindInt
+				assert _genericDef.didBindInt or _genericDef.isBindingInt
+			if .nativeType
+				_prepLibraryBox
+			else if not .didBindInh
+				.bindInh
+			if _genericDef
+				assert _genericDef is not this
+				assert _genericDef.didBindInt or _genericDef.isBindingInt
 		return base.bindInt
 
 	def _bindInt
@@ -637,13 +637,14 @@ class Box
 		DLL types get bindInh & bindInt only on demand. (Otherwise reading system DLLs slows things down.)
 		"""
 		require .nativeType
-		if _didPrep
-			return
+		if _didPrep, return
 		_didPrep = true
 		if not .didBindInh
 			.bindInh
+			assert .didBindInh
 		if not .didBindInt and not .compiler.isBindingInh
 			.bindInt
+			assert .didBindInt
 
 	var _didUnNilReturnTypes as bool
 
@@ -762,14 +763,13 @@ class Box
 
 	def constructedTypeFor(typeArgs as List<of IType>) as Box
 		require
+			.isGenericDef
 			.containsGenericParameters
 			typeArgs.count == .genericParams.count
 		ensure
 			result.genericParams == typeArgs
 		body
-			assert .isGenericDef
-
-			# TODO: can take this out. it's just a check that the above comparison is working. 2007-12-08
+			# TODO: can take this out. it's just a check that the below comparison is working. 2007-12-08
 			equal = true
 			for i = 0 .. typeArgs.count
 				if typeArgs[i] <> .genericParams[i]
@@ -781,14 +781,6 @@ class Box
 				return this
 			else
 				assert not equal
-
-			if not .didBindInh
-				assert not .didBindInt
-				.bindInh
-				assert not .didBindInt
-				if .nativeType
-					_prepLibraryBox
-					assert not .didBindInt or not .compiler.isBindingInh
 
 			# the cache of constructed types has to come from the root generic type def or you end up with duplicate
 			# constructed types which is not only wasteful, but causes problems with inheritance tests
@@ -803,6 +795,19 @@ class Box
 
 			if genericDef._constructedTypes.containsKey(key)
 				return genericDef._constructedTypes[key]
+
+			assert not .isBindingInh
+
+			if not .didBindInh
+				assert not .didBindInt
+				.bindInh
+				assert not .didBindInt
+				if .nativeType
+					_prepLibraryBox
+					assert not .didBindInt or not .compiler.isBindingInh
+
+			assert _baseInterfaceProxies.count == _baseInterfaces.count
+
 			t = .memberwiseClone to Box
 			assert t is not this
 			genericDef._constructedTypes[key] = t
@@ -864,6 +869,7 @@ class Box
 			gpToType = TypeUtil.dictionaryOf(_genericDef.genericParams, typeArgs)
 
 			_baseClass = _baseClass.secondaryConstructedTypeFor(this, gpToType) to Class
+
 			assert _baseInterfaceProxies.count == 0 or _baseInterfaceProxies.count == _baseInterfaces.count
 			for i = 0 .. _baseInterfaces.count
 				_baseInterfaces[i] = _baseInterfaces[i].secondaryConstructedTypeFor(this, gpToType) to Interface
@@ -1519,6 +1525,10 @@ class Extension
 	
 	def _bindInt
 		base._bindInt
+		extendedBox = .extendedBox
+		if not extendedBox.didBindInh, extendedBox.bindInh
+		if not extendedBox.didBindInt, extendedBox.bindInt
+		assert extendedBox.didBindInh and extendedBox.didBindInt
 		sharpName = .sharpRef   # TODO: how to generalize this beyond CLR? idea: change .sharedMethodBacking to refer to a method instead of being a String
 		for decl in .declsInOrder
 			if decl inherits AbstractMethod
@@ -1530,17 +1540,19 @@ class Extension
 					decl.isNames.add('nonvirtual')
 					decl.bindInt
 					# handle overloads
-					other = .extendedBox.declForName(decl.name)
+					other = extendedBox.declForName(decl.name)
 					if other
+						newOverload = nil to MemberOverload?
 						if other inherits MemberOverload
 							overload = other
 						else if other inherits AbstractMethod
-							overload = MemberOverload(other)
-							.extendedBox.registerOverload(overload)
+							newOverload = overload = MemberOverload(other)
+							extendedBox.registerOverload(overload)
 						else
 							throw FallThroughException([this, decl])
 						decl.overloadGroup = nil  # Could be in a group from the extension itself. And .addMember below don't like that.
 						overload.addMember(decl)
+						if newOverload, newOverload.bindInt  # an overload that never .bindInt will get cranky later
 			else
 				decl.recordError('Extensions can only contain methods.')
 
