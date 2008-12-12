@@ -397,7 +397,7 @@ CC: bug in Cobra parser where putting a doc string after a sig causes problems.
 		Returns nothing.
 		Example:  .zeroOrMore('EOL')
 		"""
-		while .peek.which == which
+		while .peek and .peek.which == which
 			.grab
 
 
@@ -2876,6 +2876,10 @@ CC: bug in Cobra parser where putting a doc string after a sig causes problems.
 		while true
 			if isSpaceAgnostic
 				_spaceAgnostic
+			if .peek is nil
+				literal = {'RPAREN': ')', 'RBRACKET': ']'}
+				what = Utils.join(" or ", for t in terminators get '"[if(literal.containsKey(t), literal[t], t)]"')
+				.throwError('Expecting "," or [what].')
 			if .peek.which in terminators
 				.grab
 				break
@@ -3491,19 +3495,20 @@ CC: bug in Cobra parser where putting a doc string after a sig causes problems.
 		Call _finishSpaceAgnostic afterwards to eat up subsequent INDENTs and DEDENTs.
 		"""
 		while true
-			peek = .peek.which
-			branch peek
-				on 'EOL'
-					.grab
-					continue
-				on 'INDENT'
-					.grab
-					_spaceAgnosticIndentLevel += 1
-					continue
-				on 'DEDENT'
-					.grab
-					_spaceAgnosticIndentLevel -= 1
-					continue
+			peek = .peek
+			if peek
+				branch .peek.which
+					on 'EOL'
+						.grab
+						continue
+					on 'INDENT'
+						.grab
+						_spaceAgnosticIndentLevel += 1
+						continue
+					on 'DEDENT'
+						.grab
+						_spaceAgnosticIndentLevel -= 1
+						continue
 			break
 		if _verbosity >= 5
 			print '<> spaceAgnostic level=[_spaceAgnosticIndentLevel]'
