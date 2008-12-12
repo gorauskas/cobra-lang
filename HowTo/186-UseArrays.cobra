@@ -1,0 +1,154 @@
+"""
+Show how to use arrays including declaration, literals and allocation.
+
+An array type is any type followed by empty square brackets such as:
+	int[]
+	bool[]
+	Customer[]
+
+An array literal is like a list literal, but prefixed by an @ such as:
+	@[1, 2, 3]
+	@['foo', 'bar']
+
+An array instantiation follows the general form TYPE(ARGS) where ARGS is the size
+of the array such as:
+	int[](100)
+	char[](bufSize)
+
+Note that generic lists are more flexible and convenient than arrays. Therefore,
+they are preferred over arrays except when a method interface requires an array
+or in extreme performance situations.
+
+For argument types, IList<of> is ideal because it can accept both arrays and
+lists.
+"""
+
+class ArraysExample
+
+	shared
+     
+		def sum(nums as int[]) as int  # nums arg is array of int
+			test 
+				nums = @[1, 2, 3]  # array literal inferred as type int[]
+				assert nums.length == 3
+				assert nums[2] == 3 
+				assert ArraysExample.sum(nums) == 6
+                
+				# instantiate a 'blank' array of a specific size
+				lottaNums = int[](100)
+
+				# Array contents are initialized to the 'default value' for the
+				# type (0 in this case). The general format for instantiation is:
+				#     <var-name> = <type>(<args>)
+				# and in the case of arrays, the <type> is an array type
+				# (suffixed by "[]") and <args> is the length of the array,
+				# so the array allocation form is:
+				#     <var-name> = <type>[](<length>)
+				# such as:
+				#     nums = number[](100)
+
+				assert lottaNums.length == 100
+				assert lottaNums[9] == 0
+				assert ArraysExample.sum(lottaNums) == 0 
+			body 
+				sum = 0 
+				for num in nums 
+					sum += num
+				return sum 
+		
+		def sum(nums as IList<of int>) as int
+			# This method is more easily reused because it accepts any array,
+			# list or any object that implements IList.
+			sum = 0
+			for num in nums
+				sum += num
+			return sum 
+
+		def moreHowTo
+			nums as int[] = int[](2)  # explicitly typed local var
+			assert nums.length == 2
+			assert ArraysExample.sum(nums) == 0
+			nums[0] = 10
+			nums[1] = 11
+			assert ArraysExample.sum(nums) == 21
+
+			# compare arrays
+			assert nums == @[10, 11]
+
+			# another example
+			n = 1024
+			ch = char[](n)
+			for i in n, ch[i] = c'z'
+
+			# convert a list to an array
+			assert [10, 11].toArray == @[10, 11]
+
+		def main 
+			# example passing array to .NET library method
+			# .NET String.split() expects an array of chars
+			parts = 'a|b:c'.split(@[c'|', c':']) 
+			assert parts.length == 3 
+			for part in parts 
+				assert part in ['a', 'b', 'c']
+				
+			
+class BinaryFileReader 
+	is abstract
+	"""
+	Abstract class that shows array handling for .NET binary file API.
+	Reads a file in fixed size chunks.
+	Subclass and override .handleBuf to provide content handling.
+	
+	Sample array code is in the _readStream method.
+	"""
+
+	var _fileName as String?
+	var _stream as Stream?
+	var _bufSize as int
+
+	def init(fileName as String)
+		.init(fileName, 1024)
+
+	def init(fileName as String, bufSize as int)
+		_fileName = fileName
+		_bufSize = bufSize
+	
+	def init(stream as Stream)
+		.init(stream, 1024)
+
+	def init(stream as Stream, bufSize as int)
+		_stream = stream
+		_bufSize = bufSize
+
+	def readFile
+		if _fileName
+			using stream = FileStream(_fileName, FileMode.Open, FileAccess.Read)
+				_readStream(stream)
+		else
+			_readStream(_stream to !)
+
+	def readStandardInput
+		using _stream = Console.openStandardInput
+			_readStream(_stream to !)
+
+	def _readStream(stream as Stream)
+		bufSize = _bufSize
+		buffer = uint8[](bufSize)
+		offset = 0
+		using br = BinaryReader(stream)
+			nRead = br.read(buffer, 0, bufSize)
+			while nRead > 0 	
+				.handleBuf(buffer, nRead, offset)
+				offset += nRead
+				nRead = br.read(buffer, 0, bufSize)
+			.fileEnd(offset)
+
+	def handleBuf(buffer as uint8[], nRead as int, offset as int) is abstract
+		""" 
+		Called on each buffer read, whether filled or partially filled.
+		"""
+
+	def fileEnd(offset as int) is abstract
+		""" 
+		Called on eof before file closed.
+		"""
