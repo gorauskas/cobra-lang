@@ -774,13 +774,41 @@ static public class CobraImp {
 		return results;
 	}
 
+	/* Numeric forExpr */
+	static public List<int> For<TIn, TOut>(int start, int stop, int step, ForGet<int, int> forGet) {
+		if ((step > 0 && start > stop) || 
+			(step < 0 && start < stop) || step == 0)
+				throw new IndexOutOfRangeException(string.Format("for expression will never terminate; start={0} stop={1} step={2}", start, stop, step));
+		List<int> results = new List<int>();
+		for (int item = start; 
+			(step > 0 && item < stop) || (step < 0 && item > stop);
+			item += step)
+			results.Add(forGet(item));
+		return results;
+	}
+
+	static public List<int> For<TIn, TOut>(int start, int stop, int step, ForWhereGet<int, int> forWhereGet) {
+		if ((step > 0 && start > stop) || 
+			(step < 0 && start < stop) || step == 0)
+				throw new IndexOutOfRangeException(string.Format("for expression will never terminate; start={0} stop={1} step={2}", start, stop, step));
+		List<int> results = new List<int>();
+		for (int item = start;
+			(step > 0 && item < stop) || (step < 0 && item > stop);
+			item += step) {
+			int value;
+			if (forWhereGet(item, out value))
+				results.Add(value);
+		}
+		return results;
+	}
+
 	static private void ProcessGetSliceArgs(int count, ref int? start, ref int? stop, ref int? step) {
 		if (start==null)
 			start = 0;
 		if (start < 0) {
 			start += count;
 			if (start < 0) {
-			    start = 0;
+				start = 0;
 			}
 		} else if (start > count) {
 			start = count;

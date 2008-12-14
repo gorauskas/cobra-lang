@@ -865,11 +865,17 @@ class ForExpr
 	var _what as Expr
 	var _whereExpr as Expr?
 	var _getExpr as Expr
+	var _start as Expr?
+	var _stop as Expr?
+	var _step as Expr?
 
-	def init(token as IToken, nameExpr as NameExpr, what as Expr, whereExpr as Expr?, getExpr as Expr)
+	def init(token as IToken, nameExpr as NameExpr, what as Expr, stopExpr as Expr?,
+				stepExpr as Expr?, whereExpr as Expr?, getExpr as Expr)
 		base.init(token)
 		_nameExpr = nameExpr
 		_what = what
+		_stop = stopExpr
+		_step = stepExpr
 		_whereExpr = whereExpr
 		_getExpr = getExpr
 
@@ -880,6 +886,11 @@ class ForExpr
 		.addField('what', _what)
 		.addField('whereExpr', _whereExpr)
 		.addField('getExpr', _getExpr)
+		.addField('start', _start)
+		.addField('stop', _stop)
+		.addField('step', _step)
+
+	# TODO: add propertiesfor the various object vars
 
 	get willChangeVar as bool is override
 		# TODO: ack. kind of weird. if the variable is a new one and its not read afterwards (without first being set) then no side effects.
@@ -892,7 +903,17 @@ class ForExpr
 		base._bindImp
 		_what.bindImp  # bind first because it may be needed for type inference
 		whatType = _what.type to !
-		if not whatType.isDescendantOf(.compiler.enumerableType) and not whatType.isSequenceLike  # TODO: can probably drop .isSequenceLike
+		if whatType inherits AnyIntType
+			if _stop
+				_start = _what
+				_stop.bindImp
+			else
+				_start = IntegerLit(.token.copy('INTEGER_LIT', '0'), 0).bindImp
+				_stop = _what
+			if not _step
+				_step = IntegerLit(.token.copy('INTEGER_LIT', '1'), 1)
+			_step.bindImp
+		else if not whatType.isDescendantOf(.compiler.enumerableType) and not whatType.isSequenceLike  # TODO: can probably drop .isSequenceLike
 			.throwError('Cannot enumerate values of type "[whatType.name]". You can enumerate anything enumerable (IEnumerable, IList, arrays, strings, etc.).')
 		_var = .bindVar(_nameExpr)
 		if _nameExpr.definition
@@ -913,7 +934,7 @@ class ForExpr
 
 	def inferredType as IType? is override
 		assert _what.type
-		return _what.type.innerType
+		return if(_what.type inherits AnyIntType, _what.type, _what.type.innerType)
 
 
 class IdentifierExpr
