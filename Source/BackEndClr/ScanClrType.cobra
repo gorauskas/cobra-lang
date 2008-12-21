@@ -351,11 +351,15 @@ class Box
 		if paramInfos and paramInfos.length
 			for paramInfo in paramInfos
 				isVari = false
+				isNotNull = false
 				for attr in paramInfo.getCustomAttributes(false)
 					if attr inherits ParamArrayAttribute
 						isVari = true
-						break
-				type = _memberTypeProxy(paramInfo.parameterType)
+					else
+						typeName = attr.getType.name
+						if typeName.endsWith('.NotNull') or typeName == 'NotNull'  # use name in case "NotNull" attributes become a .NET convention
+							isNotNull = true
+				type = _memberTypeProxy(paramInfo.parameterType, isNotNull)
 				if isVari, type = VariTypeProxy(type)
 				param = Param(paramInfo.name, type)
 				if paramInfo.parameterType.isByRef and not paramInfo.isOut
@@ -426,9 +430,12 @@ class Box
 		return false
 
 	def _memberTypeProxy(clrType as Type?) as ITypeProxy
+		return _memberTypeProxy(clrType, false)
+
+	def _memberTypeProxy(clrType as Type?, notNullAttr as bool) as ITypeProxy
 		"""
 		Returns a type proxy for a member type such as a parameter type or method return type.
-		In CLR, reference types are nilable by default.
+		In CLR, reference types are nilable by default, but you can pass `true` for `notNullAttr` to indicate there was a NotNullAttribute in the DLL.
 		"""
 		if clrType is nil
 			return .compiler.voidType
@@ -436,7 +443,10 @@ class Box
 			return ClrTypeProxy(clrType)
 		else
 			# TODO: for generic types, should look at constraints. if constraints don't dictate nilable or not, then need to treat type special during generic construction
-			return NilableTypeProxy(ClrTypeProxy(clrType))
+			tp = ClrTypeProxy(clrType) to ITypeProxy
+			if not notNullAttr
+				tp = NilableTypeProxy(tp)
+			return tp
 
 	def _memberTypeResultProxy(member as MemberInfo, clrType as Type?) as ITypeProxy
 		"""
