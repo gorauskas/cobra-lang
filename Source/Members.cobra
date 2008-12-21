@@ -756,10 +756,17 @@ class AbstractMethod
 	def _bindImp is override
 		assert .compiler.codeMemberStack.peek is this
 		base._bindImp
-		.computeMatchingBaseMember  # cannot currently go in .bindInt because it uses .memberForName which triggers other things like generic construction completion
-		if .matchingBaseMember and 'override' in .isNames and 'private' in .matchingBaseMember.isNames
-			.recordError('Cannot override the base member which is declared "private".')
-		for param in _params
+		params = .params
+		.computeMatchingBaseMember  # cannot currently go in .bindInt because it uses .memberForName which triggers other things like generic construction completion. TODO: would like to fix some day
+		if .matchingBaseMember
+			matchingBaseMember = .matchingBaseMember
+			if 'override' in .isNames and 'private' in matchingBaseMember.isNames
+				.recordError('Cannot override the base member which is declared "private".')
+			for i in params.count
+				param = params[i]
+				if matchingBaseMember.params[i].type inherits NilableType and not param.type inherits NilableType
+					.recordError('Cannot make param "[param.name]" non-nil because the base method declares it is nilable. Change "[param.name]" to "[matchingBaseMember.params[i].type.name]", or change the base method.')
+		for param in params
 			param.bindImp
 		for local in _locals
 			local.bindImp
