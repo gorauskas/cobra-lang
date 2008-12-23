@@ -815,21 +815,34 @@ class PrintStmt
 		_args = args
 		_stop = stopp
 
+	get destination from var
+	
+	get args from var
+		has Subnodes
+
+	get stop from var
+
 	def _bindImp
 		base._bindImp
-		if _destination
-			_destination.bindImp
+		if .destination
+			.destination.bindImp
+			t = .destination.type
+			if not t.isDynamicOrPassThrough and not t.isDescendantOf(.compiler.libraryType('System.IO.TextWriter'))  # TODO-BACKEND
+				.recordError('Invalid destination of type "[t.name]" for "print". Use a TextWriter or subclass thereof instead.')
+		num = 1
 		for arg in _args
-			arg.bindImp
+			try
+				arg.bindImp
+			catch ne as NodeException
+				ne.prefixMessage('For arg [num]: ')
+				.compiler.recordError(ne)
+			num += 1
 
 	def addSubFields
 		base.addSubFields
 		.addField('stop', _stop)
 		.addField('destination', _destination)
 		.addField('args', _args)
-
-	get args from var
-		has Subnodes
 
 
 class PrintRedirectStmt
