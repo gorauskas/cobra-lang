@@ -88,12 +88,13 @@ class Compiler
 			return
 		cobraExePath = CobraCore.exePath
 		assert File.exists(cobraExePath)
+		suffix = if(.options.boolValue('embed-run-time'), .embedRunTimeSuffix, '')
 		infoPath = Path.combine(Path.getDirectoryName(cobraExePath), 'CobraInfo.cs')
 		try
 			using sw = File.createText(infoPath)
 				print to sw
 					print 'using System;'
-					print 'namespace Cobra.Lang {'
+					print 'namespace Cobra.Lang[suffix] {'
 					print '    class CobraInfo {'
 					print '        static public String CobraPath {'
 					print '            get { return @"[cobraExePath]"; }'
@@ -593,6 +594,15 @@ interface IMember
 class NameSpace
 	is partial
 
+	get sharpSuffix as String
+		value as Object?
+		if not .addOnValues.tryGetValue('sharpSuffix', out value)
+			suffix = if(.fullName == 'Cobra.Lang', .compiler.embedRunTimeSuffix, '')
+			.addOnValues['sharpSuffix'] = suffix
+			return suffix
+		else
+			return value to String
+
 	get sharpInit as String is override  # TODO: remove when not a type
 		assert false
 		return ''
@@ -601,19 +611,19 @@ class NameSpace
 		if _superNameSpace is nil
 			return 'global::'
 		else
-			return .fullName
+			return .fullName + .sharpSuffix
 
 	get sharpQualifier as String
 		if _superNameSpace is nil
 			return 'global::'
 		else
-			return .fullName + '.'
+			return .fullName + .sharpSuffix + '.'
 	
 	def writeSharpDef(sw as SharpWriter) is override
 		assert not .isUnified
 		base.writeSharpDef(sw)
 		if not .isRoot
-			sw.writeAndIndent('namespace [.name] {\n\n')
+			sw.writeAndIndent('namespace [.name][.sharpSuffix] {\n\n')
 		for ud in _useDirectives
 			ud.writeSharpDef(sw)
 		for decl in _declsInOrder
@@ -634,7 +644,7 @@ class UseDirective
 	is partial
 
 	def writeSharpDef(sw as SharpWriter) is override
-		sw.write('using [_fullName];\n')
+		sw.write('using [.boundNameSpace.sharpRef];\n')
 
 
 ##
@@ -957,7 +967,7 @@ class Box
 		else
 			sharp = .sharpName
 		if .parentNameSpace and not .parentNameSpace.isRoot
-			sharp = .parentNameSpace.fullName + '.' + sharp
+			sharp = .parentNameSpace.sharpQualifier + sharp
 		else if .parentBox
 			sharp = .parentBox.sharpRef + '.' + sharp
 		return sharp

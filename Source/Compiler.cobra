@@ -373,7 +373,7 @@ class Compiler
 			embedRunTime = .options.boolValue('embed-run-time')
 
 			if not embedRunTime
-				_addRuntimeRef(.options) # then reference runtime dll
+				_addRuntimeRef(.options)  # then reference runtime dll
 
 			Node.setCompiler(this)
 			try
@@ -386,12 +386,22 @@ class Compiler
 					path = Path.combine(.cobraExeDir, 'CobraInfo.cs')
 					assert File.exists(path)
 					filenames.insert(0, path)
+					.addIntermediateFile(path)
 
 					if embedRunTime
 						paths = .commandLineArgParser.readFilesFile(Path.combine(Path.combine(.cobraExeDir, 'Cobra.Lang'), 'files.text'))
 						paths.reverse
 						for path in paths
-							filenames.insert(1, path)
+							if Path.getFileName(path) == 'Native.cs'
+								suffix = .embedRunTimeSuffix
+								nativeCode = File.readAllText(path)
+								nativeCode = nativeCode.replace('namespace Cobra.Lang', 'namespace Cobra.Lang'+suffix)
+								newPath = Path.getFullPath('Native[suffix].cs')
+								File.writeAllText(newPath, nativeCode)
+								.addIntermediateFile(newPath)
+								filenames.insert(1, newPath)
+							else
+								filenames.insert(1, path)
 						
 				modules = List<of Module>()
 				_parsedModules = modules
@@ -1356,7 +1366,26 @@ class Compiler
 						se.appendToMessage(augment)
 						return true
 			return false
-		
+
+	var _uniqueIdentifier as String?
+
+	def uniqueIdentifier as String
+		"""
+		Returns a unique id such as '95b141d670c19f2f20a820751897b9c6' which is guaranteed to be
+		unique per Compiler instance. Can be used in identifiers. Motivated by -embed-run-time
+		option which suffixes the Cobra.Lang suffix to avoid collisions with other assemblies.
+		"""
+		if _uniqueIdentifier is nil
+			components = [DateTime.now, this, Environment.currentDirectory, Process.getCurrentProcess.id]
+			_uniqueIdentifier = components.toPrintString.md5HashInHex
+		return _uniqueIdentifier to !
+
+	def embedRunTimeSuffix as String
+		if .options.boolValue('embed-run-time')
+			return '_ert_' + .uniqueIdentifier
+		else
+			return ''
+
 	shared
 		var _unknownSuggestions = {
 		# literals
