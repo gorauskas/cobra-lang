@@ -32,7 +32,7 @@ class OptionSpec
 
 	get type as String
 		require .isUnpacked
-		ensure result in ['accumulator', 'args-list', 'bool', 'int', 'main', 'menu', 'string']
+		ensure result in ['accumulator', 'args-list', 'bool', 'int', 'main', 'menu', 'set', 'string']
 		return _type
 
 	get synonyms from var
@@ -72,7 +72,7 @@ class OptionSpec
 				this['type'] = _type = 'accumulator'
 			else
 				this['type'] = 'string'
-		assert _type in ['accumulator', 'args-list', 'bool', 'int','main', 'menu', 'string']
+		assert _type in ['accumulator', 'args-list', 'bool', 'int','main', 'menu', 'set', 'string']
 		if .containsKey('synonyms')
 			for syn in this['synonyms']
 				_synonyms.add(syn)
@@ -88,7 +88,7 @@ class OptionSpec
 				_choices.add(choice)
 		_isUnpacked = true
 		assert .type=='menu' implies .choices.count > 0
-		assert .choices.count <> 0 implies .type == 'menu'
+		assert .choices.count <> 0 implies .type in ['menu', 'set']
 
 
 class CommandLineOptionSpecs
@@ -150,10 +150,13 @@ class CommandLineOptionSpecs
 			'default': 'inline',
 		},
 		{
-			'name': 'correct-case',
-			'synonyms': ['cc'],
-			'description': 'Rewrite source files with case corrected where the correction is unambiguous. For example, "string" --> "String". If possible, you should set your editor to automatically reload files when using this option.',
-			'type': 'bool',
+			'name': 'correct-source',
+			'synonyms': ['cs'],
+			'description': 'Rewrite source files with corrections, only when unambiguous. For example, "string" --> "String". If possible, you should set your editor to automatically reload files when using this option.',
+			'type': 'set',
+			'choices': ['none', 'case', 'foo', 'all'],
+			'args': 'none|case|all',
+			'default': 'none',
 		},
 		{
 			'name': 'debug',
@@ -705,7 +708,7 @@ class CommandLine
 					print '[lbracket]:[spec["args"]]]' stop
 				else
 					print ':[spec["args"]]' stop
-			else if spec['type']=='bool'
+			else if spec.type == 'bool'
 				print r'[:no|yes]' stop
 			if spec.hasDefault
 				print '  default is [spec.default]' stop
@@ -724,11 +727,9 @@ class CommandLine
 					s = ''
 				else
 					# TODO: bug in here for narrow widths. try "width = 20" to reproduce
-					j = width+1
-					if j >= s.length
-						j = s.length - 1
-					while j > 0 and s[j] <> ' '
-						j -= 1
+					j = width + 1
+					if j >= s.length, j = s.length - 1
+					while j > 0 and s[j] <> ' ', j -= 1
 					if j
 						sub = s.substring(0, j)
 						s = if(s.length, s.substring(j+1), '')
@@ -1008,7 +1009,7 @@ class ArgParser
 				name = name[:-1]
 				valueStr = 'off'
 			else
-				valueStr = 'on'
+				valueStr = 'on'  # this should probably be done at a later point, like _processToValue
 		else
 			assert parts.length == 2
 			name = parts[0]
@@ -1075,7 +1076,7 @@ class ArgParser
 						valueStr as String, 
 						spec as OptionSpec,
 						mainOptions as List<of String>) as dynamic?
-		value as dynamic? = 'no-value'
+		value = 'no-value' to dynamic?
 	
 		if name == 'debug' 		# special case
 			return _fixDebug(valueStr)
@@ -1197,12 +1198,25 @@ class ArgParser
 			on 'string'
 				value = valueStr
 			on 'menu'
-				if valueStr.length==0
-					value = nil
-				if not valueStr in spec.choices
+				if valueStr.length == 0
+					value = 'all'
+				else if not valueStr in spec.choices
 					value = nil
 				else
 					value = valueStr
+			on 'set'
+				if valueStr in ['', 'on'], valueStr = 'all'
+				valueSet = Set<of String>()
+				for choice in valueStr.split(c',')
+					if choice == 'none'
+						valueSet = {'none'}
+					else if choice == 'all'
+						valueSet = Set<of String>(for choice in spec.choices where choice not in ['none', 'all'])
+					else
+						valueSet.add(choice)
+				value = valueSet
+			else
+				throw FallThroughException(spec.type)
 		return value
 		
 	def _boolForString(s as String) as bool
@@ -1297,6 +1311,16 @@ class OptionValues
 			return List<of String>()
 
 	# CC: def getDefault<of T>(key as String, value as T) as T ...
+
+	def setValue(key as String) as Set<of String>
+		""" Returns an empty string if no such set exists. """
+		if .containsKey(key)
+			try
+				return this[key] to Set<of String>
+			catch InvalidCastException
+				throw InvalidCastException('Cannot cast [CobraCore.toTechString(this[key])] for key "[key]" to Set<of String>.')
+		else
+			return Set<of String>()
 
 	def combine(options as OptionValues)
 		if options is not this
