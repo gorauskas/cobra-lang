@@ -880,17 +880,20 @@ class InverseCoalesceExpr
 
 	def _bindImp
 		base._bindImp
+		left, right = .left, .right
 		ptt = .compiler.passThroughType
-		if _left.type is ptt or _right.type is ptt
+		if left.type is ptt or right.type is ptt
 			# x ! y   ...where either is typed as passthrough
 			_type = ptt
+		else if not left.type inherits NilableType
+			.throwError('The left hand type of "!" is not nilable (it\'s "[left.type.name]") so the expression will always evaluate to the right hand side.')
 # TODO?
 #		else if _right.type inherits NilableType and not _right.type inherits NilableType
 #			# x ? y   ...where x can be nil, but y cannot
 #			_type = _left.type.nonNil  # TODO: should be greatest common denominator between the two
 		else
 			# the catch all case
-			_type = _left.type  # TODO: should be greatest common denominator between the two
+			_type = left.type.greatestCommonDenominatorWith(right.type to !)
 
 
 class CoalesceAssignExpr
@@ -922,5 +925,8 @@ class InverseCoalesceAssignExpr
 
 	def _bindImp
 		base._bindImp
-		# TODO: any error checks here?
-		_type = _left.type
+		left, right = .left, .right
+		if not left.type inherits NilableType
+			.throwError('The left hand type of "!=" is not nilable (it\'s "[left.type.name]") so the expression will always evaluate to the right hand side. If you meant "does not equal" then use "<>". "a != b" means "a = a ! b" where "!" is an operator concerning nil.')
+		_type = left.type.greatestCommonDenominatorWith(right.type to !)
+		
