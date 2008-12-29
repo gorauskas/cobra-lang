@@ -312,20 +312,11 @@ class Node
 
 		pro typeProvider as ITypeProvider?
 			get
-				if _typeProvider
-					return _typeProvider
-				if _compiler
-					return _compiler
+				if _typeProvider, return _typeProvider
+				if _compiler, return _compiler
 				return nil
 			set
 				_typeProvider = value
-
-		var _bindStack = List<of Node>()  # not a Stack<of> because we want second to top elemest
-			"""
-			Through maintaining _bindStack and the rule of "invoke .bind, override _bind",
-			the .superNode can be computed with no additional code or requiring back refs
-			in all nodes.
-			"""
 
 		var _secondToLast as Node?
 
@@ -435,6 +426,20 @@ class Node
 	## Binding
 	##
 
+	def _stackPush
+		"""
+		Invoked during various bind phases to push this onto the .compiler.nodeStack.
+		Can be overridden by subclasses to maintain other stacks (often of a more specific type).
+		"""
+		if .compiler, .compiler.nodeStack.push(this)
+
+	def _stackPop
+		"""
+		Invoked at the end of various bind phases to pop this off the .compiler.nodeStack.
+		Can be overridden by subclasses that maintain additional stacks.
+		"""
+		if .compiler, .compiler.nodeStack.pop
+
 	def bindInh
 		require
 			.compiler or .typeProvider
@@ -445,7 +450,7 @@ class Node
 			if not _didBindInh and not _isBindingInh
 				_didStartBindInh = true
 				_isBindingInh = true
-				if .compiler, .compiler.nodeStack.push(this)
+				_stackPush
 				try
 					_didBindInhBase = false
 					_bindInh
@@ -453,7 +458,7 @@ class Node
 					_didBindInh = true
 				finally
 					_finishChildReplacements
-					if .compiler, .compiler.nodeStack.pop
+					_stackPop
 					_isBindingInh = false
 
 	def _bindInh
@@ -482,7 +487,7 @@ class Node
 			if not _didBindInt and not _isBindingInt
 				_didStartBindInt = true
 				_isBindingInt = true
-				.compiler.nodeStack.push(this)
+				_stackPush
 				try
 					_didBindIntBase = false
 					if v > 3
@@ -495,7 +500,7 @@ class Node
 					_didBindInt = true
 				finally
 					_finishChildReplacements
-					.compiler.nodeStack.pop
+					_stackPop
 					_isBindingInt = false
 					if v > 3
 						print
@@ -532,7 +537,7 @@ class Node
 				_didStartBindImp = true
 				_isBindingImp = true
 				_superNode = if(.compiler.nodeStack.count > 0, .compiler.nodeStack.peek, _superNode ? nil)
-				.compiler.nodeStack.push(this)
+				_stackPush
 				try
 					_didBindImpBase = false
 					if .compiler.verbosity>3
@@ -543,7 +548,7 @@ class Node
 					_didBindImp = true
 				finally
 					_finishChildReplacements
-					.compiler.nodeStack.pop
+					_stackPop
 					_isBindingImp = false
 			return .bindImpResult
 

@@ -465,35 +465,37 @@ class Box
 
 	## Binding
 
+	def _stackPush
+		base._stackPush
+		if .compiler, .compiler.boxStack.push(this)
+	
+	def _stackPop
+		base._stackPop
+		if .compiler, .compiler.boxStack.pop
+		
 	def _bindInh
 		base._bindInh
-		.compiler.boxStack.push(this)
-		try
-			if _needScanNativeType
-				_scanNativeType
-			_bindBase
-			# structs, classes and interfaces can all have 0 or more interfaces they inherit/implement
-			if _baseInterfaceProxies.count <> _baseInterfaces.count  # otherwise, already done
-				assert _baseInterfaces.count == 0
-				for interfaceProxy in _baseInterfaceProxies
-					try
-						baseWhat = interfaceProxy.realType
-						if baseWhat inherits Interface
-							_baseInterfaces.add(baseWhat)
-						else
-							_badInterfaceError(baseWhat)
-					catch ne as NodeException
-						hadBaseInterfaceError = ne to ?
-						.compiler.recordError(ne)
-			_checkForInheritanceCycles(this, Stack<of Box>())
-			if _baseClass, _baseClass.bindInh
-			for interf in _baseInterfaces, interf.bindInh
-			for box in .nestedBoxes, box.bindInh
-		success
-			# trace this, hadBaseInterfaceError, .baseInterfaceProxies, .baseInterfaces
-			assert hadBaseInterfaceError or .baseInterfaceProxies.count == 0 or .baseInterfaceProxies.count == .baseInterfaces.count, [.baseInterfaceProxies.count, .baseInterfaces.count]
-		finally
-			.compiler.boxStack.pop
+		if _needScanNativeType, _scanNativeType
+		_bindBase
+		# structs, classes and interfaces can all have 0 or more interfaces they inherit/implement
+		if _baseInterfaceProxies.count <> _baseInterfaces.count  # otherwise, already done
+			assert _baseInterfaces.count == 0
+			for interfaceProxy in _baseInterfaceProxies
+				try
+					baseWhat = interfaceProxy.realType
+					if baseWhat inherits Interface
+						_baseInterfaces.add(baseWhat)
+					else
+						_badInterfaceError(baseWhat)
+				catch ne as NodeException
+					hadBaseInterfaceError = ne to ?
+					.compiler.recordError(ne)
+		_checkForInheritanceCycles(this, Stack<of Box>())
+		if _baseClass, _baseClass.bindInh
+		for interf in _baseInterfaces, interf.bindInh
+		for box in .nestedBoxes, box.bindInh
+		# trace this, hadBaseInterfaceError, .baseInterfaceProxies, .baseInterfaces
+		assert hadBaseInterfaceError or .baseInterfaceProxies.count == 0 or .baseInterfaceProxies.count == .baseInterfaces.count, [.baseInterfaceProxies.count, .baseInterfaces.count]
 
 	def _checkForInheritanceCycles(originalBox as Box, bases as Stack<of Box>)
 		if this in bases
@@ -501,10 +503,8 @@ class Box
 			.throwError('Cyclical inheritance for "[.name]" with ancestor types [Utils.join(", ", names)] and back to [.name].')
 		else
 			bases.push(this)
-			if .baseClass
-				.baseClass._checkForInheritanceCycles(originalBox, bases)
-			for bi in .baseInterfaces
-				bi._checkForInheritanceCycles(originalBox, bases)
+			if .baseClass, .baseClass._checkForInheritanceCycles(originalBox, bases)
+			for bi in .baseInterfaces, bi._checkForInheritanceCycles(originalBox, bases)
 			bases.pop
 
 	def bindInt as INode
@@ -528,51 +528,47 @@ class Box
 		# Note that .bindInt (not this method, _bindInt) already ensures that if this box is constructed, its generic def binds int *first*.
 		# Therefore, everthing below has already happened for a constructed box's generic def.
 		base._bindInt
-		.compiler.boxStack.push(this)
-		try
-			if .isSystemObjectClass
-				.prepSystemObjectClass
-			errorCount = .compiler.errors.count
-			if _needScanNativeType
-				_scanNativeType
-			if _baseClass
-				_baseClass.bindInt
-			for interf in _baseInterfaces
-				interf.bindInt
-			for param in _genericParams
-				param.bindInt
-			if not .isConstructed  # because constructed boxes are already taken care of by way of their generic type def
-				.unNilReturnTypes(this)
-			for attrib in _attribs
-				try
-					attrib.bindInt
-				catch ne as NodeException
-					.compiler.recordError(ne)
-			for invari in _invariants
-				invari.bindInt
-			for decl in List<of IBoxMember>(_declsInOrder)
-				assert not decl is this
-				.compiler.boxMemberStack.push(decl)
-				try
-					if decl inherits BoxMember
-						if decl.parentBox is not this  # TODO: when does this happen
-							continue
-					decl.bindInt
-				catch ne as NodeException
-					.compiler.recordError(ne)
-				finally
-					.compiler.boxMemberStack.pop
-			_finishOverloads
-			if _testMethod
-				_testMethod.bindInt
-			if _constructedTypes
-				if .compiler.errors.count <= errorCount  # completing construction on constructed types leads to chaos if this generic def had errors during bind interface
-					for ct in _constructedTypes.values
-						assert ct is not this
-						ct.completeMemberConstructionIfNeeded
-						ct.bindInt
-		finally
-			.compiler.boxStack.pop
+		if .isSystemObjectClass
+			.prepSystemObjectClass
+		errorCount = .compiler.errors.count
+		if _needScanNativeType
+			_scanNativeType
+		if _baseClass
+			_baseClass.bindInt
+		for interf in _baseInterfaces
+			interf.bindInt
+		for param in _genericParams
+			param.bindInt
+		if not .isConstructed  # because constructed boxes are already taken care of by way of their generic type def
+			.unNilReturnTypes(this)
+		for attrib in _attribs
+			try
+				attrib.bindInt
+			catch ne as NodeException
+				.compiler.recordError(ne)
+		for invari in _invariants
+			invari.bindInt
+		for decl in List<of IBoxMember>(_declsInOrder)
+			assert not decl is this
+			.compiler.boxMemberStack.push(decl)
+			try
+				if decl inherits BoxMember
+					if decl.parentBox is not this  # TODO: when does this happen
+						continue
+				decl.bindInt
+			catch ne as NodeException
+				.compiler.recordError(ne)
+			finally
+				.compiler.boxMemberStack.pop
+		_finishOverloads
+		if _testMethod
+			_testMethod.bindInt
+		if _constructedTypes
+			if .compiler.errors.count <= errorCount  # completing construction on constructed types leads to chaos if this generic def had errors during bind interface
+				for ct in _constructedTypes.values
+					assert ct is not this
+					ct.completeMemberConstructionIfNeeded
+					ct.bindInt
 
 	def prepSystemObjectClass
 		# TODO: fix native
@@ -603,42 +599,38 @@ class Box
 	def _bindImp
 		base._bindImp
 		assert .didBindInt
-		.compiler.boxStack.push(this)
-		try
-			for attrib in _attribs
-				try
-					attrib.bindImp
-				catch ne as NodeException
-					.compiler.recordError(ne)
-			for i in _invariants.count
-				invari = _invariants[i]
-				invari.bindImp
-				if invari.type is not .compiler.boolType
-					_invariants[i] = TruthExpr(invari).bindAll to Expr
-			# TODO: should be able to remove the following
-			for invari in _invariants
-				invari.bindImp
-			for decl in List<of IBoxMember>(_declsInOrder)
-				assert not decl is this
-				.compiler.boxMemberStack.push(decl)
-				try
-					if decl inherits BoxMember
-						if decl.parentBox is not this
-							continue
-					decl.bindImp
-				catch ne as NodeException
-					.compiler.recordError(ne)
-				finally
-					.compiler.boxMemberStack.pop
-			for ol in _overloads
-				try
-					ol.bindImp
-				catch ne as NodeException
-					.compiler.recordError(ne)
-			if _testMethod
-				_testMethod.bindImp
-		finally
-			.compiler.boxStack.pop
+		for attrib in _attribs
+			try
+				attrib.bindImp
+			catch ne as NodeException
+				.compiler.recordError(ne)
+		for i in _invariants.count
+			invari = _invariants[i]
+			invari.bindImp
+			if invari.type is not .compiler.boolType
+				_invariants[i] = TruthExpr(invari).bindAll to Expr
+		# TODO: should be able to remove the following
+		for invari in _invariants
+			invari.bindImp
+		for decl in List<of IBoxMember>(_declsInOrder)
+			assert not decl is this
+			.compiler.boxMemberStack.push(decl)
+			try
+				if decl inherits BoxMember
+					if decl.parentBox is not this
+						continue
+				decl.bindImp
+			catch ne as NodeException
+				.compiler.recordError(ne)
+			finally
+				.compiler.boxMemberStack.pop
+		for ol in _overloads
+			try
+				ol.bindImp
+			catch ne as NodeException
+				.compiler.recordError(ne)
+		if _testMethod
+			_testMethod.bindImp
 
 	var _didPrep as bool
 
