@@ -972,6 +972,16 @@ class Box
 			sharp = .parentBox.sharpRef + '.' + sharp
 		return sharp
 
+	def extendedMethodGenericParams(genericParams as IList<of IType>) as IList<of IType>
+		"""
+		This is a hook for Extension and Method which have to deal with extensions on generic classes.
+		"""
+		ensure
+			old genericParams == genericParams
+			result.count >= genericParams.count
+		body
+			return genericParams
+
 	def writeSharpDef(sw as SharpWriter)
 		base.writeSharpDef(sw)
 		.compiler.boxStack.push(this)
@@ -1274,6 +1284,14 @@ class GenericTypeConstraint
 class Extension
 	is partial
 
+	get _computeSharpRef as String is override
+		sharp = .sharpName
+		if .parentNameSpace and not .parentNameSpace.isRoot
+			sharp = .parentNameSpace.sharpQualifier + sharp
+		else if .parentBox
+			sharp = .parentBox.sharpRef + '.' + sharp
+		return sharp
+
 	get sharpInit as String is override
 		return _extendedBox.sharpInit
 
@@ -1284,7 +1302,7 @@ class Extension
 		return 'class'  # because the extension is always housed in a C# class
 
 	var _backEndName as String?
-	
+
 	get sharpName as String is override
 		if not _backEndName
 			_backEndName = if(.nativeType, .nativeType.name, 'Extend_[.extendedBox.sharpNameComponent]_[Utils.toIdentifier(Path.getFileNameWithoutExtension(.compiler.curModule.fileName) to !)]')
@@ -1292,6 +1310,16 @@ class Extension
 
 	get sharpThis as String is override
 		return '_lh_this'
+
+	def extendedMethodGenericParams(genericParams as IList<of IType>) as IList<of IType> is override
+		if .isGeneric
+			# the generated static C# method will need the generic params of the extension on it
+			# since C# itself doesn't have "extension types", only extension methods
+			r = List<of IType>(.genericParams)
+			r.addRange(genericParams)
+			return r
+		else
+			return base.extendedMethodGenericParams(genericParams)
 
 	def writeSharpDefName(sw as SharpWriter) is override
 		# replace base behavior
@@ -1779,11 +1807,12 @@ class Method
 	is partial
 
 	get sharpGenericParams as String is override
-		if _genericParams.count
+		params = .parentBox.extendedMethodGenericParams(_genericParams)
+		if params.count
 			sb = StringBuilder()
 			sb.append('<')
 			sep = ''
-			for param in _genericParams
+			for param in params
 				sb.append(sep)
 				sb.append(param.sharpName)
 				sep = ','

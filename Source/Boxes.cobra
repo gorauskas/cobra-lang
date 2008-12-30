@@ -45,10 +45,9 @@ class Box
 		base.init(token, name, isNames, docString)
 		_attribs = attribs
 		_genericParams = paramList
-		for i = 0 .. _genericParams.count
+		for i in _genericParams.count
 			p = _genericParams[i]
-			if p inherits GenericParam
-				p.index = i
+			if p inherits GenericParam, p.index = i
 		_extensions = List<of Extension>()
 		_baseInterfaceProxies = baseInterfaceNodes
 		_baseInterfaces = List<of Interface>()
@@ -127,6 +126,13 @@ class Box
 		return 'public'
 
 	get extensions from var
+
+	get allExtensions as Extension*
+		""" Return all extensions including inheritance through all base classes and interfaces. """
+		require .didBindInh and .didBindInt
+		for ext in .extensions, yield ext
+		if _baseClass, for ext in _baseClass.allExtensions, yield ext
+		for bi in _baseInterfaces, for ext in bi.allExtensions, yield ext
 
 	get hasExtensions as bool
 		if _extensions.count, return true
@@ -818,15 +824,18 @@ class Box
 			t._genericDef = this
 			t._nativeType = nil  # The constructed type is really sourced from the generic def. Don't foster confusion with a reference to the original generic def's clr type (if there is one).
 			t.cloneCollections
+
 			# set the contructed type args immediately or its ancestors will get the original generic args during _bindInt:
 			for i in typeArgs.count
 				t._genericParams[i] = typeArgs[i]
 			assert t._constructedTypes is nil or t._constructedTypes.count == 0
+
 			if .didBindInt
 				t._completeConstruction(typeArgs)
 			else
 				t._needsConstruction(typeArgs)
 			assert t._constructedTypes is nil or t._constructedTypes.count == 0
+
 			return t
 
 	var _needs_typeArgs as List<of IType>?
@@ -870,10 +879,10 @@ class Box
 			_genericDef.unNilReturnTypes(_genericDef to !)
 			gpToType = TypeUtil.dictionaryOf(_genericDef.genericParams, typeArgs)
 
-			_baseClass = _baseClass.secondaryConstructedTypeFor(this, gpToType) to Class
+			if _baseClass, _baseClass = _baseClass.secondaryConstructedTypeFor(this, gpToType) to Class
 
 			assert _baseInterfaceProxies.count == 0 or _baseInterfaceProxies.count == _baseInterfaces.count
-			for i = 0 .. _baseInterfaces.count
+			for i in _baseInterfaces.count
 				_baseInterfaces[i] = _baseInterfaces[i].secondaryConstructedTypeFor(this, gpToType) to Interface
 
 			# construct the declarations
@@ -911,6 +920,9 @@ class Box
 					_declsInOrder.add(decl)
 					_declsByName[decl.name] = decl
 					_declsByNameCI[decl.name.toLower] = decl
+			for i in _extensions.count
+				ext = _extensions[i] = _extensions[i].constructedTypeFor(typeArgs) to Extension
+				ext.completeMemberConstructionIfNeeded
 			# TODO: can this next statement can be axed since there is a separate "bind inheritance" phase?
 			_finishOverloads
 
@@ -944,6 +956,7 @@ class Box
 		_baseInterfaceProxies = List<of ITypeProxy>(_baseInterfaceProxies)
 		_baseInterfaces = List<of Interface>(_baseInterfaces)
 		# _overloads = List<of MemberOverload>(_overloads)  # these will be recreated
+		_extensions = List<of Extension>(_extensions)
 
 	def typeForGenericParam(gp as GenericParam) as IType # TODO: is this needed for NilableType?
 		"""
@@ -1448,7 +1461,7 @@ class Extension
 				return .length * 2
 	"""
 
-	var _extendedBoxProxy as ITypeProxy
+	var _extendedBoxProxy as ITypeProxy?
 	var _extendedBox as Box?
 
 	def init(token as IToken, extendedBoxProxy as ITypeProxy, isNames as List<of String>, docString as String?)
@@ -1486,6 +1499,12 @@ class Extension
 			.completeMemberConstructionIfNeeded
 		if box.isDescendantOf(_extendedBox to !)
 			return .declForName(name)
+		else if box.genericDef and (box.genericDef.isDescendantOf(_extendedBox to !) _
+										or (_extendedBox.genericDef and box.isDescendantOf(_extendedBox.genericDef.constructedTypeFor(box.genericParams))))
+			for ext in box.allExtensions
+				if ext.genericDef is this
+					return ext.declForName(name)
+			throw FallThroughException()
 		else
 			return nil
 			
@@ -1505,11 +1524,20 @@ class Extension
 		base._bindInh
 
 		if _extendedBox is nil
+			if _extendedBoxProxy inherits GenericTypeIdentifier
+				# this will error on the generic params unless we set them up to be found
+				for tn in _extendedBoxProxy.typeNodes
+					if tn inherits TypeIdentifier
+						_genericParams.add(GenericParam(tn.name))
+					else
+						.throwError('Invalid generic param "[tn]".')
+
 			realType = _extendedBoxProxy.realType
 			if realType inherits Box
 				_extendedBox = realType
 			else
 				.throwError('Cannot extend a [realType.name]. You can extend classes, structs and interfaces.')
+				
 		_name = '[_extendedBox.name].extension.[.serialNum]'
 
 		# shouldn't need or use inherited types
@@ -1518,7 +1546,11 @@ class Extension
 		_baseInterfaces = List<of Interface>()
 		
 		# connect up
-		_extendedBox.extensions.add(this)
+		if _extendedBox.genericDef
+			_genericParams = List<of IType>(_extendedBox.genericParams)
+			_extendedBox.genericDef.extensions.add(this)
+		else
+			_extendedBox.extensions.add(this)
 	
 	def _bindInt
 		base._bindInt
@@ -1547,7 +1579,7 @@ class Extension
 							extendedBox.registerOverload(overload)
 						else
 							throw FallThroughException([this, decl])
-						decl.overloadGroup = nil  # Could be in a group from the extension itself. And .addMember below don't like that.
+						decl.overloadGroup = nil  # Could be in a group from the extension itself. And .addMember below doesn't like that.
 						overload.addMember(decl)
 						if newOverload, newOverload.bindInt  # an overload that never .bindInt will get cranky later
 			else

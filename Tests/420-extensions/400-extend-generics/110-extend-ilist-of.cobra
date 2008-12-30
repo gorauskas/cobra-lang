@@ -1,0 +1,99 @@
+extend String
+
+	def one as int
+		return 1
+
+
+extend IList<of X>
+
+	# the member names like .lastx and .replacex are weird to avoid
+	# any name collisions with the standard library now, or in the future
+
+	def two as int
+		return 2
+
+	def lastx as X
+		# return a value of the generic arg type
+		return this[.count-1]
+
+	def replacex(i as int, item as X)
+		# take an argument of the generic arg type
+		this[i] = item
+
+	def dup1
+		# access instance members
+		if .count > 0
+			.add(this[.count-1])
+
+	def dup2
+		# access another extension method
+		if .count > 0
+			.add(.lastx)
+
+	def dup3
+		# add a contract
+		ensure
+			.count implies .count == old .count + 1
+		body
+			if .count > 0
+				.add(this[.count-1])
+
+	def dup4
+		# more contracts
+		require .count > 0
+		ensure .count == old .count + 1
+		if .count > 0, .add(this[.count-1])
+
+	def dup5
+		# use the generic arg
+		item as X = this[.count-1]
+		.add(item)
+
+	def dup6
+		# infer a type that will be the generic arg
+		item = this[.count-1]
+		.add(item)
+
+
+class P
+
+	def main is shared
+
+		s = 'aoeu'
+		assert s.one == 1
+		t = [1, 2]
+		assert t.two == 2
+
+		assert t.lastx == 2
+
+		t.replacex(0, 4)
+		assert t == [4, 2]
+		
+		t.dup1
+		assert t.count == 3 and t.lastx == 2
+
+		t.dup2
+		assert t.count == 4 and t.lastx == 2
+		
+		t.dup3
+		assert t.count == 5	and t.lastx == 2
+
+		t.clear
+		expect RequireException, t.dup4
+
+		t.add(99)
+		t.dup4
+		assert t == [99, 99]
+		
+		t.dup5
+		assert t == [99, 99, 99]
+
+		t.dup6
+		assert t == [99, 99, 99, 99]
+
+		# use a reference type
+		names = ['red', 'blue', 'green']
+		assert names.two == 2
+		assert names.lastx == 'green'
+		names.dup1
+		assert names == ['red', 'blue', 'green', 'green']
