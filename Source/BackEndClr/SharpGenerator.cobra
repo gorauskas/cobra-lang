@@ -2796,21 +2796,22 @@ class TryStmt
 			# C# has no "success" (or in Python, "else") block for the "try" statement
 			# so it has to be simulated
 			helperName = '_lh_success_[_varNumber]'
-			sw.write('bool [helperName] = false;\n')
+			sw.write('bool [helperName] = true;\n')
 			if _finallyBlock
 				sw.write('try {\n')
 				sw.indent
 			sw.write('try')
 			_tryBlock.writeSharpDef(sw, false)
-			sw.write('[helperName] = true;\n')
+			# delme sw.write('[helperName] = true;\n')
 			sw.dedent
 			sw.write('}\n')
 			if _catchBlocks.count
-				.writeCatchBlocks(sw)
-			else
-				sw.write('finally { }\n')  # syntactically necessary
-			sw.write('if ([helperName])')
+				.writeCatchBlocks(sw, helperName)
+
+			sw.write('finally { if ([helperName])')
 			_successBlock.writeSharpDef(sw)
+			sw.write('}\n')
+
 			if _finallyBlock
 				sw.dedent
 				sw.write('}\n')
@@ -2819,12 +2820,12 @@ class TryStmt
 		else
 			sw.write('try')
 			_tryBlock.writeSharpDef(sw)
-			.writeCatchBlocks(sw)
+			.writeCatchBlocks(sw, nil)
 			if _finallyBlock
 				sw.write('finally')
 				_finallyBlock.writeSharpDef(sw)
 
-	def writeCatchBlocks(sw as SharpWriter)
+	def writeCatchBlocks(sw as SharpWriter, localSuccessVar as String?)
 		for eb in _catchBlocks
 			sw.write('catch')
 			if eb.type
@@ -2834,6 +2835,8 @@ class TryStmt
 					sw.write(' [helperName]')
 				sw.write(')')
 			sb = StringBuilder()
+			if localSuccessVar
+				sb.append('[localSuccessVar] = false;\n')
 			if .compiler.hasDetailedStackTraceOption
 				sb.append('CobraImp.HandledException();\n')
 			if eb.varName

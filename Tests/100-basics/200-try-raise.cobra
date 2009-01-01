@@ -130,3 +130,40 @@ namespace Test
 				pass
 			finally
 				pass
+
+			# test that `success` and `finally` execute even with a `return` in the try part
+			.reset
+			.returnInTry
+			assert not _didCatch and _didSuccess and _didFinally
+
+			# test that `finally` executes even with an exception
+			.reset
+			expect Exception, .throwInSuccess
+			assert not _didCatch and _didSuccess and _didFinally
+
+		var _didCatch as bool is shared
+		var _didSuccess as bool is shared
+		var _didFinally as bool is shared
+		
+		def reset is shared
+			_didCatch = _didSuccess = _didFinally = false
+
+		def returnInTry is shared
+			try
+				return  # test that a return statement here doesn't side-step `success` or `finally`
+			catch
+				_didCatch = true
+				throw
+			success
+				_didSuccess = true
+			finally
+				_didFinally = true
+
+		def throwInSuccess is shared
+			try
+				pass
+			success
+				_didSuccess = true
+				throw Exception('aoeu')  # test that an exception here doesn't side-step `finally`
+			finally
+				_didFinally = true
