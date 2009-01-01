@@ -850,8 +850,9 @@ class Box
 				.bindInt  # this is required when inheriting from a constructed type such as "class Foo inherits List<of int>". Since "bind inheritance" happens prior to "bind interface", the base type will have been partially constructed without ever binding int.
 			# TODO: compiler gives false warning for next line. see http://cobra-language.com/trac/cobra/ticket/41
 			if _needs_typeArgs  # .no-warnings.
-				_completeConstruction(_needs_typeArgs)
-			_needs_typeArgs = nil
+				typeArgs = _needs_typeArgs
+				_needs_typeArgs = nil
+				_completeConstruction(typeArgs)
 
 	get needsConstruction as bool
 		return _needs_typeArgs is not nil
@@ -1545,6 +1546,8 @@ class Extension
 		_baseInterfaceProxies = List<of ITypeProxy>()
 		_baseInterfaces = List<of Interface>()
 		
+		if not _extendedBox.didBindInh, _extendedBox.bindInh
+
 		# connect up
 		if _extendedBox.genericDef
 			_genericParams = List<of IType>(_extendedBox.genericParams)
@@ -1552,12 +1555,17 @@ class Extension
 		else
 			_extendedBox.extensions.add(this)
 	
-	def _bindInt
-		base._bindInt
+	def bindInt as INode
 		extendedBox = .extendedBox
-		if not extendedBox.didBindInh, extendedBox.bindInh
-		if not extendedBox.didBindInt, extendedBox.bindInt
+		assert extendedBox.didBindInh
+		if not extendedBox.didBindInt and not extendedBox.isBindingInh, extendedBox.bindInt
+		assert extendedBox.didBindInt
+		return base.bindInt
+	
+	def _bindInt
+		extendedBox = .extendedBox
 		assert extendedBox.didBindInh and extendedBox.didBindInt
+		base._bindInt
 		sharpName = .sharpRef   # TODO: how to generalize this beyond CLR? idea: change .sharedMethodBacking to refer to a method instead of being a String
 		for decl in .declsInOrder
 			if decl inherits AbstractMethod
