@@ -79,44 +79,6 @@ class Compiler
 
 	var _didWriteSharpInfoClass as bool
 
-	def writeSharpInfoClass
-		"""
-		The Cobra.Lang.Info class is compiled into the program and contains, at least, the path to the cobra.exe.
-		This is used for, at least, the implementation of CobraCore.findCobra.
-		"""
-		if _didWriteSharpInfoClass, return
-/# TODO-CobraInfo
-		sw = StringWriter()
-		print to sw
-			print 'namespace Cobra.Lang[.embedRunTimeSuffix]'
-			print '    class CobraInfo'
-			print '        get cobraPath as String is shared'
-			print '            return r"[CobraCore.exePath]"'
-		.options.addExtraSource(sw.toString)
-#/
-/# TODO-CobraInfo
-		cobraExePath = CobraCore.exePath
-		assert File.exists(cobraExePath)
-		suffix = if(.options.boolValue('embed-run-time'), .embedRunTimeSuffix, '')
-		infoPath = Path.combine(Path.getDirectoryName(cobraExePath), 'CobraInfo.cs')
-		try
-			using sw = File.createText(infoPath)
-				print to sw
-					print 'using System;'
-					print 'namespace Cobra.Lang[suffix] {'
-					print '    class CobraInfo {'
-					print '        static public String CobraPath {'
-					print '            get { return @"[cobraExePath]"; }'
-					print '        }'
-					print '    }'
-					print '}'
-		catch UnauthorizedAccessException
-			# an installed Cobra may not have perms to write this file
-			# and this CobraInfo.cs approach may be going away soon in favor of using the new internal 'extra-source' option
-			pass
-#/
-		_didWriteSharpInfoClass = true
-
 	get baseExeFileName from var
 		"""
 		Returns the exe file name sans extension.
