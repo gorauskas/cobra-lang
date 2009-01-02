@@ -6,6 +6,7 @@ interface INameSpaceMember
 	"""
 
 	def extensionMemberFor(box as Box, name as String) as IMember?
+	get isFromAssembly as bool
 	get isNames as List<of String>
 
 
@@ -39,10 +40,24 @@ class NameSpace
 		_subNameSpacesList = List<of NameSpace>()
 		_useDirectives = List<of UseDirective>()
 
+	get canDeclNamesDifferOnlyByCase as bool is override
+		"""
+		Returns true. While Cobra normally disallows this, assemblies created in other languages may have this characteristic. Also, 
+		Cobra normally disallows declarations that differ only in their case.
+		This works fine for source code, but not for reading assemblies.
+		"""
+		return true
+
 	get didBindUse from var
 
 	get englishName as String is override
 		return 'namespace'
+
+	get isFromAssembly as bool
+		# this is undetermined as namespaces can be spread across binaries and source
+		# but for our purposes, returning false is fine
+		# (see _checkForDeclarationsThatDifferOnlyByCase where this method is invoked)
+		return false
 
 	get isGlobal as bool
 		return _superNameSpace is nil and _name=='(global)'
@@ -160,10 +175,36 @@ class NameSpace
 		assert _didBindUse
 		.compiler.nameSpaceStack.push(this)
 		try
+			_checkForDeclarationsThatDifferOnlyByCase
 			for decl in _declsInOrder, decl.bindInh
 			for ns in _subNameSpacesList, ns.bindInh
 		finally
 			.compiler.nameSpaceStack.pop		
+
+	def _checkForDeclarationsThatDifferOnlyByCase
+		if _declsByNameCI.count < _declsByName.count
+			nameList = for d in _declsInOrder get d.name
+			remainingNames = Set<of String>(nameList)
+			for name in nameList
+				if name not in remainingNames, continue
+				lowerName = name.toLower
+				sameNames = for n in remainingNames where n.toLower == lowerName
+				if sameNames.count > 1
+					sameNames.sort
+					for n in sameNames, remainingNames.remove(n)
+					# at this point we have, for example, ['Foo', 'foo', 'FOO']
+					
+					namesMsgPart = Utils.join(' ', for n in sameNames get '"[n]"') + '.'
+					if all for n in sameNames get _declsByName[n] inherits NameSpace
+						# namespaces can be spread across DLLs and source files in any combination, so they only get a warning
+						.compiler.warning(this, 'Multiple namespaces in "[.fullName]" differ only by case: ' + namesMsgPart)
+					else
+						# if any of the decls comes from source then it's an error
+						# but if they all come from binaries, the user may not be able to correct it
+						msg = 'Multiple declarations in "[.fullName]" differ only by case: ' + namesMsgPart
+						anySource = any for n in sameNames get not _declsByName[n].isFromAssembly
+						if anySource, .recordError(msg)
+						else, .compiler.warning(this, msg)
 
 	def _bindInt
 		base._bindInt
