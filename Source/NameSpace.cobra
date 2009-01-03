@@ -170,16 +170,20 @@ class NameSpace
 			.compiler.nameSpaceStack.pop		
 		_didBindUse = true
 
+	def _stackPush
+		base._stackPush
+		.compiler.nameSpaceStack.push(this)
+
+	def _stackPop
+		base._stackPop
+		.compiler.nameSpaceStack.pop
+		
 	def _bindInh is override
 		base._bindInh
 		assert _didBindUse
-		.compiler.nameSpaceStack.push(this)
-		try
-			_checkForDeclarationsThatDifferOnlyByCase
-			for decl in _declsInOrder, decl.bindInh
-			for ns in _subNameSpacesList, ns.bindInh
-		finally
-			.compiler.nameSpaceStack.pop		
+		_checkForDeclarationsThatDifferOnlyByCase
+		for decl in _declsInOrder, decl.bindInh
+		for ns in _subNameSpacesList, ns.bindInh
 
 	def _checkForDeclarationsThatDifferOnlyByCase
 		if _declsByNameCI.count < _declsByName.count
@@ -209,32 +213,20 @@ class NameSpace
 	def _bindInt
 		base._bindInt
 		assert .didBindInh
-		.compiler.nameSpaceStack.push(this)
-		try
-			for ud in _useDirectives
-				ud.bindInt  # not logically needed (bindUse takes care of use directives), but nodes like to get at least one of .bindInt or .bindImp
-			for decl in _declsInOrder
-				decl.bindInt
-		finally
-			.compiler.nameSpaceStack.pop
+		for ud in _useDirectives
+			ud.bindInt  # not logically needed (bindUse takes care of use directives), but nodes like to get at least one of .bindInt or .bindImp
+		for decl in _declsInOrder
+			decl.bindInt
 
 	def _computeMatchingBaseMembers
 		base._computeMatchingBaseMembers
-		.compiler.nameSpaceStack.push(this)
-		try
-			for decl in .declsInOrder
-				decl.computeMatchingBaseMembers
-		finally
-			.compiler.nameSpaceStack.pop
+		for decl in .declsInOrder
+			decl.computeMatchingBaseMembers
 
 	def _bindImp
 		base._bindImp
-		.compiler.nameSpaceStack.push(this)
-		try
-			for decl in _declsInOrder
-				decl.bindImp
-		finally
-			.compiler.nameSpaceStack.pop
+		for decl in _declsInOrder
+			decl.bindImp
 
 	def extensionMemberFor(box as Box, name as String) as IMember?
 		if not .isUnified
