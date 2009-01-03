@@ -57,7 +57,7 @@ class BoxMember
 
 	get canHaveMatchingBaseMember as bool
 		"""
-		Used by .computeMatchingBaseMember to skip over members that cannot have base members.
+		Used by _computeMatchingBaseMembers to skip over members that cannot have base members.
 		Typically, explicit interface implementations like 'ICollection.IsSynchronized'
 		"""
 		return '.' not in _name
@@ -757,7 +757,6 @@ class AbstractMethod
 		assert .compiler.codeMemberStack.peek is this
 		base._bindImp
 		params = .params
-		.computeMatchingBaseMember  # cannot currently go in .bindInt because it uses .memberForName which triggers other things like generic construction completion. TODO: would like to fix some day
 		if .matchingBaseMember
 			matchingBaseMember = .matchingBaseMember
 			if 'override' in .isNames and 'private' in matchingBaseMember.isNames
@@ -795,8 +794,10 @@ class AbstractMethod
 	
 	get didComputeMatchingBaseMember from var
 
-	def computeMatchingBaseMember
-		ensure .matchingBaseMember is not this
+	def _computeMatchingBaseMembers
+		and ensure .matchingBaseMember is not this
+		base._computeMatchingBaseMembers
+		if not .canHaveMatchingBaseMember, return
 		_didComputeMatchingBaseMember = true
 		if _matchingBaseMember, return
 		if not .canHaveMatchingBaseMember, return
@@ -1210,17 +1211,18 @@ class ProperDexer
 				# VARNAME = value
 				.makeSetPart(.token).statements.add(AssignExpr(.token, 'ASSIGN', IdentifierExpr(.token, _coverVar), IdentifierExpr(.token, 'value')))
 
-		if _getPart
-			_getPart.bindInt
-		if _setPart
-			_setPart.bindInt
+		if _getPart, _getPart.bindInt
+		if _setPart, _setPart.bindInt
+
+	def _computeMatchingBaseMembers
+		base._computeMatchingBaseMembers
+		if _getPart, _getPart.computeMatchingBaseMembers
+		if _setPart, _setPart.computeMatchingBaseMembers
 
 	def _bindImp is override
 		base._bindImp
-		if _getPart
-			_getPart.bindImp
-		if _setPart
-			_setPart.bindImp
+		if _getPart, _getPart.bindImp
+		if _setPart, _setPart.bindImp
 
 	def constructedFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as BoxMember  # CC: as same
 		newMember = base.constructedFor(box, gpToType) to ProperDexer  # CC: this = base. ...
@@ -1372,6 +1374,10 @@ class MemberOverload
 			i += 1
 		# TODO: error if the returnType is different among any members
 		# TODO: error if the two members have the same arguments
+
+	def _computeMatchingBaseMembers
+		base._computeMatchingBaseMembers
+		for member in _members, member.computeMatchingBaseMembers
 
 	def _bindImp is override
 		base._bindImp
