@@ -19,7 +19,6 @@ class Box
 	var _genericParams as List<of IType>  # as in generic parameters
 	var _genericDef as Box?
 	var _constructedTypes as Dictionary<of String, Box>?
-	var _extensions as List<of Extension>
 
 	var _baseClass as Class?
 	var _baseInterfaceProxies as List<of ITypeProxy>
@@ -48,7 +47,6 @@ class Box
 		for i in _genericParams.count
 			p = _genericParams[i]
 			if p inherits GenericParam, p.index = i
-		_extensions = List<of Extension>()
 		_baseInterfaceProxies = baseInterfaceNodes
 		_baseInterfaces = List<of Interface>()
 		_overloads = List<of MemberOverload>()
@@ -124,22 +122,6 @@ class Box
 
 	get defaultAccessLevel as String is override
 		return 'public'
-
-	get extensions from var
-
-	get allExtensions as Extension*
-		""" Return all extensions including inheritance through all base classes and interfaces. """
-		require .didBindInh and .didBindInt
-		for ext in .extensions, yield ext
-		if _baseClass, for ext in _baseClass.allExtensions, yield ext
-		for bi in _baseInterfaces, for ext in bi.allExtensions, yield ext
-
-	get hasExtensions as bool
-		if _extensions.count, return true
-		if _baseClass and _baseClass.hasExtensions, return true
-		for bi in _baseInterfaces
-			if bi.hasExtensions, return true
-		return false
 
 	get isFromAssembly as bool
 		"""
@@ -295,17 +277,25 @@ class Box
 		return .didBindInh or (.nativeType and (.compiler.isBindingInt or .compiler.isBindingImp))
 
 	def extensionMemberFor(box as Box, name as String) as IMember?
-		# in the future, in support of C# 3.0, it will be necessary to implement this,
+		# in the future, in support of C# 3.0, it will be necessary to implement this
+		# to find the static extension methods like "static void Foo(this String s, ...)",
 		# or for Extensions to be instantiated when DLLs are scanned
 		return nil
 
-	def memberForName(name as String) as IMember?
-		if .nativeType
-			_prepLibraryBox
+	def memberForName(name as String) as IMember? is override
+		if .compiler and .compiler.nodeStack.count and (.compiler.nodeStack.peek to Node).isBindingImp
+			return __memberForNameIncludingExtensions(name)
 		else
-			.completeMemberConstructionIfNeeded
-		m = base.memberForName(name)
-		if m is nil and .hasExtensions and .compiler
+			return __memberForName(name)
+
+	def __memberForName(name as String) as IMember?
+		if .nativeType, _prepLibraryBox
+		else, .completeMemberConstructionIfNeeded
+		return base.memberForName(name)
+	
+	def __memberForNameIncludingExtensions(name as String) as IMember?
+		m = __memberForName(name)
+		if m is nil and .compiler
 			# look for an extension member, but it has to be accessible according to namespaces
 			if .compiler.nameSpaceStack.count
 				# don't need to go through the whole namespace stack because the namespace will check its parent
@@ -926,9 +916,6 @@ class Box
 					_declsInOrder.add(decl)
 					_declsByName[decl.name] = decl
 					_declsByNameCI[decl.name.toLower] = decl
-			for i in _extensions.count
-				ext = _extensions[i] = _extensions[i].constructedTypeFor(typeArgs) to Extension
-				ext.completeMemberConstructionIfNeeded
 			# TODO: can this next statement can be axed since there is a separate "bind inheritance" phase?
 			_finishOverloads
 
@@ -962,7 +949,6 @@ class Box
 		_baseInterfaceProxies = List<of ITypeProxy>(_baseInterfaceProxies)
 		_baseInterfaces = List<of Interface>(_baseInterfaces)
 		# _overloads = List<of MemberOverload>(_overloads)  # these will be recreated
-		_extensions = List<of Extension>(_extensions)
 
 	def typeForGenericParam(gp as GenericParam) as IType # TODO: is this needed for NilableType?
 		"""
@@ -1498,6 +1484,8 @@ class Extension
 		base.addDecl(decl)
 
 	def extensionMemberFor(box as Box, name as String) as IMember? is override
+		# TODO: this method is called too frequently, probably due to _finishOverloads, but may also be other sources. there's no bug, but it may be a performance drag
+		if not .declForName(name), return nil
 		assert .didBindInh
 		if _nativeType
 			_prepLibraryBox
@@ -1505,12 +1493,11 @@ class Extension
 			.completeMemberConstructionIfNeeded
 		if box.isDescendantOf(_extendedBox to !)
 			return .declForName(name)
-		else if box.genericDef and (box.genericDef.isDescendantOf(_extendedBox to !) _
-										or (_extendedBox.genericDef and box.isDescendantOf(_extendedBox.genericDef.constructedTypeFor(box.genericParams))))
-			for ext in box.allExtensions
-				if ext.genericDef is this
-					return ext.declForName(name)
-			throw FallThroughException()
+		else if box.isGeneric and .isGeneric and box.isDescendantOf(_extendedBox.genericDef.constructedTypeFor(box.genericParams))
+			if .declForName(name)
+				return .constructedTypeFor(box.genericParams).declForName(name)
+			else
+				return nil
 		else
 			return nil
 			
@@ -1541,6 +1528,8 @@ class Extension
 			realType = _extendedBoxProxy.realType
 			if realType inherits Box
 				_extendedBox = realType
+				if _extendedBox.genericDef
+					_genericParams = List<of IType>(_extendedBox.genericParams)
 			else
 				.throwError('Cannot extend a [realType.name]. You can extend classes, structs and interfaces.')
 				
@@ -1552,13 +1541,6 @@ class Extension
 		_baseInterfaces = List<of Interface>()
 		
 		if not _extendedBox.didBindInh, _extendedBox.bindInh
-
-		# connect up
-		if _extendedBox.genericDef
-			_genericParams = List<of IType>(_extendedBox.genericParams)
-			_extendedBox.genericDef.extensions.add(this)
-		else
-			_extendedBox.extensions.add(this)
 	
 	def bindInt as INode
 		extendedBox = .extendedBox
