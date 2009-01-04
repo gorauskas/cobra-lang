@@ -1716,10 +1716,11 @@ CC: bug in Cobra parser where putting a doc string after a sig causes problems.
 	def paramDecl as Param
 		"""
 		Example source:
-			x as int
-			x as int?
-			x as vari object
-			x   # default type is dynamic    # TODO: should be unspecified
+			foo as int
+			foo as int?
+			foo as vari String
+			foo as List<of int>
+			foo   # default type (dynamic?)
 		Arguments:
 			theClass is typically BoxVarDecl, LocalVar or Param
 			whatName could be set to 'Parameter' for example.
@@ -1734,6 +1735,11 @@ CC: bug in Cobra parser where putting a doc string after a sig causes problems.
 		if .looksLikeType(0) and .looksLikeVarNameIsNext(1)
 			# the programmer likely declared a parameter in the C syntax: String s
 			.throwError('The correct parameter syntax is "paramName as ParamType". Try "[.peek(1).text] as [.peek(0).text]".')
+		if .peek.which == 'OUT'
+			.throwError('The correct parameter syntax is "paramName as out ParamType".')
+		if .peek.which in ['INOUT', 'REF']
+			.throwError('The correct parameter syntax is "paramName as inout ParamType".')
+		
 		token = .expect('ID')
 		identifier = token.value to String
 		.checkStartsLowercase(identifier, 'Parameter')
@@ -1755,6 +1761,8 @@ CC: bug in Cobra parser where putting a doc string after a sig causes problems.
 					kind = Param.KindEnum.InOut
 					.grab
 					type = .typeId
+				on 'REF'
+					.throwError('The correct keyword is "inout" rather than "ref" which is used in expressions to refer to methods.')
 				else
 					type = .typeId
 			isMissingType = false
