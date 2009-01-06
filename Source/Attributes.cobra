@@ -9,21 +9,25 @@ class AttributeDecl
 	is partial
 	inherits NamedNode
 
-	var _expr as PostCallExpr
+	var _expr as Expr
 
 	def init(expr as Expr)
-		require expr inherits IdentifierExpr or expr inherits PostCallExpr
+		require expr inherits IdentifierExpr or expr inherits PostCallExpr or expr inherits DotExpr
 		base.init(expr.token)
-		# normalizing to PostCallExpr makes the rest of the implementation easier
 		if expr inherits IdentifierExpr
+			# making a PostCallExpr is one less class to worry about later
 			expr = PostCallExpr(expr.token, IdentifierExpr(expr.token, expr.name), List<of Expr>())
-		_expr = expr to PostCallExpr
-		_expr.isForAttribute = true
+		_expr = expr
 
 	get expr from var
 
 	get name as String is override
-		return _expr.name
+		if _expr inherits PostCallExpr
+			return _expr.name
+		else if _expr inherits DotExpr
+			return _expr.dotRight.name
+		else
+			return '(noname)'
 
 	def _bindInt
 		base._bindInt
@@ -31,12 +35,29 @@ class AttributeDecl
 
 	def _bindImp
 		base._bindImp
+
 		# support using 'Foo' when the real attribute class name is 'FooAttribute'
-		name = _expr.name
-		if not name.endsWith('Attribute') and .compiler.canNameBeUndottedMember(name) and not .compiler.symbolForName(name, true, false)
-			if .compiler.symbolForName(name+'Attribute', true, false)
-				_expr = PostCallExpr(_expr.token, IdentifierExpr(_expr.token, name+'Attribute'), _expr.args)
-				_expr.isForAttribute = true  # CC: use property set in initializer
+
+		if _expr inherits DotExpr
+			_expr.left.bindImp
+			name = _expr.dotRight.name
+			defi = _expr.left.definition.memberForName(name)
+			if defi is nil
+				defi = _expr.left.definition.memberForName(name+'Attribute')
+			if defi is nil
+				_expr.throwCannotFindMemberError(_expr.left, '[name] or [name]Attribute')
+			if defi inherits IType
+				_expr = PostCallExpr(_expr.right.token, TypeExpr(_expr.right.token, defi), _expr.dotRight.args, isForAttribute=true)
+			else
+				.throwError('Expecting an attribute class instead of a [defi.englishName].')
+		else if _expr inherits PostCallExpr
+			name = _expr.name
+			if not name.endsWith('Attribute') and .compiler.canNameBeUndottedMember(name) and not .compiler.symbolForName(name, true, false)
+				if .compiler.symbolForName(name+'Attribute', true, false)
+					_expr = PostCallExpr(_expr.token, IdentifierExpr(_expr.token, name+'Attribute'), _expr.args, isForAttribute=true)
+			else
+				_expr.isForAttribute = true
+		assert _expr inherits PostCallExpr
 		_expr.bindImp
 
 	get typeForIdentifier as IType is override
