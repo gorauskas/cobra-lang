@@ -1515,11 +1515,16 @@ class StreamType
 		return base.isEquatableTo(b)
 
 	def memberForName(name as String) as IMember? is override
-		# return base.memberForName(name)  You cannot use the members of the underlying type which varies between platforms.
-		return base.memberForName(name)
+		m = base.memberForName(name)
+		if m is nil and _box and .compiler and .compiler.nodeStack.count and (.compiler.nodeStack.peek to Node).isBindingImp
+			# look for an extension member, but it has to be accessible according to namespaces
+			if .compiler.nameSpaceStack.count
+				# don't need to go through the whole namespace stack because the namespace will check its parent
+				m = .compiler.curNameSpace.extensionMemberFor(_box to !, name)
+		return m
 
 	def suggestionsForBadMemberName(name as String) as List<of String> is override
-		# See comment in .memberForName.
+		# Need to include extension members somehow
 		return List<of String>()
 
 	def greatestCommonDenominatorWith(type as IType) as IType is override
