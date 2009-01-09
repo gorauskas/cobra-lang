@@ -39,7 +39,7 @@ class AttributeDecl
 		# support using 'Foo' when the real attribute class name is 'FooAttribute'
 
 		if _expr inherits DotExpr
-			_expr.left.bindImp
+			_expr.left.bindImp  # Could cause a transformation. Handled in .replaceChild
 			name = _expr.dotRight.name
 			defi = _expr.left.definition.memberForName(name)
 			if defi is nil
@@ -70,8 +70,13 @@ class AttributeDecl
 		if _expr is find
 			_expr = replace to PostCallExpr
 			return true
-		else
-			return false
+		else if _expr inherits DotExpr
+			# handle transformation from _expr.left.bindImp in _bindImp
+			if find is _expr.left
+				e = _expr
+				_expr = DotExpr(e.token, e.op, replace to Expr, e.dotRight to Expr)
+				return true
+		return false
 
 
 class AssemblyDecl
