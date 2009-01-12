@@ -301,12 +301,12 @@ class Node
 
 	shared
 		var _nextNodeSerialNum = 1001
-		var _compiler as Compiler?
+		var _compiler as ICompilerForNodes?
 
-		def setCompiler(c as Compiler?)
+		def setCompiler(c as ICompilerForNodes?)
 			_compiler = c
 
-		def getCompiler as Compiler
+		def getCompiler as ICompilerForNodes
 			assert _compiler
 			return _compiler to !
 
@@ -332,7 +332,7 @@ class Node
 			_secondToLast = nil
 
 
-	get compiler as Compiler?
+	get compiler as ICompilerForNodes?
 		"""
 		Compiler is an object property instead of a shared property so that it shows up in
 		exception reports which then leads to a compiler details table.
@@ -1105,3 +1105,114 @@ class Field
 	get name from var
 
 	get value from var
+
+
+interface ICompilerForNodes
+	inherits ITypeProvider, IWarningRecorder, IErrorRecorder
+
+	# TODO: Support `require` on `get` decl.
+
+
+	## Property queries
+	
+	pro options as OptionValues
+
+	def embedRunTimeSuffix as String  # TODO: make a 'get'?
+
+	get globalNS as NameSpace
+
+	get isBindingUse as bool
+	get isBindingInh as bool
+	get isBindingInt as bool
+	get isBindingImp as bool
+
+	get verbosity as int
+
+	get willTrackLocals as bool
+		# the box stack can be empty because of assembly; has SomeAttr
+
+
+	## Options - TODO: move to OptionValues
+	
+	get includeTests as bool
+	get hasDetailedStackTraceOption as bool
+	get hasExceptionReportOption as bool
+
+
+	## Additional queries
+	
+	def findLocal(name as String) as AbstractLocalVar?
+	def suggestionForUnknown(word as String) as String?
+	def symbolForName(name as String, canBeMember as bool, haveThis as bool) as IMember?
+	def symbolForName(name as String, canBeMember as bool, haveThis as bool, isLowerOkay as bool) as IMember?
+
+
+	## Current objects
+
+	get curModule as Module?
+	get curNameSpace as NameSpace
+	get curBox as Box
+		# require .boxStack.count
+	get curBoxMember as IBoxMember
+		# require .boxMemberStack.count
+	get curCodeMember as AbstractMethod
+		# require .codeMemberStack.count
+
+
+	## Stacks
+	
+	get nodeStack as Stack<of INode>
+	get nameSpaceStack as Stack<of NameSpace>
+	get boxStack as Stack<of Box>
+	get boxMemberStack as Stack<of IBoxMember>
+	get codeMemberStack as Stack<of AbstractMethod>
+
+
+	## Warnings, errors and corrections
+	
+	def correctSource(token as IToken, replace as String)
+	def warning(node as ISyntaxNode, msg as String)  # TODO: move to IWarningRecorder
+
+	get errors as List<of SourceException>  # TODO: review the usages of this
+
+	def augmentWarning(node as ISyntaxNode, lookFor as String, search as String, augment as String) as bool
+		require 
+			lookFor.length
+			augment.length
+
+
+	## More types
+	# TODO: move up to ITypeProvider?
+
+	get clrPrimitiveToITypeCache as IDictionary<of System.Type, IType>?
+
+	get basicTypes as IList<of PrimitiveType>
+
+	get anyFloatType as AnyFloatType
+	get anyIntType as AnyIntType
+	def attributeType as Box
+	def collectionType as Box
+	def collectionOfType as Box
+	def delegateType as Class
+	def dictEnumeratorType as Box
+	def dictionaryOfType as Class
+	def enumerableType as Box
+	def enumeratorType as Box
+	def enumerableOfType as Box
+	def enumeratorOfType as Box
+	def exceptionType as Class
+	def idictionaryType as Box
+	def idictionaryOfType as Box
+	def ilistType as Box
+	def ilistOfType as Box
+	def listOfType as Class
+	def nilableDynamicType as NilableType
+	def objectClass as Class
+	def setOfType as Class
+	def stringType as Class
+
+
+	## Other
+
+	def addIntermediateFile(path as String)
+	def loadReference(reference as String) as bool
