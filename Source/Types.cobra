@@ -852,12 +852,12 @@ class PrimitiveType
 
 		if .compiler and _nativeType
 			meths = List<of Method>()
-			_installNativeMethodsFrom(_nativeType to !, meths)
-			_installNativeMethodsFrom(ClrNativeType(System.Math.getType), meths)
+			_installNativeMethodsFrom('System', _nativeType to !, meths)
+			_installNativeMethodsFrom('System', ClrNativeType(System.Math.getType), meths)
 
 			# the next statement can be problematic in that you have to add new DecimalTools methods in Snapshot just so the compiler can see them
 			# ultimately, extensions of primitive types should be supported
-			_installNativeMethodsFrom(ClrNativeType(Cobra.Lang.DecimalTools.getType), meths)
+			_installNativeMethodsFrom('CobraLangInternal', ClrNativeType(Cobra.Lang.DecimalTools.getType), meths)
 
 			_box.bindInt
 			if false
@@ -877,7 +877,7 @@ class PrimitiveType
 					for meth in objectMeths
 						print '    [meth.cobraSourceSignature]'
 
-	def _installNativeMethodsFrom(nativeType as NativeType, meths as List<of Method>)
+	def _installNativeMethodsFrom(namespaceName as String, nativeType as NativeType, meths as List<of Method>)
 		argClrType = (nativeType to ClrNativeType).clrType
 		thisClrType = (_nativeType to ClrNativeType).clrType
 		box = _box
@@ -918,7 +918,7 @@ class PrimitiveType
 			if cancel, continue
 			meth = Method(Token.empty, box, name, newParams, ClrTypeProxy(methInfo.returnType), nil, modifiers, AttributeList(), '')
 			if methInfo.isStatic
-				meth.sharedMethodBacking = argClrType.name + '.' + methInfo.name
+				meth.sharedMethodBacking = '[namespaceName].[argClrType.name].[methInfo.name]'
 				if 'shared' in modifiers, meth.sharedMethodBackingIsAlias = true
 
 			overload = nil to MemberOverload?
