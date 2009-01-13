@@ -187,8 +187,12 @@ CC: bug in Cobra parser where putting a doc string after a sig causes problems.
 		Parses module source code and returns resulting module.
 		The fileName is recorded, but the file is not physically accessed.
 		"""
+		if not _preParseSource(fileName, source)
+			# Throw an exception to stop subsequent compilation phases.
+			# Note that this doesn't get recorded as an error message.
+			# That only happens through .throwError and .recordError
+			throw ParserException(fileName, 'Lexer errors.')
 		try
-			_preParseSource(fileName, source)
 			if source.length==0
 				_warning('File is empty.')
 			else if source.trim.length==0
@@ -202,15 +206,16 @@ CC: bug in Cobra parser where putting a doc string after a sig causes problems.
 		if _tokenizer and _tokenizer.errors.count <> 0
 			_tokenizer = nil
 
-	def _preParseSource(fileName as String, source as String)
+	def _preParseSource(fileName as String, source as String) as bool
 		"""
 		Sets up for parsing, but does not invoke `parseTokens`.
 		Used by `parseSource` and various test sections.
+		Returns true if successful, false if there were one or more errors.
+		Does not .throwError.
 		"""
 		_fileName = fileName
 		tokVerbosity = _verbosity - 4  # in order words, tokenizer does not spew unless our verbosity is 5 or greater
-		if tokVerbosity<0
-			tokVerbosity = 0
+		if tokVerbosity < 0, tokVerbosity = 0
 
 		_isNamesStack = Stack<of String>()  # for `shared` for example
 		_leftStack = Stack<of Expr>()
@@ -218,8 +223,8 @@ CC: bug in Cobra parser where putting a doc string after a sig causes problems.
 		.newOpStack
 
 		_tokens = nil
-		if _tokenizer is nil
-			_tokenizer = CobraTokenizer(tokVerbosity)
+		if _tokenizer is nil, _tokenizer = CobraTokenizer(tokVerbosity)
+		else, _tokenizer.restart
 		tokenizer = _tokenizer
 		try
 			tokens = tokenizer.startSource(_fileName, source).allTokens
@@ -232,12 +237,9 @@ CC: bug in Cobra parser where putting a doc string after a sig causes problems.
 						.recordError(tokens[i], 'Unexpected line continuation character.')
 				else
 					_tokens.add(tokens[i])
-			
 		catch te as TokenizerError
-			msg = te.message
-			if _verbosity>=5
-				msg = 'Token error: ' + msg
-			.throwError(te.token, msg)
+			.recordError(te.token, te.message)
+			return false
 
 		# TODO: fold all occcurrences of this lookup to a helper
 		compiler = .typeProvider to? Compiler
@@ -246,8 +248,10 @@ CC: bug in Cobra parser where putting a doc string after a sig causes problems.
 		if tokenizer.errors.count
 			for error in tokenizer.errors
 				.recordError(error.token, error.message)
+			return false
 
 		_nextTokenIndex = 0
+		return true
 
 
 	##
