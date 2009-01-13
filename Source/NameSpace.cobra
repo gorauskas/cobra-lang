@@ -261,7 +261,20 @@ class NameSpace
 			x = _unifiedNameSpace.symbolForName(name)
 			if x, return x
 			# inside a use directive?
-			return _symbolForNameFromUseDirectives(name)
+			members = Set<of IMember>()
+			_symbolsForNameFromUseDirectives(name, members)
+			if members.count == 1
+				return List<of IMember>(members)[0]  # TODO: feels silly. maybe Set should have a .only method with require .count==1
+			else if members.count > 1
+				membersList = List<of IMember>(members)
+				membersList.sort(do(a as IMember, b as IMember))
+					return a.parentNameSpace.fullName.compareTo(b.parentNameSpace.fullName)
+				spaces = Utils.join(', ', ' and ', for m in membersList get '"[m.parentNameSpace.fullName]"')
+				if .compiler and .compiler.nodeStack.peek inherits ISyntaxNode
+					node = .compiler.nodeStack.peek
+				else
+					node = this
+				node.throwError('Ambiguous reference "[name]" found in namespaces [spaces].')
 		else
 			# our decl?
 			# TODO: should this come before checking our name? what does C# do?
@@ -276,14 +289,15 @@ class NameSpace
 #/
 		return nil
 
-	def _symbolForNameFromUseDirectives(name as String) as IMember?
+	def _symbolsForNameFromUseDirectives(name as String, members as Set<of IMember>)
+		"""
+		Populates `members` with all symbols from `use` directives that match `name`.
+		"""
 		for ud in _useDirectives
 			x = ud.findSymbol(name)
-			if x, return x
+			if x, members.add(x)
 		if _superNameSpace
-			return _superNameSpace._symbolForNameFromUseDirectives(name)
-		else
-			return nil
+			_superNameSpace._symbolsForNameFromUseDirectives(name, members)
 
 	def addDecl(decl as INameSpaceMember) is override
 		base.addDecl(decl)
