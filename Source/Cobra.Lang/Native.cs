@@ -1279,14 +1279,22 @@ static public class CobraImp {
 	}
 
 	static public int DynamicCompare(Object a, Object b) {
-		if (object.ReferenceEquals(a, b))
-			return 0;
-		if (a==null)
-			return 0;
-		if (b==null)
-			return 1;
-		if (a is IComparable)
-			return ((IComparable)a).CompareTo(b);
+		if (object.ReferenceEquals(a, b)) return 0;
+		if (a==null) return 0;
+		if (b==null) return 1;
+		if (a is IComparable) {
+			try {
+				return ((IComparable)a).CompareTo(b);
+			} catch (ArgumentException ae) {
+				// Some system types are retarded. For example, someDouble.CompareTo(0) throws an exception
+				if (b.GetType() != a.GetType()) {
+					object newB = Convert.ChangeType(b, a.GetType()); // yes, may throw exception
+					return ((IComparable)a).CompareTo(newB);
+				} else {
+					throw;
+				}
+			}
+		}
 		throw new CannotCompareException(a, b);
 	}
 
