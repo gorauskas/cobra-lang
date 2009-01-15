@@ -2540,23 +2540,31 @@ class ForNumericStmt
 			.stop.writeSharpDef(sw)
 			sw.write(';\n')
 
-		if .step is nil
+		isSimpleStep = false
+		step = .step
+		if step is nil
 			sharpStep = '1'
-		else if .step inherits IntegerLit
-			sharpStep = (.step to IntegerLit).asSharp
+			isSimpleStep = true
+		else if step inherits IntegerLit
+			sharpStep = step.asSharp
+			isSimpleStep = step.value > 0
 		else
 			sw.write('[sharpType] [sharpStep] = ')
-			.step.writeSharpDef(sw)
+			step.writeSharpDef(sw)
 			sw.write(';\n')
 
-		sw.write('int [sharpDir] = [sharpStep] < 0 ? -1 : +1;\n')
+		if not isSimpleStep
+			sw.write('int [sharpDir] = [sharpStep] < 0 ? -1 : +1;\n')
 
 		sw.write('for(')
 		if trackLocals
 			sw.write('CobraLangInternal.CobraImp.SetLocal("[.var.name]", [sharpVar] = [sharpStart])')
 		else
 			sw.write('[sharpVar] = [sharpStart]')		
-		sw.write('; ([sharpDir]==1) ? [sharpVar] < [sharpStop] : [sharpVar] > [sharpStop]; ')
+		if isSimpleStep
+			sw.write('; [sharpVar] < [sharpStop] ; ')
+		else
+			sw.write('; ([sharpDir]==1) ? [sharpVar] < [sharpStop] : [sharpVar] > [sharpStop]; ')
 		if trackLocals
 			sw.write('CobraLangInternal.CobraImp.SetLocal("[.var.name]", [sharpVar] += [sharpStep])')
 		else
