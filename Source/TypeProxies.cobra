@@ -208,19 +208,10 @@ class ClrTypeProxy
 			# generic like IComparable`1
 			assert r'[' not in typeName
 			typeName = .cobraNameForSharpBoxName(typeName)
-		else if typeName == 'IBuiltInEvidence' or typeName == 'IConstantMembershipCondition'
-			# TODO: wow really weird.  2007-11-20.  problem on Mono. How about on .NET?
-			typeName = 'IMembershipCondition'
 		else if typeName[typeName.length-1].isLetterOrDigit
 			pass
 		else
-			msg = 'Cannot locate CLR type "[clrType]".'
-			if clrType.namespace and clrType.namespace.startsWith('System.')
-				# Since most (and usually all) System.Foo types can be read, don't choke up on a bad one
-				# TODO: .compiler.warning(msg)
-				typeName = 'Object'
-			else
-				.throwError(msg)
+			.throwError('Cannot locate CLR type "[clrType]".')
 
 		# compute namespace
 		nameParts = clrType.namespace.split(c'.')
@@ -228,22 +219,12 @@ class ClrTypeProxy
 		if member inherits NameSpace
 			curNS = member
 		else
-			msg = 'Cannot find top level namespace "[nameParts[0]]" of CLR type "[clrType.fullName]".'
-			if nameParts[0] == 'Accessibility'
-				# not sure what's going on here. happens with: cobra -c -t:winexe -r:System.Windows.Forms winforms1.cobra  on Novell Mono 1.2.6. Does it happen with .NET?
-				if Utils.isDevMachine
-					print msg  # could do a .compiler.warning, but then testify gets messed up
-			return _hack(clrType)
-#			.throwError(msg)
+			.throwError('Cannot find top level namespace "[nameParts[0]]" of CLR type "[clrType.fullName]".')
 		i = 1
 		while i < nameParts.length
 			possible = curNS.declForName(nameParts[i])
 			if possible is nil
-				# .throwError('Cannot find "[nameParts[i]]" at component [i+1] of CLR type "[clrType.fullName]".')
-				# TODO:
-				# error: Cannot find "Xml" at component 2 of CLR type "System.Xml.XmlNode".
-				# error: Cannot find "ObjectModel" at component 3 of CLR type "System.Collections.ObjectModel.Collection`1[[System.Net.Mail.AlternateView, System, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]]".
-				return _hack(clrType)
+				.throwError('Cannot find "[nameParts[i]]" at component [i+1] of CLR type "[clrType.fullName]".')
 			else if possible inherits NameSpace
 				curNS = possible
 			else

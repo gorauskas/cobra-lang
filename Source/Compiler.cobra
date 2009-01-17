@@ -238,7 +238,7 @@ class Compiler
 
 	def recordError(error as SourceException)
 		"""
-		Node call this to record errors.
+		Node calls this to record errors.
 		"""
 		if error inherits NodeMultiException
 			for exc in error.exceptions
@@ -867,6 +867,8 @@ class Compiler
 						reference += '.dll'  # restore to original value
 				# TODO: handle all the exceptions from Assembly.loadFrom
 			if referredAss
+				for dependency in referredAss.getReferencedAssemblies
+					.loadAssembly(dependency)
 				.readAssembly(referredAss, reference <> 'Cobra.Lang.dll')
 				# reassert the preconditions. there have been bugs in the past
 				assert reference.endsWith('.dll') or reference.endsWith('.exe')
@@ -875,6 +877,24 @@ class Compiler
 				return true
 			else
 				return false
+
+	var _didLoadAssemblies = Set<of String>()
+
+	def loadAssembly(assName as AssemblyName)
+		if assName.toString in _didLoadAssemblies, return
+		_didLoadAssemblies.add(assName.toString)
+		try
+			ass = Assembly.load(assName)  # Will not pick up the assembly from the same directory.
+		catch FileNotFoundException       # In fact, will get a FileNotFoundException!
+			.loadReference(assName.name + '.dll')
+			# TODO: compare the the name loaded to the name given with AssemblyName.referenceMatchesDefinition
+			return
+		catch exc as Exception
+			throw SourceException('Could not open assembly "[assName]" due to: [exc.getType.name]: [exc.message]')
+		for dependency in ass.getReferencedAssemblies
+			.loadAssembly(dependency)
+		.readAssembly(ass)
+
 
 	##
 	## Binding
