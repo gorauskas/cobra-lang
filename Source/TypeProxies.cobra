@@ -234,14 +234,19 @@ class ClrTypeProxy
 		# return namespace member
 		member = curNS.declForName(typeName)
 		if member inherits IType
-			if clrType.isGenericType and not clrType.isGenericTypeDefinition
-				# So we have something like ICollection<of KeyValuePair<of TKey,TValue>> which is all CLR types.
-				# We need the Cobra types of those args so we can construct the Cobra type from the generic cobra type
-				# otherwise, we would just end up returning the generic definition.
-				args = List<of IType>()
-				for genArg in clrType.getGenericArguments
-					args.add(_realType(genArg))
-				member = (member to Box).constructedTypeFor(args)
+			if member inherits Box
+				if clrType.isGenericType and not clrType.isGenericTypeDefinition
+					# So we have something like ICollection<of KeyValuePair<of TKey,TValue>> which is all CLR types.
+					# We need the Cobra types of those args so we can construct the Cobra type from the generic cobra type
+					# otherwise, we would just end up returning the generic definition.
+					args = List<of IType>()
+					for genArg in clrType.getGenericArguments
+						args.add(_realType(genArg))
+					if member.qualifiedName == 'System.Nullable<of>'
+						assert args.count == 1
+						member = NilableType(args[0])
+					else
+						member = (member to Box).constructedTypeFor(args)
 			return member
 		else
 			msg = 'Cannot locate CLR type "[clrType]".'
