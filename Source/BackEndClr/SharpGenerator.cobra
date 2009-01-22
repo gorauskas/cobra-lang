@@ -592,6 +592,7 @@ class NameSpace
 			return .fullName + .sharpSuffix
 
 	get sharpQualifier as String
+		ensure result.endsWith('.') or result == 'global::'
 		if _superNameSpace is nil
 			return 'global::'
 		else
@@ -3045,9 +3046,6 @@ class NameExpr
 	get asSharp as String
 		return _definition.sharpName
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		sw.write(.asSharp)
-
 
 class AsExpr
 	is partial
@@ -3055,6 +3053,9 @@ class AsExpr
 	def writeSharpStmt(sw as SharpWriter) is override
 		# this happens for declarations like "i as int"
 		sw.write('// [_name] as [_type.name]\n')
+
+	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+		sw.write(.asSharp)
 
 
 class AnonymousMethodExpr
@@ -3197,24 +3198,25 @@ class IdentifierExpr
 	is partial
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		# weird stuff motivated by ../Tests/110-basics-two/500-namespaces/400-type-property-name-collision-1.cobra and 402-type-property-name-collision-2.cobra
-
 		# recall that this cannot be the right side of "foo.bar" since that is a MemberExpr
-		sharpName = .sharpName
-		if not .definition inherits IVar
+		sharp = .sharpQualification + .sharpName
+		if _requiresTypeOf, sharp = 'typeof(' + sharp + ')'
+		sw.write(sharp)
+
+	get sharpQualification as String
+		qual = ''
+		if .definition inherits IVar
 			# the only definition that has no parentNameSpace in practice is IVar
-			if not sharpName.startsWith('typeof')
-				# maybe parentNameSpace could be moved up in the interface definitions
-				pn = .definition.parentNameSpace
-				if pn, sharpName = pn.sharpQualifier + sharpName
-
-				# handle the case of "X.X" where namespace and class are both called "X".
-				# C# chokes on it because the first "X" is considered to be the type
-				if .curBox.name + '.' in sharpName
-					sharpName = 'global::' + sharpName
-
-		sw.write(sharpName)
-
+			pass
+		else
+			pn = .definition.parentNameSpace
+			if pn, qual = pn.sharpQualifier
+			# handle the case of "X.X" where namespace and class are both called "X".
+			# C# chokes on it because the first "X" is considered to be the type
+			if .curBox.name + '.' in qual
+				qual = 'global::' + qual
+		return qual
+		
 	get sharpName as String
 		assert .didBindImp
 		assert .namedDefinition
@@ -3222,12 +3224,18 @@ class IdentifierExpr
 		if .superNode inherits DotExpr
 			assert this is not (.superNode to DotExpr).right  # should be a CallExpr or MemberExpr instead
 		defi = .namedDefinition
-		if .isTypeReference
-			# C# often requires typeof(Foo) instead of just plain Foo
-			superNode = .superNode
-			if not superNode inherits DotExpr and not superNode inherits InheritsExpr and (not superNode inherits PostCallExpr or (superNode to PostCallExpr).expr is not this)
-				return 'typeof(' + (defi to IType).sharpRef + ')'
 		return defi.sharpName
+
+	def _requiresTypeOf as bool
+		# C# often requires typeof(Foo) instead of just plain Foo
+		if not .isTypeReference, return false
+		superNode = .superNode
+		if superNode inherits DotExpr, return false
+		if superNode inherits InheritsExpr, return false
+		if superNode inherits PostCallExpr
+			if superNode.expr is this
+				return false
+		return true
 
 	def writeSharpStmt(sw as SharpWriter) is override
 		assert .isCalling
@@ -3243,12 +3251,11 @@ class IdentifierExpr
 			else
 				return nil
 
-	def writeSharpDefForBreakdown(sw as SharpWriter)
-		sharpName = .sharpName
-		if .isKindOf(.compiler.typeType) and .namedDefinition inherits IType and 'typeof(' not in sharpName
-			sw.write('typeof(' + (.namedDefinition to IType).sharpRef + ')')
-		else
-			base.writeSharpDefForBreakdown(sw)
+	def writeSharpDefForBreakdown(sw as SharpWriter) is override
+		name = .sharpQualification + .sharpName
+		# _requiresTypeOf may return false, but in the sharp def breakdown, typeof() is always required
+		if .isTypeReference, name = 'typeof(' + name + ')'
+		sw.write(name)
 
 
 class IfExpr
@@ -3623,9 +3630,10 @@ class TypeExpr
 			return true
 
 	def writeSharpDefForBreakdown(sw as SharpWriter) is override
-		sw.write('typeof(')
+		requiresTypeOf = _requiresTypeOf
+		if not requiresTypeOf, sw.write('typeof(')
 		.writeSharpDef(sw)
-		sw.write(')')
+		if not requiresTypeOf, sw.write(')')
 
 
 class AllOrAnyExpr
