@@ -1285,7 +1285,7 @@ static public class CobraImp {
 		if (a is IComparable) {
 			try {
 				return ((IComparable)a).CompareTo(b);
-			} catch (ArgumentException ae) {
+			} catch (ArgumentException) {
 				// Some system types are retarded. For example, someDouble.CompareTo(0) throws an exception
 				if (b.GetType() != a.GetType()) {
 					object newB = Convert.ChangeType(b, a.GetType()); // yes, may throw exception
