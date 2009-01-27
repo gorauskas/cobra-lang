@@ -220,6 +220,8 @@ class CobraTokenizer
 	get keywords as IList<of String> is override
 		return KeywordSpecs.keywords
 
+	pro typeProvider from var as ITypeProvider?
+
 	def _reset is override
 		base._reset
 		_indentCount = 0
@@ -498,11 +500,21 @@ class CobraTokenizer
 	def onFRACTIONAL_LIT(tok as IToken) as IToken?
 		s = tok.text.replace('_', '')
 		try
-			tok.value = decimal.parse(s, Utils.cultureInfoForNumbers)
+			assert _typeProvider
+			numberType = if(.typeProvider, .typeProvider.numberType, DecimalType())
+			# parse literal to same type as numberType
+			if numberType inherits DecimalType
+				tok.value = decimal.parse(s, Utils.cultureInfoForNumbers)
+			else if numberType inherits FloatType
+				tok.value = float.parse(s, Utils.cultureInfoForNumbers)
+				tok.which = 'FLOAT_LIT'
+				tok.info = numberType.size
+			else
+				throw FallThroughException(numberType)
 		catch FormatException
 			assert false, 'not expecting to get here given regex'
 		catch OverflowException
-			.recordError('Range overflow for fractional literal "[tok.text]".')
+			.recordError('[numberType.name.capped] range overflow for fractional literal "[tok.text]".')
 		return tok
 
 	def onINTEGER_LIT(tok as IToken) as IToken?
