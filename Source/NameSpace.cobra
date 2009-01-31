@@ -234,8 +234,18 @@ class NameSpace
 		for decl in _declsInOrder
 			decl.bindImp
 
+	var _cacheForExtensionMembers = Dictionary<of String, IMember>()
+
 	def extensionMemberFor(box as Box, name as String) as IMember?
-		# TODO: add caching
+		key = box.serialNum.toString + name  # names can't start with a digit, so no separator is needed
+		cacheHit as IMember?
+		_cacheForExtensionMembers.tryGetValue(key, out cacheHit)
+		if cacheHit, return cacheHit
+		m = _extensionMemberFor(box, name)
+		if m, _cacheForExtensionMembers[key] = m
+		return m
+
+	def _extensionMemberFor(box as Box, name as String) as IMember?
 		# TODO: pick *closest* extension member
 		if not .isUnified
 			m = _unifiedNameSpace.extensionMemberFor(box, name)

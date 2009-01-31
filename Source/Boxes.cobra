@@ -1024,6 +1024,27 @@ class Class
 
 	get subclasses from var
 
+	def declForName(name as String) as IBoxMember? is override
+		"""
+		Handle get/set parts like "someProp.get" or "[].set"
+		`computeMatchingBaseMember` in Members.cobra is at least one that returns this.
+		"""
+		m = base.declForName(name)
+		if m is nil and '.' in name
+			isProperty = true
+			if name.endsWith('.get'), part = 'g'
+			else if name.endsWith('.set'), part = 's'
+			else, isProperty = false  # example: 'System.Collections.IList.IsFixedSize'
+			if isProperty
+				pd = .memberForName(name[:-4])
+				if pd inherits ProperDexer
+					branch part
+						on 'g', m = pd.getPart
+						on 's', m = pd.setPart
+					# TODO: cache the above back into the _decls
+				# TODO: ? else, throw FallThroughException(...)
+		return m
+
 	def memberForName(name as String) as IMember?
 		# the next assertion fails for Tests\600-misc\404-implement-IEnumerable
 		# could not fix. I'm confused. Something to do with generics. So bail on generics:
@@ -1032,28 +1053,8 @@ class Class
 		# 	assert .didBindInt  # TODO: is this legit? if so, push up to Container
 		# TODO: assert .didBindInh
 		m = base.memberForName(name)
-		if m is nil and _baseClass
-			m = _baseClass.memberForName(name)
-		if m is nil
-			m = .interfaceMemberForName(name)
-		# handle get/set parts like "someProp.get" or "[].set"
-		# `computeMatchingBaseMember` in Members.cobra is at least one that returns this
-		if m is nil and '.' in name
-			if name.endsWith('.get')
-				part = 'g'
-			else if name.endsWith('.set')
-				part = 's'
-			else
-				throw FallThroughException(name)
-			pd = .memberForName(name[:-4])
-			if pd inherits ProperDexer
-				branch part
-					on 'g'
-						m = pd.getPart
-					on 's'
-						m = pd.setPart
-				# TODO: cache the above back into the _decls
-			# TODO: ? else, throw FallThroughException(...)
+		if m is nil and _baseClass, m = _baseClass.memberForName(name)
+		if m is nil, m = .interfaceMemberForName(name)
 		return m
 
 	def _bindBase is override
