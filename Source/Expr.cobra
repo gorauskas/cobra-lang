@@ -1083,61 +1083,69 @@ class IfExpr
 	var _fpart as Expr
 
 	def init(token as IToken, cond as Expr, tpart as Expr, fpart as Expr)
+		ensure .cond == cond and .tpart == tpart and .fpart == fpart
 		base.init(token)
-		_cond = cond
-		_tpart = tpart
-		_fpart = fpart
+		_cond, _tpart, _fpart = cond, tpart, fpart
+
+	get cond from var
+	
+	get tpart from var
+	
+	get fpart from var
 
 	def addSubFields is override
 		base.addSubFields
-		.addField('cond', _cond)
-		.addField('tpart', _tpart)
-		.addField('fpart', _fpart)
+		.addField('cond', .cond)
+		.addField('tpart', .tpart)
+		.addField('fpart', .fpart)
 
 	get hasError as bool is override
 		if base.hasError, return true
-		if _cond.hasError, return true
-		if _tpart.hasError, return true
-		if _fpart.hasError, return true
+		if .cond.hasError, return true
+		if .tpart.hasError, return true
+		if .fpart.hasError, return true
 		return false
 
 	get willChangeVar as bool is override
-		if _cond.willChangeVar, return true
-		if _tpart.willChangeVar, return true
-		if _fpart.willChangeVar, return true
+		if base.willChangeVar, return true
+		if .cond.willChangeVar, return true
+		if .tpart.willChangeVar, return true
+		if .fpart.willChangeVar, return true
 		return false
 
 	def _bindImp is override
-		base._bindImp
-		tpart = _tpart
-		fpart = _fpart
-		hadError = false
-		try
-			_cond.bindImp
-		catch ne as NodeException
-			.compiler.recordError(ne)
-			hadError = true
-		if not hadError and not _cond.type.isDescendantOf(.compiler.boolType)
-			_cond = TruthExpr(_cond).bindAll to TruthExpr  # CC: axe cast when "as same"
-		try
-			_tpart.bindImp
-		catch ne as NodeException
-			.compiler.recordError(ne)
-			hadError = true
-		try
-			_fpart.bindImp
-		catch ne as NodeException
-			.compiler.recordError(ne)
-			hadError = true
-		if hadError
-			_type = .compiler.passThroughType
-			return
-		assert tpart.type
-		assert fpart.type
-		_type = tpart.type.greatestCommonDenominatorWith(fpart.type to !)
+		and ensure
+			.cond.hasError or .tpart.hasError or .fpart.hasError implies .hasError
+			.hasError implies .type == .compiler.passThroughType
+		body
+			base._bindImp
+			hadError = false
+			try
+				_cond.bindImp
+			catch ne as NodeException
+				.compiler.recordError(ne)
+				hadError = true
+			if not hadError and not _cond.type.isDescendantOf(.compiler.boolType)
+				_cond = TruthExpr(_cond).bindAll to TruthExpr  # CC: axe cast when "as same"
+			try
+				_tpart.bindImp
+			catch ne as NodeException
+				.compiler.recordError(ne)
+				hadError = true
+			try
+				_fpart.bindImp
+			catch ne as NodeException
+				.compiler.recordError(ne)
+				hadError = true
+			if hadError
+				_type = .compiler.passThroughType
+			else
+				assert _tpart.type
+				assert _fpart.type
+				_type = _tpart.type.greatestCommonDenominatorWith(_fpart.type to !)
 
 	def toCobraSource as String is override
-		return 'if([_cond.toCobraSource], [_tpart.toCobraSource], [_fpart.toCobraSource])'
+		return 'if([.cond.toCobraSource], [.tpart.toCobraSource], [.fpart.toCobraSource])'
 
 
 class IndexExpr

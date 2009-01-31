@@ -3262,17 +3262,18 @@ class IfExpr
 	is partial
 
 	def writeSharpDef(sw as SharpWriter, parens as bool) is override
-		cast = _tpart.type <> _fpart.type
+		cond, tpart, fpart = .cond, .tpart, .fpart
+		cast = tpart.type <> fpart.type
 		# C# doesn't do the "greatest common denominator" thing like Cobra does, so some casting is in order
 		sw.write('(')
-		_cond.writeSharpDef(sw)
+		cond.writeSharpDef(sw)
 		sw.write('?')
 		if cast, sw.write('([.type.sharpRef])(')
-		_tpart.writeSharpDef(sw)
+		tpart.writeSharpDef(sw)
 		if cast, sw.write(')')
 		sw.write(':')
 		if cast, sw.write('([.type.sharpRef])(')
-		_fpart.writeSharpDef(sw)
+		fpart.writeSharpDef(sw)
 		if cast, sw.write(')')
 		sw.write(')')
 
@@ -3281,23 +3282,24 @@ class IfExpr
 
 		sw.write(', +1') # indent
 
-		_cond.writeSharpBreakdownItems(sw)
+		cond, tpart, fpart = .cond, .tpart, .fpart
+		cond.writeSharpBreakdownItems(sw)
 		# only one of the target expressions is actually evaluated
 
 		# tpart:
-		src = Utils.sharpStringLiteralFor(_tpart.toCobraSource)
+		src = Utils.sharpStringLiteralFor(tpart.toCobraSource)
 		sw.write(', [src], new CobraLangInternal.CobraDirectString(')
-		_cond.writeSharpDefForBreakdown(sw)
+		cond.writeSharpDefForBreakdown(sw)
 		sw.write(' ? CobraLangInternal.CobraCore.ToTechString(')
-		_tpart.writeSharpDefForBreakdown(sw)
+		tpart.writeSharpDefForBreakdown(sw)
 		sw.write(') : "(not-evaluated)")')
 
 		# fpart:
-		src = Utils.sharpStringLiteralFor(_fpart.toCobraSource)
+		src = Utils.sharpStringLiteralFor(fpart.toCobraSource)
 		sw.write(', [src], new CobraLangInternal.CobraDirectString(')
-		_cond.writeSharpDefForBreakdown(sw)
+		cond.writeSharpDefForBreakdown(sw)
 		sw.write(' ? "(not-evaluated)" : CobraLangInternal.CobraCore.ToTechString(')
-		_fpart.writeSharpDefForBreakdown(sw)
+		fpart.writeSharpDefForBreakdown(sw)
 		sw.write('))')
 
 		sw.write(', -1') # dedent
