@@ -45,22 +45,30 @@ class Compiler
 				if verbosity >= 4
 					print '  Reading type [type.name] in namespace "[namespaceName]"'
 				clrType = ClrNativeType(type)
-				if type.isClass
-					if type.name.startsWith('Extend_') and Utils.countChars(type.name, c'_') >= 2
-						curNameSpace.addDecl(Extension(clrType))
-					else
-						curNameSpace.addDecl(Class(clrType))
-				else if type.isInterface
-					curNameSpace.addDecl(Interface(clrType))
-				else if type.isEnum
-					curNameSpace.addDecl(EnumDecl(curNameSpace, clrType, List<of String>(), ''))  # TODO: isNames; docString?
-				else if type.isValueType
-					curNameSpace.addDecl(Struct(clrType))
-				else if type.isAnsiClass
-					# The Enum class is an example that returns false for .isClass but true for .isAnsiClass
-					curNameSpace.addDecl(Class(clrType))
+				if curNameSpace.unifiedNameSpace.declForName(clrType.name)
+					# Happens between these two assemblies for *dozens* of types:
+					# Reading assembly:  office, Version=11.0.0.0, Culture=neutral, PublicKeyToken=71e9bce111e9429c
+					#               at:  C:\WINDOWS\assembly\GAC\office\11.0.0.0__71e9bce111e9429c\office.dll
+					# Reading assembly:  Interop.Microsoft.Office.Core, Version=2.4.0.0, Culture=neutral, PublicKeyToken=null
+					#               at:  C:\Documents and Settings\Chuck\My Documents\Kaiser\Workspaces\SpiritDevA\Code\Cobra\Interop.Microsoft.Office.Core.d
+					.warning(CobraWarning('Already have declaration "[clrType.name]" in namespace "[curNameSpace.fullName]".'))
 				else
-					throw FallThroughException(type)
+					if type.isClass
+						if type.name.startsWith('Extend_') and Utils.countChars(type.name, c'_') >= 2
+							curNameSpace.addDecl(Extension(clrType))
+						else
+							curNameSpace.addDecl(Class(clrType))
+					else if type.isInterface
+						curNameSpace.addDecl(Interface(clrType))
+					else if type.isEnum
+						curNameSpace.addDecl(EnumDecl(curNameSpace, clrType, List<of String>(), ''))  # TODO: isNames; docString?
+					else if type.isValueType
+						curNameSpace.addDecl(Struct(clrType))
+					else if type.isAnsiClass
+						# The Enum class is an example that returns false for .isClass but true for .isAnsiClass
+						curNameSpace.addDecl(Class(clrType))
+					else
+						throw FallThroughException(type)
 		finally
 			_curModule = nil
 
