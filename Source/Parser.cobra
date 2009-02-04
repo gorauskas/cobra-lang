@@ -1,3 +1,39 @@
+class ParserException
+	inherits SourceException
+
+	var _token as IToken?
+	var _fileName as String
+	var _lineNum as int
+
+	def init(token as IToken, message as String)
+		base.init(message)
+		_token = token
+		_fileName = _token.fileName
+		_lineNum = _token.lineNum
+
+	def init(fileName as String, msg as String)
+		base.init(msg)
+		_fileName = fileName
+		_lineNum = 1
+
+	get hasSourceSite as bool is override
+		return true
+
+	get fileName from var is override
+
+	get lineNum from var is override
+
+
+interface IWarningRecorder
+
+	def warning(we as CobraWarning)
+
+
+interface IErrorRecorder
+
+	def recordError(error as SourceException)
+
+
 class Parser
 	is abstract
 
@@ -10,3 +46,218 @@ class Parser
 
 	pro verbosity from var
 
+	##
+	## Tokens
+	##
+
+	def grab as IToken?
+		"""
+		Returns the next token or nil if there are none left.
+		"""
+		if _nextTokenIndex >= _tokens.count
+			return nil
+		token = _tokens[_nextTokenIndex]
+		_nextTokenIndex += 1
+		if _willShowTokens
+			print 'grab    --> [token]'
+		return token
+
+	def undo
+		"""
+		Undoes the last `token` call. Often called "push" in parser examples.
+		"""
+		require _nextTokenIndex>0
+		_nextTokenIndex -= 1
+		if _willShowTokens
+			print 'undo'
+
+	def peek as IToken?
+		return .peek(0)
+
+	def replace(token as IToken)
+		"""
+		Replaces the current token in the token stream with the given argument.
+		"""
+		require .peek
+		ensure .peek == token
+		_tokens[_nextTokenIndex] = token
+		
+	def peek(offset as int) as IToken?
+		"""
+		Returns a token without changing the current token, or nil if none left.
+		With no offset, returns the current token, otherwise peeks ahead.
+		"""
+		i = _nextTokenIndex + offset
+		if i < _tokens.count
+			token = _tokens[i] to ?
+		else
+			token = nil
+		if _willShowTokens
+			print 'peek([offset]) --> [token]'
+		# TODO: resolve CUE
+		if token and token.which=='CUE'
+			token.which = 'DEF'
+		return token
+
+	get last as IToken?
+		"""
+		Returns the last token returned by `get` or nil if `get` was never invoked.
+		"""
+		if _nextTokenIndex > 0
+			token = _tokens[_nextTokenIndex-1] to ?
+		else
+			token = nil
+		if _willShowTokens
+			print 'last    --> [token]'
+		return token
+
+	def lastN(n as int) as List<of NumberedToken>  # CC: use List<of Pair<of int, IToken>>
+		"""
+		Returns a list of NumberedTokens.
+		"""
+/# TODO - figure out a how to test this
+		test
+			p = CobraParser()
+			s = 'namespace class Foo def'
+			p._preParseSource('(no filename)', s)
+			p.grab
+			p.grab
+			p.grab
+			t = p.lastN(2)
+			assert t[0].token.which=='CLASS'
+			assert t[1].token.which=='ID'
+			assert t.count==2
+#/
+		body
+			tokens = List<of NumberedToken>()
+			if _nextTokenIndex > 0
+				while true
+					n -= 1
+					if n == -1, break
+					i = _nextTokenIndex - n - 1
+					if i >= 0 and i < _tokens.count
+						tokens.add(NumberedToken(i, _tokens[i]))
+			return tokens
+
+	def expect(whatTypes as vari String) as IToken
+		"""
+		Gets a token and complains if its type does not match whatType(s).
+		Returns the token.
+		"""
+		t = .grab
+		if _willShowTokens
+			print 'expect([whatTypes]) --> [t]'
+		if t is nil
+			.throwError('Expecting [Utils.join(" or ",whatTypes)], but source ended suddenly.')
+		if t.which not in whatTypes
+			if whatTypes[0]=='DEF' and t.which=='CUE'
+				t.which = 'DEF'
+			else
+				.throwError('Expecting [Utils.join(" or ",whatTypes)], but got [t] instead.')
+		return t to !
+
+	def optional(whatTypes as vari String) as IToken?
+		"""
+		Gets a token, but only if it matches whatTypes.
+		Does not complain or consume a token if there is no match.
+		"""
+		t = .peek
+		if _willShowTokens
+			print 'optional([whatTypes]) --> [t]'
+		if t is nil
+			return nil
+		else if t.which in whatTypes
+			return .grab
+		else
+			return nil
+
+	def oneOrMore(which as String)
+		"""
+		Consumes the expected token and any other additional contiguous ones.
+		Returns nothing.
+		Example:  .oneOrMore('EOL')
+		"""
+		.expect(which)
+		while .peek and .peek.which == which
+			.grab
+
+	def zeroOrMore(which as String)
+		"""
+		Consumes the token (if present) and any other additional contiguous ones.
+		Returns nothing.
+		Example:  .zeroOrMore('EOL')
+		"""
+		while .peek and .peek.which == which
+			.grab
+
+
+	##
+	## Errors and warnings
+	##
+
+	def recordError(msg as String) as ParserException
+		return .recordError(.last, msg)
+
+	def recordError(token as IToken?, msg as String) as ParserException
+		err = _makeError(token, msg)
+		_errorRecorder.recordError(err)
+		return err
+		
+	def throwError(msg as String)
+		.throwError(.last, msg)
+
+	def throwError(token as IToken?, msg as String)
+		throw _makeError(token, msg)  # will get recorded in .parseSource if the exception actually "makes it out" (some parser logic catches errors)
+
+	def _makeError(token as IToken?, msg as String) as ParserException
+		if token
+			msg = '[token.fileName]([token.lineNum],[token.colNum]): error: [msg]'
+		else
+			msg = '[_fileName](1, 1): error: [msg]'
+		if _verbosity>=2
+			print 'PARSER ERROR: [msg]'
+			print 'Last tokens:'
+			print '    ...'
+			for pair in .lastN(9)
+				s = '    [pair.i]. [pair.token]'
+				s = s.padRight(25) + 'line [pair.token.lineNum]'
+				print s
+			# assert false
+		token ?= .last
+		if token is nil
+			return ParserException(_fileName, msg)
+		else
+			return ParserException(token, msg)
+
+	def _warning(msg as String)
+		_warning(.last, msg)
+
+	def _warning(token as IToken, msg as String)
+		_warningRecorder.warning(CobraWarning(_fileName, token, msg))
+
+	# TODO: do this with a callback/delegate instead of this bullshit Java-style interface technique
+	var _warningRecorder as IWarningRecorder?
+	var _errorRecorder as IErrorRecorder?
+
+	pro warningRecorder from var
+	pro errorRecorder from var
+
+
+class NumberedToken
+	"""
+	In support of Parser.lastN.
+	# TODO: Replace this with Pair<T1, T2>
+	"""
+
+	var _i as int
+	var _token as IToken
+
+	def init(i as int, token as IToken)
+		_i = i
+		_token = token
+
+	get i from var
+	get token from var
+
+	def toString as String is override
+		return '([_i], [_token])'
