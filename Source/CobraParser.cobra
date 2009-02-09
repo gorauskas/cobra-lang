@@ -976,6 +976,7 @@ class CobraParser
 						.classPass
 						breakLoop = true
 					on 'DEDENT', breakLoop = true
+					on 'CUE', .addDecl(box, .declareCue)
 					on 'DEF', .addDecl(box, .declareMethod)
 					on 'GET', .addDecl(box, .declareGetOnlyProperty)
 					on 'SET', .addDecl(box, .declareSetOnlyProperty)
@@ -1089,9 +1090,15 @@ class CobraParser
 			.curBox.invariants.add(.expression)
 			.endOfLine
 
+	def declareCue as AbstractMethod?
+		m = .declareMethod
+		if m and m.name not in ['init', 'finalize', 'hash', 'compare', 'equals', 'enumerate']
+			.throwError('Unknown cue "[m.name]". Expecting "init", "finalize", "hash", "compare", "equals" or "enumerate".')
+		return m
+
 	def declareMethod as AbstractMethod?
 		require _typeProvider
-		token = .expect('DEF')
+		token = .expect('DEF', 'CUE')
 		opener = .grab to !
 		if opener.which not in ['ID', 'OPEN_CALL', 'OPEN_GENERIC'] and not opener.isKeyword
 			.throwError('Encountered [opener.which] when expecting an identifier.')
