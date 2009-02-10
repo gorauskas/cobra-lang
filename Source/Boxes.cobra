@@ -254,6 +254,13 @@ class Box
 				return true
 		return false
 
+	def allMembersForName(name as String) as IBoxMember*
+		m = .declForName(name)
+		if m, yield m
+		for inter in _baseInterfaces
+			m = inter.interfaceMemberForName(name)
+			if m, yield m
+
 	def interfaceMemberForName(name as String) as IBoxMember?
 		m = .declForName(name)
 		if m, return m
@@ -411,12 +418,20 @@ class Box
 			_prepLibraryBox
 		else
 			.completeMemberConstructionIfNeeded
-		if this is .compiler.stringType  # TODO: hacky
+		if this is .compiler.stringType  # TODO: hacky. solution is to look at the specific type of .current property of enumerator. make a test case that shows that
 			return .compiler.charType
 # can a for loop go through an IEnumerator<of>?
 #		if .isConstructed and .genericDef is .compiler.enumeratorOfType
 #			return .genericParams[0]
-		getEnum = .symbolForName('getEnumerator', true)
+		getEnum as IMember?
+		if .declForName('getEnumerator') is nil
+			# Comes up for IList<of T> which has multiple 'getEnumerator' methods in ancestor interfaces
+			for member in .allMembersForName('getEnumerator')
+				if member inherits Method and member.parentBox.isGeneric
+					getEnum = member
+					break
+		if getEnum is nil
+			getEnum = .symbolForName('getEnumerator', true)
 		if getEnum
 			assert getEnum.didBindInt
 			# can have two getEnumerators -- one generic and the other not. favor the generic one
