@@ -213,15 +213,25 @@ class CobraParser
 
 	def docString as String?
 		if .optional('DOC_STRING_START')
+			quoteToken as IToken?
 			textParts = List<of String>()
 			keepGoing = true
 			while keepGoing
 				tok = .grab
+				if tok is nil
+					msg = 'Unexpected end of file inside doc string.'
+					if quoteToken
+						msg += ' Maybe line [quoteToken.lineNum] was intended to end the doc string. Use exactly three quotes.'
+					else
+						msg += ' Use exactly three quotes to end the doc string.'
+					.throwError(msg)
 				branch tok.which
 					on 'DOC_STRING_STOP'
 						# TODO: check that indentation level is correct
 						keepGoing = false
 					on 'DOC_STRING_BODY_TEXT'
+						if quoteToken is nil and tok.text.startsWith('"')
+							quoteToken = tok
 						textParts.add(tok.text)
 					else
 						.throwError('Expecting more doc string contents or the end of the doc string instead of [tok].')
