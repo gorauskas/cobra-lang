@@ -254,12 +254,22 @@ class Box
 				return true
 		return false
 
-	def allMembersForName(name as String) as IBoxMember*
-		m = .declForName(name)
-		if m, yield m
+	def allMembersForName(name as String) as Set<of IBoxMember>
+		"""
+		Returns a set of all members with a given name, including inherited members,
+		with no duplicates and no guaranteed order.
+		"""
+		return Set<of IBoxMember>(_allMembersForName(name))
+		
+	def _allMembersForName(name as String) as IBoxMember*
+		decl = .declForName(name)
+		if decl, yield decl
+		if .baseClass
+			for m in .baseClass._allMembersForName(name)
+				yield m
 		for inter in _baseInterfaces
-			m = inter.interfaceMemberForName(name)
-			if m, yield m
+			for m in inter._allMembersForName(name)
+				yield m
 
 	def interfaceMemberForName(name as String) as IBoxMember?
 		m = .declForName(name)
