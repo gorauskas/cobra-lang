@@ -374,34 +374,22 @@ class BoxEvent
 		# _handlerType.nonNil.isDescendantOf(.compiler.delegateType)
 
 
-class BoxVar
-	is partial
+class BoxField
+	is abstract, partial
 	inherits BoxMember
-	implements IVar
 	"""
-	A BoxVar is a variable or constant declared for a box, whether instance or shared. For example:
-		var _x as int is shared
-		const PI = 3.14
-
-	Classes and structs can have vars, but interfaces cannot.
+	The abstract base class for BoxConst and BoxVar.
+	"""
 	
-	In CLI terminology, these are called "fields".
-	"""
-
 	var _typeNode as ITypeProxy?
 	var _type as IType?
 	var _initExpr as Expr?
-	var _ifInheritsStack as Stack<of IType>
 	var _isAssignedTo as bool
-	var _isConst as bool
 
 	def init(token as IToken, box as Box, name as String, typeNode as ITypeProxy?, isNames as List<of String>, initExpr as Expr?, attribs as AttributeList?, docString as String)
 		base.init(token, box, name, isNames, attribs ? AttributeList(), docString)
 		_typeNode = typeNode
 		_initExpr = initExpr
-		_ifInheritsStack = Stack<of IType>()
-		_useBackEndNameStack = Stack<of String>()  # for if-inherits
-		_useBackEndNameStack.push(name)
 
 	def addRefFields is override
 		base.addRefFields
@@ -412,21 +400,101 @@ class BoxVar
 		base.addSubFields
 		.addField('initExpr', _initExpr)
 
-	get englishName as String is override
-		return if(_isConst, 'constant member',  'variable member')
-
 	pro isAssignedTo from var
-
-	pro ifInheritsStack from var
 
 	get requiresDotPrefix as bool
 		return not _name.startsWith('_')
 		
-	def makeConstant
-		_isConst = true	
-		
-	get isShared as bool
-		return _isConst or base.isShared
+	get resultType as IType is override
+		"""
+		The result type of the var, method or property.
+		"""
+		t = .type
+		if t, return t
+		else, throw FallThroughException('_type is nil. this=[this]')
+
+	pro type as IType?
+		get
+			return _type
+		set
+			assert false, 'Cannot set the type of a box field.'
+
+	def _bindInt is override
+		base._bindInt
+		assert _typeNode or _initExpr
+		if _type is nil and _typeNode
+			_type = _typeNode.realType
+		if _initExpr
+			_initExpr.bindImp  # that's bindImp intentionally
+			if _type is nil
+				_type = _initExpr.type
+			else if not _initExpr.canBeAssignedTo(_type to !)
+				.throwError('Incompatible types. Cannot assign value of type [_initExpr.type.name] on the right to [_type.name] on the left.')
+
+	def constructedFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as BoxMember  # CC: as same
+		assert .type
+		newMember = base.constructedFor(box, gpToType) to BoxVar  # CC: this = base. ...
+		assert newMember._type
+		newMember._type = newMember._type.secondaryConstructedTypeFor(box, gpToType)
+		return newMember
+
+
+class BoxConst
+	is partial
+	inherits BoxField
+	"""
+	A constanst such as:
+		const PI = 3.14
+	
+	In practice, when developing libraries, a read-only var is more practical than a constant,
+	because if you update/correct its value, the programs that depend on it will see the update.
+	Constants, on the other hand, are inlined in code and can only be updated in programs by
+	recompiling against a newer library.
+	
+	Also, in practice, properties may be more practical than constants or read-only variables.
+	Their implementation can be revamped later to retrieve values from a config file, database,
+	test harness, etc.
+	"""		
+
+	def init(token as IToken, box as Box, name as String, typeNode as ITypeProxy?, isNames as List<of String>, initExpr as Expr?, attribs as AttributeList?, docString as String)
+		base.init(token, box, name, typeNode, isNames, initExpr, attribs, docString)
+
+	get isShared as bool is override
+		return true
+
+	get englishName as String is override
+		return 'constant member'
+
+	def _bindInt is override
+		base._bindInt
+		if not _initExpr
+			.throwError('A constant must be explicitly initialized on declaration')
+
+
+class BoxVar
+	is partial
+	inherits BoxField
+	implements IVar
+	"""
+	A BoxVar is a variable or constant declared for a box, whether instance or shared. For example:
+		var _x as int is shared
+		const PI = 3.14
+
+	Classes and structs can have vars, but interfaces cannot.
+	"""
+
+	var _ifInheritsStack as Stack<of IType>
+
+	def init(token as IToken, box as Box, name as String, typeNode as ITypeProxy?, isNames as List<of String>, initExpr as Expr?, attribs as AttributeList?, docString as String)
+		base.init(token, box, name, typeNode, isNames, initExpr, attribs, docString)
+		_ifInheritsStack = Stack<of IType>()
+		_useBackEndNameStack = Stack<of String>()  # for if-inherits
+		_useBackEndNameStack.push(name)
+
+	get englishName as String is override
+		return 'variable member'
+
+	pro ifInheritsStack from var
 
 	def attemptAssignmentOf(type as IType) as bool
 		# TODO: dup'ed with AbstractLocalVar
@@ -451,36 +519,6 @@ class BoxVar
 		else
 			return false
 
-	def _bindInt is override
-		base._bindInt
-		assert _typeNode or _initExpr
-		if _type is nil and _typeNode
-			_type = _typeNode.realType
-		if _initExpr
-			_initExpr.bindImp  # that's bindImp intentionally
-			if _type is nil
-				_type = _initExpr.type
-			else if not _initExpr.canBeAssignedTo(_type to !)
-				.throwError('Incompatible types. Cannot assign value of type [_initExpr.type.name] on the right to [_type.name] on the left.')
-		if _isConst and not _initExpr
-			.throwError('Cobra const must be explicitly initialised on declaration')
-			# enforce all upcase on const names?	
-
-	get resultType as IType is override
-		"""
-		The result type of the var, method or property.
-		"""
-		t = .type
-		if t, return t
-		else, throw FallThroughException('_type is nil. this=[this]')
-
-	def constructedFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as BoxMember  # CC: as same
-		assert .type
-		newMember = base.constructedFor(box, gpToType) to BoxVar  # CC: this = base. ...
-		assert newMember._type
-		newMember._type = newMember._type.secondaryConstructedTypeFor(box, gpToType)
-		return newMember
-
 	## INamedNode
 
 	get typeForReceiver as IType is override
@@ -488,9 +526,8 @@ class BoxVar
 
 	## IVar
 
-	pro type as IType?
+	pro type as IType? is override
 		get
-			require _type
 			return if(_ifInheritsStack.count, _ifInheritsStack.peek, _type)
 		set
 			assert false, 'Cannot set the type of a ClassVar.'

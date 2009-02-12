@@ -991,8 +991,8 @@ class CobraParser
 					on 'GET', .addDecl(box, .declareGetOnlyProperty)
 					on 'SET', .addDecl(box, .declareSetOnlyProperty)
 					on 'PRO', .addDecl(box, .declareProperty)
-					on 'VAR', .addDecl(box, .boxVarDecl(true))
-					on 'CONST', .addDecl(box, .boxVarDecl(false))
+					on 'VAR', .addDecl(box, .boxFieldDecl(true))
+					on 'CONST', .addDecl(box, .boxFieldDecl(false))
 					on 'INVARIANT', .declareInvariant
 					on 'EOL', .endOfLine
 					on 'ENUM', .addDecl(box, .enumDecl)
@@ -1033,7 +1033,7 @@ class CobraParser
 		.grab
 		.endOfLine
 
-	def boxVarDecl(isVar as bool) as BoxVar
+	def boxFieldDecl(isVar as bool) as BoxField
 		.expect(if(isVar, 'VAR', 'CONST'))
 		tok = .expect('ID')
 		identifier = tok.text
@@ -1073,10 +1073,11 @@ class CobraParser
 			attribs = .hasAttribs
 			docString = .docString
 			.dedent
-		bv = BoxVar(tok, .curBox, identifier, type, isNames, initExpr, attribs, docString)
-		if not isVar
-			bv.makeConstant
-		return bv
+		if isVar
+			field = BoxVar(tok, .curBox, identifier, type, isNames, initExpr, attribs, docString) to BoxField
+		else
+			field = BoxConst(tok, .curBox, identifier, type, isNames, initExpr, attribs, docString)
+		return field
 				
 	def declareInvariant
 		.expect('INVARIANT')
