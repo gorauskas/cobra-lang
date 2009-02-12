@@ -185,28 +185,20 @@ class Box
 			
 	def _scanFields
 		for fieldInfo in .clrType.getFields(BindingFlags(Instance, Static, DeclaredOnly, Public))
-			if fieldInfo.declaringType is not .clrType
-				continue
-			if fieldInfo.isPrivate
-				continue
+			if fieldInfo.declaringType is not .clrType, continue
+			if fieldInfo.isPrivate, continue
+			name = Utils.cobraNameForSharpMemberName(fieldInfo.name)
+			type = _memberTypeResultProxy(fieldInfo, fieldInfo.fieldType)
+			attrs = AttributeList()
+			isNames = [if(fieldInfo.isPublic, 'public', 'protected')]  # private was guarded against above
+			if fieldInfo.isStatic, isNames.add('shared')
 			if fieldInfo.isInitOnly or fieldInfo.isLiteral
-				# TODO: kind of weird to use properties
-				isNames = ['nonvirtual']
-				if fieldInfo.isPublic
-					isNames.add('public')
-				else
-					isNames.add('private')
-				if fieldInfo.isStatic
-					isNames.add('shared')
-				prop = Property(TokenFix.empty, this, Utils.cobraNameForSharpMemberName(fieldInfo.name), _memberTypeResultProxy(fieldInfo, fieldInfo.fieldType), isNames, AttributeList(), '')
-				prop.binaryName = fieldInfo.name
-				prop.makeGetPart(TokenFix.empty)
-				.addDecl(prop)
+				isNames.add('nonvirtual')
+				const = BoxConst(TokenFix.empty, this, name, type, isNames, nil, attrs, '')
+				const.binaryName = fieldInfo.name
+				.addDecl(const)
 			else
-				isNames = [if(fieldInfo.isPublic, 'public', 'protected')]  # private was guarded against above
-				if fieldInfo.isStatic
-					isNames.add('shared')
-				varr = BoxVar(TokenFix.empty, this, Utils.cobraNameForSharpMemberName(fieldInfo.name), _memberTypeResultProxy(fieldInfo, fieldInfo.fieldType), isNames, nil, nil, '')
+				varr = BoxVar(TokenFix.empty, this, name, type, isNames, nil, attrs, '')
 				varr.binaryName = fieldInfo.name
 				.addDecl(varr)
 
