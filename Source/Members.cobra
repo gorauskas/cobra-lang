@@ -379,8 +379,9 @@ class BoxVar
 	inherits BoxMember
 	implements IVar
 	"""
-	A BoxVar is a variable declared for a box, whether instance or shared. For example:
+	A BoxVar is a variable or constant declared for a box, whether instance or shared. For example:
 		var _x as int is shared
+		const PI = 3.14
 
 	Classes and structs can have vars, but interfaces cannot.
 	
@@ -392,6 +393,7 @@ class BoxVar
 	var _initExpr as Expr?
 	var _ifInheritsStack as Stack<of IType>
 	var _isAssignedTo as bool
+	var _isConst as bool
 
 	def init(token as IToken, box as Box, name as String, typeNode as ITypeProxy?, isNames as List<of String>, initExpr as Expr?, attribs as AttributeList?, docString as String)
 		base.init(token, box, name, isNames, attribs ? AttributeList(), docString)
@@ -411,7 +413,7 @@ class BoxVar
 		.addField('initExpr', _initExpr)
 
 	get englishName as String is override
-		return 'variable member'
+		return if(_isConst, 'constant member',  'variable member')
 
 	pro isAssignedTo from var
 
@@ -419,6 +421,12 @@ class BoxVar
 
 	get requiresDotPrefix as bool
 		return not _name.startsWith('_')
+		
+	def makeConstant
+		_isConst = true	
+		
+	get isShared as bool
+		return _isConst or base.isShared
 
 	def attemptAssignmentOf(type as IType) as bool
 		# TODO: dup'ed with AbstractLocalVar
@@ -454,6 +462,9 @@ class BoxVar
 				_type = _initExpr.type
 			else if not _initExpr.canBeAssignedTo(_type to !)
 				.throwError('Incompatible types. Cannot assign value of type [_initExpr.type.name] on the right to [_type.name] on the left.')
+		if _isConst and not _initExpr
+			.throwError('Cobra const must be explicitly initialised on declaration')
+			# enforce all upcase on const names?	
 
 	get resultType as IType is override
 		"""

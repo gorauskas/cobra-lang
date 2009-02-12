@@ -991,7 +991,8 @@ class CobraParser
 					on 'GET', .addDecl(box, .declareGetOnlyProperty)
 					on 'SET', .addDecl(box, .declareSetOnlyProperty)
 					on 'PRO', .addDecl(box, .declareProperty)
-					on 'VAR', .addDecl(box, .boxVarDecl)
+					on 'VAR', .addDecl(box, .boxVarDecl(true))
+					on 'CONST', .addDecl(box, .boxVarDecl(false))
 					on 'INVARIANT', .declareInvariant
 					on 'EOL', .endOfLine
 					on 'ENUM', .addDecl(box, .enumDecl)
@@ -1032,8 +1033,8 @@ class CobraParser
 		.grab
 		.endOfLine
 
-	def boxVarDecl as BoxVar
-		.expect('VAR')
+	def boxVarDecl(isVar as bool) as BoxVar
+		.expect(if(isVar, 'VAR', 'CONST'))
 		tok = .expect('ID')
 		identifier = tok.text
 		other = .curBox.declForName(identifier)
@@ -1046,7 +1047,7 @@ class CobraParser
 			numUnderscores += 1
 		if not s.length
 			.throwError('A class variable must be made of more than underscores. Try "[identifier]x" or "[identifier]1".')
-		if not s[0].isLower
+		if isVar and not s[0].isLower
 			sugg = String(c'_', numUnderscores) + s[0].toString.toLower + s[1:]
 			sugg = ' Try "[sugg]".'
 			.throwError('Class variables must start with lowercase letters (after the underscore(s)) to distinguish them from other types of identifiers.[sugg]')
@@ -1072,8 +1073,11 @@ class CobraParser
 			attribs = .hasAttribs
 			docString = .docString
 			.dedent
-		return BoxVar(tok, .curBox, identifier, type, isNames, initExpr, attribs, docString)
-
+		bv = BoxVar(tok, .curBox, identifier, type, isNames, initExpr, attribs, docString)
+		if not isVar
+			bv.makeConstant
+		return bv
+				
 	def declareInvariant
 		.expect('INVARIANT')
 		if .optional('COLON')
