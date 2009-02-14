@@ -1892,15 +1892,19 @@ class CobraParser
 			if .last.which <> 'IN'
 				.throwError('Comma separated nameId list in forStatement needs to terminate with an IN token ("in")')
 			if args.count == 0  # "for v1, in ..."  single multiarg variable 
+				# TODO: should probably be a syntax error
 				.undo  # 'in' token
 				return .forStmt(token, varr)
 			else
-				args.insert(0, varr)
+				multiArgs = [varr]
+				for arg in args
+					if arg inherits NameExpr, multiArgs.add(arg)
+					else, .recordError('Expression "[arg.toCobraSource]" of comma-separated list is not an identifier or identifier-as-type.')
 				what = .expression
 				name = 'forEnumVar[what.serialNum]'  # will get made more unique by For Stmt 
 				nameToken = token.copy('ID', name)
 				varr = IdentifierExpr(nameToken, name)
-				return ForEnumerableStmt(token, varr, args, what, .block)
+				return ForEnumerableStmt(token, varr, multiArgs, what, .block)
 
 		# forStmt single variable assign - for v {in,=} ...
 		peek = .peek.which

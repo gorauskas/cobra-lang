@@ -521,22 +521,22 @@ class ForEnumerableStmt
 
 	var _what as Expr
 	var _varNumber as int
-	var _multiArgs as List<of Expr>?		# actually contains NameExprs
+	var _multiArgs as List<of NameExpr>?
 
 	def init(token as IToken, varr as NameExpr, what as Expr, block as BlockStmt)
 		base.init(token, varr, block)
 		_what = what
 
-	def init(token as IToken, varr as NameExpr, args as List<of Expr>, what as Expr, block as BlockStmt)
+	def init(token as IToken, varr as NameExpr, args as List<of NameExpr>, what as Expr, block as BlockStmt)
 		# multiArg assignment in for stmt
 		.init(token, varr, what, block)
 		_multiArgs = args
 		
 	def addSubFields
 		base.addSubFields
-		.addField('_what', _what)
-		.addField('_varNumber', _varNumber)
-		.addField('_multiArgs', _multiArgs)
+		.addField('what', _what)
+		.addField('varNumber', _varNumber)
+		.addField('multiArgs', _multiArgs)
 
 	get what from var
 	
@@ -554,20 +554,11 @@ class ForEnumerableStmt
 			base._bindImp  # just to pass the assertion that base._bindImp was invoked
 		else
 			_var = .bindVar(_varExpr)
-			if _multiArgs
-				_validateMultiArgs
-				_unpackMultiArgStmts
+			if _multiArgs, _unpackMultiArgStmts
 			base._bindImp
 			_varNumber = .compiler.curBox.makeNextPrivateSerialNumber
 			_block.bindImp
 		
-	def _validateMultiArgs
-		n = 1
-		for arg in _multiArgs
-			if not (arg inherits IdentifierExpr or arg inherits AsExpr)
-				.throwError('Item "[arg.toCobraSource]" of comma-separated list is not an identifier or identifier-as-type.')
-			n += 1		
-
 	def _unpackMultiArgStmts
 		"""
 		Handle expansion of statements for multiArg variables in for statements: 
@@ -583,19 +574,28 @@ class ForEnumerableStmt
 				c = varExpr_uniq[2]
 		with rest of block following				
 		"""
+		# TODO: make sure varName starts with _lh_
 		stmts = List<of Stmt>()
-		varName = _varExpr.name # "[_varExpr.name]_[.serialNum]"
+		varName = _varExpr.name  # "[_varExpr.name]_[.serialNum]"
 		token = _token.copy
 		count = 0
-		if .what.type.isDictionaryLike
-			# assume enumerator will return KeyValue so cant have other than 2 multiargs
+		isStreamOfKeyValue = .what.type.isDictionaryLike
+		if not isStreamOfKeyValue and _var.type inherits Box
+			isStreamOfKeyValue = (_var.type to Box).isConstructionOf(.compiler.libraryType('System.Collections.Generic.KeyValuePair<of,>') to Box)
+		if isStreamOfKeyValue
+			# This covers:
+			#    * dictionaries such as: [I]Dictionary<of TKey, TValue>
+			#    * streams such as: KeyValuePair<of TKey, TValue>*
+			#    * any user type that implements IEnumerable<of KeyValuePair<of TKey, TValue>>
+			
+			# assume enumerator will return KeyValue so can't have other than 2 multiargs
 			if _multiArgs.count <> 2
 				.throwError('Cannot have other than two multiarg variables in a for statement as assignment targets from a Dictionary')
 			kvRHS = ['key', 'value']
 			for id in _multiArgs
 				forVar    = IdentifierExpr(token.copy('ID', varName), varName)
 				rhsToken  = token.copy('ID', kvRHS[count])
-				keyOrVal  = MemberExpr(rhsToken )
+				keyOrVal  = MemberExpr(rhsToken)
 				kvExpr    = BinaryOpExpr.make(token.copy('DOT', '.'), 'DOT', forVar, keyOrVal) # forVar.{key,value}
 				assignTok = token.copy('ASSIGN', '=')
 				# print id.toCobraSource, '=', kvExpr.toCobraSource
@@ -1420,9 +1420,10 @@ class MultiTargetAssignStatement
 	inherits Stmt
 	"""
 	Handle statements of form 
-		a,[b,...] = <List-Generating-Expr>
+		a, [b, ...] = <list-generating-expr>
 	or
-		a,[b,...] = <expr>,[<expr>,...]
+		a, [b, ...] = <expr>, [<expr>,...]
+
 	Gets turned into various sequences of assignExpr.
 		tmp = <List-Generating-Expr>
 		a = tmp[0]
