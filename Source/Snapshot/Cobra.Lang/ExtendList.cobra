@@ -1,0 +1,217 @@
+"""
+"""
+
+
+namespace Cobra.Lang
+
+	extend System.Collections.IList
+	
+		def swap(i as int, j as int)
+			require
+				i >= -.count and i < .count
+				j >= -.count and j < .count
+			ensure
+				old this[i] == this[j]
+				old this[j] == this[i]
+				.count == old.count
+			body
+				count = .count
+				if i < 0, i += count
+				if j < 0, j += count
+				temp = this[i]
+				this[i] = this[j]
+				this[j] = temp
+
+
+namespace Cobra.Lang
+
+	extend IList<of T>
+	
+		def get(flexibleIndex as int) as T
+			require
+				.count > 0
+				(flexibleIndex >= 0 and flexibleIndex < .count) _
+					or (flexibleIndex < 0 and flexibleIndex >= -.count)
+			body
+				if flexibleIndex < 0, flexibleIndex += .count
+				return this[flexibleIndex]
+		
+		def get(flexibleIndex as int, default as T) as T
+			ensure
+				.count == 0 implies result == default
+				(flexibleIndex > .count or flexibleIndex < -.count) _
+					implies result == default
+			body
+				count = .count
+				if flexibleIndex < 0, flexibleIndex += count
+				if flexibleIndex >= 0 and flexibleIndex < count
+					return this[flexibleIndex]
+				else
+					return default
+	
+		def last as T
+			"""
+			Returns the last element in the list.
+			"""
+			require .count > 0
+			return this[.count-1]
+	
+		# TODO: haven't tested generic methods in generic extensions yet
+		# def keyed<of TKey>(sig keyFor(value as T) as TKey) as Dictionary<of TKey, T>
+	
+		def numbered as KeyValuePair<of int, T>*
+			"""
+			Returns a stream of pairs of (index, value).
+			Can be used like so:
+				for i, value in someList.numbered
+					...
+			"""
+			for index in .count
+				yield KeyValuePair<of int, T>(index, this[index])
+	
+		def reversed as List<of T>
+			ensure
+				result is not this
+				result.count == .count
+			body
+				t = List<of T>(this)
+				t.reverse
+				return t
+	
+		def sorted as List<of T>
+			ensure
+				result is not this
+				result.count == .count
+			body
+				t = List<of T>(this)
+				t.sort
+				return t
+		
+		def sorted(comparison as Comparison<of T>) as List<of T>
+			ensure
+				result is not this
+				result.count == .count
+			body
+				# TODO: needs test case
+				t = List<of T>(this)
+				t.sort(comparison)
+				return t
+			
+		def sorted(comparer as Comparer<of T>) as List<of T>
+			ensure
+				result is not this
+				result.count == .count
+			body
+				# TODO: needs test cas
+				t = List<of T>(this)
+				t.sort(comparer)
+				return t
+	
+		def swap(i as int, j as int)
+			"""
+			Swaps the elements at the given indexes which can be negative to index from the end of the
+			list towards the front (-1 is last element, -2 is second to last, etc.).
+			"""
+			require
+				i >= -.count and i < .count
+				j >= -.count and j < .count
+			ensure
+				old this[i] == this[j]
+				old this[j] == this[i]
+				.count == old.count
+			body
+				count = .count
+				if i < 0, i += count
+				if j < 0, j += count
+				temp = this[i]
+				this[i] = this[j]
+				this[j] = temp
+	
+	
+	class TestIListExtensions
+	
+		shared
+		
+			def hasContracts as bool
+				try
+					_hasContracts
+				catch RequireException
+					return true
+				return false
+			
+			def _hasContracts
+				require false
+				pass
+	
+		test
+			hasContracts = .hasContracts
+			empty = List<of int>()
+	
+			# get(i)
+			t = [1, 2]
+			assert t.get(0) == 1 and t.get(1) == 2
+			assert t.get(-1) == 2 and t.get(-2) == 1
+			if hasContracts
+				expect RequireException, t.get(-3)
+				expect RequireException, t.get(2)
+				t.clear
+				expect RequireException, t.get(0)
+				expect RequireException, t.get(1)
+				expect RequireException, t.get(-1)
+			else
+				expect ArgumentOutOfRangeException, t.get(-3)
+				expect ArgumentOutOfRangeException, t.get(2)
+				t.clear
+				expect ArgumentOutOfRangeException, t.get(0)
+				expect ArgumentOutOfRangeException, t.get(1)
+				expect ArgumentOutOfRangeException, t.get(-1)
+			
+			# get(i, default)
+			t = [1, 2]
+			assert t.get(0, 5) == 1 and t.get(1, 5) == 2
+			assert t.get(-1, 5) == 2 and t.get(-2, 5) == 1
+			assert t.get(-3, 5) == 5 and t.get(2, 5) == 5
+			t.clear
+			assert t.get(0, 5) == 5 and t.get(1, 5) == 5 and t.get(-1, 5) == 5
+	
+			# last
+			t = [1, 2]
+			assert t.last == 2
+			t.clear
+			if hasContracts
+				expect RequireException, t.last
+			else
+				expect ArgumentOutOfRangeException, t.last
+	
+			# numbered
+			t = [100, 200]
+			count = 0
+			for pair in t.numbered
+				assert (pair.key == 0 and pair.value == 100) or (pair.key == 1 and pair.value == 200)
+				count += 1
+			assert count == 2
+			for i, v in t.numbered
+				assert (i==0 and v==100) or (i==1 and v==200)
+
+			# reversed
+			t = [1, 2, 3]
+			u = t.reversed
+			assert t is not u and t.count == u.count
+			assert t == [1, 2, 3] and u == [3, 2, 1]
+			t = List<of int>()
+			u = t.reversed
+			assert t is not u and t.count == u.count
+			assert t == empty and u == empty
+	
+			# sorted
+			t = [3, 1, 2]
+			u = t.sorted
+			assert t is not u and t == [3, 1, 2] and u == [1, 2, 3]
+			t = List<of int>()
+			u = t.reversed
+			assert t is not u and t == empty and u == empty
+			
+			# swap
+			t = [1, 2]
+			t.swap(0, 1)
+			assert t == [2, 1]

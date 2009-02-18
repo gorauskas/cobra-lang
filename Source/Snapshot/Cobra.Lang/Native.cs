@@ -1181,7 +1181,7 @@ static public class CobraImp {
 		} else {
 			// HACK. TODO. This needs to be generalized where extension methods can be registered with the dynamic binder. Will/does DLR have something like this?
 			if (methodName == "Swap" && obj is System.Collections.IList) {
-				Type extension = Type.GetType("Cobra.Lang.Extend_IList_Extensions");
+				Type extension = Type.GetType("Cobra.Lang.Extend_IList_ExtendList");
 				Type extendedType = typeof(System.Collections.IList); // this reference could be put with the extension using an attribute
 				return InvokeMethodFromExtension(extension, extendedType, obj, methodName, argsTypes, args);
 			}
@@ -1279,14 +1279,22 @@ static public class CobraImp {
 	}
 
 	static public int DynamicCompare(Object a, Object b) {
-		if (object.ReferenceEquals(a, b))
-			return 0;
-		if (a==null)
-			return 0;
-		if (b==null)
-			return 1;
-		if (a is IComparable)
-			return ((IComparable)a).CompareTo(b);
+		if (object.ReferenceEquals(a, b)) return 0;
+		if (a==null) return 0;
+		if (b==null) return 1;
+		if (a is IComparable) {
+			try {
+				return ((IComparable)a).CompareTo(b);
+			} catch (ArgumentException) {
+				// Some system types are retarded. For example, someDouble.CompareTo(0) throws an exception
+				if (b.GetType() != a.GetType()) {
+					object newB = Convert.ChangeType(b, a.GetType()); // yes, may throw exception
+					return ((IComparable)a).CompareTo(newB);
+				} else {
+					throw;
+				}
+			}
+		}
 		throw new CannotCompareException(a, b);
 	}
 
