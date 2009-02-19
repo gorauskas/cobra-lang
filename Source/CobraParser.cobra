@@ -494,6 +494,94 @@ class CobraParser
 		.dedent
 		return AssemblyDecl(token, attribs)
 
+	def typeSpecDecls(token as IToken, genericParams as List<of GenericParam>) as TypeSpecs
+		"""
+		Parses the specifications for a type declaration:
+			modifiers (is-names)
+			attributes
+			generic constraints
+			inheritance
+			implements interfaces
+		
+		These results are returned in a TypeSpecs instance, but note that the generic constraints
+		are attached directly to their generic parameters.
+		
+		Parsing rules:
+			* these clauses can appear in any order
+			* no repetition is allowed except for "where" which can appear once per generic parameter
+			* all "where" clauses must be consecutive
+			* these clauses can be on the same line or separate lines
+			* this all implies that a clause is terminated by a keyword or EOL
+		"""
+		baseNode as ITypeProxy?
+		isNames = List<of String>()
+		attribs = AttributeList()
+		interfaceNames = List<of ITypeProxy>()
+
+		encountered = List<of String>()  # token types		
+		didIndent = false
+		isDone = false
+		while true
+			peek = .peek
+			if peek is nil, .throwError('Unexpected end of source.')
+			last = .peek.which
+			branch last
+				on 'EOL'
+					.grab
+				on 'INDENT'
+					.grab
+					if didIndent, .throwError('Unexpected indent.')
+					didIndent = true
+				on 'IS'
+					isNames = .isDeclNames
+				on 'HAS'
+					attribs = .hasAttribs
+				on 'WHERE'
+					.genericConstraints(token, genericParams)
+				on 'INHERITS'
+					if .optional('INHERITS')
+						baseNode = .typeId
+						.endOfTypeSpecClause
+				on 'IMPLEMENTS'
+					if .optional('IMPLEMENTS')
+						expectComma = false
+						while true
+							if .peek.which == 'EOL'
+								.grab
+								break
+							if expectComma
+								if .peek.isKeyword, break
+								.expect('COMMA')
+							interfaceName = .typeId  # using .typeId since interface could be qualified (Foo.Bar) or a generic like IEnumerable<of T>
+							interfaceNames.add(interfaceName)
+							expectComma = true
+				else
+					isDone = true
+			if last in ['EOL', 'INDENT'], continue
+			if isDone, break
+			if last in encountered and last <> 'WHERE'
+				.throwError('Encountered "[last]" twice.')
+			encountered.add(last)
+		if not didIndent, .indent
+		return TypeSpecs(isNames, attribs, baseNode, interfaceNames)
+
+	def endOfTypeSpecClause
+		"""
+		Ends a type clause on EOL or a keyword.
+		Throws an error for any other kind of token or end-of-tokens.
+		Used by .typeSpecDecls.
+		"""
+		if .optional('COLON')
+			_warning('Colons are not used to start indented blocks. You can remove the colon.')
+		if .peek is nil
+			.throwError('Unexpected end of source.')
+		else if .peek.which == 'EOL'
+			.endOfLine
+		else if .peek.isKeyword
+			pass
+		else
+			.throwError('Expecting end-of-line or next clause instead of "[.peek.which]".')
+
 	def classDecl as Class
 		token = .expect('CLASS')
 		peek = .peek.which
@@ -514,36 +602,10 @@ class CobraParser
 
 		genericParams = .declGenericParams(token)
 		name = .nameForDeclGenericParams(token, genericParams)
-
-		.indent
-
-		isNames = .isDeclNames
-		attribs = .hasAttribs
-
-		.genericConstraints(token, genericParams)
-
-		baseNode as ITypeProxy?
-		if .optional('INHERITS')
-			baseNode = .typeId
-			.endOfLine
-		else
-			baseNode = nil
-
-		interfaceNames = List<of ITypeProxy>()
-		if .optional('IMPLEMENTS')
-			expectComma = false
-			while true
-				if .peek.which=='EOL'
-					.grab
-					break
-				if expectComma, .expect('COMMA')
-				interfaceName = .typeId  # using .typeId since interface could be qualified (Foo.Bar) or a generic like IEnumerable<of T>
-				interfaceNames.add(interfaceName)
-				expectComma = true
-
+		typeSpecs = .typeSpecDecls(token, genericParams)
 		docString = .docString
 
-		theClass = Class(token, name, .makeList<of IType>(genericParams), isNames, attribs, baseNode, interfaceNames, docString)
+		theClass = Class(token, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, typeSpecs.inheritsProxy, typeSpecs.implementsProxies, docString)
 
 		# TODO when supporting nested classes, look at the _boxStack and set a back pointer here
 		_boxStack.push(theClass)
@@ -566,19 +628,47 @@ class CobraParser
 
 	def hasAttribs as AttributeList
 		attribs = AttributeList()
-		hasWord = .optional('HAS')
-		if not hasWord
-			return attribs
-		while true
-			expr = .expression
-			if not expr inherits IdentifierExpr and not expr inherits PostCallExpr and not expr inherits CallExpr and not expr inherits DotExpr
-				.throwError('Invalid attribute.')  # TODO: record the error instead of throwing one
-			attribs.add(AttributeDecl(expr))
-			if not .optional('COMMA')
-				break
-		.endOfLine
+		if .optional('HAS')
+			while true
+				expr = .attribExpr(0)
+				if not expr inherits IdentifierExpr and not expr inherits PostCallExpr and not expr inherits CallExpr and not expr inherits DotExpr
+					.throwError('Invalid attribute.')  # TODO: record the error instead of throwing one
+				attribs.add(AttributeDecl(expr))
+				if not .optional('COMMA'), break
+			.endOfTypeSpecClause
 		return attribs
 
+	def attribExpr(level as int) as Expr?
+		exprs = List<of Expr>()
+		dots  = List<of IToken>()
+		expr as Expr?
+		while true
+			branch .peek.which
+				on 'ID'
+					expr = if(exprs.count, MemberExpr(.grab), IdentifierExpr(.grab))
+				on 'OPEN_CALL'
+					token = .grab
+					args = .commaSepExprs(['RPAREN'], true, true)
+					if exprs.count
+						expr = CallExpr(token, token.value to String, args, true)
+					else
+						expr = PostCallExpr(token, IdentifierExpr(token, token.value to String), args)
+				else
+					.throwError('Syntax error when expecting attribute.')
+			exprs.add(expr)
+			if .peek.which == 'DOT'
+				dots.add(.grab)
+			else
+				break
+		assert exprs.count
+		if exprs.count > 1
+			expr = exprs[0]
+			for i in 1 : exprs.count
+				expr = DotExpr(dots[i-1], 'DOT', expr, exprs[i])
+		if expr inherits DotExpr
+			assert expr.left inherits IdentifierExpr or expr.left inherits DotExpr
+		return expr
+			
 	var _validIsNames as List<of String>?
 
 	def isDeclNames as List<of String>
@@ -613,7 +703,7 @@ class CobraParser
 				if .peek.text in _validIsNames
 					.throwError(.peek, 'Multiple access modifiers should be separated by commas such as "[what], [.peek.text]".')
 				break
-		.endOfLine
+		.endOfTypeSpecClause
 		# TODO: error on virtual and override
 		# TODO: error on virtual and shared
 		# TODO: error if 2 or more of 'public', 'protected', 'private', 'internal'
@@ -862,7 +952,7 @@ class CobraParser
 			if token.which <> 'OPEN_GENERIC'
 				.throwError('Unexpected where clause for non-generic declaration.')
 			paramName = .expect('ID').value
-			# CC: found = find param in params where param.name == paramName
+			# CC: find param in params where param.name == paramName
 			found = false
 			for param in params
 				if param.name == paramName
@@ -3333,3 +3423,23 @@ class CobraParser
 				.expect('INDENT')
 				_spaceAgnosticIndentLevel += 1
 		assert _spaceAgnosticIndentLevel==0  # cobra: make this an ensure
+
+
+class TypeSpecs
+	"""
+	This is a results container for the parser.
+	"""
+	
+	cue init(isNames as List<of String>, attributes as AttributeList, inheritsProxy as ITypeProxy?, implementsProxies as List<of ITypeProxy>)
+		_isNames = isNames
+		_attributes = attributes
+		_inheritsProxy = inheritsProxy
+		_implementsProxies = implementsProxies
+	
+	get isNames from var as List<of String>
+	
+	get attributes from var as AttributeList
+	
+	get inheritsProxy from var as ITypeProxy?
+	
+	get implementsProxies from var as List<of ITypeProxy>
