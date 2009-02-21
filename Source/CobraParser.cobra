@@ -513,10 +513,10 @@ class CobraParser
 			* these clauses can be on the same line or separate lines
 			* this all implies that a clause is terminated by a keyword or EOL
 		"""
-		baseNode as ITypeProxy?
 		isNames = List<of String>()
 		attribs = AttributeList()
-		interfaceNames = List<of ITypeProxy>()
+		inheritsProxies = List<of ITypeProxy>()
+		implementsProxies = List<of ITypeProxy>()
 
 		encountered = List<of String>()  # token types		
 		didIndent = false
@@ -540,21 +540,33 @@ class CobraParser
 					.genericConstraints(token, genericParams)
 				on 'INHERITS'
 					if .optional('INHERITS')
-						baseNode = .typeId
-						.endOfTypeSpecClause
-				on 'IMPLEMENTS'
-					if .optional('IMPLEMENTS')
 						expectComma = false
 						while true
-							if .peek.which == 'EOL'
-								.grab
-								break
 							if expectComma
 								if .peek.isKeyword, break
 								.expect('COMMA')
-							interfaceName = .typeId  # using .typeId since interface could be qualified (Foo.Bar) or a generic like IEnumerable<of T>
-							interfaceNames.add(interfaceName)
+							inheritsProxies.add(.typeId)
 							expectComma = true
+							if .peek.which == 'EOL'
+								.grab
+								break
+							else if .peek.isKeyword
+								break
+				on 'IMPLEMENTS'
+					if .optional('IMPLEMENTS')
+						# TODO: use a nested def to eliminate duplication with on 'INHERITS' just above
+						expectComma = false
+						while true
+							if expectComma
+								if .peek.isKeyword, break
+								.expect('COMMA')
+							implementsProxies.add(.typeId)
+							expectComma = true
+							if .peek.which == 'EOL'
+								.grab
+								break
+							else if .peek.isKeyword
+								break
 				else
 					isDone = true
 			if last in ['EOL', 'INDENT'], continue
@@ -563,7 +575,7 @@ class CobraParser
 				.throwError('Encountered "[last]" twice.')
 			encountered.add(last)
 		if not didIndent, .indent
-		return TypeSpecs(isNames, attribs, baseNode, interfaceNames)
+		return TypeSpecs(isNames, attribs, inheritsProxies, implementsProxies)
 
 	def endOfTypeSpecClause
 		"""
@@ -603,9 +615,14 @@ class CobraParser
 		genericParams = .declGenericParams(token)
 		name = .nameForDeclGenericParams(token, genericParams)
 		typeSpecs = .typeSpecDecls(token, genericParams)
+		inheritsProxy as ITypeProxy?
+		if typeSpecs.inheritsProxies.count > 1
+			.throwError('Cannot inherit from multiple types. Put classes after "inherits" and interfaces after "implements".')
+		else if typeSpecs.inheritsProxies.count == 1
+			inheritsProxy = typeSpecs.inheritsProxies[0]
 		docString = .docString
-
-		theClass = Class(token, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, typeSpecs.inheritsProxy, typeSpecs.implementsProxies, docString)
+		
+		theClass = Class(token, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, inheritsProxy, typeSpecs.implementsProxies, docString)
 
 		# TODO when supporting nested classes, look at the _boxStack and set a back pointer here
 		_boxStack.push(theClass)
@@ -632,7 +649,7 @@ class CobraParser
 			while true
 				expr = .attribExpr(0)
 				if not expr inherits IdentifierExpr and not expr inherits PostCallExpr and not expr inherits CallExpr and not expr inherits DotExpr
-					.throwError('Invalid attribute.')  # TODO: record the error instead of throwing one
+					.throwError('Invalid attribute.')
 				attribs.add(AttributeDecl(expr))
 				if not .optional('COMMA'), break
 			.endOfTypeSpecClause
@@ -769,35 +786,14 @@ class CobraParser
 		if .peek.which=='COLON' and .peek(1)<>nil and .peek(1).which=='ID'
 			.throwError(_syntaxForInterfaceInheritanceMsg)
 
-		params = .declGenericParams(token)
-		name = .nameForDeclGenericParams(token, params)
-
-		.indent
-
-		isNames = .isDeclNames
-		attribs = .hasAttribs
-
-		.genericConstraints(token, params)
-
-		baseNames = List<of ITypeProxy>()
-		if .optional('INHERITS')
-			expectComma = false
-			while true
-				if .optional('EOL')
-					break
-				if expectComma
-					.expect('COMMA')
-				baseName = .typeId  # using .typeId since interface could be a generic like IEnumerable<of T>
-				baseNames.add(baseName)
-				expectComma = true
-
-		if .optional('IMPLEMENTS')
+		genericParams = .declGenericParams(token)
+		name = .nameForDeclGenericParams(token, genericParams)
+		typeSpecs = .typeSpecDecls(token, genericParams)
+		if typeSpecs.implementsProxies.count
 			.throwError('Encountered "implements" in interface declaration. Use "inherits" instead.')
-
-		# TODO: can an interface be nested in another interface?
 		docString = .docString
-
-		theInterface = Interface(token, name, .makeList<of IType>(params), isNames, attribs, baseNames, docString)
+		# TODO: can an interface be nested in another interface?
+		theInterface = Interface(token, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, typeSpecs.inheritsProxies, docString)
 
 		_boxStack.push(theInterface)
 #		.isNamesStack = Stack(str)
@@ -3430,16 +3426,16 @@ class TypeSpecs
 	This is a results container for the parser.
 	"""
 	
-	cue init(isNames as List<of String>, attributes as AttributeList, inheritsProxy as ITypeProxy?, implementsProxies as List<of ITypeProxy>)
+	cue init(isNames as List<of String>, attributes as AttributeList, inheritsProxies as List<of ITypeProxy>, implementsProxies as List<of ITypeProxy>)
 		_isNames = isNames
 		_attributes = attributes
-		_inheritsProxy = inheritsProxy
+		_inheritsProxies = inheritsProxies
 		_implementsProxies = implementsProxies
 	
 	get isNames from var as List<of String>
 	
 	get attributes from var as AttributeList
 	
-	get inheritsProxy from var as ITypeProxy?
+	get inheritsProxies from var as List<of ITypeProxy>
 	
 	get implementsProxies from var as List<of ITypeProxy>
