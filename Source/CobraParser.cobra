@@ -816,35 +816,14 @@ class CobraParser
 		if name[0] not in _uppercaseLetters
 			.throwError('Struct names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 
-		params = .declGenericParams(token)
-		name = .nameForDeclGenericParams(token, params)
-
-		.indent
-
-		isNames = .isDeclNames
-		attribs = .hasAttribs
-
-		.genericConstraints(token, params)
-
-		baseName as String?
-		if .optional('INHERITS')
+		genericParams = .declGenericParams(token)
+		name = .nameForDeclGenericParams(token, genericParams)
+		typeSpecs = .typeSpecDecls(token, genericParams)
+		if typeSpecs.inheritsProxies.count > 0
 			.throwError('Structs cannot inherit. If you mean to implement an interface, use "implements" instead.')
-
-		interfaceNames = List<of ITypeProxy>()
-		if .optional('IMPLEMENTS')
-			expectComma = false
-			while true
-				if .peek.which == 'EOL'
-					.grab
-					break
-				if expectComma
-					.expect('COMMA')
-				interfaceNames.add(.typeId)  # using .typeId since interface could be qualified (Foo.Bar) or a generic like IEnumerable<of T>
-				expectComma = true
-
 		docString = .docString
 
-		theStruct = Struct(token, name, .makeList<of IType>(params), isNames, attribs, baseName, interfaceNames, docString)
+		theStruct = Struct(token, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, nil, typeSpecs.implementsProxies, docString)
 
 		# TODO when supporting nested classes, look at the boxStack and set a back pointer here
 		_boxStack.push(theStruct)
