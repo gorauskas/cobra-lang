@@ -2812,7 +2812,7 @@ class CobraParser
 			expectSep = true
 		return exprs
 	
-	def doExpr as AnonymousMethodExpr
+	def doExpr as AnonymousExpr
 		"""
 		Example:
 			... do(int a, int b) ...
@@ -2828,11 +2828,14 @@ class CobraParser
 		require .peek.which in ['OPEN_DO', 'DO']
 		token = .grab
 		params = if(token.which == 'OPEN_DO', .paramDecls(true), List<of Param>())
-		returnTypeId = if(.optional('AS'), .typeId, nil)
-		# TODO: check for 'EQUALS' for lambdas
-		ame = AnonymousMethodExpr(token, params, returnTypeId)
-		_expectAnonymousMethodExprStack.push(ame)
-		return ame
+		if .optional('ASSIGN')
+			expr = .expression
+			return LambdaExpr(token, params, nil, expr)
+		else
+			returnTypeId = if(.optional('AS'), .typeId, nil)
+			ame = AnonymousMethodExpr(token, params, returnTypeId)
+			_expectAnonymousMethodExprStack.push(ame)
+			return ame
 
 	def forExpr as ForExpr
 		"""

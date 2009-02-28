@@ -290,39 +290,25 @@ class NameExpr
 			return _definition.typeForReceiver.memberForName(name)
 
 
-class AnonymousMethodExpr
-	is partial
+class AnonymousExpr
+	is abstract, partial
 	inherits Expr
-	implements HasAddStmt
 	"""
-	Also called "closures".
+	The abstract base class for LambdaExpr and AnonymousMethodExpr.
 	"""
 	
-	var _method as AnonymousMethod?
 	var _returnTypeProxy as ITypeProxy?
 
 	def init(token as IToken, params as List<of Param>, returnTypeProxy as ITypeProxy?)
 		base.init(token)
 		_params = params
-		_stmts = List<of Stmt>()
 		_returnTypeProxy = returnTypeProxy
-
-	get params from var as List<of Param>
-
-	get stmts from var as List<of Stmt>
 	
-	def addStmt(stmt as Stmt)
-		_stmts.add(stmt)
+	get params from var as List<of Param>
 
 	def addSubFields
 		base.addSubFields
 		.addField('params', .params)
-
-	get hasError as bool
-		return base.hasError or _method.hasError
-
-	get willChangeVar as bool is override
-		return base.willChangeVar
 
 	def toCobraSource as String is override
 		sb = StringBuilder('do(')
@@ -335,6 +321,30 @@ class AnonymousMethodExpr
 		sb.append(')')
 		return sb.toString
 
+
+class AnonymousMethodExpr
+	is partial
+	inherits AnonymousExpr
+	implements HasAddStmt
+	"""
+	Also called "closures".
+	"""
+	
+	var _method as AnonymousMethod?
+	var _returnTypeProxy as ITypeProxy?
+
+	def init(token as IToken, params as List<of Param>, returnTypeProxy as ITypeProxy?)
+		base.init(token, params, returnTypeProxy)
+		_stmts = List<of Stmt>()
+
+	get stmts from var as List<of Stmt>
+	
+	def addStmt(stmt as Stmt)
+		_stmts.add(stmt)
+
+	get hasError as bool
+		return base.hasError or _method.hasError
+
 	def _bindImp is override
 		base._bindImp
 		_method = AnonymousMethod(.token, .curCodeMember, .params, _returnTypeProxy, if(.curCodeMember.isShared, ['shared'], List<of String>()))
@@ -342,6 +352,42 @@ class AnonymousMethodExpr
 		_method.bindInt
 		_method.bindImp
 		_type = _method.resultType
+
+
+class LambdaExpr
+	is partial
+	inherits AnonymousExpr
+	"""
+	... do(a as int, b as int)=a.compareTo(b) ...
+	"""
+
+	def init(token as IToken, params as List<of Param>, returnTypeProxy as ITypeProxy?, expr as Expr)
+		base.init(token, params, returnTypeProxy)
+		_expr = expr
+
+	get expr from var as Expr
+	
+	def addSubFields
+		base.addSubFields
+		.addField('expr', .expr)
+
+	get hasError as bool
+		return base.hasError or _expr.hasError
+
+	def toCobraSource as String is override
+		sb = StringBuilder(base.toCobraSource)
+		sb.append('=')
+		sb.append(.expr.toCobraSource)
+		return sb.toString
+
+	def _bindImp is override
+		base._bindImp
+		method = AnonymousMethod(.token, .curCodeMember, .params, .compiler.dynamicType, if(.curCodeMember.isShared, ['shared'], List<of String>()))
+		method.addStmt(ReturnStmt(.token.copy('RETURN', 'return'), .expr))
+		method.bindInt
+		method.bindImp
+		_type = .compiler.passThroughType # TODO: Set a real type such as .compiler.delegateType
+		# method.lambdaReturnType
 
 
 class AsExpr

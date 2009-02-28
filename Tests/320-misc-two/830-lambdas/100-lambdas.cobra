@@ -1,0 +1,95 @@
+class Platform
+
+	def init(name as String)
+		_name = name
+
+	get name from var as String
+
+	def equals(other as Object?) as bool is override
+		if other is this, return true
+		if other inherits Platform
+			return .name == other.name
+		else
+			return false
+
+	def getHashCode as int is override
+		return .name.getHashCode
+
+	def toString as String is override
+		return .name
+
+
+sig ArithmeticOp(a as int, b as int) as int
+
+sig SimpleMethod as int
+
+
+class Test
+
+	def main is shared
+		t = Test()
+		t.testDelegates
+	
+	get two as int
+		return 2
+
+	def testDelegates
+		nonsorted = [Platform('Linux'), Platform('MS Windows'), Platform('Apple')]
+		sorted = [Platform('Apple'), Platform('Linux'), Platform('MS Windows')]
+		assert nonsorted <> sorted
+		
+		# sort with ref
+		t = List<of Platform>(nonsorted)
+		assert t == nonsorted and t <> sorted
+		t.sort(ref .comparePlatforms)
+		assert t == sorted and t <> nonsorted
+		
+		# sort with lamda with explicitly typed arguments and implicit return type
+		t = List<of Platform>(nonsorted)
+		assert t == nonsorted and t <> sorted
+		t.sort(do(a as Platform, b as Platform)=a.name.compareTo(b.name))
+		assert t == sorted and t <> nonsorted
+		
+/#
+		# sort with lambda with implicitly typed arguments and implicit return type
+		Not supported by C# or Cobra at this point. Might be nice to have.
+		t = List<of Platform>(nonsorted)
+		assert t == nonsorted and t <> sorted
+		t.sort(do(a, b)=a.name.compareTo(b.name))
+		assert t == sorted and t <> nonsorted
+#/
+
+		# use lambda in a more complex statement
+		assert 12 == .callArithmeticOp(3, 4, do(a as int, b as int)=a*b)
+
+		# access members
+		assert 24 == .callArithmeticOp(3, 4, do(a as int, b as int)=a*b*.two)
+
+		# access local vars
+		multiplier = 10
+		assert 120 == .callArithmeticOp(3, 4, do(a as int, b as int)=a * b * multiplier)
+
+		# no parameters
+		count = 0
+		.invoke(do=count+=1)
+		assert count == 1
+
+		# inside a control statement
+		if true
+			t = List<of Platform>(nonsorted)
+			assert t == nonsorted and t <> sorted
+			t.sort(do(a as Platform, b as Platform)=a.name.compareTo(b.name))
+			assert t == sorted and t <> nonsorted
+
+	def comparePlatforms(a as Platform, b as Platform) as int
+		return a.name.compareTo(b.name)
+	
+	def callArithmeticOp(a as int, b as int, op as ArithmeticOp) as int
+		return op(a, b)
+
+	def invoke(method as SimpleMethod)
+		method()
+
+	var _clickCount as int
+	
+	event onClick as EventHandler

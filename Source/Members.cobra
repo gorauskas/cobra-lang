@@ -550,6 +550,11 @@ class AnonymousMethod
 	get englishName as String is override
 		return 'anonymous method'
 
+	get hasReturnStmt as bool is override
+		# the second boolean term is to prevent an extra error in _bindImp for lambdas,
+		# although it's not clear to me why this extra guard is needed
+		return base.hasReturnStmt or (_stmts.count > 0 and _stmts[0] inherits ReturnStmt)
+		
 	get hasVariArgs as bool
 		return false
 
@@ -561,6 +566,15 @@ class AnonymousMethod
 
 	get shouldBeVirtual as bool is override
 		return false
+
+	def lambdaReturnType as IType
+		""" This is a service method for LambdaExpr. """
+		require .didBindInt and .didBindImp
+		stmt = _stmts[0]
+		if stmt inherits ReturnStmt
+			return stmt.expr.type to !
+		else
+			throw FallThroughException(stmt)
 
 	def _bindInt is override
 		base._bindInt
