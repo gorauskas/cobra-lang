@@ -970,10 +970,9 @@ class Box
 
 	def writeSharpDef(sw as SharpWriter)
 		base.writeSharpDef(sw)
+		if .isExtern, return
 		.compiler.boxStack.push(this)
 		try
-			if .isExtern
-				return
 			assert not .isConstructed
 			.writeSharpAttribs(sw)
 			.writeSharpIsNames(sw)
@@ -999,11 +998,15 @@ class Box
 			if _testMethod
 				_testMethod.writeSharpDef(sw)
 			for decl in _declsInOrder
+				if not .willWriteDeclSharpDef(decl), continue
 				.compiler.boxMemberStack.push(decl)
 				try
+/#
+delme
 					if decl inherits BoxMember
 						if decl.parentBox is not this  # skip extension methods that were not declared in this box
 							continue
+#/
 					decl.writeSharpDef(sw)
 				finally
 					.compiler.boxMemberStack.pop
@@ -1013,6 +1016,9 @@ class Box
 			sw.write('\n')
 		finally
 			.compiler.boxStack.pop
+
+	def willWriteDeclSharpDef(decl) as bool
+		return true
 
 	def writeSharpAttribs(sw as SharpWriter)
 		for attrib in _attribs
@@ -1169,6 +1175,33 @@ class Interface
 
 	def writeSharpTestInvocation(sw as SharpWriter) is override
 		pass
+
+
+class Mixin
+	is partial
+
+	get sharpName as String
+		name = base.sharpName
+		if .canHaveStatements
+			name += 'Mixin'
+		return name
+		
+	get sharpKeyWord as String is override
+		return if(.canHaveStatements, 'class', 'interface')
+
+	def willWriteDeclSharpDef(decl) as bool is override
+		return not decl inherits BoxVar
+
+	def writeSharpDef(sw as SharpWriter)
+		# write the interface
+		_canHaveStatements = false
+		base.writeSharpDef(sw)
+/#
+		# write the class
+		_sharpRef = nil
+		_canHaveStatements = true
+		base.writeSharpDef(sw)
+#/
 
 
 class Struct
@@ -1842,7 +1875,7 @@ class Method
 				if param inherits GenericParam
 					param.writeSharpConstraint(sw)
 			sw.dedent
-		if .isInterfaceMember and not .isExtensionMember
+		if not .parentBox.canHaveStatements
 			sw.write(';\n')
 		else
 			if .isAbstract, sw.writeLine(';')
@@ -1884,19 +1917,15 @@ class ProperDexer
 		sw.write(' {\n')
 		sw.indent
 		if _getPart
-			if .isAbstract or .isInterfaceMember
+			if .isAbstract or not .parentBox.canHaveStatements
 				sw.write('\tget;\n')
-			else if .isClassMember or .isStructMember
+			else
 				_getPart.writeSharpDef(sw)
-			else
-				throw FallThroughException(this)
 		if _setPart
-			if .isAbstract or .isInterfaceMember
+			if .isAbstract or not .parentBox.canHaveStatements
 				sw.write('\tset;\n')
-			else if .isClassMember or .isStructMember
-				_setPart.writeSharpDef(sw)
 			else
-				throw FallThroughException(this)
+				_setPart.writeSharpDef(sw)
 		sw.dedent
 		sw.write('}\n')
 

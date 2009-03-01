@@ -113,6 +113,14 @@ class Box
 		# TODO: use a class level attribute instead of hard-coded names. DetailedStackTrace(false)
 		return .name not in @['CobraFrame', 'SourceSite']  # otherwise, stack overflow
 
+	get canHaveStatements as bool
+		"""
+		Returns true if the members of the box can contain statements.
+		Returns true by default.
+		Interfaces return false (in contrast to classes, structs, mixins and extensions).
+		"""
+		return true
+
 	get constructedTypes as IDictionary<of String, Box>
 		"""
 		The return value is a shallow copy to prevent outside modification of a generic's constructedTypes cache.
@@ -982,7 +990,7 @@ class Box
 	def typeForGenericParam(gp as GenericParam) as IType # TODO: is this needed for NilableType?
 		"""
 		Returns the specific type arg that corresponds to the given generic
-		parameter. Used to match the gp's in method, properties, etc. against
+		parameter. Used to match the generic params in method, properties, etc. against
 		the actual types in a constructed type.
 		"""
 		require
@@ -1002,26 +1010,53 @@ class Box
 		return false
 
 
+class ClassOrStruct
+	is abstract, partial
+	inherits Box
+	"""
+	The abstract base class for Class and Struct.
+	"""
+	
+	var _addsProxies as List<of ITypeProxy>
+	
+	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, implementsNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
+		base.init(token, name, paramList, isNames, attribs, implementsNodes, docString)
+		_addsProxies = addsProxies
+
+	def _bindInh
+		# mixins act as interfaces (and more)
+		for proxy in _addsProxies
+			_baseInterfaceProxies.add(proxy)
+		base._bindInh
+
+	def _bindInt
+		# inject mixins
+		for interf in _baseInterfaces
+			if interf inherits Mixin
+				interf.injectInto(this)
+		base._bindInt
+
+
 class Class
 	is partial
-	inherits Box
+	inherits ClassOrStruct
 
 	var _baseNode as ITypeProxy?
 	var _subclasses = List<of Class>()
 
-	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseNode as ITypeProxy?, implementsNodes as List<of ITypeProxy>, docString as String?)
-		base.init(token, name, paramList, isNames, attribs, implementsNodes, docString)
+	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseNode as ITypeProxy?, implementsNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
+		base.init(token, name, paramList, isNames, attribs, implementsNodes, addsProxies, docString)
 		_baseNode = baseNode
 
 	def init(nativeType as NativeType)
 		# TODO: fix native
-		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
+		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), List<of ITypeProxy>(), nil)
 		if nativeType.baseType
 			_baseNode = ClrTypeProxy(nativeType.baseType to ClrNativeType)  # TODO: fix native. Change to NativeTypeProxy
 		_initNativeType(nativeType)
 
-	def addSubFields
-		base.addSubFields
+	def addRefFields
+		base.addRefFields
 		.addField('baseNode', _baseNode)
 
 	get isCallable as bool is override
@@ -1153,6 +1188,61 @@ class Class
 		return 'class'
 
 
+class Mixin
+	is partial
+	inherits Interface
+
+	# Hilarious! The implementation of Mixin would benefit from having mixins in the language
+	# because we need them for class, struct and mixin, but not for interfaces. Awesome!  :-)
+	
+	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseNode as ITypeProxy?, implementsNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
+		base.init(token, name, paramList, isNames, attribs, implementsNodes, docString)
+		# there are restrictions on mixins which may be relaxed in the future
+		assert baseNode is nil
+		assert implementsNodes.count == 0
+		assert addsProxies.count == 0
+		_addsProxies = addsProxies
+
+	var _canHaveStatements = true
+	
+	get canHaveStatements as bool is override
+		return _canHaveStatements
+
+	var _addsProxies as List<of ITypeProxy>
+	
+	def _bindInt
+		# mixins act as interfaces (and more)
+		for proxy in _addsProxies
+			_baseInterfaceProxies.add(proxy)
+		base._bindInt
+
+	def injectInto(box as Box)
+		for member in .declsInOrder  # TODO: deal with inheritance if mixins are allowed to have mixins added to them
+			# TODO: deal with overloads
+			if member inherits Method
+				method = Method(member.token, box, member.name, member.genericParams, member.params, member.resultType, nil/#implementsTypeNode#/, member.isNames, member.attributes, member.docString)
+				# TODO: contracts? tests?
+				for stmt in member.statements
+					method.addStmt(stmt.clone)
+				box.addDecl(method)
+			else if member inherits Property
+				prop = Property(member.token, box, member.name, member.returnType, member.isNames, member.attributes, member.docString)
+				if member.getPart
+					getPart = prop.makeGetPart(member.getPart.token)
+					for stmt in member.getPart.statements
+						getPart.addStmt(stmt.clone)
+				if member.setPart
+					setPart = prop.makeSetPart(member.setPart.token)
+					for stmt in member.setPart.statements
+						setPart.addStmt(stmt.clone)
+				box.addDecl(prop)
+			else if member inherits BoxField
+				box.addDecl(member)
+			else
+				# TODO: warning?
+				pass
+
+
 class Interface
 	is partial
 	inherits Box
@@ -1163,6 +1253,9 @@ class Interface
 	def init(nativeType as NativeType)
 		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
 		_initNativeType(nativeType)
+
+	get canHaveStatements as bool is override
+		return false
 
 	get englishName as String is override
 		return 'interface'
@@ -1191,13 +1284,13 @@ class Interface
 
 class Struct
 	is partial
-	inherits Box
+	inherits ClassOrStruct
 
-	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseName as String?, interfaceNodes as List<of ITypeProxy>, docString as String?)
-		base.init(token, name, paramList, isNames, attribs, interfaceNodes, docString)
+	def init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseName as String?, interfaceNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
+		base.init(token, name, paramList, isNames, attribs, interfaceNodes, addsProxies, docString)
 
 	def init(nativeType as NativeType)
-		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
+		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), List<of ITypeProxy>(), nil)
 		_initNativeType(nativeType)
 
 	get englishName as String is override
@@ -1259,7 +1352,7 @@ class MethodSig
 	var _returnType as IType?
 
 	def init(token as IToken, parent as IParentSpace?, name as String, params as List<of Param>, returnTypeProxy as ITypeProxy, isNames as List<of String>, attribs as AttributeList, docString as String)
-		base.init(token, name, List<of IType>(), isNames, attribs, LibraryTypeProxy('System.MulticastDelegate'), List<of ITypeProxy>(), docString)
+		base.init(token, name, List<of IType>(), isNames, attribs, LibraryTypeProxy('System.MulticastDelegate'), List<of ITypeProxy>(), List<of ITypeProxy>(), docString)
 		_initParent(parent)
 		_params = params
 		_returnTypeProxy = returnTypeProxy

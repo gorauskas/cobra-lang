@@ -349,6 +349,8 @@ class CobraParser
 #						what = .importDirective
 					on 'CLASS'
 						what = .classDecl
+					on 'MIXIN'
+						what = .mixinDecl
 					on 'INTERFACE'
 						what = .interfaceDecl
 					on 'SIG'
@@ -502,6 +504,7 @@ class CobraParser
 			generic constraints
 			inheritance
 			implements interfaces
+			adds mixins
 		
 		These results are returned in a TypeSpecs instance, but note that the generic constraints
 		are attached directly to their generic parameters.
@@ -517,6 +520,7 @@ class CobraParser
 		attribs = AttributeList()
 		inheritsProxies = List<of ITypeProxy>()
 		implementsProxies = List<of ITypeProxy>()
+		addsProxies = List<of ITypeProxy>()
 
 		encountered = List<of String>()  # token types		
 		didIndent = false
@@ -567,6 +571,20 @@ class CobraParser
 								break
 							else if .peek.isKeyword
 								break
+				on 'ADDS'
+					if .optional('ADDS')
+						expectComma = false
+						while true
+							if expectComma
+								if .peek.isKeyword, break
+								.expect('COMMA')
+							addsProxies.add(.typeId)
+							expectComma = true
+							if .peek.which == 'EOL'
+								.grab
+								break
+							else if .peek.isKeyword
+								break
 				else
 					isDone = true
 			if last in ['EOL', 'INDENT'], continue
@@ -575,7 +593,7 @@ class CobraParser
 				.throwError('Encountered "[last]" twice.')
 			encountered.add(last)
 		if not didIndent, .indent
-		return TypeSpecs(isNames, attribs, inheritsProxies, implementsProxies)
+		return TypeSpecs(isNames, attribs, inheritsProxies, implementsProxies, addsProxies)
 
 	def endOfTypeSpecClause
 		"""
@@ -617,12 +635,12 @@ class CobraParser
 		typeSpecs = .typeSpecDecls(token, genericParams)
 		inheritsProxy as ITypeProxy?
 		if typeSpecs.inheritsProxies.count > 1
-			.throwError('Cannot inherit from multiple types. Put classes after "inherits" and interfaces after "implements".')
+			.throwError('Cannot inherit from multiple types. Put classes after "inherits", interfaces after "implements" and mixins after "adds".')
 		else if typeSpecs.inheritsProxies.count == 1
 			inheritsProxy = typeSpecs.inheritsProxies[0]
 		docString = .docString
 		
-		theClass = Class(token, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, inheritsProxy, typeSpecs.implementsProxies, docString)
+		theClass = Class(token, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, inheritsProxy, typeSpecs.implementsProxies, typeSpecs.addsProxies, docString)
 
 		# TODO when supporting nested classes, look at the _boxStack and set a back pointer here
 		_boxStack.push(theClass)
@@ -763,6 +781,45 @@ class CobraParser
 			name += '>'
 		return name
 
+	def mixinDecl as Mixin
+		token = .expect('MIXIN')
+		peek = .peek.which
+		if peek == 'ID'
+			token = .expect('ID')
+			name = token.value to String
+		else if peek == 'OPEN_GENERIC'
+			token = .expect('OPEN_GENERIC')
+			name = token.value to String
+		else if peek == 'OPEN_CALL'
+			.throwError(_syntaxForClassInheritanceMsg)
+		else
+			.throwError('Expecting a name.')
+		if name[0] not in _uppercaseLetters
+			.throwError('Mixin names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
+
+		genericParams = .declGenericParams(token)
+		name = .nameForDeclGenericParams(token, genericParams)
+		typeSpecs = .typeSpecDecls(token, genericParams)
+		inheritsProxy as ITypeProxy?
+		# note: these restrictions may be temporary
+		if typeSpecs.inheritsProxies.count > 0
+			.throwError('Mixins cannot inherit from other types.')
+		if typeSpecs.implementsProxies.count > 0
+			.throwError('Mixins cannot implement interfaces.')
+		if typeSpecs.addsProxies.count > 0
+			.throwError('Mixins cannot add other mixins.')
+		docString = .docString
+		
+		theMixin = Mixin(token, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, inheritsProxy, typeSpecs.implementsProxies, typeSpecs.addsProxies, docString)
+
+		# TODO when supporting nested classes, look at the _boxStack and set a back pointer here
+		_boxStack.push(theMixin)
+#		.isNamesStack = Stack<of String>
+		.bodiedBoxMemberDecls(theMixin)
+		_boxStack.pop
+
+		return theMixin
+
 	var _syntaxForInterfaceInheritanceMsg = 'The syntax for inheritance is to put "inherits BaseInterfaceA, BaseInterfaceB" on the following line, indented.'
 
 	def interfaceDecl as Interface
@@ -823,7 +880,7 @@ class CobraParser
 			.throwError('Structs cannot inherit. If you mean to implement an interface, use "implements" instead.')
 		docString = .docString
 
-		theStruct = Struct(token, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, nil, typeSpecs.implementsProxies, docString)
+		theStruct = Struct(token, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, nil, typeSpecs.implementsProxies, typeSpecs.addsProxies, docString)
 
 		# TODO when supporting nested classes, look at the boxStack and set a back pointer here
 		_boxStack.push(theStruct)
@@ -1266,8 +1323,8 @@ class CobraParser
 		if method.statements.count
 			if 'abstract' in isNames
 				.throwError('Cannot have statements for an abstract method.')
-			if curBox inherits Interface
-				.throwError('Cannot have statements for a method in an interface.')
+			if not curBox.canHaveStatements
+				.throwError('Cannot have statements for a method in an [curBox.englishName].')
 		else
 			if not 'abstract' in isNames and not curBox inherits Interface
 				.throwError('Missing statements. Use "pass" or other statements.')
@@ -1406,7 +1463,7 @@ class CobraParser
 			docString = .docString
 		else
 			# no additional specs
-			if not isAbstract and not curBox inherits Interface
+			if not isAbstract and curBox.canHaveStatements
 				.throwError('Missing body for property.')
 			if not hasIsNames
 				isNames = List<of String>(_isNamesStack)
@@ -1424,20 +1481,20 @@ class CobraParser
 				.testSection(prop to !)
 			getWord = .optional('GET')
 			if getWord
-				if isAbstract or curBox inherits Interface
+				if isAbstract or not curBox.canHaveStatements
 					prop.makeGetPart(getWord)
 				else
 					.indent
 					.statementsFor(prop.makeGetPart(getWord))
 			setWord = .optional('SET')
 			if setWord
-				if isAbstract or curBox inherits Interface
+				if isAbstract or not curBox.canHaveStatements
 					prop.makeSetPart(setWord)
 				else
 					.indent
 					.statementsFor(prop.makeSetPart(setWord))
 			if not getWord and not setWord
-				if isAbstract or curBox inherits Interface
+				if isAbstract or not curBox.canHaveStatements
 					prop.makeGetPart(TokenFix.empty)
 					prop.makeSetPart(TokenFix.empty)
 				else
@@ -1542,7 +1599,7 @@ class CobraParser
 			docString = .docString
 		else
 			# no additional specs
-			if not isAbstract and not curBox inherits Interface
+			if not isAbstract and curBox.canHaveStatements
 				.throwError('Missing body for property.')
 			if not hasIsNames
 				isNames = List<of String>(_isNamesStack)
@@ -1559,7 +1616,7 @@ class CobraParser
 				# TODO: what about abstract?
 				.testSection(prop to !)
 			part = if(getOrSet, prop.makeSetPart(token), prop.makeGetPart(token))
-			if isAbstract or curBox inherits Interface
+			if isAbstract or not curBox.canHaveStatements
 				.dedent
 			else
 				.statementsFor(part, prop)
@@ -3408,11 +3465,12 @@ class TypeSpecs
 	This is a results container for the parser.
 	"""
 	
-	cue init(isNames as List<of String>, attributes as AttributeList, inheritsProxies as List<of ITypeProxy>, implementsProxies as List<of ITypeProxy>)
+	cue init(isNames as List<of String>, attributes as AttributeList, inheritsProxies as List<of ITypeProxy>, implementsProxies as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>)
 		_isNames = isNames
 		_attributes = attributes
 		_inheritsProxies = inheritsProxies
 		_implementsProxies = implementsProxies
+		_addsProxies = addsProxies
 	
 	get isNames from var as List<of String>
 	
@@ -3421,3 +3479,5 @@ class TypeSpecs
 	get inheritsProxies from var as List<of ITypeProxy>
 	
 	get implementsProxies from var as List<of ITypeProxy>
+
+	get addsProxies from var as List<of ITypeProxy>
