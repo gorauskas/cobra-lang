@@ -3,6 +3,7 @@ Cobra Command Line Program (compiler and more)
 """
 
 use System.Diagnostics
+use System.Text.RegularExpressions
 
 
 class OptionSpec
@@ -433,11 +434,15 @@ class CommandLine
 
 	get versionString as String is shared
 		ensure Utils.countChars(result, c'.') == 2
+
 		# Can't just take CobraCore.versionDescription as is, because that will be the one from Snapshot,
 		# not the current Source directory. And Snapshot can be a final release such as '0.7.4' for a
 		# period of time where this Cobra source represents an svn-post-RELEASE.
-		return '0.8.0 post-release'
+		# Keep three components to the version number: X.Y.Z
 		
+		# return 'post 0.8.0, informal release 2009-03-01'
+		return '0.8.0 post-release'
+
 
 	var _startTime as DateTime
 	var _verbosity = 0
@@ -822,11 +827,13 @@ class CommandLine
 		_options['embed-run-time'] = true  # because the runtime is what we're building!
 
 		# embed the version
-		version = .versionString
+		reMatch = Regex(r'\d+\.\d+\.\d+').match(.versionString)
+		assert reMatch.success
+		version = reMatch.value to !
 		assert Utils.countChars(version, c'.') == 2  # ex: '0.8.0'
-		if ' ' in version or 'post' in version  # ex: '0.8.0 post'
+		if ' ' in .versionString or 'post' in .versionString  # ex: '0.8.0 post'
 			# 'post' versions have a fourth version component of 1, as opposed to 0
-			version = version.split[0] + '.1'   # ex: 0.8.0.1
+			version += '.1'
 			assert Utils.countChars(version, c'.') == 3
 		_options.addExtraUse('use System.Reflection')
 		_options.addExtraSource("assembly\n\thas AssemblyVersion('[version]')\n")

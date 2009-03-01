@@ -99,9 +99,9 @@ class InstallFromWorkspace
 
 	var _snapshotCompilerPath as String?
 	var _gacutil as String?
-	var _baseVersion as String?       # ex: '0.8.0'
+	var _baseVersion as String?       # ex: '0.8.0-post', '0.8.0-post-2009-03-01'
 	var _baseDir as String?           # ex: 'C:\Cobra', '/usr/local/cobra'
-	var _versionDir as String?        # ex: 'C:\Cobra\Cobra-0.8.0-post', '/usr/local/cobra/Cobra-0.8.1-post'
+	var _versionDir as String?        # ex: 'C:\Cobra\Cobra-0.8.0-post', 'C:\Cobra\Cobra-0.8.0-post-2009-03-01', '/usr/local/cobra/Cobra-0.8.1-post'
 	var _cobraCommandPath as String?  # ex: 'C:\Cobra\bin\cobra.bat', '/usr/local/cobra/bin/cobra'
 
 
@@ -398,11 +398,24 @@ class InstallFromWorkspace
 		re = Regex(r'\d+\.\d+\.\d+')
 		reMatch = re.match(output)
 		if reMatch.success
-			assert reMatch.index == 0
 			assert reMatch.value
 			_baseVersion = reMatch.value
 		else
 			.error('Could not extract base version number.')
+		_baseVersion += '-post'
+		# check for an informal release
+		parent = Path.getFullPath('..')
+		if File.exists('[parent][.slash]InformalRelease.text')
+			output = File.readAllText('[parent][.slash]InformalRelease.text')
+			re = Regex(r'\d+\-\d+\-\d+')
+			reMatch = re.match(output)
+			if reMatch.success
+				assert reMatch.value
+				_baseVersion += '-' + reMatch.value
+			else
+				.error('Could not extract date from InformalRelease.text')
+		print 'base version: [_baseVersion]'
+		print
 
 	def buildCobraLibrary
 		.startStage('Build Cobra standard library')
@@ -446,7 +459,7 @@ class InstallFromWorkspace
 
 		.requireDir(baseDir)
 		
-		versionDir = '[baseDir][slash]Cobra-[_baseVersion]-post'
+		versionDir = '[baseDir][slash]Cobra-[_baseVersion]'
 		.deleteDir(versionDir)
 		.requireDir(versionDir)
 		_versionDir = versionDir
@@ -486,16 +499,20 @@ class InstallFromWorkspace
 				f.writeLine('@"[versionDir][slash]bin[slash]cobra.exe" %*')
 			print
 
-		# record "svn info" in the installation directory
-		try 
-			output = .runCommand('svn', 'info', false)
-		catch ex as SystemException
-			# user could be on TortoiseSVN
-			print 'svn is not installed or it is not in the PATH. ' + ex.message
-		success
-			svnInfo = '[versionDir][slash]svn_info.text'
-			print 'writing  :', svnInfo
-			File.writeAllText(svnInfo, output)
+		output = ''
+		if File.exists('[parent][slash]InformalRelease.text')
+			output = File.readAllText('[parent][slash]InformalRelease.text')
+		else
+			# record "svn info" in the installation directory
+			try
+				output = .runCommand('svn', 'info', false)
+			catch ex as SystemException
+				# user could be on TortoiseSVN
+				print 'svn is not installed or it is not in the PATH. ' + ex.message
+		if output <> ''
+			fileName = '[versionDir][slash]Version.text'
+			print 'writing  :', fileName
+			File.writeAllText(fileName, output)
 		print
 
 	def verifyNewlyInstalledCobra
