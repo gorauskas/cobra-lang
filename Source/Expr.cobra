@@ -704,7 +704,7 @@ class CallExpr
 					if not arg.didBindImp
 						trace arg
 						trace arg.hasError
-					if arg.type == param.type
+					if arg.type == param.type or arg.type == param.type.nonNil
 						score += 20
 					else if arg.canBeAssignedTo(param.type)
 						score += 10
@@ -722,9 +722,28 @@ class CallExpr
 		maxScore = -10_000
 		winner = nil to BoxMember?
 		for pair in candidates
+			if false, print pair[0], (pair[1] to BoxMember).idString
 			if pair[0] to int > maxScore
 				maxScore = pair[0] to int
 				winner = pair[1] to BoxMember
+
+		if false
+			# detect overload invocation ambiguity
+			# TODO: not ready for this yet
+			count = 0
+			for pair in candidates
+				if pair[0] to int == maxScore
+					count += 1
+			if count > 1
+				# TODO: do this for indexing too
+				msg = 'The call is ambiguous between these methods: '
+				sep = ''
+				for pair in candidates
+					if pair[0] to int == maxScore
+						msg += sep + (pair[1] to AbstractMethod).cobraSourceSignature(false)
+						sep = ', '
+				.throwError(msg)
+
 		if false
 			print
 			trace .token.fileName
@@ -2106,6 +2125,8 @@ class TruthExpr
 			_treatment = Treatment.CompareToZeroChar
 		else if type inherits VoidType
 			.throwError('Cannot determine truth because the method does not return a value.')
+		else if type inherits Struct
+			.throwError('Cannot determine truth from an arbitrary struct.')
 		else
 			throw FallThroughException(this)
 		if type.isReference and not type inherits NilableType and not type inherits NilType and not type inherits PassThroughType and not type inherits DynamicType
