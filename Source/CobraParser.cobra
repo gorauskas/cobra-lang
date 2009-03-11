@@ -269,29 +269,6 @@ class CobraParser
 		while .optional('EOL'), pass
 		.expect('DEDENT')
 
-	def indentIsDeclNames as List<of String>
-		"""
-		Parses indentation followed by "is" names, or "is" names followed by indentation.
-		Example 1:
-			def main is shared
-				pass
-		Example 2:
-			def main
-				is shared
-				pass
-		In either case, returns the list of "is" names or nil if there were none.
-		"""
-		if .peek.which=='IS'
-			isNames = .isDeclNames
-			.expect('INDENT')
-			return isNames
-		else
-			if .optionalIndent
-				return .isDeclNames
-			else
-				.expect('INDENT')
-				return List<of String>()
-
 	def optionalIndent as IToken?
 		"""
 		Consumes and warns about COLON not being necessary.
@@ -704,8 +681,6 @@ class CobraParser
 			assert expr.left inherits IdentifierExpr or expr.left inherits DotExpr
 		return expr
 			
-	var _validIsNames as List<of String>?
-
 	def isDeclNames as List<of String>
 		"""
 		Example source:
@@ -718,16 +693,27 @@ class CobraParser
 			['private', 'shared']
 		Errors:
 			TODO
-		Used by: classDecl, interfaceDecl, enumDecl, indentIsDeclNames
+		Used by: classDecl, interfaceDecl, enumDecl
 		"""
-		if _validIsNames is nil
-			_validIsNames = ['fake', 'extern', 'shared', 'virtual', 'nonvirtual', 'override', 'new', 'public', 'protected', 'private', 'internal', 'abstract', 'partial']
+		hasIsNames = false
+		names = _isDeclNamesNoEOL(out hasIsNames)
+		if hasIsNames
+			.endOfTypeSpecClause
+		# TODO: error on virtual and override
+		# TODO: error on virtual and shared
+		# TODO: error if 2 or more of 'public', 'protected', 'private', 'internal'
+		return names
+
+	def _isDeclNamesNoEOL(hasIsNames as out bool) as List<of String>
+		""" Parse for possible stream of isNames without terminating EOL. """
 		names = List<of String>(_isNamesStack)
+		hasIsNames = false
 		if .optional('IS') is nil
 			return names
+		hasIsNames = true
 		while true
 			what = .grab.text
-			if what in _validIsNames
+			if what in .validIsNames
 				if what == 'fake'
 					_warning(.last, '"fake" has been deprecated. Use "extern" instead.')  # deprecated on 2008-10-03
 					what = 'extern'
@@ -735,14 +721,20 @@ class CobraParser
 			else
 				.throwError('Not expecting "[what]".')
 			if not .optional('COMMA')
-				if .peek.text in _validIsNames
+				if .peek.text in .validIsNames
 					.throwError(.peek, 'Multiple access modifiers should be separated by commas such as "[what], [.peek.text]".')
 				break
-		.endOfTypeSpecClause
 		# TODO: error on virtual and override
 		# TODO: error on virtual and shared
 		# TODO: error if 2 or more of 'public', 'protected', 'private', 'internal'
 		return names
+
+	var _validIsNames as List<of String>?
+
+	get validIsNames as List<of String>
+		if _validIsNames is nil
+			_validIsNames = ['fake', 'extern', 'shared', 'virtual', 'nonvirtual', 'override', 'new', 'public', 'protected', 'private', 'internal', 'abstract', 'partial']
+		return _validIsNames to !
 
 	def declGenericParams(token as IToken) as List<of GenericParam>
 		"""
@@ -1519,26 +1511,15 @@ class CobraParser
 		else
 			varName = .expect('ID').text
 		declVarType = if(.optional('AS'), .typeId, nil)
-		if declVarType
-			varDef = BoxVar(token, .curBox, varName, declVarType, List<of String>(_isNamesStack), nil, nil, 'Automatic backing var for property "[name]".')
-			.curBox.addDecl(varDef)
-		else
-			possibleVarDef = .curBox.declForName(varName)
-			if possibleVarDef is nil
-				.throwError('There is no variable named "[varName]" to match the property "[name]".')
-			if possibleVarDef inherits BoxVar
-				varDef = possibleVarDef
-			else
-				.throwError('A property can only cover for variables. [varName] is a [possibleVarDef]')  # TODO: .englishName?
 		if .curBox inherits Interface
 			.throwError('Cannot use the "from" form of a property inside an interface declaration.')
 		if .peek.which == 'IS'
-			isNames = .isDeclNames
-			hasIsNames = true
-			indent = .optional('INDENT')
-		else
-			indent = .optionalIndent		
-		if indent
+			hasIsNames = false
+			isNames = _isDeclNamesNoEOL(out hasIsNames)
+		if .optional('ASSIGN')
+			initExpr = .expression to ?
+		.endOfLine
+		if .optional('INDENT')
 			if not hasIsNames, isNames = .isDeclNames
 			attribs = .hasAttribs
 			docString = .docString
@@ -1547,8 +1528,27 @@ class CobraParser
 			if not hasIsNames, isNames = List<of String>(_isNamesStack)
 			attribs = AttributeList()
 			docString = ''
+		varDef = _genVarDef(declVarType, token, name, varName, initExpr)
 		return Property(token, .curBox, name, isNames, attribs, varDef, coverWhat, docString)
-
+		
+	def _genVarDef(declVarType as ITypeProxy?, token as IToken, name as String, varName as String, initExpr as Expr?) as BoxVar
+		""" Find existing backing variable for property or make one and return it.""" 
+		possibleVarDef = .curBox.declForName(varName)
+		if not possibleVarDef
+			if not initExpr and not declVarType
+				.throwError('There is no variable named "[varName]" to match the property "[name]".')
+			varDef = BoxVar(token, .curBox, varName, declVarType, List<of String>(_isNamesStack), initExpr, nil, 'Automatic backing var for property "[name]".')
+			.curBox.addDecl(varDef)
+			return varDef
+				
+		if  possibleVarDef inherits BoxVar
+			varDef = possibleVarDef
+		else
+			.throwError('A property can only cover for variables. [varName] is a [possibleVarDef]')  # TODO: .englishName?
+		if initExpr and not varDef.setInitExpr(initExpr to !)	
+			.throwError('Property backing variable "[varName]" has already been initialised') # include line# of backing variable decl
+		return varDef
+			
 	def declareGetOnlyProperty as ProperDexer?
 		return _declareGetOrSetOnlyProperty(0)
 
