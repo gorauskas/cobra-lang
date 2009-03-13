@@ -1,0 +1,242 @@
+class Compiler is partial
+
+	def highlightFiles
+		require
+			.modules.count
+		body
+			Directory.createDirectory(.targetDirectory)
+			for mod in .modules
+				if mod inherits CobraModule
+					mod.writeHtmlHighlightedSource(.targetDirectory)
+
+	get targetDirectory as String
+		return 'gen-html'
+
+
+class CobraModule is partial
+
+	def writeHtmlHighlightedSource(targetDirectory as String)
+		source = File.readAllText(.fileName)
+
+		marks = Marks()
+
+		# first do token stream which covers all tokens including comments
+		# not expecting any errors here since we got past this phase before
+		tokenizer = CobraTokenizer(typeProvider=.typeProvider, willReturnComments=true)
+		tokens = tokenizer.startSource(.fileName, source).allTokens
+		marks.add(tokens)
+
+		# now do nodes -- gives better semantic highlighting than just tokens
+		.topNameSpace.highlight(marks)
+
+		htmlSource = marks.combine(source)
+		
+		htmlFileName = Path.combine(targetDirectory, .fileName + '.html')
+		print 'Writing [htmlFileName]'
+		using tw = File.createText(htmlFileName)
+			tw.writeLine('<html>')
+			tw.writeLine('<head>')
+			tw.writeLine('<title>[.fileName]</title>')
+			tw.writeLine('<link rel="stylesheet" href="../styles-cobra-doc.css" type="text/css">')
+			tw.writeLine('<link rel="stylesheet" href="../styles-cobra-shl.css" type="text/css">')
+			tw.writeLine('</head>')
+			tw.writeLine('<body>')
+			tw.writeLine('<pre class=shl>')
+			tw.write(htmlSource)
+			tw.writeLine('</pre>')
+			tw.writeLine('</body>')
+			tw.writeLine('</html>')
+
+
+class Marks
+	"""
+	A collection of marks as in "mark up".
+	Used for syntax highlighting of source files.
+	For example, source code could be rewritten as HTML with <span> tags for each mark.
+	"""
+
+	shared
+
+		var _ignoreTokens = Set<of String>()
+		var _invisibleTokens = {'DEDENT', 'EOL', 'INDENT'}
+		var _normalTokens = {
+			'BANG', 'COLON', 'COMMA', 'DOT', 'DOTDOT', 'LCURLY', 'LPAREN', 'QUESTION', 'RCURLY', 'RPAREN'
+		}
+
+		get ignoreTokens as Set<of String>
+			if _ignoreTokens.count == 0
+				_ignoreTokens.addRange(_invisibleTokens)
+				_ignoreTokens.addRange(_normalTokens)
+			return _ignoreTokens
+
+		var _tokenToStyleSpecs = [
+			'TRUE kw-s',
+			'FALSE kw-s',
+			'NIL kw-s',
+			'BASE kw-s',
+			'THIS kw-s',
+			
+			'CHAR_LIT_SINGLE lc',
+			'CHAR_LIT_DOUBLE lc',
+			'DIRECTIVE di',
+			'COMMA no',
+			'COMMENT c',
+			'DOC_STRING_START ds',
+			'DOC_STRING_BODY_TEXT ds',
+			'DOC_STRING_STOP ds',
+			'DOC_STRING_LINE ds',
+			'ID i',
+			'INTEGER_LIT li',
+			'STRING_DOUBLE ls',
+			'STRING_SINGLE ls',
+			'STRING_START_SINGLE ls',
+			'STRING_PART_SINGLE ls',
+			'STRING_STOP_SINGLE ls',
+			'STRING_START_DOUBLE ls',
+			'STRING_PART_DOUBLE ls',
+			'STRING_STOP_DOUBLE ls',
+			'TOQ kw',
+		]
+
+		var _ops = 'ASSIGN EQ NE GT LT GE LE DOUBLE_GT LBRACKET RBRACKET PLUS MINUS STAR STARSTAR SLASH SLASHSLASH PERCENT MINUS_EQUALS PLUS_EQUALS'
+		
+		var _tokenToStyle = Dictionary<of String, String>()
+
+		get tokenToStyle as Dictionary<of String, String>
+			if _tokenToStyle.count == 0
+				for spec in _tokenToStyleSpecs
+					parts = spec.split
+					_tokenToStyle[parts[0]] = parts[1]
+				for op in _ops.split
+					_tokenToStyle[op] = 'op'
+			return _tokenToStyle
+
+	var _marks = Dictionary<of int, Mark>()
+
+	def init
+		pass
+
+	def add(tokens as IToken*)
+		ignoreTokens, tokenToStyle = .ignoreTokens, .tokenToStyle
+		for token in tokens
+			# print token.which, token.text, token.charNum, token.isKeyword
+			if token.which in ignoreTokens
+				pass
+			else if tokenToStyle.containsKey(token.which)
+				.add(token, tokenToStyle[token.which])
+			else if token.isKeyword
+				.add(token, 'kw')
+			else
+				charNum = token.charNum - 1
+				branch token.which
+					on 'OPEN_GENERIC'
+						.add(charNum, token.text.length-3, 'i', token.text[:-3])
+						.add(charNum+token.text.length-3, 2, 'kw', 'of')
+					on 'OPEN_CALL'
+						.add(charNum, token.text.length-1, 'i', token.text[:-1])
+					on 'OPEN_IF'
+						.add(charNum, token.text.length-1, 'kw', token.text[:-1])
+					on 'SHARP_SINGLE' or 'SHARP_DOUBLE'  # sharp'...'
+						.add(charNum, 5, 'kw', 'sharp')
+						.add(charNum+5, token.text.length-5, 'ls', token.text[5:])
+					else, print '*** unknown token type: [token.which]; [token]'
+
+	def add(token as IToken, kind as String)
+		.add(token.charNum-1, token.text.length, kind, token.text)
+
+	def add(charNum as int, length as int, kind as String)
+		.add(charNum, length, kind, '')
+		
+	def add(charNum as int, length as int, kind as String, text as String)
+		_marks[charNum] = Mark(charNum, length, kind, text)
+
+	def combine(plainSource as String) as String
+		# CC: TODO: next line causes exception in the compiler
+		# marks = _marks.values.toList.sorted
+		marks = List<of Mark>(_marks.values).sorted
+		closeSpansAt = Set<of int>()
+		ci = mi = 0
+		sb = StringBuilder()
+		for c in plainSource
+			if ci in closeSpansAt
+				sb.append('</span>')
+				closeSpansAt.remove(ci)
+			if mi < marks.count
+				mark = marks[mi]
+				if mark.charNum == ci
+					sb.append('<span class="shl-[mark.kind]">')
+					# sb.append('<span class="shl-[mark.kind]" what="[mark.text]">')
+					closeSpansAt.add(mark.charNum + mark.length)
+				while mi < marks.count and marks[mi].charNum <= ci
+					mi += 1
+			if c == '\t', sb.append('    ')
+			else, sb.append(c)
+			if c <> c'\r', ci += 1
+		return sb.toString
+
+
+class Mark implements IComparable<of Mark>
+
+	def init(charNum as int, length as int, kind as String, text as String)
+		require
+			charNum >= 0
+			length > 0
+			kind <> ''
+		body
+			_charNum, _length, _kind, _text = charNum, length, kind, text
+	
+	get charNum from var as int
+
+	get length from var as int
+		
+	get kind from var as String
+	
+	get text from var as String
+	
+	def toString as String is override
+		return '[.getType.name]([.charNum], [.length], [.kind], [.text])'
+
+	def compareTo(other as Mark) as int
+		diff = .charNum - other.charNum
+		if diff == 0
+			diff = .length - other.length
+			if diff == 0
+				diff = .kind.compareTo(other.kind)
+		return diff
+
+
+class Container<of TMember> is partial
+
+	def highlight(marks as Marks)
+		h = Highlighter(marks)
+		for decl as dynamic in .declsInOrder
+			h.dispatch(decl)
+
+
+class Highlighter inherits Visitor
+
+	def init(marks as Marks)
+		_marks = marks
+	
+	get methodName as String is override
+		return 'highlight'
+
+	get marks from var as Marks
+
+	def mark(token as IToken, kind as String)
+		.marks.add(token, kind)
+
+	def highlight(box as Box)
+		.mark(box.token, 'bdn')
+		for member in box.declsInOrder
+			.dispatch(member)
+
+	def highlight(member as BoxMember)
+		.mark(member.token, 'kw-md')
+	
+	def highlight(method as AbstractMethod)
+		.mark(method.token, 'kw-md')
+		.dispatch(method.statements)
+		
+	def highlight(stmt as Stmt)
+		.mark(stmt.token, 'kw')

@@ -71,6 +71,8 @@ class CobraTokenizer
 		sb.append('_inDocString=[_inDocString]')
 		sb.append('_inCommentBlock=[_inCommentBlock]')
 
+	pro willReturnComments from var as bool
+	
 	# Note: The Tokenizer class handles it's input one line at a time,
 	#       and retains the \n at the end of the line. This affects
 	#       the regex design for the tokens below.
@@ -294,12 +296,17 @@ class CobraTokenizer
 
 	def onWHITESPACE_COMMENT_1(tok as IToken) as IToken?
 		#print '<> onWHITESPACE_COMMENT_1'
-		.checkForCommentDirective(tok)
-		return nil
+		if .checkForCommentDirective(tok)
+			return tok
+		else
+			return .commentToken(tok)
 
 	def onWHITESPACE_COMMENT_2(tok as IToken) as IToken?
 		#print '<> onWHITESPACE_COMMENT_2'
-		.checkForCommentDirective(tok)
+		if .checkForCommentDirective(tok)
+			return tok
+		else
+			return .commentToken(tok)
 		return nil
 	
 	##
@@ -322,12 +329,12 @@ class CobraTokenizer
 				_commentBlockDefs = defs
 			.pushTokenDefs(_commentBlockDefs to !)
 		_inCommentBlock += 1
-		return nil
+		return .commentToken(tok)
 		
 	def onCOMMENT_BLOCK_LINE(tok as IToken) as IToken?
 		#print '<> onCOMMENT_BLOCK_LINE', tok.lineNum 
 		assert _inCommentBlock > 0, tok
-		return nil
+		return .commentToken(tok)
 		
 	def onCOMMENT_BLOCK_STOP(tok as IToken) as IToken?
 		#print '<> onCOMMENT_BLOCK_STOP', tok.lineNum
@@ -335,7 +342,7 @@ class CobraTokenizer
 		_inCommentBlock -= 1
 		if _inCommentBlock == 0
 			.popTokenDefs
-		return nil
+		return .commentToken(tok)
 
 	def onINDENT_MIXED_TSNS(tok as IToken) as IToken?
 		# expecting tabs, spaces, non-whitespace
@@ -417,17 +424,17 @@ class CobraTokenizer
 		return tok
 
 	def onSINGLE_LINE_COMMENT(tok as IToken) as IToken?
-		# eat these
-		.checkForCommentDirective(tok)
-		return nil
+		if .checkForCommentDirective(tok)
+			return tok
+		else
+			return .commentToken(tok)
 
 	def onINLINE_COMMENT(tok as IToken) as IToken?
-		# eat these
-		return nil
+		return .commentToken(tok)
 
 	def onAMBIGUOUS_COMMENT(tok as IToken) as IToken?
 		.throwError('Ambiguous comment at /#. For an end-of-line comment, put a space between / and #. For an inline comment, end it with #/. For a block comment, put /# at the beginning of a line.')
-		return nil
+		return .commentToken(tok)
 
 	def onSPACE(tok as IToken) as IToken?
 		# eat these
@@ -841,10 +848,11 @@ class CobraTokenizer
 
 	var _directiveRE = Regex(r'#\s?\.([\w\-]+)\.($|\s)', RegexOptions.Compiled)
 
-	def checkForCommentDirective(tok as IToken)
+	def checkForCommentDirective(tok as IToken) as bool
 		# check for .no-warnings.
 		reMatch = _directiveRE.match(tok.text)
 		if reMatch.success
+			tok.which = 'DIRECTIVE'
 			name = reMatch.groups[1].value
 			branch name
 				on 'no-warnings', .addNoWarning(tok)
@@ -858,6 +866,15 @@ class CobraTokenizer
 				on 'skip', pass
 				on 'warning', pass
 				else, .throwError('Unrecognized compiler directive "[name]".')
+			return true
+		return false
+
+	def commentToken(tok as IToken) as IToken?
+		if .willReturnComments
+			tok.which = 'COMMENT'
+			return tok
+		else
+			return nil
 
 
 class StringTokenDef
