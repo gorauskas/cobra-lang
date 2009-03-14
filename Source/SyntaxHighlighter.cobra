@@ -1,3 +1,10 @@
+"""
+The main test case for the syntax highlighter is the Cobra compiler itself:
+
+cobra -highlight -files:files-to-compile.text
+"""
+
+
 class Compiler is partial
 
 	def highlightFiles
@@ -142,7 +149,8 @@ class Marks
 					else, print '*** unknown token type: [token.which]; [token]'
 
 	def add(token as IToken, kind as String)
-		.add(token.charNum-1, token.text.length, kind, token.text)
+		if not token.isEmpty
+			.add(token.charNum-1, token.text.length, kind, token.text)
 
 	def add(charNum as int, length as int, kind as String)
 		.add(charNum, length, kind, '')
@@ -169,8 +177,13 @@ class Marks
 					closeSpansAt.add(mark.charNum + mark.length)
 				while mi < marks.count and marks[mi].charNum <= ci
 					mi += 1
-			if c == '\t', sb.append('    ')
-			else, sb.append(c)
+			branch c
+				on c'\t', sb.append('    ')
+				on c'<', sb.append('&lt')
+				on c'>', sb.append('&gt')
+				on c'&', sb.append('&amp;')
+				on c'"', sb.append('&quot;')
+				else, sb.append(c)
 			if c <> c'\r', ci += 1
 		return sb.toString
 
@@ -233,10 +246,13 @@ class Highlighter inherits Visitor
 
 	def highlight(member as BoxMember)
 		.mark(member.token, 'kw-md')
+		.mark(member.idToken, 'mdn')
 	
 	def highlight(method as AbstractMethod)
 		.mark(method.token, 'kw-md')
+		.mark(method.idToken, 'mdn')
 		.dispatch(method.statements)
 		
 	def highlight(stmt as Stmt)
-		.mark(stmt.token, 'kw')
+		if not stmt inherits Expr
+			.mark(stmt.token, 'kw')
