@@ -25,7 +25,7 @@ class CobraModule is partial
 	def writeHtmlHighlightedSource(targetDirectory as String)
 		source = File.readAllText(.fileName)
 
-		marks = Marks()
+		marks = Marks(.fileName)
 
 		# first do token stream which covers all tokens including comments
 		# not expecting any errors here since we got past this phase before
@@ -123,9 +123,11 @@ class Marks
 
 	var _marks = Dictionary<of int, Mark>()
 
-	def init
-		pass
+	def init(fileName as String)
+		_fileName = fileName
 
+	get fileName from var as String
+	
 	def add(tokens as IToken*)
 		ignoreTokens, tokenToStyle = .ignoreTokens, .tokenToStyle
 		for token in tokens
@@ -140,12 +142,11 @@ class Marks
 				charNum = token.charNum - 1
 				branch token.which
 					on 'OPEN_CALL'
-						.add(charNum, token.text.length-1, 'i', token.text[:-1])
+						.add(token, 'i')
 					on 'OPEN_DO'
 						.add(charNum, 2, 'kw', 'do')
 					on 'OPEN_GENERIC'
-						.add(charNum, token.text.length-3, 'i', token.text[:-3])
-						.add(charNum+token.text.length-3, 2, 'kw', 'of')
+						.add(token, 'i')
 					on 'OPEN_IF'
 						.add(charNum, token.text.length-1, 'kw', token.text[:-1])
 					on 'SHARP_SINGLE' or 'SHARP_DOUBLE'  # sharp'...'
@@ -156,8 +157,18 @@ class Marks
 					else, print '*** unknown token type: [token.which]; [token]'
 
 	def add(token as IToken, kind as String)
-		if not token.isEmpty
-			.add(token.charNum-1, token.text.length, kind, token.text)
+		# second check below guards against partial classes split across files
+		if not token.isEmpty and token.fileName.endsWith(.fileName)
+			# The OPEN_CALL and OPEN_GENERIC tokens come from multiple sources such as declarations
+			# and expressions. So we check for them here in one place.
+			charNum = token.charNum - 1
+			branch token.which
+				on 'OPEN_CALL'
+					.add(charNum, token.text.length-1, kind, token.text[:-1])
+				on 'OPEN_GENERIC'
+					.add(charNum, token.text.length-3, kind, token.text[:-3])
+					.add(charNum+token.text.length-3, 2, 'kw', 'of')
+				else, .add(charNum, token.text.length, kind, token.text)
 
 	def add(charNum as int, length as int, kind as String)
 		.add(charNum, length, kind, '')
@@ -180,6 +191,7 @@ class Marks
 				mark = marks[mi]
 				if mark.charNum == ci
 					sb.append('<span class="shl-[mark.kind]">')
+					# use next statement in place of above for debugging:
 					# sb.append('<span class="shl-[mark.kind]" what="[mark.text]">')
 					closeSpansAt.add(mark.charNum + mark.length)
 				while mi < marks.count and marks[mi].charNum <= ci
@@ -264,5 +276,5 @@ class Highlighter inherits Visitor
 		.dispatch(method.statements)
 		
 	def highlight(stmt as Stmt)
-		if not stmt inherits Expr
-			.mark(stmt.token, 'kw')
+		# nothing for now
+		pass
