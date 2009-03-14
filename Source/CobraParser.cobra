@@ -884,7 +884,8 @@ class CobraParser
 
 	def eventDecl as BoxEvent
 		token = .expect('EVENT')
-		name = .expect('ID').value to String
+		idToken = .expect('ID')
+		name = idToken.value to String
 		.expect('AS')
 		handlerType = .typeId
 		# ahem, duplicated from .boxVarDecl
@@ -905,7 +906,7 @@ class CobraParser
 			.dedent
 		else
 			attribs = AttributeList()
-		return BoxEvent(token, .curBox, name, isNames, attribs, docString, handlerType)
+		return BoxEvent(token, idToken, .curBox, name, isNames, attribs, docString, handlerType)
 
 	def enumDecl as EnumDecl
 		token = .expect('ENUM')
@@ -1148,19 +1149,19 @@ class CobraParser
 		.endOfLine
 
 	def boxFieldDecl(isVar as bool) as BoxField
-		.expect(if(isVar, 'VAR', 'CONST'))
-		tok = .expect('ID')
-		identifier = tok.text
-		other = .curBox.declForName(identifier)
+		token = .expect(if(isVar, 'VAR', 'CONST'))
+		idToken = .expect('ID')
+		name = idToken.text
+		other = .curBox.declForName(name)
 		if other
-			.throwError('The name "[identifier]" was already declared earlier.')  # TODO: show the location of the previous symbol
+			.throwError('The name "[name]" was already declared earlier.')  # TODO: show the location of the previous symbol
 		numUnderscores = 0
-		s = identifier
+		s = name
 		while s.startsWith('_')
 			s = s.substring(1)
 			numUnderscores += 1
 		if not s.length
-			.throwError('A class variable must be made of more than underscores. Try "[identifier]x" or "[identifier]1".')
+			.throwError('A class variable must be made of more than underscores. Try "[name]x" or "[name]1".')
 		if isVar and not s[0].isLower
 			sugg = String(c'_', numUnderscores) + s[0].toString.toLower + s[1:]
 			sugg = ' Try "[sugg]".'
@@ -1188,9 +1189,9 @@ class CobraParser
 			docString = .docString
 			.dedent
 		if isVar
-			field = BoxVar(tok, .curBox, identifier, type, isNames, initExpr, attribs, docString) to BoxField
+			field = BoxVar(token, idToken, .curBox, name, type, isNames, initExpr, attribs, docString) to BoxField
 		else
-			field = BoxConst(tok, .curBox, identifier, type, isNames, initExpr, attribs, docString)
+			field = BoxConst(token, idToken, .curBox, name, type, isNames, initExpr, attribs, docString)
 		return field
 				
 	def declareInvariant
@@ -1303,9 +1304,9 @@ class CobraParser
 				.throwError('Cannot declare a return type for an initializer.')
 			if implementsType
 				.throwError('Cannot specify `implements` for an initializer.')
-			method = Initializer(token, .curBox, params, isNames, attribs, docString)
+			method = Initializer(token, opener, .curBox, params, isNames, attribs, docString)
 		else
-			method = Method(token, .curBox, name, .makeList<of IType>(genericParams), params, returnType, implementsType, isNames, attribs, docString)
+			method = Method(token, opener, .curBox, name, .makeList<of IType>(genericParams), params, returnType, implementsType, isNames, attribs, docString)
 		if nothingMore
 			if not 'abstract' in isNames and not curBox inherits Interface
 				.throwError('Missing method body for "[name]".')
@@ -1348,7 +1349,7 @@ class CobraParser
 				
 	def declareMethodSig as MethodSig
 		require _typeProvider
-		token = .expect('SIG')
+		.expect('SIG')
 		opener = .grab
 		if opener.which not in ['ID', 'OPEN_CALL'] and not opener.isKeyword
 			.throwError('Encountered [opener.which] when expecting an identifier.')
@@ -1398,7 +1399,7 @@ class CobraParser
 			docString = .docString
 			.dedent
 
-		methodSig = MethodSig(token, curContainer to IParentSpace, name, params, returnType, isNames, attribs, docString)
+		methodSig = MethodSig(opener, curContainer to IParentSpace, name, params, returnType, isNames, attribs, docString)
 
 		return methodSig
 		
@@ -1423,14 +1424,16 @@ class CobraParser
 		token = .expect('PRO')
 		overload as MemberOverload?
 		if .optional('LBRACKET')
+			idToken = .last to !
 			params = .paramDecls(true, 'RBRACKET')
 			name = r'[]'
 			overload = _overloadIfNeeded(curBox, name)
 		else
-			name = .idOrKeyword.text
+			idToken = .idOrKeyword
+			name = idToken.text
 			.checkProperty(name)
 			if .optional('FROM')
-				return .declarePropertyFrom(token, name, 'getset')
+				return .declarePropertyFrom(token, idToken, name, 'getset')
 			params = List<of Param>()
 		if .optional('AS')
 			returnType = .typeId to ITypeProxy
@@ -1462,9 +1465,9 @@ class CobraParser
 			attribs = AttributeList()
 			docString = ''
 		if params.count
-			prop = Indexer(token, curBox, name, params, returnType, isNames, attribs, docString)
+			prop = Indexer(token, idToken, curBox, name, params, returnType, isNames, attribs, docString)
 		else
-			prop = Property(token, curBox, name, returnType, isNames, attribs, docString)
+			prop = Property(token, idToken, curBox, name, returnType, isNames, attribs, docString)
 		if indent
 			if .peek.which=='TEST'
 				if curBox inherits Interface
@@ -1504,7 +1507,7 @@ class CobraParser
 		else
 			return prop
 
-	def declarePropertyFrom(token as IToken, name as String, coverWhat as String) as Property
+	def declarePropertyFrom(token as IToken, idToken as IToken, name as String, coverWhat as String) as Property
 		require coverWhat in ['get', 'set', 'getset']
 		if .optional('VAR')
 			varName = '_' + name
@@ -1529,7 +1532,7 @@ class CobraParser
 			attribs = AttributeList()
 			docString = ''
 		varDef = _genVarDef(declVarType, token, name, varName, initExpr)
-		return Property(token, .curBox, name, isNames, attribs, varDef, coverWhat, docString)
+		return Property(token, idToken, .curBox, name, isNames, attribs, varDef, coverWhat, docString)
 		
 	def _genVarDef(declVarType as ITypeProxy?, token as IToken, name as String, varName as String, initExpr as Expr?) as BoxVar
 		""" Find existing backing variable for property or make one and return it.""" 
@@ -1539,7 +1542,7 @@ class CobraParser
 		if not possibleVarDef
 			if not initExpr and not declVarType
 				.throwError('There is no variable named "[varName]" to match the property "[name]".')
-			varDef = BoxVar(token, .curBox, varName, declVarType, List<of String>(_isNamesStack), initExpr, nil, 'Automatic backing var for property "[name]".')
+			varDef = BoxVar(token, Token.empty, .curBox, varName, declVarType, List<of String>(_isNamesStack), initExpr, nil, 'Automatic backing var for property "[name]".')
 			.curBox.addDecl(varDef)
 			return varDef
 				
@@ -1569,14 +1572,16 @@ class CobraParser
 		token = .expect(if(getOrSet, 'SET', 'GET'))
 		overload as MemberOverload?
 		if .optional('LBRACKET')
+			idToken = .last to !
 			params = .paramDecls(true, 'RBRACKET')
 			name = r'[]'
 			overload = _overloadIfNeeded(curBox, name)
 		else
-			name = .idOrKeyword.text
+			idToken = .idOrKeyword
+			name = idToken.text
 			.checkProperty(name)
 			if .optional('FROM')
-				return .declarePropertyFrom(token, name, if(getOrSet, 'set', 'get'))
+				return .declarePropertyFrom(token, idToken, name, if(getOrSet, 'set', 'get'))
 			params = List<of Param>()
 		if .optional('AS')
 			returnType = .typeId to ITypeProxy
@@ -1608,9 +1613,9 @@ class CobraParser
 			attribs = AttributeList()
 			docString = ''
 		if params.count
-			prop = Indexer(token, curBox, name, params, returnType, isNames, attribs, docString)
+			prop = Indexer(token, idToken, curBox, name, params, returnType, isNames, attribs, docString)
 		else
-			prop = Property(token, curBox, name, returnType, isNames, attribs, docString)
+			prop = Property(token, idToken, curBox, name, returnType, isNames, attribs, docString)
 		if indent
 			if .peek.which=='TEST'
 				if curBox inherits Interface

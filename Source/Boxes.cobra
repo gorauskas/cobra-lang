@@ -610,7 +610,7 @@ class Box
 		existing = .declForName('getType') to BoxMember
 		overload = MemberOverload(existing)
 		.registerOverload(overload)
-		meth = Method(TokenFix.empty, this, 'getType', List<of Param>(), ClrTypeProxy(Type), nil, ['shared'], AttributeList(), 'Returns the Type instance that defines this type.')
+		meth = Method(TokenFix.empty, TokenFix.empty, this, 'getType', List<of Param>(), ClrTypeProxy(Type), nil, ['shared'], AttributeList(), 'Returns the Type instance that defines this type.')
 		meth.sharedMethodBacking = 'typeof'
 		overload.addMember(meth)
 
@@ -1146,7 +1146,7 @@ class Class
 				break
 		if not foundInitializer
 			# TODO: this should be changed to provide cover initializers for each of the public, inherited initializers
-			.addDecl(Initializer(.token, this, List<of Param>(), ['public'], AttributeList(), ''))
+			.addDecl(Initializer(.token, Token.empty, this, List<of Param>(), ['public'], AttributeList(), ''))
 		# Note that the _baseClass is not told to bindInt. That would fail for classes in other namespaces and it's unnecessary
 		base._bindInt
 		if .isDescendantOf(.compiler.attributeType) and not .name.endsWith('Attribute')
@@ -1220,13 +1220,13 @@ class Mixin
 		for member in .declsInOrder  # TODO: deal with inheritance if mixins are allowed to have mixins added to them
 			# TODO: deal with overloads
 			if member inherits Method
-				method = Method(member.token, box, member.name, member.genericParams, member.params, member.resultType, nil/#implementsTypeNode#/, member.isNames, member.attributes, member.docString)
+				method = Method(member.token, member.idToken, box, member.name, member.genericParams, member.params, member.resultType, nil/#implementsTypeNode#/, member.isNames, member.attributes, member.docString)
 				# TODO: contracts? tests?
 				for stmt in member.statements
 					method.addStmt(stmt.clone)
 				box.addDecl(method)
 			else if member inherits Property
-				prop = Property(member.token, box, member.name, member.returnType, member.isNames, member.attributes, member.docString)
+				prop = Property(member.token, member.idToken, box, member.name, member.returnType, member.isNames, member.attributes, member.docString)
 				if member.getPart
 					getPart = prop.makeGetPart(member.getPart.token)
 					for stmt in member.getPart.statements
@@ -1373,7 +1373,7 @@ class MethodSig
 		assert .parentBox or .parentNameSpace
 
 	def _bindInt
-		m = Method(.token, this, 'invoke', List<of Param>(.params), .returnType ? .returnTypeProxy, nil, List<of String>(.isNames), AttributeList(), '')
+		m = Method(.token, .token, this, 'invoke', List<of Param>(.params), .returnType ? .returnTypeProxy, nil, List<of String>(.isNames), AttributeList(), '')
 		m.statements.add(ThrowStmt(.token, PostCallExpr(.token, IdentifierExpr(.token, 'Exception'), List<of Expr>()))) # just to avoid a Cobra warning during .bindImp
 		.addDecl(m)
 		base._bindInt

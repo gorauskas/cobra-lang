@@ -28,6 +28,7 @@ class BoxMember
 			The access level names are the same in both Cobra and C#.
 			"""
 
+	var _idToken as IToken
 	var _parentBox as Box
 	var _docString as String?
 	var _isNames as List<of String>?
@@ -39,11 +40,12 @@ class BoxMember
 	var _sharedMethodBackingIsAlias as bool
 	var _binaryName as String?
 
-	def init(token as IToken, parentBox as Box, name as String, isNames as List<of String>, attribs as AttributeList)
-		.init(token, parentBox, name, isNames, attribs, nil)
+	def init(token as IToken, idToken as IToken, parentBox as Box, name as String, isNames as List<of String>, attribs as AttributeList)
+		.init(token, idToken, parentBox, name, isNames, attribs, nil)
 
-	def init(token as IToken, parentBox as Box, name as String, isNames as List<of String>, attribs as AttributeList, docString as String?)
-		base.init(token, name)
+	def init(token as IToken, idToken as IToken, parentBox as Box, name as String, isNames as List<of String>, attribs as AttributeList, docString as String?)
+		base.init(idToken, name)
+		_idToken = idToken
 		_isNames = isNames
 		_attribs = attribs
 		_parentBox = parentBox
@@ -53,6 +55,8 @@ class BoxMember
 
 	get attributes from _attribs
 
+	get idToken from var
+	
 	get parentBox from var
 
 	get canHaveMatchingBaseMember as bool
@@ -325,8 +329,8 @@ class BoxEvent
 	var _handlerType as IType?
 	var _handlerTypeProxy as ITypeProxy?
 
-	def init(token as IToken, box as Box, name as String, isNames as List<of String>, attribs as AttributeList, docString as String?, handlerType as ITypeProxy)
-		base.init(token, box, name, isNames, attribs, docString)
+	def init(token as IToken, idToken as IToken, box as Box, name as String, isNames as List<of String>, attribs as AttributeList, docString as String?, handlerType as ITypeProxy)
+		base.init(token, idToken, box, name, isNames, attribs, docString)
 		_handlerTypeProxy = handlerType
 
 	get englishName as String is override
@@ -386,8 +390,8 @@ class BoxField
 	var _initExpr as Expr?
 	var _isAssignedTo as bool
 
-	def init(token as IToken, box as Box, name as String, typeNode as ITypeProxy?, isNames as List<of String>, initExpr as Expr?, attribs as AttributeList?, docString as String)
-		base.init(token, box, name, isNames, attribs ? AttributeList(), docString)
+	def init(token as IToken, idToken as IToken, box as Box, name as String, typeNode as ITypeProxy?, isNames as List<of String>, initExpr as Expr?, attribs as AttributeList?, docString as String)
+		base.init(token, idToken, box, name, isNames, attribs ? AttributeList(), docString)
 		_typeNode = typeNode
 		_initExpr = initExpr
 
@@ -456,8 +460,8 @@ class BoxConst
 	test harness, etc.
 	"""		
 
-	def init(token as IToken, box as Box, name as String, typeNode as ITypeProxy?, isNames as List<of String>, initExpr as Expr?, attribs as AttributeList?, docString as String)
-		base.init(token, box, name, typeNode, isNames, initExpr, attribs, docString)
+	def init(token as IToken, idToken as IToken, box as Box, name as String, typeNode as ITypeProxy?, isNames as List<of String>, initExpr as Expr?, attribs as AttributeList?, docString as String)
+		base.init(token, idToken, box, name, typeNode, isNames, initExpr, attribs, docString)
 
 	get isShared as bool is override
 		return true
@@ -485,8 +489,8 @@ class BoxVar
 
 	var _ifInheritsStack as Stack<of IType>
 
-	def init(token as IToken, box as Box, name as String, typeNode as ITypeProxy?, isNames as List<of String>, initExpr as Expr?, attribs as AttributeList?, docString as String)
-		base.init(token, box, name, typeNode, isNames, initExpr, attribs, docString)
+	def init(token as IToken, idToken as IToken, box as Box, name as String, typeNode as ITypeProxy?, isNames as List<of String>, initExpr as Expr?, attribs as AttributeList?, docString as String)
+		base.init(token, idToken, box, name, typeNode, isNames, initExpr, attribs, docString)
 		_ifInheritsStack = Stack<of IType>()
 		_useBackEndNameStack = Stack<of String>()  # for if-inherits
 		_useBackEndNameStack.push(name)
@@ -548,7 +552,7 @@ class AnonymousMethod
 	inherits AbstractMethod
 	
 	def init(token as IToken, parentMethod as AbstractMethod, paramsList as List<of Param>, returnTypeNode as ITypeProxy?, isNames as List<of String>)
-		base.init(token, parentMethod.parentBox, parentMethod, '(anonymous method)', paramsList, isNames, AttributeList(), '')
+		base.init(token, Token.empty, parentMethod.parentBox, parentMethod, '(anonymous method)', paramsList, isNames, AttributeList(), '')
 		_name = '(anonymous method [.serialNum])'
 		_returnTypeNode = returnTypeNode
 		for param in .params, param.isAnonymousParam = true
@@ -632,8 +636,8 @@ class AbstractMethod
 	var _curStmtIndex as int  # to implement .replaceChild
 	var _isCompilerGenerated as bool
 
-	def init(token as IToken, box as Box, parentMethod as AbstractMethod?, name as String, paramsList as List<of Param>, isNames as List<of String>, attribs as AttributeList, docString as String)
-		base.init(token, box, name, isNames, attribs, docString)
+	def init(token as IToken, idToken as IToken, box as Box, parentMethod as AbstractMethod?, name as String, paramsList as List<of Param>, isNames as List<of String>, attribs as AttributeList, docString as String)
+		base.init(token, idToken, box, name, isNames, attribs, docString)
 		_parentMethod = parentMethod
 		_params = paramsList
 		_oldExprs = List<of OldExpr>()
@@ -913,8 +917,8 @@ class Initializer
 	is partial
 	inherits AbstractMethod
 
-	def init(token as IToken, box as Box, paramsList as List<of Param>, isNames as List<of String>, attribs as AttributeList, docString as String)
-		base.init(token, box, nil, 'init', paramsList, isNames, attribs, docString)
+	def init(token as IToken, idToken as IToken, box as Box, paramsList as List<of Param>, isNames as List<of String>, attribs as AttributeList, docString as String)
+		base.init(token, idToken, box, nil, 'init', paramsList, isNames, attribs, docString)
 		_isNames = isNames
 		_stmts = List<of Stmt>()
 
@@ -994,11 +998,11 @@ class Method
 	var _implementsTypeNode as ITypeProxy?
 	var _implementsType as IType?
 
-	def init(token as IToken, box as Box, name as String, paramsList as List<of Param>, returnTypeNode as ITypeProxy, implementsTypeNode as ITypeProxy?, isNames as List<of String>, attribs as AttributeList, docString as String)
-		.init(token, box, name, List<of IType>(), paramsList, returnTypeNode, implementsTypeNode, isNames, attribs, docString)
+	def init(token as IToken, idToken as IToken, box as Box, name as String, paramsList as List<of Param>, returnTypeNode as ITypeProxy, implementsTypeNode as ITypeProxy?, isNames as List<of String>, attribs as AttributeList, docString as String)
+		.init(token, idToken, box, name, List<of IType>(), paramsList, returnTypeNode, implementsTypeNode, isNames, attribs, docString)
 
-	def init(token as IToken, box as Box, name as String, genericParams as List<of IType>, paramsList as List<of Param>, returnTypeNode as ITypeProxy, implementsTypeNode as ITypeProxy?, isNames as List<of String>, attribs as AttributeList, docString as String)
-		base.init(token, box, nil, name, paramsList, isNames, attribs, docString)
+	def init(token as IToken, idToken as IToken, box as Box, name as String, genericParams as List<of IType>, paramsList as List<of Param>, returnTypeNode as ITypeProxy, implementsTypeNode as ITypeProxy?, isNames as List<of String>, attribs as AttributeList, docString as String)
+		base.init(token, idToken, box, nil, name, paramsList, isNames, attribs, docString)
 		_genericParams = genericParams
 		_returnTypeNode = returnTypeNode
 		_implementsTypeNode = implementsTypeNode
@@ -1190,11 +1194,11 @@ class ProperDexer
 	var _returnType as IType?
 	var _returnTypeNode as ITypeProxy?
 
-	def init(token as IToken, box as Box, name as String, isNames as List<of String>, attribs as AttributeList, docString as String?)
-		base.init(token, box, name, isNames, attribs, docString)
+	def init(token as IToken, idToken as IToken, box as Box, name as String, isNames as List<of String>, attribs as AttributeList, docString as String?)
+		base.init(token, idToken, box, name, isNames, attribs, docString)
 
-	def init(token as IToken, box as Box, name as String, returnTypeOrNode as INode, isNames as List<of String>, attribs as AttributeList, docString as String)
-		.init(token, box, name, isNames, attribs, docString)
+	def init(token as IToken, idToken as IToken, box as Box, name as String, returnTypeOrNode as INode, isNames as List<of String>, attribs as AttributeList, docString as String)
+		.init(token, idToken, box, name, isNames, attribs, docString)
 		if returnTypeOrNode inherits IType
 			_returnType = returnTypeOrNode
 			_returnTypeNode = nil
@@ -1298,7 +1302,7 @@ class ProperDexerXetter
 	var _parent as ProperDexer
 
 	def init(token as IToken, parent as ProperDexer, isNames as List<of String>)
-		base.init(token, parent.parentBox, nil, parent.name, List<of Param>(), isNames, AttributeList(), '')  # TODO: should be docString, right?
+		base.init(token, Token.empty, parent.parentBox, nil, parent.name, List<of Param>(), isNames, AttributeList(), '')  # TODO: should be docString, right?
 		_name = parent.name + '.' + .xetPartName  # CC: somewhat awkward. belongs in the base.init() call
 		_parent = parent
 
@@ -1342,7 +1346,7 @@ class MemberOverload
 			.members.count
 			.members[0] == member
 		body
-			base.init(member.token, member.parentBox, member.name, member.isNames, AttributeList())
+			base.init(member.token, member.idToken, member.parentBox, member.name, member.isNames, AttributeList())
 			member.overloadGroup = this
 			_members = [member]
 			_isNames = member.isNames  # pick up 'shared' for example
@@ -1455,14 +1459,14 @@ class TestMethod
 		require
 			member.name.length
 		body
-			base.init(token, member.parentBox, 'test_'+member.name.capped, List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
+			base.init(token, Token.empty, member.parentBox, 'test_'+member.name.capped, List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
 			_forMember = member
 
 	def init(token as IToken, box as Box)
 		require
 			box.name.length
 		body
-			base.init(token, box, 'test_class_'+box.name.capped, List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
+			base.init(token, Token.empty, box, 'test_class_'+box.name.capped, List<of Param>(), .getCompiler.voidType, nil, ['shared'], AttributeList(), '')
 			_forBox = box
 
 	get shouldBeVirtual as bool is override
