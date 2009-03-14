@@ -39,6 +39,9 @@ class CobraModule is partial
 		htmlSource = marks.combine(source)
 		
 		htmlFileName = Path.combine(targetDirectory, .fileName + '.html')
+		dir = Path.getDirectoryName(htmlFileName)
+		Directory.createDirectory(dir)  # the .fileName may have relative subdirs in it
+		
 		print 'Writing [htmlFileName]'
 		using tw = File.createText(htmlFileName)
 			tw.writeLine('<html>')
@@ -67,7 +70,7 @@ class Marks
 		var _ignoreTokens = Set<of String>()
 		var _invisibleTokens = {'DEDENT', 'EOL', 'INDENT'}
 		var _normalTokens = {
-			'BANG', 'COLON', 'COMMA', 'DOT', 'DOTDOT', 'LCURLY', 'LPAREN', 'QUESTION', 'RCURLY', 'RPAREN'
+			'BANG', 'BANG_EQUALS', 'COLON', 'COMMA', 'DOT', 'DOTDOT', 'LCURLY', 'LPAREN', 'QUESTION', 'QUESTION_EQUALS', 'RCURLY', 'RPAREN', 'INT_SIZE', 'UINT_SIZE',
 		}
 
 		get ignoreTokens as Set<of String>
@@ -105,7 +108,7 @@ class Marks
 			'TOQ kw',
 		]
 
-		var _ops = 'ASSIGN EQ NE GT LT GE LE DOUBLE_GT LBRACKET RBRACKET PLUS MINUS STAR STARSTAR SLASH SLASHSLASH PERCENT MINUS_EQUALS PLUS_EQUALS'
+		var _ops = 'ARRAY_OPEN ASSIGN EQ NE GT LT GE LE DOUBLE_GT LBRACKET RBRACKET PLUS MINUS STAR STARSTAR SLASH SLASHSLASH PERCENT MINUS_EQUALS PLUS_EQUALS'
 		
 		var _tokenToStyle = Dictionary<of String, String>()
 
@@ -136,16 +139,20 @@ class Marks
 			else
 				charNum = token.charNum - 1
 				branch token.which
+					on 'OPEN_CALL'
+						.add(charNum, token.text.length-1, 'i', token.text[:-1])
+					on 'OPEN_DO'
+						.add(charNum, 2, 'kw', 'do')
 					on 'OPEN_GENERIC'
 						.add(charNum, token.text.length-3, 'i', token.text[:-3])
 						.add(charNum+token.text.length-3, 2, 'kw', 'of')
-					on 'OPEN_CALL'
-						.add(charNum, token.text.length-1, 'i', token.text[:-1])
 					on 'OPEN_IF'
 						.add(charNum, token.text.length-1, 'kw', token.text[:-1])
 					on 'SHARP_SINGLE' or 'SHARP_DOUBLE'  # sharp'...'
 						.add(charNum, 5, 'kw', 'sharp')
 						.add(charNum+5, token.text.length-5, 'ls', token.text[5:])
+					on 'SHARP_OPEN'
+						.add(charNum, 6, 'kw', '$sharp')
 					else, print '*** unknown token type: [token.which]; [token]'
 
 	def add(token as IToken, kind as String)
@@ -240,10 +247,13 @@ class Highlighter inherits Visitor
 		.marks.add(token, kind)
 
 	def highlight(box as Box)
-		.mark(box.token, 'bdn')
+		.mark(box.token, 'tdn')
 		for member in box.declsInOrder
 			.dispatch(member)
 
+	def highlight(enumDecl as EnumDecl)
+		.mark(enumDecl.token, 'tdn')
+		
 	def highlight(member as BoxMember)
 		.mark(member.token, 'kw-md')
 		.mark(member.idToken, 'mdn')
