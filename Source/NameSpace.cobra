@@ -150,15 +150,23 @@ class NameSpace
 	get typeForReceiver as IType? is override
 		return this
 
-	def adoptDefaultNameSpace
+	def adoptDefaultNameSpace as NameSpace
 		# support -namespace option
 		if .isRoot and .declForName('Cobra') is nil
 			# the test for 'Cobra' above is needed to support -embed-run-time:yes which has files with 'namespace Cobra.Lang'
 			ns = .compiler.options.getDefault('namespace', '') to String
 			if ns <> ''
-				_superNameSpace = .compiler.globalNS
+				newTop = NameSpace(.unifiedNameSpace, .name)
 				_name = ns
 				_unifiedNameSpace = .compiler.globalNS.getOrMakeNameSpaceNamed(.token.copy(.token.which, ns), ns)
+				assert _unifiedNameSpace.isUnified
+				for decl in .declsInOrder
+					if not decl inherits NameSpace
+						_unifiedNameSpace.addDecl(decl)
+				_superNameSpace = newTop
+				newTop.addDecl(this)
+				return newTop
+		return this
 
 	def bindUse
 		if _didBindUse, return
