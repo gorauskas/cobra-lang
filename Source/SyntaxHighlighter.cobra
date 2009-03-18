@@ -2,6 +2,16 @@
 The main test case for the syntax highlighter is the Cobra compiler itself:
 
 cobra -highlight -files:files-to-compile.text
+
+TODO:
+	[ ] The stylesheet path should be computed rather than hardcoded as ..\
+	[ ] Files that are in a deeper subdirectory, like gen-html\BackEndClr\, don't have a correct path to the stylesheet
+	[ ] Partial classes are not getting the 'tdn' style because they are merged into their classes. Likewise, their members are not getting 'mdn' style.
+	[ ] String substitution should not color the brackets [] the same color as the string text.
+	[ ] Negative constants like "-1" don't get highlighted correctly. The - is treated as an operator.
+	[ ] Right now "bool" is a bolded keyword and types like String and Shape are normal. Maybe there should be a "type" highlight.
+	[ ] Use what's found in OperatorSpecs instead of duplicating. This also requires completing a TODO item in OperatorSpecs
+		    # TODO: move the binary op and unary op specs here
 """
 
 
@@ -14,7 +24,7 @@ class Compiler is partial
 			Directory.createDirectory(.targetDirectory)
 			for mod in .modules
 				if mod inherits CobraModule
-					mod.writeHtmlHighlightedSource(.targetDirectory)
+					mod.writeHtmlHighlightedFileTo(.targetDirectory)
 
 	get targetDirectory as String
 		return 'gen-html'
@@ -22,9 +32,28 @@ class Compiler is partial
 
 class CobraModule is partial
 
-	def writeHtmlHighlightedSource(targetDirectory as String)
-		source = File.readAllText(.fileName)
+	def writeHtmlHighlightedFileTo(targetDirectory as String)
+		htmlFileName = Path.combine(targetDirectory, .fileName + '.html')
+		dir = Path.getDirectoryName(htmlFileName)
+		Directory.createDirectory(dir)  # the .fileName may have relative subdirs in it
+		print 'Writing [htmlFileName]'
+		using tw = File.createText(htmlFileName)
+			.writeHtmlHighlightedFileTo(tw)
 
+	def writeHtmlHighlightedFileTo(tw as TextWriter)
+		tw.writeLine('<html>')
+		tw.writeLine('<head>')
+		tw.writeLine('<title>[.fileName]</title>')
+		tw.writeLine('<link rel="stylesheet" href="../styles-cobra-doc.css" type="text/css">')
+		tw.writeLine('<link rel="stylesheet" href="../styles-cobra-shl.css" type="text/css">')
+		tw.writeLine('</head>')
+		tw.writeLine('<body>')
+		tw.write(.htmlSource)
+		tw.writeLine('</body>')
+		tw.writeLine('</html>')
+
+	def htmlSource as String
+		source = File.readAllText(.fileName)
 		marks = Marks(.fileName)
 
 		# first do token stream which covers all tokens including comments
@@ -36,26 +65,10 @@ class CobraModule is partial
 		# now do nodes -- gives better semantic highlighting than just tokens
 		.topNameSpace.highlight(marks)
 
-		htmlSource = marks.combine(source)
-		
-		htmlFileName = Path.combine(targetDirectory, .fileName + '.html')
-		dir = Path.getDirectoryName(htmlFileName)
-		Directory.createDirectory(dir)  # the .fileName may have relative subdirs in it
-		
-		print 'Writing [htmlFileName]'
-		using tw = File.createText(htmlFileName)
-			tw.writeLine('<html>')
-			tw.writeLine('<head>')
-			tw.writeLine('<title>[.fileName]</title>')
-			tw.writeLine('<link rel="stylesheet" href="../styles-cobra-doc.css" type="text/css">')
-			tw.writeLine('<link rel="stylesheet" href="../styles-cobra-shl.css" type="text/css">')
-			tw.writeLine('</head>')
-			tw.writeLine('<body>')
-			tw.writeLine('<pre class=shl>')
-			tw.write(htmlSource)
-			tw.writeLine('</pre>')
-			tw.writeLine('</body>')
-			tw.writeLine('</html>')
+		sb = StringBuilder('<pre class=shl>')
+		marks.combine(source, sb)
+		sb.append('</pre>')
+		return sb.toString
 
 
 class Marks
@@ -179,13 +192,12 @@ class Marks
 	def add(charNum as int, length as int, kind as String, text as String)
 		_marks[charNum] = Mark(charNum, length, kind, text)
 
-	def combine(plainSource as String) as String
+	def combine(plainSource as String, sb as StringBuilder)
 		# CC: TODO: next line causes exception in the compiler
 		# marks = _marks.values.toList.sorted
 		marks = List<of Mark>(_marks.values).sorted
 		closeSpansAt = Set<of int>()
 		ci = mi = 0
-		sb = StringBuilder()
 		for c in plainSource
 			if ci in closeSpansAt
 				sb.append('</span>')
@@ -207,7 +219,6 @@ class Marks
 				on c'"', sb.append('&quot;')
 				else, sb.append(c)
 			if c <> c'\r', ci += 1
-		return sb.toString
 
 
 class Mark implements IComparable<of Mark>
