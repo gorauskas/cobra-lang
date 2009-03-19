@@ -53,22 +53,34 @@ class CobraModule is partial
 		tw.writeLine('</html>')
 
 	def htmlSource as String
-		source = File.readAllText(.fileName)
-		marks = Marks(.fileName)
+		require .typeProvider
+		return .htmlSource(nil)
 
-		# first do token stream which covers all tokens including comments
-		# not expecting any errors here since we got past this phase before
-		tokenizer = CobraTokenizer(typeProvider=.typeProvider, willReturnComments=true)
-		tokens = tokenizer.startSource(.fileName, source).allTokens
-		marks.add(tokens)
+	def htmlSource(typeProvider as ITypeProvider?) as String
+		require .typeProvider or typeProvider
+		if typeProvider
+			saveProvider = Node.typeProvider
+			Node.typeProvider = typeProvider
+		try
+			source = File.readAllText(.fileName)
+			marks = Marks(.fileName)
 
-		# now do nodes -- gives better semantic highlighting than just tokens
-		.topNameSpace.highlight(marks)
+			# first do token stream which covers all tokens including comments
+			# not expecting any errors here since we got past this phase before
+			tokenizer = CobraTokenizer(typeProvider=.typeProvider, willReturnComments=true)
+			tokens = tokenizer.startSource(.fileName, source).allTokens
+			marks.add(tokens)
 
-		sb = StringBuilder('<pre class=shl>')
-		marks.combine(source, sb)
-		sb.append('</pre>')
-		return sb.toString
+			# now do nodes -- gives better semantic highlighting than just tokens
+			.topNameSpace.highlight(marks)
+
+			sb = StringBuilder('<pre class=shl>')
+			marks.combine(source, sb)
+			sb.append('</pre>')
+			return sb.toString
+		finally
+			if typeProvider
+				Node.typeProvider = saveProvider
 
 
 class Marks
@@ -83,7 +95,7 @@ class Marks
 		var _ignoreTokens = Set<of String>()
 		var _invisibleTokens = {'DEDENT', 'EOL', 'INDENT'}
 		var _normalTokens = {
-			'BANG', 'BANG_EQUALS', 'COLON', 'COMMA', 'DOT', 'DOTDOT', 'LCURLY', 'LPAREN', 'QUESTION', 'QUESTION_EQUALS', 'RCURLY', 'RPAREN', 'INT_SIZE', 'UINT_SIZE',
+			'BANG', 'BANG_EQUALS', 'CARET', 'COLON', 'COMMA', 'DOT', 'DOTDOT', 'LCURLY', 'LPAREN', 'PERCENTPERCENT', 'QUESTION', 'QUESTION_EQUALS', 'RCURLY', 'RPAREN', 'INT_SIZE', 'UINT_SIZE',
 		}
 
 		get ignoreTokens as Set<of String>
@@ -104,6 +116,7 @@ class Marks
 			
 			'CHAR_LIT_SINGLE lc',
 			'CHAR_LIT_DOUBLE lc',
+			'DECIMAL_LIT ld',
 			'DIRECTIVE di',
 			'COMMA no',
 			'COMMENT c',
@@ -112,15 +125,12 @@ class Marks
 			'DOC_STRING_STOP ds',
 			'DOC_STRING_LINE ds',
 			'ID i',
+			'FLOAT_LIT lf',
+			'FRACTIONAL_LIT lfr',
 			'INTEGER_LIT li',
 			'STRING_DOUBLE ls',
 			'STRING_SINGLE ls',
-			'STRING_START_SINGLE ls',
-			'STRING_PART_SINGLE ls',
-			'STRING_STOP_SINGLE ls',
-			'STRING_START_DOUBLE ls',
-			'STRING_PART_DOUBLE ls',
-			'STRING_STOP_DOUBLE ls',
+			'STRING_PART_FORMAT spf',
 			'TOQ kw',
 		]
 
@@ -156,6 +166,8 @@ class Marks
 				.add(token, 'kw')
 			else
 				charNum = token.charNum - 1
+				len = token.text.length
+				text = token.text
 				branch token.which
 					on 'OPEN_CALL'
 						.add(token, 'i')
@@ -164,12 +176,22 @@ class Marks
 					on 'OPEN_GENERIC'
 						.add(token, 'i')
 					on 'OPEN_IF'
-						.add(charNum, token.text.length-1, 'kw', token.text[:-1])
+						.add(charNum, len-1, 'kw', text[:-1])
 					on 'SHARP_SINGLE' or 'SHARP_DOUBLE'  # sharp'...'
 						.add(charNum, 5, 'kw', 'sharp')
-						.add(charNum+5, token.text.length-5, 'ls', token.text[5:])
+						.add(charNum+5, len-5, 'ls', text[5:])
 					on 'SHARP_OPEN'
 						.add(charNum, 6, 'kw', '$sharp')
+					on 'STRING_START_SINGLE' or 'STRING_START_DOUBLE'
+						.add(charNum, len-1, 'ls', text[:-1])
+						.add(charNum+len-1, 1, 'lslb', '\[')
+					on 'STRING_PART_SINGLE' or 'STRING_PART_DOUBLE'
+						.add(charNum, 1, 'lsrb', ']')
+						if len > 2, .add(charNum+1, len-2, 'ls', text[1:-1])  # else text is ']['
+						.add(charNum+len-1, 1, 'lslb', '\[')
+					on 'STRING_STOP_SINGLE' or 'STRING_STOP_DOUBLE'
+						.add(charNum, 1, 'lsrb', ']')
+						.add(charNum+1, len-1, 'ls', text[1:])
 					else, print '*** unknown token type: [token.which]; [token]'
 
 	def add(token as IToken, kind as String)
