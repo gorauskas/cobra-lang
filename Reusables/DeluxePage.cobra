@@ -8,8 +8,7 @@ cobra -r=System.Web WebPages.cobra DeluxePage.cobra > deluxe.html
 """
 
 
-class DeluxePage
-	inherits Page
+class DeluxePage inherits Page
 	"""
 	DeluxePage adds these capabilities:
 
@@ -32,7 +31,8 @@ class DeluxePage
 		"""
 		The HTML source code that is output is actually wrapped at a
 		right hand margin. This often makes it easier to read the
-		source.
+		source, but doesn't work well with <pre> content that will cross the
+		margin (especially if the <pre> content has <span> tags in it).
 		"""
 		return 100
 
@@ -158,8 +158,7 @@ class DeluxePage
 
 
 
-class MyPage
-	inherits DeluxePage
+class MyPage inherits DeluxePage
 
 	get styleSheetUrl as String is override
 		return 'styles.css'
@@ -171,8 +170,7 @@ class MyPage
 		.writeLine('Added unit testing as a language level feature. You can now write test sections for methods, properties and classes. Because these unit tests can be specified next to what they actually test, they are more likely to be kept up to date. Also, because they are a natural part of the source code, they benefit from development environment features such as syntax highlighting and autocompletion. Finally, more programmers may be encouraged to write unit tests when it is this easy.')
 
 
-class DeluxeWriter
-	inherits TextWriter
+class DeluxeWriter inherits TextWriter
 	"""
 	Provides:
 
@@ -199,7 +197,7 @@ class DeluxeWriter
 		assert iw.toString=='one[nl][tab]two[nl]three[nl]'
 
 	var _innerWriter as TextWriter
-	var _lastChar = ''  # use a string because _innerWriter.NewLine is a string
+	var _lastChar = ''  # use a string because _innerWriter.newLine is a string
 	var _indentString = '    '
 	var _indentLevel = 0
 	var _totalIndentString = ''
@@ -207,13 +205,12 @@ class DeluxeWriter
 	var _column = 1
 	var _rightMargin = 80
 
-	def init(tw as TextWriter)
+	cue init(tw as TextWriter)
 		_innerWriter = tw
 
-	def init(tw as TextWriter, rightMargin as int)
+	cue init(tw as TextWriter, rightMargin as int)
+		require rightMargin == 0 or rightMargin > 10
 		.init(tw)
-		# TODO: require
-		assert rightMargin>10
 		_rightMargin = rightMargin
 
 	def indent
@@ -252,10 +249,12 @@ class DeluxeWriter
 		_innerWriter.write(value)
 		_column += 1
 		_lastChar = value.toString
-		if _column>_rightMargin and _lastChar==' '
+/#
+		if _rightMargin and _column > _rightMargin and _lastChar==' '
 			# TODO: need a better word wrapping algorithm that doesn't allow words to poke out of the right hand margin
 			# but this is good enough for now
 			.write(_innerWriter.newLine)
+#/
 
 	def write(value as String?) is override
 		if _isWritingIndent
@@ -274,7 +273,7 @@ class DeluxeWriter
 
 	def _setTotalIndentString is protected
 		sb = StringBuilder()
-		for i = 0 .. _indentLevel
+		for i in _indentLevel
 			sb.append(_indentString)
 		_totalIndentString = sb.toString
 
