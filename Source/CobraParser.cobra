@@ -315,7 +315,9 @@ class CobraParser
 					break
 				isGood = true
 				branch tok.which
-					on 'PERCENTPERCENT'  # TODO: this has to be changed. doubling other math ops yields math ops or math related purpose (// ** -- ++)
+					on 'AT_ID'
+						.compilerDirective
+					on 'PERCENTPERCENT'
 						if .peek(1) and .peek(1).text == 'stop'
 							keepParsing = false
 						else
@@ -362,10 +364,16 @@ class CobraParser
 		return _module to !
 
 	def compilerDirective
-		.expect('PERCENTPERCENT')
+		if .peek.which == 'AT_ID'
+			token = .grab
+		else
+			# pp =
+			.expect('PERCENTPERCENT')
+			token = .grab
+			# 2009-04-06 Maybe in a month.
+			# TODO: _warning(pp, 'Use "@[token.text]" instead of "%% [token.text]" for compiler directives.')
 		# 'stop' is already handled in main parse loop
-		token = .grab
-		branch token.text
+		branch token.value to String
 			on 'throw'
 				# throw an internal error. used for testing that the compiler will catch and report these as internal errors
 				.expect('EOL')
@@ -373,13 +381,13 @@ class CobraParser
 				assert false, IdentifierExpr(token, 'throw')
 			on 'error'
 				# emit an error message
-				msg = '%% error directive'
+				msg = '@error directive'
 				if .optionalStringLiteral
 					msg = .last.value to String
 				.throwError(msg)
 			on 'warning'
 				# emit a warning
-				msg = '%% warning directive'
+				msg = '@warning directive'
 				if .optionalStringLiteral
 					msg = .last.value to String
 				_warning(msg)
@@ -422,7 +430,7 @@ class CobraParser
 				if not isAvailable
 					.throwError('Cannot set command line arguments from directive because no arguments parser is available.')
 			else
-				.throwError('Unknown compiler directive.')
+				.throwError('Unknown compiler directive "[token.text]".')
 
 	def useDirective as UseDirective
 		"""
