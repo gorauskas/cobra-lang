@@ -420,6 +420,7 @@ class Compiler
 					parser = CobraParser(verbosity=_verbosity, typeProvider=this, warningRecorder=this, errorRecorder=this, globalNS=_globalNS)
 					parser.parseCommandLineArgs = ref .parseCommandLineArgsCallBack
 					module = parser.parseSource('_ch_cobra-extra-source.cobra', extraSource)  # ch = compiler helper
+					for r in parser.references, .loadReference(_fixLibExtension(r))
 					modules.add(module)
 
 				for filename in filenames
@@ -440,6 +441,7 @@ class Compiler
 						catch SourceException
 							pass
 						success
+							for r in parser.references, .loadReference(_fixLibExtension(r))
 							# There could still be parse errors that were recorded, but not thrown.
 							# But that's okay because _errors.count is checked further below.
 							modules.add(module)
@@ -509,7 +511,7 @@ class Compiler
 			if opts.containsKey(key)
 				if key == 'reference'
 					references = opts.getStringList('reference')
-					_fixLibSuffix(references)
+					_fixLibExtensions(references)
 				if not .options.containsKey(key)
 					.options[key] = List<of String>()
 				existList = .options[key] to List<of String>
@@ -738,12 +740,17 @@ class Compiler
 		t = System.Diagnostics.Process.getType
 		.readAssembly(t.assembly) # System.dll
 
-	def _fixLibSuffix(references as List<of String>)
+	def _fixLibExtension(reference as String) as String
+		require reference.length
+		ensure reference.endsWith('.dll') or reference.endsWith('.exe')
+		if not reference.endsWith('.dll') and not reference.endsWith('.exe')
+			reference += '.dll'
+		return reference
+
+	def _fixLibExtensions(references as List<of String>)
 		i = 0
 		for reference in List<of String>(references)
-			if not reference.endsWith('.dll') and not reference.endsWith('.exe')
-				reference += '.dll'
-				references[i] = reference
+			references[i] = _fixLibExtension(reference)
 			i += 1
 			
 	def _printRefs(references as List<of String>)
@@ -760,7 +767,7 @@ class Compiler
 		references = options.getStringList('reference')
 
 		# Excluding the extension can be problematic
-		_fixLibSuffix(references)
+		_fixLibExtensions(references)
 
 		# now that references are fixed, make a copy so that .options['references'] is not modified further
 		references = List<of String>(references)
@@ -769,7 +776,7 @@ class Compiler
 			for pkgName in options['pkg'] to List<of String>
 				references.addRange(.refsForPackage(pkgName))
 
-		if .verbosity > 1 
+		if .verbosity > 1
 			_printRefs(references)
 
 		# Here be "reflectionOnlyLoad" code... which does not work on Mono 1.2.4

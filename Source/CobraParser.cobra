@@ -85,6 +85,7 @@ class CobraParser
 		_nameSpaceStack = Stack<of NameSpace>()
 		_codeParts = Stack<of AbstractMethod>()
 		_expectAnonymousMethodExprStack = Stack<of AnonymousMethodExpr>()
+		_references = List<of String>()
 
 	pro typeProvider from var
 
@@ -93,6 +94,11 @@ class CobraParser
 		The delegate is used to implement the 'args' compiler directive.
 		If none is provided and the 'args' directive is encountered, an error is generated.
 		See also: ParseCommandLineArgsSig
+		"""
+
+	get references from var as List<of String>
+		"""
+		A list of references, possibly empty, from the @ref compiler directive.
 		"""
 
 	pro globalNS as NameSpace
@@ -132,6 +138,7 @@ class CobraParser
 		"""
 		Parses module source code and returns resulting module.
 		The fileName is recorded, but the file is not physically accessed.
+		After parsing, .references will hold a list of any @ref directive references that were parsed.
 		"""
 		if not _preParseSource(fileName, source)
 			# Throw an exception to stop subsequent compilation phases.
@@ -399,6 +406,16 @@ class CobraParser
 				.expect('EOL')
 				comp = .typeProvider to? Compiler
 				if comp, comp.numberTypeName = typeName.text
+			on 'ref'
+				pathToken = .grab
+				if not pathToken.which in ['ID', 'STRING_SINGLE', 'STRING_DOUBLE']
+					.throwError('Expecting a string literal or identifier after "@ref".')
+				path = pathToken.text
+				if pathToken.which in ['STRING_SINGLE', 'STRING_DOUBLE']
+					path = path[1:-1]
+				if path.trim == ''
+					.throwError('Expecting a non-empty string literal or identifier after "@ref".')
+				.references.add(path)
 			on 'args'   # remaining tokens are cmdline args
 				# args -ref:foo.dll -target:exe
 				args = List<of String>()
