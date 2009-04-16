@@ -53,7 +53,7 @@ class Compiler is partial
 	def writeSharpTestInvocation
 		dt = DateTime.now
 		fileName = 'test-[dt.year][dt.month][dt.day][dt.hour][dt.minute].cs'  # TODO: format the numbers to have leading zeros
-		using f = SharpWriter(File.createText(fileName))
+		using f = CurlyWriter(File.createText(fileName), CurlyLineNumberTreatment.PoundLine)
 			print to f
 				print 'using CobraLangInternal = Cobra.Lang[.embedRunTimeSuffix];'
 				print ''
@@ -355,14 +355,14 @@ class Compiler is partial
 
 class Node is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		require .didBindInt or .didBindImp
 		pass
 
 
 class SyntaxNode is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		sw.node(this)
 
@@ -403,7 +403,7 @@ class Module
 
 	def writeSharpDef as Dictionary<of int, int>? is abstract
 
-	def writeSharpTestInvocation(sw as SharpWriter)
+	def writeSharpTestInvocation(sw as CurlyWriter)
 		pass
 
 
@@ -448,7 +448,7 @@ class CobraModule
 
 	def writeSharpDef as Dictionary<of int, int>? is override
 		file = File.createText(.sharpFileName)
-		using sw = SharpWriter(file)
+		using sw = CurlyWriter(file, CurlyLineNumberTreatment.PoundLine)
 			.compiler.addIntermediateFile(_sharpFileName)
 			sw.start(.fileName)
 			sw.write('// [_sharpFileName]\n')
@@ -460,10 +460,10 @@ class CobraModule
 			sw.write('using CobraLangInternal = Cobra.Lang[.compiler.embedRunTimeSuffix];\n')
 			
 			.topNameSpace.writeSharpDef(sw)
-			d = sw.sharpToCobraLineNum
+			d = sw.curlyToCobraLineNum
 		return d
 
-	def writeSharpTestInvocation(sw as SharpWriter) is override
+	def writeSharpTestInvocation(sw as CurlyWriter) is override
 		.topNameSpace.writeSharpTestInvocation(sw)
 
 
@@ -511,7 +511,7 @@ class Container<of TMember>
 			s = .sharpName
 		return s
 
-	def writeSharpIsNames(sw as SharpWriter)
+	def writeSharpIsNames(sw as CurlyWriter)
 		# TODO: cache this somewhere
 		accessLevels = ['public', 'protected', 'internal', 'protected internal', 'private']
 		# CC: accessLevels = 'public,protected,internal,protected internal,private'.split(c',')
@@ -543,20 +543,20 @@ class Container<of TMember>
 		if sep.length
 			sw.write(' ')
 
-	def writeSharpTestInvocation(sw as SharpWriter)
+	def writeSharpTestInvocation(sw as CurlyWriter)
 		pass
 
 
 interface IMember
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		"""
 		Write the C# code for this member declaration to the given
-		SharpWriter.
+		CurlyWriter.
 		"""
 
-	def writeSharpTestInvocation(sw as SharpWriter)
+	def writeSharpTestInvocation(sw as CurlyWriter)
 		"""
 		Write the C# call to the test method for this member.
 		"""
@@ -595,7 +595,7 @@ class NameSpace
 		else
 			return .fullName + .sharpSuffix + '.'
 	
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as CurlyWriter) is override
 		assert not .isUnified
 		base.writeSharpDef(sw)
 		if not .isRoot
@@ -611,7 +611,7 @@ class NameSpace
 		if not .isRoot
 			sw.dedentAndWrite('} // namespace [.name]\n')
 
-	def writeSharpTestInvocation(sw as SharpWriter) is override
+	def writeSharpTestInvocation(sw as CurlyWriter) is override
 		for decl in _declsInOrder
 			decl.writeSharpTestInvocation(sw)
 	
@@ -624,7 +624,7 @@ class UseDirective
 # -- Using Cobra.Lang library type names without qualification in the generated code could lead to confusing errors if the user happens to have a type with the same name.
 # -- You can't used unqualified type names in IL code which we may migrate to in the future. Might as well deal with this now.
 
-#	def writeSharpDef(sw as SharpWriter) is override
+#	def writeSharpDef(sw as CurlyWriter) is override
 #		sw.write('using [.boundNameSpace.sharpRef];\n')
 
 	pass
@@ -634,8 +634,7 @@ class UseDirective
 ## Types
 ##
 
-class BasicLibraryType
-	is partial
+class BasicLibraryType is partial
 
 	get sharpInit as String
 		throw NoSourceGenerationException(this)
@@ -652,10 +651,10 @@ class BasicLibraryType
 	get sharpRef as String
 		throw NoSourceGenerationException(this)
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		throw NoSourceGenerationException(this)
 
-	def writeSharpTestInvocation(sw as SharpWriter)
+	def writeSharpTestInvocation(sw as CurlyWriter)
 		throw NoSourceGenerationException(this)
 
 
@@ -712,7 +711,7 @@ class CobraType
 	get sharpParamRef as String
 		return .sharpRef
 
-	def writeSharpTestInvocation(sw as SharpWriter)
+	def writeSharpTestInvocation(sw as CurlyWriter)
 		pass
 
 
@@ -854,7 +853,7 @@ class EnumDecl
 	get sharpInit as String is override
 		return .sharpRef + '.' + _declsInOrder[0].name.capped
 
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as CurlyWriter) is override
 		base.writeSharpDef(sw)
 		if 'extern' in _isNames
 			return
@@ -894,7 +893,7 @@ class EnumDecl
 class EnumMember
 	is partial
 
-	def writeSharpTestInvocation(sw as SharpWriter)
+	def writeSharpTestInvocation(sw as CurlyWriter)
 		pass
 
 	get sharpRef as String is override
@@ -964,7 +963,7 @@ class Box
 		body
 			return genericParams
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		if .isExtern, return
 		.compiler.boxStack.push(this)
@@ -1016,11 +1015,11 @@ delme
 	def willWriteDeclSharpDef(decl) as bool
 		return true
 
-	def writeSharpAttribs(sw as SharpWriter)
+	def writeSharpAttribs(sw as CurlyWriter)
 		for attrib in _attribs
 			attrib.writeSharpDef(sw)
 
-	def writeSharpDefName(sw as SharpWriter)
+	def writeSharpDefName(sw as CurlyWriter)
 		sw.write('[.rootName]')
 		if _genericParams.count
 			sw.write('<')
@@ -1031,7 +1030,7 @@ delme
 				sep = ', '
 			sw.write('>')
 
-	def writeSharpInheritance(sw as SharpWriter)
+	def writeSharpInheritance(sw as CurlyWriter)
 		"""
 		Class uses this to write its base class declaration.
 		No box uses this to write interface implementation--that's handled in the Box class.
@@ -1040,7 +1039,7 @@ delme
 
 	get sharpInvariantVisibility as String is abstract
 
-	def writeSharpInvariantMethod(sw as SharpWriter)
+	def writeSharpInvariantMethod(sw as CurlyWriter)
 		if .compiler.options['contracts'] <> 'none'
 			sw.write('\nint _ih_invariantGuard;\n\n')
 		if .compiler.options['contracts'] <> 'methods'
@@ -1053,18 +1052,18 @@ delme
 		sw.dedent
 		sw.write('}\n\n')
 
-	def writeAllSharpInvariantChecks(sw as SharpWriter)
+	def writeAllSharpInvariantChecks(sw as CurlyWriter)
 		"""
 		Writes all C# invariant checks including inherited. In support of -contracts:inline
 		"""
 		_writeAllSharpInvariantChecks(sw, this)
 
-	def _writeAllSharpInvariantChecks(sw as SharpWriter, box as Box)
+	def _writeAllSharpInvariantChecks(sw as CurlyWriter, box as Box)
 		if box.baseClass and not box.baseClass.isFromBinaryLibrary
 			_writeAllSharpInvariantChecks(sw, box.baseClass to !)
 		box.writeSharpInvariantChecks(sw)
 		
-	def writeSharpInvariantChecks(sw as SharpWriter)
+	def writeSharpInvariantChecks(sw as CurlyWriter)
 		"""
 		Writes the C# invariant checks just for this class.
 		"""
@@ -1079,7 +1078,7 @@ delme
 			sw.write('[sharpThis], null);\n')
 			sw.dedent
 
-	def writeSharpTest(sw as SharpWriter)
+	def writeSharpTest(sw as CurlyWriter)
 		# Running tests from the static initializer seems like a good idea, but has been problematic at various times on both .NET and Mono, so no more:
 		# sw.write('\nstatic [.rootName]() { RunTestsIfNeeded(); }\n')
 		# -- er, it turned out that the problem was likely -dst on SourceSite. Consequently we could try returning to static initializers to trigger tests.
@@ -1099,7 +1098,7 @@ delme
 
 	var _didWriteSharpTestInvocation = false
 
-	def writeSharpTestInvocation(sw as SharpWriter) is override
+	def writeSharpTestInvocation(sw as CurlyWriter) is override
 		# used by the test option
 		if _didWriteSharpTestInvocation
 			return
@@ -1127,7 +1126,7 @@ class Class
 	get sharpKeyWord as String is override
 		return 'class'
 
-	def writeSharpInheritance(sw as SharpWriter) is override
+	def writeSharpInheritance(sw as CurlyWriter) is override
 		sw.write(' : ')
 		if _baseClass
 			sw.write(_baseClass.sharpRef)
@@ -1154,22 +1153,22 @@ class Interface
 	get sharpKeyWord as String is override
 		return 'interface'
 
-	def writeSharpInheritance(sw as SharpWriter) is override
+	def writeSharpInheritance(sw as CurlyWriter) is override
 		if _baseInterfaces.count
 			sw.write(' : ')
 
-	def writeSharpInvariantMethod(sw as SharpWriter) is override
+	def writeSharpInvariantMethod(sw as CurlyWriter) is override
 		# Even when invariants are inherited by the classes and structs that implement them,
 		# the code gen for the interface invariant does not go "here", inside the C# interface definition.
 		pass
 
-	def writeSharpTest(sw as SharpWriter) is override
+	def writeSharpTest(sw as CurlyWriter) is override
 		# Static methods can't be put in interfaces. However, at some point Cobra should support
 		# tests for interfaces which could then be run against the classes that implement them.
 		# Just requires more code gen smarts.
 		pass
 
-	def writeSharpTestInvocation(sw as SharpWriter) is override
+	def writeSharpTestInvocation(sw as CurlyWriter) is override
 		pass
 
 
@@ -1188,7 +1187,7 @@ class Mixin
 	def willWriteDeclSharpDef(decl) as bool is override
 		return not decl inherits BoxVar
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		# write the interface
 		_canHaveStatements = false
 		base.writeSharpDef(sw)
@@ -1212,7 +1211,7 @@ class Struct
 	get sharpKeyWord as String is override
 		return 'struct'
 
-	def writeSharpInheritance(sw as SharpWriter) is override
+	def writeSharpInheritance(sw as CurlyWriter) is override
 		if _baseInterfaces.count
 			sw.write(' : ')
 
@@ -1220,7 +1219,7 @@ class Struct
 class MethodSig
 	is partial
 
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as CurlyWriter) is override
 		.writeSharpAttribs(sw)
 		.writeSharpIsNames(sw)
 		sw.write('delegate [.resultType.sharpRef] [.rootName]')
@@ -1240,10 +1239,10 @@ class MethodSig
 			sep = ', '
 		sw.write(');\n')
 
-	def writeSharpTest(sw as SharpWriter) is override
+	def writeSharpTest(sw as CurlyWriter) is override
 		pass
 
-	def writeSharpTestInvocation(sw as SharpWriter) is override
+	def writeSharpTestInvocation(sw as CurlyWriter) is override
 		pass
 
 
@@ -1253,11 +1252,11 @@ class GenericParam
 	get sharpInit as String is override
 		return 'default([_name])'
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		sw.write(.name)
 
-	def writeSharpConstraint(sw as SharpWriter)
+	def writeSharpConstraint(sw as CurlyWriter)
 		if _constraints.count
 			sw.write(' where [_name] :  ')
 			sep = ''
@@ -1271,28 +1270,28 @@ class GenericParam
 class GenericClassConstraint
 	is partial
 
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as CurlyWriter) is override
 		sw.write('class')
 
 
 class GenericStructConstraint
 	is partial
 
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as CurlyWriter) is override
 		sw.write('struct')
 
 
 class GenericCallableConstraint
 	is partial
 
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as CurlyWriter) is override
 		sw.write('new()')
 
 
 class GenericTypeConstraint
 	is partial
 
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as CurlyWriter) is override
 		sw.write(_representedType.sharpRef)
 
 
@@ -1336,11 +1335,11 @@ class Extension
 		else
 			return base.extendedMethodGenericParams(genericParams)
 
-	def writeSharpDefName(sw as SharpWriter) is override
+	def writeSharpDefName(sw as CurlyWriter) is override
 		# replace base behavior
 		sw.write(.sharpName)
 
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as CurlyWriter) is override
 		for decl in .declsInOrder
 			if decl inherits BoxMember
 				decl.sharpExtraIsNames = {'static'}
@@ -1387,7 +1386,7 @@ class AbstractLocalVar
 class Param
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		if .type.isReference and not .type inherits NilableType
 			sw.write(r'[CobraLangInternal.NotNull] ')
@@ -1397,7 +1396,7 @@ class Param
 			on KindEnum.Out, sw.write('out ')
 		sw.write('[.type.sharpParamRef] [.sharpName]')
 
-	def writeSharpDefSansReferenceLabels(sw as SharpWriter)
+	def writeSharpDefSansReferenceLabels(sw as CurlyWriter)
 		"""
 		Writes the parameter declaration but without C# "out" or "ref"--these are not available for
 		contract methods (require_foo and ensure_foo) because contracts cannot modify arguments.
@@ -1435,7 +1434,7 @@ class BoxMember
 		# sigh. I wish .NET had metaclasses instead of this instance vs. static crap
 		return if(.isShared, 'typeof([.parentBox.sharpName])', .parentBox.sharpThis)
 
-	def writeSharpNotNull(sw as SharpWriter)
+	def writeSharpNotNull(sw as CurlyWriter)
 		if .resultType.isReference and not .resultType inherits NilableType
 			sw.writeLine(r'[' + .sharpNotNullPrefix + 'CobraLangInternal.NotNull]')
 
@@ -1445,18 +1444,18 @@ class BoxMember
 		#return 'return: '
 		return ''
 
-	def writeSharpTest(sw as SharpWriter)
+	def writeSharpTest(sw as CurlyWriter)
 		if _testMethod
 			_testMethod.writeSharpDef(sw)
 
-	def writeSharpTestInvocation(sw as SharpWriter)
+	def writeSharpTestInvocation(sw as CurlyWriter)
 		if _testMethod
 			sw.write('[_testMethod.sharpName]();\n')
 
-	def writeSharpParams(sw as SharpWriter)
+	def writeSharpParams(sw as CurlyWriter)
 		.writeSharpParams(sw, '()')
 
-	def writeSharpParams(sw as SharpWriter, parens as String)
+	def writeSharpParams(sw as CurlyWriter, parens as String)
 		require parens.length==2 or parens==''
 		if parens.length
 			sw.write(parens[0])
@@ -1468,7 +1467,7 @@ class BoxMember
 		if parens.length
 			sw.write(parens[1].toString+' ')
 
-	def writeSharpIsNames(sw as SharpWriter)
+	def writeSharpIsNames(sw as CurlyWriter)
 		# TODO:
 		# if isNames is nil
 		#	isNames = _isNames
@@ -1494,7 +1493,7 @@ class BoxMember
 		if sep.length
 			sw.write(' ')
 
-	def writeSharpAttribs(sw as SharpWriter)
+	def writeSharpAttribs(sw as CurlyWriter)
 		for attrib in _attribs
 			attrib.writeSharpDef(sw)
 
@@ -1505,7 +1504,7 @@ class BoxEvent
 	get sharpName as String is override
 		return .name.capped
 
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as CurlyWriter) is override
 		base.writeSharpDef(sw)
 		.writeSharpAttribs(sw)
 		.writeSharpIsNames(sw)
@@ -1528,7 +1527,7 @@ class BoxField
 class BoxConst
 	is partial
 
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as CurlyWriter) is override
 		base.writeSharpDef(sw)
 		.writeSharpAttribs(sw)
 		.writeSharpIsNames(sw)
@@ -1561,7 +1560,7 @@ class BoxVar
 			return .name
 		# return _useBackEndNameStack.peek to !
 
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as CurlyWriter) is override
 		base.writeSharpDef(sw)
 		.writeSharpAttribs(sw)
 		.writeSharpIsNames(sw)
@@ -1592,7 +1591,7 @@ class AbstractMethod
 
 	get backEndResultVarName from var
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		.compiler.codeMemberStack.push(this)
 		try
@@ -1600,10 +1599,10 @@ class AbstractMethod
 		finally
 			.compiler.codeMemberStack.pop
 
-	def innerWriteSharpDef(sw as SharpWriter)
+	def innerWriteSharpDef(sw as CurlyWriter)
 		pass
 	
-	def writeSharpImp(sw as SharpWriter, skipFirst as bool)
+	def writeSharpImp(sw as CurlyWriter, skipFirst as bool)
 		.compiler.codeMemberStack.push(this)
 		try
 			sw.writeAndIndent('{\n')
@@ -1657,16 +1656,16 @@ class AbstractMethod
 		finally
 			.compiler.codeMemberStack.pop
 
-	def writeSharpImpHeader(sw as SharpWriter)
+	def writeSharpImpHeader(sw as CurlyWriter)
 		pass
 		
-	def writeSharpImpFooter(sw as SharpWriter)
+	def writeSharpImpFooter(sw as CurlyWriter)
 		pass
 		
-	def writeSharpPassArgs(sw as SharpWriter)
+	def writeSharpPassArgs(sw as CurlyWriter)
 		.writeSharpPassArgs(sw, '()', false)
 
-	def writeSharpPassArgs(sw as SharpWriter, parens as String, excludeOutArgs as bool)
+	def writeSharpPassArgs(sw as CurlyWriter, parens as String, excludeOutArgs as bool)
 		require parens.length==2 or parens==''
 		if parens.length
 			sw.write(parens[0])
@@ -1680,7 +1679,7 @@ class AbstractMethod
 		if parens.length
 			sw.write(parens[1])
 
-	def writeSharpLocals(sw as SharpWriter, locals as List<of LocalVar>?, open as bool)
+	def writeSharpLocals(sw as CurlyWriter, locals as List<of LocalVar>?, open as bool)
 		if open
 			sw.writeAndIndent('{\n')
 		# record the `old` expressions for `ensure`
@@ -1697,7 +1696,7 @@ class AbstractMethod
 						sw.write(' = [init]')
 					sw.write(';\n')
 
-	def writeSharpRequireParamDecls(sw as SharpWriter)
+	def writeSharpRequireParamDecls(sw as CurlyWriter)
 		sep = ''
 		for param in .params
 			if param.isOut
@@ -1707,13 +1706,13 @@ class AbstractMethod
 			param.writeSharpDefSansReferenceLabels(sw)  # no `inout/ref` label since a contract cannot modify reference arguments
 			sep = ', '
 		
-	def writeSharpOldAssignments(sw as SharpWriter)
+	def writeSharpOldAssignments(sw as CurlyWriter)
 		if .isOverride and .matchingBaseMember
 			(.matchingBaseMember to AbstractMethod).writeSharpOldAssignments(sw)
 		for oldExpr in _oldExprs
 			oldExpr.writeSharpAssignment(sw)
 
-	def writeSharpEnsureArgs(sw as SharpWriter)
+	def writeSharpEnsureArgs(sw as CurlyWriter)
 		if .backEndResultVarName.length
 			sw.write('[.backEndResultVarName]')
 			sep = [',']
@@ -1724,7 +1723,7 @@ class AbstractMethod
 			sw.write(sep[0])
 		.writeSharpPassArgs(sw, '', false)  # these have to come last, because they might include a C# "params" which has to be last
 
-	def _writeSharpOldArgs(sw as SharpWriter, sep as List<of String>)
+	def _writeSharpOldArgs(sw as CurlyWriter, sep as List<of String>)
 		if .isOverride and .matchingBaseMember
 			assert .matchingBaseMember is not this
 			(.matchingBaseMember to AbstractMethod)._writeSharpOldArgs(sw, sep)
@@ -1733,7 +1732,7 @@ class AbstractMethod
 			sw.write(oldExpr.sharpVarName)
 			sep[0] = ', '
 
-	def writeSharpEnsureParamDecls(sw as SharpWriter)
+	def writeSharpEnsureParamDecls(sw as CurlyWriter)
 		if .backEndResultVarName.length
 			sw.write('[.resultType.sharpRef] [.backEndResultVarName]')
 			sep = [',']
@@ -1746,7 +1745,7 @@ class AbstractMethod
 			param.writeSharpDefSansReferenceLabels(sw)  # no `out` or `inout/ref` labels since a contract cannot modify reference arguments
 			sep[0] = ', '
 
-	def _writeSharpOldParamDecls(sw as SharpWriter, sep as List<of String>)
+	def _writeSharpOldParamDecls(sw as CurlyWriter, sep as List<of String>)
 		if .isOverride and .matchingBaseMember
 			assert .matchingBaseMember is not this
 			(.matchingBaseMember to AbstractMethod)._writeSharpOldParamDecls(sw, sep)
@@ -1755,13 +1754,13 @@ class AbstractMethod
 			sw.write('[oldExpr.type.sharpRef] [oldExpr.sharpVarName]')
 			sep[0] = ', '
 
-	def writeSharpParamCheck(param as Param, sw as SharpWriter)
+	def writeSharpParamCheck(param as Param, sw as CurlyWriter)
 		if .isCompilerGenerated, return
 		if param.type.isReference and not param.type inherits NilableType and not param.isOut
 			if .compiler.options.boolValue('include-nil-checks')
 				sw.write('if (CobraLangInternal.CobraCore._willCheckNil && [param.sharpName]==null) throw new System.ArgumentNullException("[param.name]");\n')
 
-	def writeDSTHead(sw as SharpWriter)
+	def writeDSTHead(sw as CurlyWriter)
 		if not .canHaveDetailedStackTrace
 			return
 		# could be a neat option, -trace-methods, but maybe done with events:
@@ -1775,7 +1774,7 @@ class AbstractMethod
 		sw.write(');\n')
 		sw.writeAndIndent('try {\n')
 
-	def writeDSTTail(sw as SharpWriter)
+	def writeDSTTail(sw as CurlyWriter)
 		if not .canHaveDetailedStackTrace
 			return
 		# sw.writeLine('Console.WriteLine("<< [.parentBox.name].[.name]");')
@@ -1793,7 +1792,7 @@ class AbstractMethod
 class Initializer
 	is partial
 
-	def innerWriteSharpDef(sw as SharpWriter)
+	def innerWriteSharpDef(sw as CurlyWriter)
 		base.innerWriteSharpDef(sw)
 		.writeSharpAttribs(sw)
 		first = if(_stmts.count, _stmts[0], nil)
@@ -1830,7 +1829,7 @@ class Initializer
 		if .compiler.includeTests
 			.writeSharpTest(sw)
 
-	def writeSharpImpHeader(sw as SharpWriter)
+	def writeSharpImpHeader(sw as CurlyWriter)
 		base.writeSharpImpHeader(sw)
 		if .isStructMember and .compiler.options['contracts'] <> 'none'
 			sw.write('\n_ih_invariantGuard = 0;\n\n')  # otherwise C# complains: Field "STRUCTNAME._ih_invariantGuard" must be fully assigned before control leaves the constructor
@@ -1854,7 +1853,7 @@ class Method
 		else
 			return ''
 
-	def innerWriteSharpDef(sw as SharpWriter)
+	def innerWriteSharpDef(sw as CurlyWriter)
 		base.innerWriteSharpDef(sw)
 		.writeSharpNotNull(sw)
 		.writeSharpAttribs(sw)
@@ -1880,7 +1879,7 @@ class Method
 			if _ensurePart, _ensurePart.writeSharpMethod(sw)
 			if .compiler.includeTests, .writeSharpTest(sw)
 
-	def writeSharpImpHeader(sw as SharpWriter)
+	def writeSharpImpHeader(sw as CurlyWriter)
 		base.writeSharpImpHeader(sw)
 		if .isMain
 			if .compiler.hasExceptionReportOption
@@ -1892,7 +1891,7 @@ class Method
 		if .isMain and .compiler.options.boolValue('include-tests')
 			sw.writeLine('CobraLangInternal.CobraCore.RunAllTests();  // turn off with -include-tests:no (see cobra -h)')
 
-	def writeSharpImpFooter(sw as SharpWriter)
+	def writeSharpImpFooter(sw as CurlyWriter)
 		base.writeSharpImpFooter(sw)
 		if .isMain
 			if .compiler.hasExceptionReportOption
@@ -1909,7 +1908,7 @@ class Method
 class ProperDexer
 	is partial
 
-	def writeSharpBody(sw as SharpWriter)
+	def writeSharpBody(sw as CurlyWriter)
 		sw.write(' {\n')
 		sw.indent
 		if _getPart
@@ -1929,7 +1928,7 @@ class ProperDexer
 class ProperDexerXetter
 	is partial
 
-	def innerWriteSharpDef(sw as SharpWriter)
+	def innerWriteSharpDef(sw as CurlyWriter)
 		base.innerWriteSharpDef(sw)
 		sw.write(.xetPartName)
 		.writeSharpImp(sw, false)
@@ -1941,7 +1940,7 @@ class Property
 	get sharpNotNullPrefix as String is override
 		return ''
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		sw.writeLine('')
 		.writeSharpNotNull(sw)
@@ -1979,7 +1978,7 @@ class Indexer
 	get sharpNotNullPrefix as String is override
 		return ''
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		assert _name==r'[]'
 		sw.writeLine('')
@@ -2038,7 +2037,7 @@ class ContractPart
 	var _sharpMethodNameCache as String?
 
 		
-	def writeSharpMethod(sw as SharpWriter) is abstract
+	def writeSharpMethod(sw as CurlyWriter) is abstract
 
 	def _sharpMethodName(prefix as String) as String
 		if _sharpMethodNameCache is nil
@@ -2064,7 +2063,7 @@ class RequirePart
 	get sharpMethodName as String
 		return _sharpMethodName('require')
 
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as CurlyWriter) is override
 		base.writeSharpDef(sw)
 		assert .willGenerateCode
 		willInline = .willInlineCode
@@ -2127,7 +2126,7 @@ class RequirePart
 		sw.dedent
 		sw.write('}\n')
 
-	def writeSharpMethod(sw as SharpWriter) is override
+	def writeSharpMethod(sw as CurlyWriter) is override
 		if .compiler.options['contracts'] <> 'methods'
 			return
 		if _codeMember.isInterfaceMember
@@ -2146,7 +2145,7 @@ class RequirePart
 		sw.dedent
 		sw.write('}\n\n')
 
-	def writeSharpChecks(sw as SharpWriter)
+	def writeSharpChecks(sw as CurlyWriter)
 		for expr in _exprs
 			sw.write('if (!')
 			expr.writeSharpDef(sw)
@@ -2163,7 +2162,7 @@ class EnsurePart is partial
 	get sharpMethodName as String
 		return _sharpMethodName('ensure')
 
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as CurlyWriter) is override
 		base.writeSharpDef(sw)
 		assert .willGenerateCode
 		willInline = .willInlineCode
@@ -2191,7 +2190,7 @@ class EnsurePart is partial
 		sw.dedent
 		sw.write('}\n')
 
-	def writeSharpMethod(sw as SharpWriter) is override
+	def writeSharpMethod(sw as CurlyWriter) is override
 		if .compiler.options['contracts'] <> 'methods'
 			return
 		if _codeMember.isInterfaceMember
@@ -2210,7 +2209,7 @@ class EnsurePart is partial
 		sw.dedent
 		sw.write('}\n\n')
 
-	def writeSharpChecks(sw as SharpWriter)
+	def writeSharpChecks(sw as CurlyWriter)
 		for expr in _exprs
 			sw.write('if (!')
 			expr.writeSharpDef(sw)
@@ -2288,11 +2287,11 @@ class Stmt
 			# so not a code member
 			return '"(uninitialized [.compiler.curBox.name] instance)"'
 
-	def writeSharpSetLine(sw as SharpWriter)
+	def writeSharpSetLine(sw as CurlyWriter)
 		if _canSetLine and .token.lineNum > 0
 			sw.write('CobraLangInternal.CobraImp._curFrame._lineNum = [.token.lineNum];\n')
 
-	def writeSharpStmt(sw as SharpWriter)
+	def writeSharpStmt(sw as CurlyWriter)
 		assert .didBindImp
 		sw.node(this)
 		.writeSharpSetLine(sw)
@@ -2302,7 +2301,7 @@ class Stmt
 class AssertStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		if not .compiler.options.boolValue('include-asserts')
 			return
@@ -2324,7 +2323,7 @@ class AssertStmt
 class BranchStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		if _expr.type.isDynamic
 			# if the expression is dynamic, then use an if-else ladder with CobraImp.Equals(
@@ -2379,17 +2378,17 @@ class BranchStmt
 class BlockStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		.writeSharpDef(sw, true, nil)
 
-	def writeSharpDef(sw as SharpWriter, close as bool)
+	def writeSharpDef(sw as CurlyWriter, close as bool)
 		.writeSharpDef(sw, close, nil)
 
-	def writeSharpDef(sw as SharpWriter, top as String?)
+	def writeSharpDef(sw as CurlyWriter, top as String?)
 		.writeSharpDef(sw, true, top)
 
-	def writeSharpDef(sw as SharpWriter, close as bool, top as String?)
+	def writeSharpDef(sw as CurlyWriter, close as bool, top as String?)
 		sw.node(this)
 		sw.write(' {\n')
 		sw.indent
@@ -2415,7 +2414,7 @@ class BlockStmt
 class BreakStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		sw.write('break;\n')
 
@@ -2423,7 +2422,7 @@ class BreakStmt
 class ContinueStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		sw.write('continue;\n')
 
@@ -2431,7 +2430,7 @@ class ContinueStmt
 class ExpectStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		exceptionTypeRef = _exceptionType.sharpRef
 		gotRightExceptionVarName = '_lh_expect_[_varNumber-1]'  # lh => "local helper"
@@ -2461,7 +2460,7 @@ class OldForNumericStmt
 	is partial
 
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		csVar = _var.sharpName
 		trackLocals = .compiler.willTrackLocals
@@ -2506,14 +2505,14 @@ class OldForNumericStmt
 class ForNumericStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		if _var.type.isDynamic
 			_writeSharpDefForDynamic(sw)
 		else
 			_writeSharpDefForStatic(sw)
 	
-	def _writeSharpDefForDynamic(sw as SharpWriter)
+	def _writeSharpDefForDynamic(sw as CurlyWriter)
 		# TODO: this is the old numeric for loop behavior. 
 		csVar = _var.sharpName
 		trackLocals = .compiler.willTrackLocals
@@ -2537,7 +2536,7 @@ class ForNumericStmt
 		sw.write(')')
 		_block.writeSharpDef(sw)
 
-	def _writeSharpDefForStatic(sw as SharpWriter)
+	def _writeSharpDefForStatic(sw as CurlyWriter)
 		"""
 		Pseudo example:
 			Cobra:
@@ -2620,7 +2619,7 @@ class ForNumericStmt
 class ForEnumerableStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		# in a C# foreach, (1) you must declare a new variable, (2) you cannot reassign it and (3) you cannot access it after the loop
 		# these constraints don't exist in Cobra
@@ -2647,7 +2646,7 @@ class ForEnumerableStmt
 class IfStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		# if you're looking for if-inherits related code gen, see BlockStmt
 		base.writeSharpDef(sw)
 		sw.write('if (')
@@ -2665,7 +2664,7 @@ class IfStmt
 class ListenOrIgnoreStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		_event.writeSharpDef(sw, false)
 		sw.write(' [.sharpOperator] ')
@@ -2698,7 +2697,7 @@ class PassStmt
 class PrintStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		if _destination
 			_destination.writeSharpDef(sw, true)
@@ -2719,7 +2718,7 @@ class PrintStmt
 class PrintRedirectStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		sw.write('CobraLangInternal.CobraImp.PushPrintTo(')
 		_destination.writeSharpDef(sw, false)
@@ -2736,7 +2735,7 @@ class PrintRedirectStmt
 class RaiseStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		name = .name.capped
 		localName = '_lh_event_[.serialNum]'
@@ -2757,7 +2756,7 @@ class ReturnStmt
 
 	pro backEndResultVarName from var
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		ensurePart = .compiler.curCodeMember.ensurePart
 		willEnsure = ensurePart and ensurePart.willGenerateCode
@@ -2785,7 +2784,7 @@ class TraceStmt
 class TraceLocationStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		if .includeTraces
 			sw.write('CobraLangInternal.CobraCore.Tracer.Trace([.sharpSourceSite]);\n')
@@ -2794,7 +2793,7 @@ class TraceLocationStmt
 class TraceAllStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		if .includeTraces
 			sw.write('CobraLangInternal.CobraCore.Tracer.Trace([.sharpSourceSite], "this", [_codePart.sharpThis]')
@@ -2808,7 +2807,7 @@ class TraceAllStmt
 class TraceExprsStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		if .includeTraces
 			sw.write('CobraLangInternal.CobraCore.Tracer.Trace([.sharpSourceSite]')
@@ -2822,7 +2821,7 @@ class TraceExprsStmt
 class TryStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		if _successBlock
 			# C# has no "success" (or in Python, "else") block for the "try" statement
@@ -2857,7 +2856,7 @@ class TryStmt
 				sw.write('finally')
 				_finallyBlock.writeSharpDef(sw)
 
-	def writeCatchBlocks(sw as SharpWriter, localSuccessVar as String?)
+	def writeCatchBlocks(sw as CurlyWriter, localSuccessVar as String?)
 		for eb in _catchBlocks
 			sw.write('catch')
 			if eb.type
@@ -2896,7 +2895,7 @@ class CatchBlock
 class ThrowStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		sw.write('throw ')
 		if _expr
@@ -2911,7 +2910,7 @@ class ThrowStmt
 class UsingStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		name = _var.sharpName
 		sw.write('// using\n')
@@ -2931,7 +2930,7 @@ class UsingStmt
 class WhileStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		sw.write('while (')
 		_expr.writeSharpDef(sw, false)
@@ -2942,7 +2941,7 @@ class WhileStmt
 class PostWhileStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as CurlyWriter) is override
 		# base.writeSharpDef(sw) - don't generate the other form of while loop
 		sw.write('do')
 		_block.writeSharpDef(sw, false)
@@ -2961,7 +2960,7 @@ class YieldStmt
 class YieldBreakStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		sw.write('yield break;\n')
 
@@ -2969,7 +2968,7 @@ class YieldBreakStmt
 class YieldReturnStmt
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		ensurePart = .compiler.curCodeMember.ensurePart
 		willEnsure = ensurePart and ensurePart.willGenerateCode
@@ -2995,7 +2994,7 @@ class YieldReturnStmt
 class MultiTargetAssignStatement
 	is partial
 
-	def writeSharpDef(sw as SharpWriter)
+	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		_block.writeSharpDef(sw)
 
@@ -3018,10 +3017,10 @@ class Expr
 			if type.size < 32, return true
 		return false
 
-	def writeSharpDefInContext(sw as SharpWriter)
+	def writeSharpDefInContext(sw as CurlyWriter)
 		.writeSharpDefInContext(sw, true)
 
-	def writeSharpDefInContext(sw as SharpWriter, parens as bool)
+	def writeSharpDefInContext(sw as CurlyWriter, parens as bool)
 		"""
 		When an expression is used where a particular type is expected, such as:
 			# assignment
@@ -3042,7 +3041,7 @@ class Expr
 			sw.write(')')
 			if parens, sw.write(')')
 
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as CurlyWriter) is override
 		base.writeSharpDef(sw)
 		branch .argumentLabel
 			on ArgumentLabel.None,  pass
@@ -3050,17 +3049,17 @@ class Expr
 			on ArgumentLabel.InOut, sw.write('ref ')
 		.writeSharpDef(sw, true)
 
-	def writeSharpDef(sw as SharpWriter, parens as bool)
+	def writeSharpDef(sw as CurlyWriter, parens as bool)
 		pass
 
-	def writeSharpStmt(sw as SharpWriter) is override
+	def writeSharpStmt(sw as CurlyWriter) is override
 		assert .didBindImp
 		sw.node(this)
 		.writeSharpSetLine(sw)
 		.writeSharpDef(sw, false)
 		sw.write(';\n')
 
-	def writeSharpBreakdown(sw as SharpWriter)
+	def writeSharpBreakdown(sw as CurlyWriter)
 		sw.write(r'new object[] { 0')
 		.writeSharpBreakdownItems(sw)
 		sw.write('}, ')
@@ -3068,13 +3067,13 @@ class Expr
 	get willWriteSharpBreakdownItems as bool
 		return _argumentLabel <> ArgumentLabel.Out
 
-	def writeSharpBreakdownItems(sw as SharpWriter)
+	def writeSharpBreakdownItems(sw as CurlyWriter)
 		if .willWriteSharpBreakdownItems
 			src = Utils.sharpStringLiteralFor(.toCobraSource)
 			sw.write(', [src], ')
 			.writeSharpDefForBreakdown(sw)
 
-	def writeSharpDefForBreakdown(sw as SharpWriter)
+	def writeSharpDefForBreakdown(sw as CurlyWriter)
 		.writeSharpDef(sw)
 
 
@@ -3088,18 +3087,18 @@ class NameExpr
 class AsExpr
 	is partial
 
-	def writeSharpStmt(sw as SharpWriter) is override
+	def writeSharpStmt(sw as CurlyWriter) is override
 		# this happens for declarations like "i as int"
 		sw.write('// [_name] as [_type.name]\n')
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		sw.write(.asSharp)
 
 
 class AnonymousMethodExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		# note that C# delegates don't allow explicit return types
 		# C# always infers the return type from the return statement
 		sw.write('delegate')
@@ -3113,7 +3112,7 @@ class AnonymousMethodExpr
 			sw.write(')')
 		_method.writeSharpImp(sw, false)  # writes { ... }
 
-	def writeSharpDefForBreakdown(sw as SharpWriter) is override
+	def writeSharpDefForBreakdown(sw as CurlyWriter) is override
 		# .writeSharpDef(sw)
 		sw.write('new CobraLangInternal.CobraDirectString("(anonymous method)")')
 
@@ -3121,7 +3120,7 @@ class AnonymousMethodExpr
 class LambdaExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		# note that C# delegates don't allow explicit return types
 		# C# always infers the return type from the return statement
 		sw.write('delegate')
@@ -3137,7 +3136,7 @@ class LambdaExpr
 		.expr.writeSharpDef(sw, false)
 		sw.write(';}')
 
-	def writeSharpDefForBreakdown(sw as SharpWriter) is override
+	def writeSharpDefForBreakdown(sw as CurlyWriter) is override
 		# .writeSharpDef(sw)
 		sw.write('new CobraLangInternal.CobraDirectString("(lambda)")')
 
@@ -3145,7 +3144,7 @@ class LambdaExpr
 class CallExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		assert .superNode inherits DotExpr
 		name = .name
 		if _definition inherits BoxMember and (_definition to BoxMember).binaryName
@@ -3168,7 +3167,7 @@ class CallExpr
 			sep = ', '
 		sw.write(')')
 
-	def writeSharpBreakdownItems(sw as SharpWriter) is override
+	def writeSharpBreakdownItems(sw as CurlyWriter) is override
 		# leaving out the base call is intentional:
 		# base.writeSharpBreakdownItems(sw)
 		sw.write(', +1')
@@ -3180,7 +3179,7 @@ class CallExpr
 class EnumCallExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		if parens
 			sw.write('(')
 		if _args.count == 0
@@ -3194,7 +3193,7 @@ class EnumCallExpr
 		if parens
 			sw.write(')')
 
-	def writeSharpBreakdownItems(sw as SharpWriter)
+	def writeSharpBreakdownItems(sw as CurlyWriter)
 		base.writeSharpBreakdownItems(sw)
 		sw.write(', +1')
 		for member in _members
@@ -3206,7 +3205,7 @@ class EnumCallExpr
 class ForExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		# C#:  CobraImp.For(stuff, delegate(x as int) { return x*x })
 		# C#:  CobraImp.For(stuff, delegate(x as int) { if (x<0) return x*x; })
 		inType = .inferredType
@@ -3259,7 +3258,7 @@ class ForExpr
 class IdentifierExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		# recall that this cannot be the right side of "foo.bar" since that is a MemberExpr
 		sharp = .sharpQualification + .sharpName
 		if _requiresTypeOf, sharp = 'typeof(' + sharp + ')'
@@ -3299,7 +3298,7 @@ class IdentifierExpr
 				return false
 		return true
 
-	def writeSharpStmt(sw as SharpWriter) is override
+	def writeSharpStmt(sw as CurlyWriter) is override
 		assert .isCalling
 		sw.write('[_name]();')
 
@@ -3313,7 +3312,7 @@ class IdentifierExpr
 			else
 				return nil
 
-	def writeSharpDefForBreakdown(sw as SharpWriter) is override
+	def writeSharpDefForBreakdown(sw as CurlyWriter) is override
 		name = .sharpQualification + .sharpName
 		# _requiresTypeOf may return false, but in the sharp def breakdown, typeof() is always required
 		if .isTypeReference, name = 'typeof(' + name + ')'
@@ -3323,7 +3322,7 @@ class IdentifierExpr
 class IfExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		cond, tpart, fpart = .cond, .tpart, .fpart
 		cast = tpart.type <> fpart.type
 		# C# doesn't do the "greatest common denominator" thing like Cobra does, so some casting is in order
@@ -3339,7 +3338,7 @@ class IfExpr
 		if cast, sw.write(')')
 		sw.write(')')
 
-	def writeSharpBreakdownItems(sw as SharpWriter)
+	def writeSharpBreakdownItems(sw as CurlyWriter)
 		base.writeSharpBreakdownItems(sw)
 
 		sw.write(', +1') # indent
@@ -3370,7 +3369,7 @@ class IfExpr
 class IndexExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		if _target.type.isDynamic
 			sw.write('CobraLangInternal.CobraImp.GetIndexerValue(')
 			_target.writeSharpDef(sw, false)
@@ -3398,7 +3397,7 @@ class IndexExpr
 		if parens
 			sw.write(')')
 
-	def writeSharpBreakdownItems(sw as SharpWriter)
+	def writeSharpBreakdownItems(sw as CurlyWriter)
 		base.writeSharpBreakdownItems(sw)
 		sw.write(', +1')
 		_target.writeSharpBreakdownItems(sw)
@@ -3410,7 +3409,7 @@ class IndexExpr
 class IsNilExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		if parens
 			sw.write('(')
 		sw.write('(')
@@ -3420,7 +3419,7 @@ class IsNilExpr
 		if parens
 			sw.write(')')
 
-	def writeSharpBreakdownItems(sw as SharpWriter)
+	def writeSharpBreakdownItems(sw as CurlyWriter)
 		base.writeSharpBreakdownItems(sw)
 		_expr.writeSharpBreakdownItems(sw)
 
@@ -3428,7 +3427,7 @@ class IsNilExpr
 class IsNotNilExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		if parens, sw.write('(')
 		sw.write('(')
 		_expr.writeSharpDef(sw)
@@ -3436,7 +3435,7 @@ class IsNotNilExpr
 		sw.write('!=null')
 		if parens, sw.write(')')
 
-	def writeSharpBreakdownItems(sw as SharpWriter)
+	def writeSharpBreakdownItems(sw as CurlyWriter)
 		base.writeSharpBreakdownItems(sw)
 		_expr.writeSharpBreakdownItems(sw)
 
@@ -3444,7 +3443,7 @@ class IsNotNilExpr
 class MemberExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		assert .superNode inherits DotExpr
 		if _definition inherits BoxMember
 			name = _definition.binaryName
@@ -3454,7 +3453,7 @@ class MemberExpr
 		if _definition and (_definition.isMethod or _name=='toString') and not _isReference  # TODO: axe the 'toString' check
 			sw.write('()')
 
-	def writeSharpBreakdownItems(sw as SharpWriter) is override
+	def writeSharpBreakdownItems(sw as CurlyWriter) is override
 		pass
 
 
@@ -3465,7 +3464,7 @@ class OldExpr
 
 	pro sharpVarName from var
 
-	def writeSharpAssignment(sw as SharpWriter)
+	def writeSharpAssignment(sw as CurlyWriter)
 		require
 			.didBindImp
 			.sharpVarName
@@ -3475,7 +3474,7 @@ class OldExpr
 			_expr.writeSharpDef(sw)
 			sw.write(';\n')
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		assert _sharpVarName
 		# this gets called when generating the `ensure` code
 		sw.write(_sharpVarName)
@@ -3484,7 +3483,7 @@ class OldExpr
 class PostCallExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		if _helperMethod
 			sw.write(_helperMethod.name + '(')
 			sep = ''
@@ -3557,16 +3556,16 @@ class PostCallExpr
 				sw.write(')')
 			if parens, sw.write(')')
 
-	def writeSharpArgs(sw as SharpWriter)
+	def writeSharpArgs(sw as CurlyWriter)
 		.writeSharpArgs(sw, '')
 
-	def writeSharpArgs(sw as SharpWriter, sep as String)
+	def writeSharpArgs(sw as CurlyWriter, sep as String)
 		for arg in _args
 			sw.write(sep)
 			arg.writeSharpDefInContext(sw, false)
 			sep = ','
 		
-	def writeSharpBreakdownItems(sw as SharpWriter)
+	def writeSharpBreakdownItems(sw as CurlyWriter)
 		base.writeSharpBreakdownItems(sw)
 		sw.write(', +1')
 		_expr.writeSharpBreakdownItems(sw)
@@ -3578,14 +3577,14 @@ class PostCallExpr
 class RefExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		if parens
 			sw.write('(')
 		_expr.writeSharpDef(sw, false)
 		if parens
 			sw.write(')')
 
-	def writeSharpBreakdownItems(sw as SharpWriter)
+	def writeSharpBreakdownItems(sw as CurlyWriter)
 		base.writeSharpBreakdownItems(sw)
 		# TODO
 
@@ -3593,7 +3592,7 @@ class RefExpr
 class SharpExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		if parens, sw.write('(')
 		if _sharpSource
 			sw.write(_sharpSource)
@@ -3606,7 +3605,7 @@ class SliceExpr
 	is partial
 
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		sw.write('CobraLangInternal.CobraImp.GetSlice(')
 		_target.writeSharpDef(sw, false)
 		sw.write(',')
@@ -3620,7 +3619,7 @@ class SliceExpr
 		else, _step.writeSharpDefInContext(sw, false)
 		sw.write(')')
 
-	def writeSharpBreakdownItems(sw as SharpWriter)
+	def writeSharpBreakdownItems(sw as CurlyWriter)
 		base.writeSharpBreakdownItems(sw)
 		sw.write(', +1')
 		_target.writeSharpBreakdownItems(sw)
@@ -3633,7 +3632,7 @@ class SliceExpr
 class TruthExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		lparen = if(parens, '(', '')
 		rparen = if(parens, ')', '')
 		branch _treatment
@@ -3656,7 +3655,7 @@ class TruthExpr
 				_expr.writeSharpDef(sw, true)
 				sw.write(rparen)
 
-	def writeSharpBreakdownItems(sw as SharpWriter) is override
+	def writeSharpBreakdownItems(sw as CurlyWriter) is override
 		# leaving out the base class is intentional:
 		# base.writeSharpBreakdownItems(sw, isFirstExpr)
 		_expr.writeSharpBreakdownItems(sw)
@@ -3665,7 +3664,7 @@ class TruthExpr
 class TypeExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		sharpRef = _containedType.sharpRef
 		# handle the case of "X.X" where namespace and class are both called "X".
 		# C# chokes on it because the first "X" is considered to be the type
@@ -3693,7 +3692,7 @@ class TypeExpr
 						return false
 			return true
 
-	def writeSharpDefForBreakdown(sw as SharpWriter) is override
+	def writeSharpDefForBreakdown(sw as CurlyWriter) is override
 		requiresTypeOf = _requiresTypeOf
 		if not requiresTypeOf, sw.write('typeof(')
 		.writeSharpDef(sw)
@@ -3703,12 +3702,12 @@ class TypeExpr
 class AllOrAnyExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		sw.write('CobraLangInternal.CobraImp.[.opName.capped](')
 		.expr.writeSharpDefInContext(sw)
 		sw.write(')')
 
-	def writeSharpBreakdownItems(sw as SharpWriter)
+	def writeSharpBreakdownItems(sw as CurlyWriter)
 		base.writeSharpBreakdownItems(sw)
 		sw.write(', +1')
 		.expr.writeSharpBreakdownItems(sw)
@@ -3718,7 +3717,7 @@ class AllOrAnyExpr
 class UnaryOpExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		if _op == 'PLUS'
 			if parens
 				sw.write('(')
@@ -3750,7 +3749,7 @@ class UnaryOpExpr
 		if parens
 			sw.write(')')
 
-	def writeSharpBreakdownItems(sw as SharpWriter)
+	def writeSharpBreakdownItems(sw as CurlyWriter)
 		base.writeSharpBreakdownItems(sw)
 		sw.write(', +1')
 		_expr.writeSharpBreakdownItems(sw)
@@ -3763,7 +3762,7 @@ class Literal
 	get asSharp as String
 		return ''
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		sw.write(.asSharp)
 
 
@@ -3858,7 +3857,7 @@ class StringLit
 class StringSubstLit
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		if _items.count>1
 			sw.write('CobraLangInternal.CobraImp.MakeString(')
 		sep = ''
@@ -3905,7 +3904,7 @@ class VarLit
 class SequenceLit
 	is partial
 
-	def writeSharpBreakdownItems(sw as SharpWriter) is override  # CC: axe is override
+	def writeSharpBreakdownItems(sw as CurlyWriter) is override  # CC: axe is override
 		base.writeSharpBreakdownItems(sw)
 		sw.write(', +1')
 		for expr in _exprs
@@ -3916,7 +3915,7 @@ class SequenceLit
 class ListLit
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		innerType = (_type to Box).genericParams[0]
 		sw.write('CobraLangInternal.CobraImp.MakeList<[innerType.sharpRef]>(typeof([_type.sharpRef])')
 		if _exprs.count
@@ -3932,7 +3931,7 @@ class ListLit
 class ArrayLit
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		sw.write('new [_type.sharpRef] { ')
 		if _exprs.count
 			sep = ''
@@ -3946,7 +3945,7 @@ class ArrayLit
 class SetLit
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		innerType = (_type to Box).genericParams[0]
 		sw.write('CobraLangInternal.CobraImp.MakeSet<[innerType.sharpRef]>(typeof([_type.sharpRef])')
 		if _exprs.count
@@ -3962,7 +3961,7 @@ class SetLit
 class DictLit
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		assert (_type to Box).genericParams.count==2
 		keyType   = (_type to Box).genericParams[0]
 		valueType = (_type to Box).genericParams[1]
@@ -3978,7 +3977,7 @@ class DictLit
 				sep = ', '
 		sw.write(')')
 
-	def writeSharpBreakdownItems(sw as SharpWriter) is override  # CC: axe is override
+	def writeSharpBreakdownItems(sw as CurlyWriter) is override  # CC: axe is override
 		base.writeSharpBreakdownItems(sw)
 		sw.write(', +1')
 		for entry in _entries
@@ -3993,7 +3992,7 @@ class DictLit
 class ToNilableOrNotExpr
 	is partial
 
-	def writeSharpBreakdownItems(sw as SharpWriter)
+	def writeSharpBreakdownItems(sw as CurlyWriter)
 		base.writeSharpBreakdownItems(sw)
 		_expr.writeSharpBreakdownItems(sw)
 
@@ -4001,7 +4000,7 @@ class ToNilableOrNotExpr
 class ToNilableExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		if _expr.type.isReference
 			# In C#/.NET, reference types are always "nilable"
 			_expr.writeSharpDef(sw)
@@ -4017,7 +4016,7 @@ class ToNonNilableExpr
 	is partial
 
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		type = _expr.type
 		if type inherits NilableType and not type.nonNil.isReference
 			# ex: (x).Value
@@ -4042,32 +4041,32 @@ class ToNonNilableExpr
 class BinaryOpExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		if parens, sw.write('(')
 		_writeSharpDef(sw)
 		if parens, sw.write(')')
 
-	def _writeSharpDef(sw as SharpWriter)
+	def _writeSharpDef(sw as CurlyWriter)
 		pass
 
-	def writeSharpBreakdownItems(sw as SharpWriter)
+	def writeSharpBreakdownItems(sw as CurlyWriter)
 		base.writeSharpBreakdownItems(sw)
 		sw.write(', +1')
 		_writeSharpBreakdownItemsLeft(sw)
 		_writeSharpBreakdownItemsRight(sw)
 		sw.write(', -1')
 
-	def _writeSharpBreakdownItemsLeft(sw as SharpWriter)
+	def _writeSharpBreakdownItemsLeft(sw as CurlyWriter)
 		_left.writeSharpBreakdownItems(sw)
 
-	def _writeSharpBreakdownItemsRight(sw as SharpWriter)
+	def _writeSharpBreakdownItemsRight(sw as CurlyWriter)
 		_right.writeSharpBreakdownItems(sw)
 
 
 class AbstractAssignExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		if _trackLocal
 			sw.write('CobraLangInternal.CobraImp.SetLocal("[_trackName]", ')
 		else if parens
@@ -4080,7 +4079,7 @@ class AbstractAssignExpr
 class AssignExpr
 	is partial
 
-	def _writeSharpDef(sw as SharpWriter) is override
+	def _writeSharpDef(sw as CurlyWriter) is override
 		# TODO:
 		# if trackLocal:
 		#	out.write('CobraLangInternal.CobraImp.SetLocal("%s", ' % .left.name)
@@ -4137,7 +4136,7 @@ class AssignExpr
 class NumericPromoExpr
 	is partial
 
-	def _writeSharpDefDynamic(sw as SharpWriter)
+	def _writeSharpDefDynamic(sw as CurlyWriter)
 		specs = OperatorSpecs.binaryOpSpecsByCobraText
 		assert specs.containsKey(.token.text)
 		spec = specs[.token.text]
@@ -4152,7 +4151,7 @@ class NumericPromoExpr
 class AugAssignMathExpr
 	is partial
 
-	def _writeSharpDef(sw as SharpWriter) is override
+	def _writeSharpDef(sw as CurlyWriter) is override
 		if _left.type.isDynamic
 			_left.writeSharpDef(sw)
 			sw.write(' = ')
@@ -4201,7 +4200,7 @@ class AugAssignMathExpr
 class AugAssignBitwiseExpr
 	is partial
 
-	def _writeSharpDef(sw as SharpWriter) is override
+	def _writeSharpDef(sw as CurlyWriter) is override
 		if _left.type.isDynamic
 			_left.writeSharpDef(sw)
 			sw.write(' = ')
@@ -4238,7 +4237,7 @@ class AugAssignBitwiseExpr
 class BinaryBoolExpr
 	is partial
 
-	def _writeSharpDef(sw as SharpWriter) is override
+	def _writeSharpDef(sw as CurlyWriter) is override
 		if _op=='IMPLIES'
 			sw.write('!')
 		_left.writeSharpDef(sw)
@@ -4249,7 +4248,7 @@ class BinaryBoolExpr
 				sw.write('||')
 		_right.writeSharpDef(sw)
 
-	def _writeSharpBreakdownItemsRight(sw as SharpWriter) is override
+	def _writeSharpBreakdownItemsRight(sw as CurlyWriter) is override
 		# have to respect the short circuit otherwise something like "s and s.length" will give
 		# NullReference exception for "s.length"
 		# solution is: given L and R,
@@ -4271,7 +4270,7 @@ class BinaryBoolExpr
 class BinaryBitwiseExpr
 	is partial
 
-	def _writeSharpDef(sw as SharpWriter) is override
+	def _writeSharpDef(sw as CurlyWriter) is override
 		if _type.isDynamic
 			_writeSharpDefDynamic(sw)
 			return
@@ -4298,7 +4297,7 @@ class BinaryBitwiseExpr
 class BinaryMathExpr
 	is partial
 
-	def _writeSharpDef(sw as SharpWriter) is override
+	def _writeSharpDef(sw as CurlyWriter) is override
 		if _type.isDynamic
 			_writeSharpDefDynamic(sw)
 			return
@@ -4353,7 +4352,7 @@ class BinaryMathExpr
 class CompareExpr
 	is partial
 
-	def _writeSharpDef(sw as SharpWriter) is override
+	def _writeSharpDef(sw as CurlyWriter) is override
 		left = _left
 		right = _right
 		op = _op
@@ -4437,7 +4436,7 @@ class DotExpr
 			# This would confuse the code generation into thinking that `d.getType` is a statically typed expression.
 		return r
 
-	def _writeSharpDef(sw as SharpWriter) is override
+	def _writeSharpDef(sw as CurlyWriter) is override
 		if _left.receiverType.isDynamic
 			# handle dynamic typing
 			if _right inherits MemberExpr
@@ -4497,7 +4496,7 @@ class DotExpr
 			if didSetInInitCall
 				Stmt.inInitCall = false
 
-	def _writeSharpBreakdownItemsLeft(sw as SharpWriter) is override
+	def _writeSharpBreakdownItemsLeft(sw as CurlyWriter) is override
 		if not _left.type.isDescendantOf(.compiler.typeType) # feels like a cheap escape...  # TODO: still needed? what is this?
 			_left.writeSharpBreakdownItems(sw)
 
@@ -4505,7 +4504,7 @@ class DotExpr
 class InExpr
 	is partial
 
-	def writeSharpDef(sw as SharpWriter, parens as bool) is override
+	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		branch _op
 			on 'NOTIN', sw.write('!')
 			on 'IN', pass
@@ -4523,7 +4522,7 @@ class InExpr
 class InheritsExpr
 	is partial
 				
-	def _writeSharpDef(sw as SharpWriter) is override
+	def _writeSharpDef(sw as CurlyWriter) is override
 		_left.writeSharpDef(sw)
 		sw.write(' is ')
 		_right.writeSharpDef(sw, false)
@@ -4532,7 +4531,7 @@ class InheritsExpr
 class ToExpr
 	is partial
 
-	def _writeSharpDef(sw as SharpWriter) is override
+	def _writeSharpDef(sw as CurlyWriter) is override
 		rightType = _rightTypeExpr.potentialType to !   # its not nil or _bindImp would have thrown an error
 		if rightType is .compiler.passThroughType
 			_left.writeSharpDef(sw)
@@ -4551,7 +4550,7 @@ class ToExpr
 class ToQExpr
 	is partial
 
-	def _writeSharpDef(sw as SharpWriter) is override
+	def _writeSharpDef(sw as CurlyWriter) is override
 		# x to? int     --> ((x is int || x is int?) ? (int?)x : (int?)null)
 		# x to? int?    --> ((x is int || x is int?) ? (int?)x : (int?)null)
 		# ^ but this would cause multiple evaluation of x, so...
@@ -4575,7 +4574,7 @@ class ToQExpr
 class CoalesceExpr
 	is partial
 
-	def _writeSharpDef(sw as SharpWriter) is override
+	def _writeSharpDef(sw as CurlyWriter) is override
 		_left.writeSharpDef(sw)
 		sw.write(' ?? ')
 		_right.writeSharpDef(sw)
@@ -4584,7 +4583,7 @@ class CoalesceExpr
 class InverseCoalesceExpr
 	is partial
 
-	def _writeSharpDef(sw as SharpWriter) is override
+	def _writeSharpDef(sw as CurlyWriter) is override
 		if _right inherits NilLiteral
 			# `left ! nil` always returns nil -- it's like a no-op
 			if _left inherits IdentifierExpr
@@ -4606,7 +4605,7 @@ class InverseCoalesceExpr
 class CoalesceAssignExpr
 	is partial
 
-	def _writeSharpDef(sw as SharpWriter) is override
+	def _writeSharpDef(sw as CurlyWriter) is override
 		# L = L * R
 		_left.writeSharpDef(sw)
 		sw.write(' = ')
@@ -4618,7 +4617,7 @@ class CoalesceAssignExpr
 class InverseCoalesceAssignExpr
 	is partial
 
-	def _writeSharpDef(sw as SharpWriter) is override
+	def _writeSharpDef(sw as CurlyWriter) is override
 		_left.writeSharpDef(sw)
 		sw.write(' = ')
 		if _right inherits NilLiteral
@@ -4639,10 +4638,10 @@ class InverseCoalesceAssignExpr
 class AttributeDecl
 	is partial
 
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as CurlyWriter) is override
 		.writeSharpDef(sw, '')
 
-	def writeSharpDef(sw as SharpWriter, prefix as String)
+	def writeSharpDef(sw as CurlyWriter, prefix as String)
 		sw.write(r'[')
 		sw.write(prefix)
 		expr = _expr to PostCallExpr
@@ -4666,12 +4665,12 @@ class AttributeDecl
 class AssemblyDecl
 	is partial
 
-	def writeSharpDef(sw as SharpWriter) is override
+	def writeSharpDef(sw as CurlyWriter) is override
 		base.writeSharpDef(sw)
 		for attrib in _attribs
 			attrib.writeSharpDef(sw, 'assembly: ')
 
-	def writeSharpTestInvocation(sw as SharpWriter)
+	def writeSharpTestInvocation(sw as CurlyWriter)
 		pass
 
 
