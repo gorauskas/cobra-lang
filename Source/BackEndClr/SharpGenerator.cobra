@@ -36,17 +36,16 @@ class Compiler is partial
 
 	var _baseExeFileName as String = ''
 	var _fullExeFileName as String = ''
-	var _moduleFileName_to_sharpToCobraLineNum as Dictionary<of String, Dictionary<of int, int>?>?
 
 	def writeSharp
 		Node.setCompiler(this)
 		try
-			_moduleFileName_to_sharpToCobraLineNum = Dictionary<of String, Dictionary<of int, int>>()
+			_moduleFileName_to_sharpToCurlyLineNum = Dictionary<of String, Dictionary<of int, int>>()
 			for _curModule in _modules
 				if not _curModule.fileName.endsWith('SystemInterfaces.cobra')
 					sharpToCobraLineNum = _curModule.writeSharpDef
-					_moduleFileName_to_sharpToCobraLineNum[_curModule.fileName] = sharpToCobraLineNum
-					_moduleFileName_to_sharpToCobraLineNum[Path.getFullPath(_curModule.fileName)] = sharpToCobraLineNum
+					_moduleFileName_to_sharpToCurlyLineNum[_curModule.fileName] = sharpToCobraLineNum
+					_moduleFileName_to_sharpToCurlyLineNum[Path.getFullPath(_curModule.fileName)] = sharpToCobraLineNum
 		finally
 			Node.setCompiler(nil)
 
@@ -317,37 +316,6 @@ class Compiler is partial
 					print 'C# message: [line]'
 				_addMessage(SharpCompilationMessage(line, this))
 
-	def cobraLineNumForSharp(fileName as String, lineNum as int) as int
-		"""
-		Returns the source cobra line number given a filename (sans ".cs") and line number in the
-		generated C#. Used by SharpCompilationMessage.
-		"""
-		# for some reason the C# filenames come in with a lower case drive letter,
-		# and in 2006 strings are *still* case sensitive.
-		# *sigh*
-		if fileName.length>=2 and fileName[1]==c':'
-			fileName = fileName.capped
-
-		# TODO: handle relative paths like ..\foo.cobra which C# spells out as absolute paths
-
-		if not _moduleFileName_to_sharpToCobraLineNum.containsKey(fileName)
-			return lineNum
-		map = _moduleFileName_to_sharpToCobraLineNum[fileName]
-
-		# sometimes the line numbers are one off. that's not ideal, but keep chugging:
-		if not map.containsKey(lineNum) and map.containsKey(lineNum-1)
-			lineNum -= 1
-
-		if map.containsKey(lineNum)
-			return map[lineNum]
-		else
-			# TODO: take this out someday. was put in 2006-11-12
-			print '<> Cannot map C# location back to cobra.'
-			print '   fileName = [fileName]'
-			print '   lineNum = [lineNum]'
-			print '   sharpToCobraLineNum = [CobraCore.toTechString(map)]'
-			return map[lineNum]
-
 
 ##
 ## Node
@@ -407,10 +375,16 @@ class Module
 		pass
 
 
-class SharpModule
-	inherits NativeModule
+class JavaModule inherits NativeModule is partial
+
+	def writeSharpDef as Dictionary<of int, int>? is override
+		assert false
+		return nil
+
+
+class SharpModule inherits NativeModule is partial
 	"""
-	The purpose of a C# module is to allow the programmer to include .cs command for Cobra to
+	The purpose of a C# module is to allow the programmer to include .cs source for Cobra to
 	incorporate in the final compilation.
 	"""
 
@@ -428,8 +402,7 @@ class SharpModule
 		return nil
 
 
-class AssemblyModule
-	is partial
+class AssemblyModule is partial
 
 	get sharpSource as String is override
 		return '(no C# source for [this])'
@@ -438,8 +411,7 @@ class AssemblyModule
 		return nil
 
 
-class CobraModule
-	is partial
+class CobraModule is partial
 
 	get sharpFileName as String is override
 		if _sharpFileName == '' and not _fileName.endsWith('SystemInterfaces.cobra')

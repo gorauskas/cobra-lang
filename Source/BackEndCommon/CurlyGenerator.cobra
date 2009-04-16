@@ -1,0 +1,34 @@
+class Compiler is partial
+
+	var _moduleFileName_to_sharpToCurlyLineNum as Dictionary<of String, Dictionary<of int, int>?>?
+
+	def cobraLineNumForCurly(fileName as String, lineNum as int) as int
+		"""
+		Returns the source cobra line number given a filename (sans ".cs") and line number in the
+		generated C#. Used by SharpCompilationMessage.
+		"""
+		# for some reason the C# filenames come in with a lower case drive letter,
+		# and in 2006 strings are *still* case sensitive.
+		# *sigh*
+		if fileName.length>=2 and fileName[1]==c':'
+			fileName = fileName.capped
+
+		# TODO: handle relative paths like ..\foo.cobra which C# spells out as absolute paths
+
+		if not _moduleFileName_to_sharpToCurlyLineNum.containsKey(fileName)
+			return lineNum
+		map = _moduleFileName_to_sharpToCurlyLineNum[fileName]
+
+		# sometimes the line numbers are one off. that's not ideal, but keep chugging:
+		if not map.containsKey(lineNum) and map.containsKey(lineNum-1)
+			lineNum -= 1
+
+		if map.containsKey(lineNum)
+			return map[lineNum]
+		else
+			# TODO: take this out someday. was put in 2006-11-12
+			print '<> Cannot map C# location back to cobra.'
+			print '   fileName = [fileName]'
+			print '   lineNum = [lineNum]'
+			print '   sharpToCobraLineNum = [CobraCore.toTechString(map)]'
+			return map[lineNum]
