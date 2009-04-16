@@ -13,6 +13,12 @@ class ClrBackEnd inherits BackEnd
 	cue init(compiler as Compiler)
 		base.init(compiler)
 
+	def generateIntermediateCode is override
+		.compiler.writeSharp  # extension method
+	
+	def generateBinary is override
+		.compiler.compileSharp  # extension method
+
 	def generateCode(writeTestInvocation as bool) is override
 		.compiler.writeSharp
 		if writeTestInvocation
@@ -1611,10 +1617,10 @@ class AbstractMethod
 				.writeDSTHead(sw)
 			for param in _params
 				.writeSharpParamCheck(param, sw)
-			if _requirePart and _requirePart.willWriteSharp
+			if _requirePart and _requirePart.willGenerateCode
 				_requirePart.writeSharpDef(sw)
 			.writeSharpLocals(sw, nil, false)
-			willEnsure = _ensurePart and _ensurePart.willWriteSharp
+			willEnsure = _ensurePart and _ensurePart.willGenerateCode
 			if willEnsure
 				sw.write('bool _lh_canEnsure = false;\n')
 				# have to set `out` parameters or C# will error on them being passed in the `finally` for the ensure,
@@ -2055,9 +2061,6 @@ class ContractPart
 	get sharpThis as String
 		return _codeMember.sharpThis
 
-	get willInlineSharp as bool
-		return .compiler.options['contracts'] == 'inline'
-
 
 class RequirePart
 	is partial
@@ -2068,8 +2071,8 @@ class RequirePart
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		assert .willWriteSharp
-		willInline = .willInlineSharp
+		assert .willGenerateCode
+		willInline = .willInlineCode
 		sw.write('if (CobraLangInternal.CobraCore._willCheckRequire) {\n')
 		sw.indent
 		if _codeMember.isOverride
@@ -2136,7 +2139,7 @@ class RequirePart
 			# contracts on interface members are not supported yet
 			# and when they are, these methods will have to be written outside the interface
 			return
-		if not .willWriteSharp
+		if not .willGenerateCode
 			return
 		static = if(_codeMember.isShared, 'static ', '')
 		access = if(_codeMember.parentBox inherits Struct, 'private', 'protected')
@@ -2160,17 +2163,15 @@ class RequirePart
 			sw.dedent
 
 
-class EnsurePart
-	is partial
-
+class EnsurePart is partial
 
 	get sharpMethodName as String
 		return _sharpMethodName('ensure')
 
 	def writeSharpDef(sw as SharpWriter) is override
 		base.writeSharpDef(sw)
-		assert .willWriteSharp
-		willInline = .willInlineSharp
+		assert .willGenerateCode
+		willInline = .willInlineCode
 		sw.write('if (CobraLangInternal.CobraCore._willCheckEnsure) {\n')
 		sw.indent
 		if _codeMember.isOverride
@@ -2202,7 +2203,7 @@ class EnsurePart
 			# contracts on interface members are not supported yet
 			# and when they are, these methods will have to be written outside the interface
 			return
-		if not .willWriteSharp
+		if not .willGenerateCode
 			return
 		static = if(_codeMember.isShared, 'static ', '')
 		access = if(_codeMember.parentBox inherits Struct, 'private', 'protected')
@@ -2230,7 +2231,7 @@ class EnsurePart
 			sw.write('_ih_invariantGuard += 1;\n')
 			sw.write('try {\n')
 			sw.indent
-			if .willInlineSharp
+			if .willInlineCode
 				.codeMember.parentBox.writeAllSharpInvariantChecks(sw)
 			else
 				sw.write('invariant_[_codeMember.parentBox.rootName]();')
@@ -2764,7 +2765,7 @@ class ReturnStmt
 	def writeSharpDef(sw as SharpWriter)
 		base.writeSharpDef(sw)
 		ensurePart = .compiler.curCodeMember.ensurePart
-		willEnsure = ensurePart and ensurePart.willWriteSharp
+		willEnsure = ensurePart and ensurePart.willGenerateCode
 		if willEnsure
 			sw.write('_lh_canEnsure = true;\n')
 		if _expr
@@ -2976,7 +2977,7 @@ class YieldReturnStmt
 	def writeSharpDef(sw as SharpWriter)
 		base.writeSharpDef(sw)
 		ensurePart = .compiler.curCodeMember.ensurePart
-		willEnsure = ensurePart and ensurePart.willWriteSharp
+		willEnsure = ensurePart and ensurePart.willGenerateCode
 		if willEnsure
 			sw.write('_lh_canEnsure = true;\n')
 		if _expr
