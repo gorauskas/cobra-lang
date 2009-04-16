@@ -35,8 +35,7 @@ enum PlatformEnum
 	Novell
 
 
-class BackEnd
-	is abstract
+class BackEnd is abstract
 
 	cue init(compiler as Compiler)
 		__compiler = compiler
@@ -110,7 +109,6 @@ class Compiler
 
 	cue init(verbosity as int, initialModules as IList<of Module>?)
 		Node.reset
-		_backEnd = ClrBackEnd(this)
 		_nextSerialNum += 1
 		_serialNum = _nextSerialNum
 		_verbosity = verbosity
@@ -294,6 +292,7 @@ class Compiler
 				.printMessages
 
 	def _compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool, stopAfterBindInt as bool)
+		_initBackEnd
 		.parseFilesNamed(paths)
 		.bindUse
 		.writeSourceCodeCorrections
@@ -316,6 +315,7 @@ class Compiler
 		"""
 		.options = options
 		bar = '----------------------------------------------------------------------------------------------------'
+		_initBackEnd
 		.parseFilesNamed(fileNames)
 
 		assert .modules.count
@@ -1520,6 +1520,15 @@ class Compiler
 			_errors.add(message)
 		else
 			_warnings.add(message)
+
+	def _initBackEnd
+		require .backEnd is nil
+		ensure .backEnd
+		branch .options.get('back-end')
+			on 'none', _backEnd = ClrBackEnd(this)  # TODO-SELFHOST
+			on 'clr',  _backEnd = ClrBackEnd(this)
+			on 'jvm',  _backEnd = JvmBackEnd(this)
+			else, throw FallThroughException(.options.get('back-end'))
 
 
 class InternalError
