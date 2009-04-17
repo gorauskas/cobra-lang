@@ -8,12 +8,12 @@ class Compiler is partial
 		Node.setCompiler(this)
 		try
 			pass
-			_moduleFileName_to_sharpToCurlyLineNum = Dictionary<of String, Dictionary<of int, int>>()
+			_moduleFileName_to_curlyToCobraLineNum = Dictionary<of String, Dictionary<of int, int>>()
 			for _curModule in _modules
 				if not _curModule.fileName.endsWith('SystemInterfaces.cobra')
-					sharpToCobraLineNum = _curModule.writeJavaDef
-					_moduleFileName_to_sharpToCurlyLineNum[_curModule.fileName] = sharpToCobraLineNum
-					_moduleFileName_to_sharpToCurlyLineNum[Path.getFullPath(_curModule.fileName)] = sharpToCobraLineNum
+					javaToCobraLineNum = _curModule.writeJavaDef
+					_moduleFileName_to_curlyToCobraLineNum[_curModule.fileName] = javaToCobraLineNum
+					_moduleFileName_to_curlyToCobraLineNum[Path.getFullPath(_curModule.fileName)] = javaToCobraLineNum
 		finally
 			Node.setCompiler(nil)
 
@@ -161,6 +161,90 @@ interface IParentSpace is partial
 	get javaRef as String
 
 
+class Container<of TMember> is partial
+
+	get javaInit as String  # TODO: is abstract
+		return ''
+		
+	get javaNameComponent as String
+		"""
+		Returns a string that can be used in a Java identifier. That means it cannot have special symbols such as period or left bracket.
+		"""
+		ensure result.length > 0  # TODO? Move to interface
+		return .javaRef
+
+	var _javaRef as String?
+
+	get javaRef as String is override
+		if _javaRef is nil and .didBindImp
+			_javaRef = _computeJavaRef
+			return _javaRef to !
+		else
+			return _computeJavaRef
+
+	get javaParamRef as String
+		return .javaRef
+
+	get _computeJavaRef as String
+		if .parent
+			s = .parent.javaRef
+			# TODO: delme
+			#if s.length and not s.endsWith('::')  # C# has weird "global::" name
+			#	s += '.'
+			s += .javaName
+		else
+			s = .javaName
+		return s
+
+	def writeJavaIsNames(sw as CurlyWriter)
+		# TODO: look up Java access levels
+		
+		# TODO: cache this somewhere
+		accessLevels = ['public', 'protected', 'internal', 'protected internal', 'private']
+		# CC: accessLevels = 'public,protected,internal,protected internal,private'.split(c',')
+			# same names in both Cobra and C#
+
+		# TODO:
+		# if isNames is nil
+		#	isNames = _isNames
+		isNames = List<of String>()
+		isNames.addRange(_isNames)
+		if .defaultAccessLevel.length
+			found = false
+			for level as String in accessLevels  # CC: axe as
+				if level in isNames
+					found = true
+			if not found
+				isNames.insert(0, .defaultAccessLevel)
+		isNameJava = {
+			# only have to specify the ones that are different
+			'shared': 'static',
+			'nonvirtual': '',
+		}
+		sep = ''
+		for name in isNames
+			name = Utils.getSS(isNameJava to passthrough, name, name) to !
+			sw.write(sep)
+			sw.write(name)
+			sep = ' '
+		if sep.length, sw.write(' ')
+
+	def writeJavaTestInvocation(sw as CurlyWriter)
+		pass
+
+
+interface IMember is partial
+
+	def writeJavaDef(sw as CurlyWriter)
+		"""
+		Write the Java code for this member declaration to the given CurlyWriter.
+		"""
+
+	def writeJavaTestInvocation(sw as CurlyWriter)
+		"""
+		Write the Java call to the test method for this member.
+		"""
+
 
 ##
 ## Types
@@ -192,5 +276,46 @@ class BasicLibraryType is partial
 
 class CobraType is partial
 
+	get javaInit as String # TODO: is abstract
+		return ''
+
 	get javaName as String
-		return .name  # TODO
+		return .name
+
+	get javaNameComponent as String
+		name = .name
+		i = name.indexOf('/*')  # example: /*dynamic*/object
+		if i <> -1
+			j = name.indexOf('*/', i)
+			name = name[:i] + name[j+2:]
+		name = name.replace('.', '_').replace('<', '_').replace('>', '_').replace(', ', '_')
+		return name
+
+	get javaRef as String
+		return .javaName
+
+	get javaParamRef as String
+		return .javaRef
+
+	def writeJavaTestInvocation(sw as CurlyWriter)
+		pass
+
+
+##
+## Temporary
+##
+
+class AssemblyDecl is partial
+
+	def writeJavaTestInvocation(sw as CurlyWriter)
+		pass
+
+class BoxMember is partial
+
+	def writeJavaTestInvocation(sw as CurlyWriter)
+		pass
+
+class EnumMember is partial
+
+	def writeJavaTestInvocation(sw as CurlyWriter)
+		pass
