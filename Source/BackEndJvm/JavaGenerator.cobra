@@ -1,3 +1,9 @@
+"""
+The code in this file should not .throwError, record warnings, etc.
+All of that happens during .bindFoo phases.
+"""
+
+
 ##
 ## Compiler
 ##
@@ -87,7 +93,7 @@ class Module is partial
 		pass
 
 
-class SharpModule is partial
+class SharpModule is partial  # Sharp Module
 
 	def writeJavaDef as Dictionary<of int, int>? is override
 		assert false
@@ -247,6 +253,61 @@ interface IMember is partial
 
 
 ##
+## Namespace
+##
+
+class NameSpace is partial
+
+	get javaSuffix as String
+		# TODO: not sure how -embed-run-time is going to work on JVM or if it's even needed
+		value as Object?
+		if not .addOnValues.tryGetValue('JavaSuffix', out value)
+			suffix = if(.fullName == 'Cobra.Lang', .compiler.embedRunTimeSuffix, '')
+			.addOnValues['javaSuffix'] = suffix
+			return suffix
+		else
+			return value to String
+
+	get javaInit as String is override  # TODO: remove when not a type
+		assert false
+		return ''
+
+	get javaRef as String is override
+		return .fullName + .javaSuffix
+
+	get javaQualifier as String
+		ensure result.endsWith('.')
+		return .fullName + .javaSuffix + '.'
+	
+	def writeJavaDef(sw as CurlyWriter) is override
+		assert not .isUnified
+		base.writeJavaDef(sw)
+		# TODO: how to handle namespaces in Cobra
+		#if not .isRoot
+		#	sw.writeAndIndent('namespace [.name][.javaSuffix] {\n\n')
+		for ud in _useDirectives
+			ud.writeJavaDef(sw)
+		for decl in _declsInOrder
+			if decl inherits Box
+				.compiler.boxStack.push(decl)
+			decl.writeJavaDef(sw)
+			if decl inherits Box
+				.compiler.boxStack.pop
+		# TODO
+		#if not .isRoot
+		#	sw.dedentAndWrite('} // namespace [.name]\n')
+
+	def writeJavaTestInvocation(sw as CurlyWriter) is override
+		for decl in _declsInOrder
+			decl.writeJavaTestInvocation(sw)
+	
+
+class UseDirective is partial
+
+	pass
+
+
+##
 ## Types
 ##
 
@@ -274,10 +335,33 @@ class BasicLibraryType is partial
 		throw NoSourceGenerationException(this)
 
 
+interface IType is partial
+
+	get javaInit as String
+
+	get javaNameComponent as String
+		"""
+		Returns a string that refers to this type and is suitable for embedding in a larger
+		identifier (meaning there will be no punction, spaces or Java comments).
+		"""
+
+	get javaRef as String
+		"""
+		Returns a string that refers to this type.
+		Examples: 'int'  'List<String>'  'object'
+		"""
+
+	get javaParamRef as String
+		"""
+		# TODO: update doc string to reflect Java accurately
+		Returns a string that refers to this type including any necessary parameter declaration
+		specification such as Java 'params' or 'out'. Invoked by Param.writeSharpDef.
+		"""
+
+
 class CobraType is partial
 
-	get javaInit as String # TODO: is abstract
-		return ''
+	get javaInit as String is abstract
 
 	get javaName as String
 		return .name
@@ -301,6 +385,119 @@ class CobraType is partial
 		pass
 
 
+class BoolType is partial
+
+	get javaInit as String is override
+		return 'false'
+
+
+class CharType is partial
+
+	get javaInit as String is override
+		return '(char)0'
+
+
+class DynamicType is partial
+
+	get javaInit as String is override
+		return 'null'
+
+	get javaName as String is override
+		return '/*dynamic*/java.lang.Object'
+
+
+class FloatType is partial
+
+	get javaName as String is override
+		return _nativeType.fullName
+
+
+class IntType is partial
+
+	get javaName as String is override
+		return _nativeType.fullName
+
+
+class NilableType is partial
+
+	get javaInit as String is override
+		return 'null'
+
+	get javaRef as String is override
+		return _wrappedType.javaRef + if(not _wrappedType.isReference, '?', '')
+
+
+class NilType is partial
+
+	get javaInit as String is override
+		return 'null'
+
+	get javaRef as String is override
+		return '/*nil*/java.lang.Object'
+
+
+class AbstractNumberType is partial
+
+	get javaInit as String is override
+		return '0'
+
+
+class PassThroughType is partial
+
+	get javaInit as String is override
+		return 'null'
+
+	get javaRef as String is override
+		return '/*passthrough*/java.lang.Object'
+
+
+class StreamType is partial
+
+	get javaInit as String is override
+		return 'new Cobra.Lang.EmptyStream<[.theWrappedType.javaRef]>()'
+
+	get javaRef as String is override
+		assert .didBindInh and .didBindInt
+		return '/*[.name]*/[.box.javaRef]'
+
+
+class VoidType is partial
+
+	get javaInit as String is override
+		throw Exception('Cannot init a void type.')
+
+
+class WrappedType is partial
+
+	get javaInit as String is override
+		return _wrappedType.javaInit
+
+
+class ArrayType is partial
+
+	get javaRef as String is override
+		return '[_wrappedType.javaRef]' + r'[]'
+
+	get javaInit as String is override
+		return 'null'
+
+
+class VariType is partial
+
+	get javaRef as String is override
+		return '[_wrappedType.javaRef]' + r'[]'
+
+	get javaParamRef as String is override
+		return 'params ' + .javaRef
+
+
+class UnspecifiedType is partial
+	
+	get javaInit as String is override
+		# TODO: throw Exception('Not expecting code gen for unspecified types.')
+		return '!UnspecifiedType!'
+
+
 ##
 ## Temporary
 ##
@@ -319,3 +516,8 @@ class EnumMember is partial
 
 	def writeJavaTestInvocation(sw as CurlyWriter)
 		pass
+
+class GenericParam is partial
+
+	get javaInit as String is override
+		return ''
