@@ -355,7 +355,7 @@ interface IType is partial
 		"""
 		# TODO: update doc string to reflect Java accurately
 		Returns a string that refers to this type including any necessary parameter declaration
-		specification such as Java 'params' or 'out'. Invoked by Param.writeSharpDef.
+		specification such as Java 'params' or 'out'. Invoked by Param.writeJavaDef.
 		"""
 
 
@@ -717,7 +717,7 @@ class Class is partial
 	def writeJavaInheritance(sw as CurlyWriter) is override
 		sw.write(' extends ')
 		if _baseClass
-			sw.write(_baseClass.sharpRef)
+			sw.write(_baseClass.javaRef)
 			didWrite = true
 		if didWrite
 			if _baseInterfaces.count
@@ -795,6 +795,245 @@ class Struct is partial
 			sw.write(' extends ')
 
 
+class MethodSig is partial
+
+	pass # TODO STUB
+
+
+class GenericParam is partial
+
+	get javaInit as String is override
+		# TODO: ack. does Java have anything like this?
+		return 'default([_name])'
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		sw.write(.name)
+
+	def writeJavaConstraint(sw as CurlyWriter)
+		if _constraints.count
+			# TODO
+			sw.write(' where [_name] :  ')
+			sep = ''
+			for constraint in _constraints
+				sw.write(sep)
+				constraint.writeJavaDef(sw)
+				sep = ', '
+			sw.write('\n')
+
+
+class GenericClassConstraint is partial
+
+	def writeJavaDef(sw as CurlyWriter) is override
+		sw.write('class')
+
+
+class GenericStructConstraint is partial
+
+	def writeJavaDef(sw as CurlyWriter) is override
+		sw.write('struct')
+
+
+class GenericCallableConstraint is partial
+
+	def writeJavaDef(sw as CurlyWriter) is override
+		sw.write('new()')
+
+
+class GenericTypeConstraint is partial
+
+	def writeJavaDef(sw as CurlyWriter) is override
+		sw.write(_representedType.javaRef)
+
+
+class Extension is partial
+
+	pass # TODO STUB
+
+
+##
+## Vars
+##
+
+interface IVar is partial
+
+	get javaAssignmentNames as List<of String>?
+		"""
+		Return the Java names to assign to above and beyond the javaName.
+		This in support of if-inherits.
+		"""
+
+class AbstractLocalVar is partial
+
+	get javaAssignmentNames as List<of String>
+		return [_backEndName]
+		# return List<of String>(_useBackEndNameStack)
+
+	get javaName as String is override
+		if _ifInheritsStack.count
+			if _type.isReference
+				return '(([_ifInheritsStack.peek.javaRef])[_backEndName])'
+			else
+				# could it be a subclass? no. value types are structs and cannot be subclassed so this must be `if i` where `i` is nullable struct
+				return '[.name].Value'  # Nullable<of T>.Value
+		else
+			return _backEndName
+		# return _useBackEndNameStack.peek to !
+
+
+class Param is partial
+
+	def writeJavoDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		if .type.isReference and not .type inherits NilableType
+			sw.write(r'[CobraLangInternal.NotNull] ')
+		branch .kind
+			on KindEnum.Value, pass
+			on KindEnum.InOut, sw.write('ref ')
+			on KindEnum.Out, sw.write('out ')
+		sw.write('[.type.javaParamRef] [.javaName]')
+
+	def writeJavaDefSansReferenceLabels(sw as CurlyWriter)
+		"""
+		Writes the parameter declaration but without Java "out" or "ref"--these are not available for
+		contract methods (require_foo and ensure_foo) because contracts cannot modify arguments.
+		"""
+		# skip the [NotNull] as well since it's not really needed
+		sw.write('[.type.javaRef] [.javaName]')		
+
+
+class LocalVar is partial
+
+	pass
+
+
+class ResultVar is partial
+
+	get javaName as String is override
+		return _backEndName
+
+
+##
+## Members
+##
+
+
+class BoxMember is partial
+
+	var _javaExtraIsNames as Set<of String>?
+
+	pro javaExtraIsNames from var
+	
+	get javaThis as String
+		return if(.isShared, 'typeof([.parentBox.javaName])', .parentBox.javaThis)
+
+	def writeJavaNotNull(sw as CurlyWriter)
+		if .resultType.isReference and not .resultType inherits NilableType
+			sw.writeLine(r'[' + .javaNotNullPrefix + 'CobraLangInternal.NotNull]')
+
+	get javaNotNullPrefix as String
+		# TODO
+		# 2007-12-22 Writing the attribute like [return: NotNull] is problematic because MemberInfo.getCustomAttributes()
+		# will not see it. At least not on Novell Mono 1.2.4. I don't know if that is a bug or a "feature".
+		#return 'return: '
+		return ''
+
+	def writeJavaTest(sw as CurlyWriter)
+		if _testMethod
+			_testMethod.writeJavaDef(sw)
+
+	def writeJavaTestInvocation(sw as CurlyWriter)
+		if _testMethod
+			sw.write('[_testMethod.javaName]();\n')
+
+	def writeJavaParams(sw as CurlyWriter)
+		.writeJavaParams(sw, '()')
+
+	def writeJavaParams(sw as CurlyWriter, parens as String)
+		require parens.length==2 or parens==''
+		if parens.length
+			sw.write(parens[0])
+		sep = ''
+		for param in .params
+			sw.write(sep)
+			param.writeJavaDef(sw)
+			sep = ', '
+		if parens.length
+			sw.write(parens[1].toString+' ')
+
+	def writeJavaIsNames(sw as CurlyWriter)
+		# TODO:
+		# if isNames is nil
+		#	isNames = _isNames
+		
+		# TODO:
+		isNameJava = {
+			# only have to specify the ones that are different
+			'shared': 'static',
+			'nonvirtual': '',
+		}
+		wroteNames = Set<of String>()
+		sep = ''
+		for name in _isNames
+			name = Utils.getSS(isNameJava, name, name) to !
+			sw.write(sep)
+			sw.write(name)
+			sep = ' '
+			wroteNames.add(name)
+		if _javaExtraIsNames
+			for name in _javaExtraIsNames
+				if name not in wroteNames
+					sw.write(sep)
+					sw.write(name)
+					sep = ' '
+		if sep.length
+			sw.write(' ')
+
+	def writeJavaAttribs(sw as CurlyWriter)
+		for attrib in _attribs
+			attrib.writeJavaDef(sw)
+
+
+class BoxEvent is partial
+
+	# TODO:
+	
+	get javaName as String is override
+		return .name.capped
+
+	def writeJavaDef(sw as CurlyWriter) is override
+		base.writeJavaDef(sw)
+		.writeJavaAttribs(sw)
+		.writeJavaIsNames(sw)
+		sw.write('event ')
+		sw.write(.handlerType.javaRef)
+		sw.write(' [.javaName]')
+		sw.write(';\n')
+
+
+class BoxField is partial
+
+	get _backEndName as String
+		name = .name
+		if not name.startsWith('_')
+			name = name.capped
+		return name
+
+
+class BoxConst is partial
+
+	def writeJavaDef(sw as CurlyWriter) is override
+		base.writeJavaDef(sw)
+		.writeJavaAttribs(sw)
+		.writeJavaIsNames(sw)
+		sw.write('const ')
+		sw.write(_type.javaRef)
+		sw.write(' [_backEndName] = ')
+		_initExpr.writeJavaDef(sw)
+		sw.write(';\n')
+
+
+
 ##
 ## Temporary
 ##
@@ -804,22 +1043,9 @@ class AssemblyDecl is partial
 	def writeJavaTestInvocation(sw as CurlyWriter)
 		pass
 
-class BoxMember is partial
-
-	def writeJavaTestInvocation(sw as CurlyWriter)
-		pass
-
 class EnumMember is partial
 
 	def writeJavaTestInvocation(sw as CurlyWriter)
-		pass
-
-class GenericParam is partial
-
-	get javaInit as String is override
-		return ''
-
-	def writeJavaConstraint(sw as CurlyWriter)
 		pass
 
 class Expr is partial
@@ -837,3 +1063,8 @@ class Extension is partial
 	
 	get javaInvariantVisibility as String is override
 		return ''
+
+class BoxVar is partial
+
+	get javaAssignmentNames as List<of String>?
+		return nil
