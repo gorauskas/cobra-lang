@@ -476,6 +476,30 @@ class InstallFromWorkspace
 
 		# TODO: readme file?
 		parent = Path.getFullPath('..')
+
+		versionOutput = ''
+		if File.exists('[parent][slash]InformalRelease.text')
+			versionOutput = File.readAllText('[parent][slash]InformalRelease.text')
+		else
+			# record "svn info" in the installation directory
+			try
+				process as Process?
+				versionOutput = .runCommand('svn', 'info', out process, false)
+				if process.exitCode
+					print '"snv info" failed. Check your svn installation.'
+					print '[versionOutput]'
+					print
+					.error('Cannot find version information, installation halted.')
+			catch ex as SystemException
+				# user could be on TortoiseSVN
+				print 'svn is not installed or it is not in the PATH. ', ex.message
+				.error('Cannot find version information, installation halted.')
+		if versionOutput <> ''
+			fileName = '[versionDir][slash]Version.text'
+			print 'writing  :', fileName
+			File.writeAllText(fileName, versionOutput)
+		print
+
 		for dir in ['HowTo', 'Reusables', 'Samples', 'Supplements']
 			.copyContents('[parent][slash][dir]', '[versionDir][slash][dir]')
 
@@ -508,22 +532,6 @@ class InstallFromWorkspace
 			using f = File.createText(_cobraCommandPath)
 				f.writeLine('@"[versionDir][slash]bin[slash]cobra.exe" %*')
 			print
-
-		output = ''
-		if File.exists('[parent][slash]InformalRelease.text')
-			output = File.readAllText('[parent][slash]InformalRelease.text')
-		else
-			# record "svn info" in the installation directory
-			try
-				output = .runCommand('svn', 'info', false)
-			catch ex as SystemException
-				# user could be on TortoiseSVN
-				print 'svn is not installed or it is not in the PATH. ' + ex.message
-		if output <> ''
-			fileName = '[versionDir][slash]Version.text'
-			print 'writing  :', fileName
-			File.writeAllText(fileName, output)
-		print
 
 	def verifyNewlyInstalledCobra
 		.startStage('Verify newly installed Cobra compiler')
