@@ -1033,6 +1033,359 @@ class BoxConst is partial
 		sw.write(';\n')
 
 
+class BoxVar is partial
+
+	get javaAssignmentNames as List<of String>
+		return [_backEndName]
+		# return List<of String>(_useBackEndNameStack)
+
+	get javaName as String is override
+		if _ifInheritsStack.count
+			if _type.isReference
+				return '(([_ifInheritsStack.peek.javaRef])[_backEndName])'
+			else
+				# could it be a subclass? no. value types are structs and cannot be subclassed so this must be `if i` where `i` is nullable struct
+				return '[_backEndName].Value'  # Nullable<of T>.Value
+		else
+			return .name
+		# return _useBackEndNameStack.peek to !
+
+	def writeJavaDef(sw as CurlyWriter) is override
+		base.writeJavaDef(sw)
+		.writeJavaAttribs(sw)
+		.writeJavaIsNames(sw)
+		sw.write(_type.javaRef)
+		sw.write(' [_backEndName]')
+		if _initExpr
+			sw.write(' = ')
+			_initExpr.writeJavaDef(sw)
+		else if .type.isReference and not .type.nonNil inherits GenericParam
+			javaInit = .type.javaInit
+			if javaInit.length
+				sw.write(' = ')
+				sw.write(javaInit)
+		sw.write(';\n')
+
+
+class AbstractMethod is partial
+
+	get javaGenericParams as String
+		"""
+		Can return, for example, '<TKey,TValue>' or ''.
+		"""
+		ensure ' ' not in result
+		return ''
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		.compiler.codeMemberStack.push(this)
+		try
+			.innerWriteJavaDef(sw)
+		finally
+			.compiler.codeMemberStack.pop
+
+	def innerWriteJavaDef(sw as CurlyWriter)
+		pass
+	
+	def writeJavaImp(sw as CurlyWriter, skipFirst as bool)
+		.compiler.codeMemberStack.push(this)
+		try
+			sw.writeAndIndent('{\n')
+			.writeJavaImpHeader(sw)
+			if .compiler.hasDetailedStackTraceOption
+				.writeJavaDSTHead(sw)
+			for param in _params
+				.writeJavaParamCheck(param, sw)
+			if _requirePart and _requirePart.willGenerateCode
+				_requirePart.writeJavaDef(sw)
+			.writeJavaLocals(sw, nil, false)
+			willEnsure = _ensurePart and _ensurePart.willGenerateCode
+			if willEnsure
+				sw.write('bool _lh_canEnsure = false;\n')
+				# have to set `out` parameters or C# will error on them being passed in the `finally` for the ensure,
+				# even though the _lh_canEnsure guard logically prevents problems at run-time
+				for param in _params
+					if param.isOut
+						javaInit = param.type.javaInit
+						if not javaInit.length
+							# TODO/HACK: yes we need something like this (or a way to convice C# that the out param reference in `finally` really is okay),
+							# but it should be something less hackish, like an attribute
+							javaInit = 'DateTime.Today'
+						sw.write('[param.javaName] = [javaInit];')
+				if _backEndResultVarName.length  # set in _bindImp
+					sw.write('[_returnType.javaRef] [_backEndResultVarName]')
+					if _returnType.javaInit.length
+						sw.write('= [_returnType.javaInit]')
+					sw.write(';\n')
+				sw.writeAndIndent('try {\n')
+			for stmt in _stmts
+				if skipFirst
+					skipFirst = false
+					continue
+				stmt.writeJavaStmt(sw)
+			if willEnsure
+				if not stmt inherits ReturnStmt and not stmt inherits ThrowStmt
+					sw.write('_lh_canEnsure = true;\n')
+				sw.dedentAndWrite('} finally { // ensure\n')
+				sw.indentAndWrite('if (_lh_canEnsure) {\n')
+				sw.indent
+				_ensurePart.writeJavaDef(sw)
+				sw.dedentAndWrite('}\n')
+				sw.dedentAndWrite('}\n')
+			if .compiler.hasDetailedStackTraceOption
+				.writeJavaDSTTail(sw)
+			.writeJavaImpFooter(sw)
+			sw.dedent
+			sw.write('}\n')
+			sw.write('\n')
+		finally
+			.compiler.codeMemberStack.pop
+
+	def writeJavaImpHeader(sw as CurlyWriter)
+		pass
+		
+	def writeJavaImpFooter(sw as CurlyWriter)
+		pass
+		
+	def writeJavaPassArgs(sw as CurlyWriter)
+		.writeJavaPassArgs(sw, '()', false)
+
+	def writeJavaPassArgs(sw as CurlyWriter, parens as String, excludeOutArgs as bool)
+		require parens.length==2 or parens==''
+		if parens.length
+			sw.write(parens[0])
+		sep = ''
+		for param in _params
+			if excludeOutArgs and param.isOut
+				continue
+			sw.write(sep)
+			sw.write(param.javaName)
+			sep = ', '
+		if parens.length
+			sw.write(parens[1])
+
+	def writeJavaLocals(sw as CurlyWriter, locals as List<of LocalVar>?, open as bool)
+		if open
+			sw.writeAndIndent('{\n')
+		# record the `old` expressions for `ensure`
+		.writeJavaOldAssignments(sw)
+		if locals is nil
+			locals = _locals
+		if locals.count
+			sw.write('// locals\n')
+			for local in locals
+				if not local.isImplicit
+					sw.write('[local.type.javaRef] [local.javaName]')
+					init = local.type.javaInit
+					if init.length, sw.write(' = [init]')
+					sw.write(';\n')
+
+	def writeJavaRequireParamDecls(sw as CurlyWriter)
+		sep = ''
+		for param in .params
+			if param.isOut
+				# a requirement cannot say anything useful about a parameter that is output only
+				continue
+			sw.write(sep)
+			param.writeJavaDefSansReferenceLabels(sw)  # no `inout/ref` label since a contract cannot modify reference arguments
+			sep = ', '
+		
+	def writeJavaOldAssignments(sw as CurlyWriter)
+		if .isOverride and .matchingBaseMember
+			(.matchingBaseMember to AbstractMethod).writeJavaOldAssignments(sw)
+		for oldExpr in _oldExprs
+			oldExpr.writeJavaAssignment(sw)
+
+	def writeJavaEnsureArgs(sw as CurlyWriter)
+		if .backEndResultVarName.length
+			sw.write('[.backEndResultVarName]')
+			sep = [',']
+		else
+			sep = ['']
+		_writeJavaOldArgs(sw, sep)
+		if .params.count
+			sw.write(sep[0])
+		.writeJavaPassArgs(sw, '', false)  # these have to come last, because they might include a C# "params" which has to be last
+
+	def _writeJavaOldArgs(sw as CurlyWriter, sep as List<of String>)
+		if .isOverride and .matchingBaseMember
+			assert .matchingBaseMember is not this
+			(.matchingBaseMember to AbstractMethod)._writeJavaOldArgs(sw, sep)
+		for oldExpr in _oldExprs
+			sw.write(sep[0])
+			sw.write(oldExpr.javaVarName)
+			sep[0] = ', '
+
+	def writeJavaEnsureParamDecls(sw as CurlyWriter)
+		if .backEndResultVarName.length
+			sw.write('[.resultType.javaRef] [.backEndResultVarName]')
+			sep = [',']
+		else
+			sep = ['']
+		_writeJavaOldParamDecls(sw, sep)
+		# these have to come last, because they might include a C# "params" which has to be last
+		for param in .params
+			sw.write(sep[0])
+			param.writeJavaDefSansReferenceLabels(sw)  # no `out` or `inout/ref` labels since a contract cannot modify reference arguments
+			sep[0] = ', '
+
+	def _writeJavaOldParamDecls(sw as CurlyWriter, sep as List<of String>)
+		if .isOverride and .matchingBaseMember
+			assert .matchingBaseMember is not this
+			(.matchingBaseMember to AbstractMethod)._writeJavaOldParamDecls(sw, sep)
+		for oldExpr in _oldExprs
+			sw.write(sep[0])
+			sw.write('[oldExpr.type.javaRef] [oldExpr.javaVarName]')
+			sep[0] = ', '
+
+	def writeJavaParamCheck(param as Param, sw as CurlyWriter)
+		if .isCompilerGenerated, return
+		if param.type.isReference and not param.type inherits NilableType and not param.isOut
+			if .compiler.options.boolValue('include-nil-checks')
+				sw.write('if (Cobra.Lang.CobraCore._willCheckNil && [param.javaName]==null) throw new System.ArgumentNullException("[param.name]");\n')
+
+	def writeJavaDSTHead(sw as CurlyWriter)
+		if not .canHaveDetailedStackTrace
+			return
+		# could be a neat option, -trace-methods, but maybe done with events:
+		# sw.writeLine('Console.WriteLine(">> [.parentBox.name].[.name]");')
+		sw.write('Cobra.Lang.CobraImp.PushFrame("[.parentBox.name]", "[.name]", [Utils.javaStringLiteralFor(.token.fullPathName)], [.token.lineNum]')
+		if not .isShared
+			sw.write(', "this", [.compiler.curBox.javaThis]')
+		for param in .params
+			if not param.isImplicit and not param.isOut
+				sw.write(', "[param.name]", [param.javaName]')
+		sw.write(');\n')
+		sw.writeAndIndent('try {\n')
+
+	def writeJavaDSTTail(sw as CurlyWriter)
+		if not .canHaveDetailedStackTrace
+			return
+		# sw.writeLine('Console.WriteLine("<< [.parentBox.name].[.name]");')
+		# this catch all clashes with yield statements. which is why .canHaveDetailedStackTrace returns false if a method has a yield statement.
+		sw.dedentAndWrite('} catch {\n')
+		sw.indent
+		sw.write('Cobra.Lang.CobraImp.CaughtUncaughtException();\n')
+		sw.write('throw;\n')
+		sw.dedentAndWrite('} finally {\n')
+		sw.indent
+		sw.write('Cobra.Lang.CobraImp.PopFrame();\n')
+		sw.dedentAndWrite('}\n')
+
+
+class Initializer is partial
+
+	def innerWriteJavaDef(sw as CurlyWriter)
+		base.innerWriteJavaDef(sw)
+		.writeJavaAttribs(sw)
+		first = if(_stmts.count, _stmts[0], nil)
+		callInitializer as String? = nil
+		if first inherits DotExpr
+			if first.left inherits ThisOrBaseLit
+				if (firstRight = first.right) inherits IDotRightExpr
+					if firstRight.name == 'init'
+						callInitializer = (first.left to ThisOrBaseLit).asJava
+						args = firstRight.args
+						Stmt.inInitCall = true
+						didSetInInitCall = true
+		.writeJavaIsNames(sw)
+		sw.write(' [.parentBox.rootName]')
+		.writeJavaParams(sw)
+		if callInitializer
+			sw.writeAndIndent('\n')
+			sw.write(': [callInitializer](')
+			sep = ''
+			for arg in args
+				sw.write(sep)
+				arg.writeJavaDef(sw)
+				sep = ', '
+			sw.write(') ')
+			sw.dedent
+			if didSetInInitCall
+				assert Stmt.inInitCall  # make sure it wasn't reset somewhere else
+				Stmt.inInitCall = false
+		.writeJavaImp(sw, if(callInitializer, true, false))
+		if _requirePart
+			_requirePart.writeJavaMethod(sw)
+		if _ensurePart
+			_ensurePart.writeJavaMethod(sw)
+		if .compiler.includeTests
+			.writeJavaTest(sw)
+
+	def writeJavaImpHeader(sw as CurlyWriter)
+		base.writeJavaImpHeader(sw)
+		if .isStructMember and .compiler.options['contracts'] <> 'none'
+			sw.write('\n_ih_invariantGuard = 0;\n\n')  # otherwise C# complains: Field "STRUCTNAME._ih_invariantGuard" must be fully assigned before control leaves the constructor
+		
+
+class Method is partial
+
+	get javaGenericParams as String is override
+		params = .parentBox.extendedMethodGenericParams(_genericParams)
+		if params.count
+			sb = StringBuilder()
+			sb.append('<')
+			sep = ''
+			for param in params
+				sb.append(sep)
+				sb.append(param.javaName)
+				sep = ','
+			sb.append('>')
+			return sb.toString
+		else
+			return ''
+
+	def innerWriteJavaDef(sw as CurlyWriter)
+		base.innerWriteJavaDef(sw)
+		.writeJavaNotNull(sw)
+		.writeJavaAttribs(sw)
+		name = .javaName
+		returnType = _returnType ? .compiler.voidType
+		if _implementsType
+			name = _implementsType.javaRef + '.' + name
+		.writeJavaIsNames(sw)
+		sw.write('[returnType.javaRef] [name][.javaGenericParams]')
+		.writeJavaParams(sw)
+		if .genericParams.count
+			sw.indent
+			for param in .genericParams
+				if param inherits GenericParam
+					param.writeJavaConstraint(sw)
+			sw.dedent
+		if not .parentBox.canHaveStatements
+			sw.write(';\n')
+		else
+			if .isAbstract, sw.writeLine(';')
+			else, .writeJavaImp(sw, false)
+			if _requirePart, _requirePart.writeJavaMethod(sw)
+			if _ensurePart, _ensurePart.writeJavaMethod(sw)
+			if .compiler.includeTests, .writeJavaTest(sw)
+
+	def writeJavaImpHeader(sw as CurlyWriter)
+		base.writeJavaImpHeader(sw)
+		if .isMain
+			if .compiler.hasExceptionReportOption
+				sw.writeLine('try { // Exception Report')
+				sw.indent
+			else if .compiler.options.boolValue('debugging-tips')
+				sw.writeLine('try { // -debugging-tips')
+				sw.indent
+		if .isMain and .compiler.options.boolValue('include-tests')
+			sw.writeLine('Cobra.Lang.CobraCore.RunAllTests();  // turn off with -include-tests:no (see cobra -h)')
+
+	def writeJavaImpFooter(sw as CurlyWriter)
+		base.writeJavaImpFooter(sw)
+		if .isMain
+			if .compiler.hasExceptionReportOption
+				sw.dedent
+				sw.writeLine('} catch (System.Exception _lh_exceptionReportException) { Cobra.Lang.CobraCore.HandleUnhandledException(_lh_exceptionReportException); }')
+			else if .compiler.options.boolValue('debugging-tips')
+				sw.dedent
+				sw.writeLine('} catch { Cobra.Lang.CobraCore.PrintDebuggingTips(); throw; }')
+				
+	get javaName as String is override
+		return .name.capped
+
 
 ##
 ## Temporary
@@ -1064,7 +1417,34 @@ class Extension is partial
 	get javaInvariantVisibility as String is override
 		return ''
 
-class BoxVar is partial
+class Stmt is partial
 
-	get javaAssignmentNames as List<of String>?
-		return nil
+	def writeJavaStmt(args as vari dynamic)
+		pass
+
+class OldExpr is partial
+
+	def writeJavaAssignment(args as vari dynamic)
+		pass
+
+	get javaVarName as String
+		return ''
+		
+class Utils is partial
+
+	shared
+
+		def javaStringLiteralFor(args as vari dynamic) as String
+			# TODO:
+			for arg in args, return arg
+			return ''
+
+class ThisOrBaseLit is partial
+
+	def asJava as String
+		return 'this'
+
+class ContractPart is partial
+
+	def writeJavaMethod(args as vari dynamic)
+		pass
