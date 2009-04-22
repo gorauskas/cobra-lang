@@ -138,7 +138,7 @@ class CobraModule is partial
 
 	def writeJavaDef as Dictionary<of int, int>? is override
 		file = File.createText(.javaFileName)
-		using sw = CurlyWriter(file, CurlyLineNumberTreatment.PoundLine)
+		using sw = CurlyWriter(file, CurlyLineNumberTreatment.Comment)
 			.compiler.addIntermediateFile(_javaFileName)
 			sw.start(.fileName)
 			sw.write('// [_javaFileName]\n')
@@ -1450,7 +1450,178 @@ class EnsurePart is partial
 ## Statements
 ##
 
+class Stmt is partial
+
+	def javaSourceSite as String
+		"""
+		Returns a Java "new SourceSite(...)" expression with the correct arguments for the current code generation.
+		"""
+		if .compiler.codeMemberStack.count
+			codeMember = .compiler.curCodeMember
+			return .javaSourceSite(codeMember.parentBox.name, codeMember.name, .javaThis)
+		else
+			# example: var _x = someExpr ...
+			return .javaSourceSite(.compiler.curBox.name, .compiler.curBoxMember.name, .javaThis)
+		
+	def javaSourceSite(boxName as String, memberName as String, javaThis as String) as String
+		"""
+		Returns a Java "new SourceSite(...)" expression with the correct arguments for the current code generation.
+		The arguments to this method allow for some explicit control in special circumstances, such as `invariant`.
+		"""
+		require
+			boxName.length
+			memberName.length
+			javaThis.length
+		body
+			boxName = Utils.javaStringLiteralFor(boxName)
+			memberName = Utils.javaStringLiteralFor(memberName)
+			tok = .token
+			fileName = tok.fileName
+			if not Path.isPathRooted(fileName)
+				fileName = Path.combine(Environment.currentDirectory, fileName)
+			fileName = Utils.javaStringLiteralFor(fileName)
+			return 'new Cobra.Lang.SourceSite([fileName], [tok.lineNum], [boxName], [memberName], [javaThis])'
+
+	get javaThis as String
+		if _inInitCall  # C# won't allow 'this' in a base constructor call -- TODO
+			return '"(uninitialized [.compiler.curBox.name] instance)"'
+		else if .compiler.codeMemberStack.count
+			return .compiler.curCodeMember.javaThis
+		else
+			assert .compiler.boxMemberStack.count
+			# so not a code member
+			return '"(uninitialized [.compiler.curBox.name] instance)"'
+
+	def writeJavaSetLine(sw as CurlyWriter)
+		if _canSetLine and .token.lineNum > 0
+			sw.write('Cobra.Lang.CobraImp._curFrame._lineNum = [.token.lineNum];\n')
+
+	def writeJavaStmt(sw as CurlyWriter)
+		assert .didBindImp
+		sw.node(this)
+		.writeJavaSetLine(sw)
+		.writeJavaDef(sw)
+
+
+class AssertStmt is partial
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		if not .compiler.options.boolValue('include-asserts')
+			return
+		sw.write('if (Cobra.Lang.CobraCore._willCheckAssert && !')
+		_expr.writeJavaDef(sw)
+		sw.write(') ')
+		sw.indent
+		sw.write('throw new Cobra.Lang.AssertException([.javaSourceSite], ')
+		_expr.writeJavaBreakdown(sw)
+		sw.write('[.javaThis], ')
+		if _info
+			_info.writeJavaDef(sw)
+		else
+			sw.write('null')
+		sw.write(');\n')
+		sw.dedent
+
+
 # uu
+
+
+##
+## Expressions
+##
+
+
+class Expr is partial
+
+/#
+	TODO axe or be content with SharpGenerator version.
+	def needsContextCast as bool
+		"""
+		Returns true if this expression needs to be cast within its context.
+		One example, is that a dynamically typed expression requires such casting.
+		"""
+		type = .type
+		if type.isDynamic, return true
+		if type inherits IntType
+			if type.size < 32, return true
+		return false
+#/
+
+	def writeJavaDefInContext(sw as CurlyWriter)
+		.writeJavaDefInContext(sw, true)
+
+	def writeJavaDefInContext(sw as CurlyWriter, parens as bool)
+		"""
+		When an expression is used where a particular type is expected, such as:
+			# assignment
+			x = y
+			# argument passing
+			obj.foo(x, y)
+			obj[x, y]
+		it may need C# typecasting--particularly if it is dynamic typed expression.
+		This method relies on having had its .contextType set beforehand.
+		This method should be invoked instead of `writeJavaDef` in any situation where .contextType was set.
+		"""
+		cast = _contextType and .needsContextCast
+		if cast
+			if parens, sw.write('(')
+			sw.write('([_contextType.javaRef])(')
+		.writeJavaDef(sw)
+		if cast
+			sw.write(')')
+			if parens, sw.write(')')
+
+	def writeJavaDef(sw as CurlyWriter) is override
+		base.writeJavaDef(sw)
+		branch .argumentLabel
+			on ArgumentLabel.None,  pass
+			on ArgumentLabel.Out,   sw.write('out ')  # TODO
+			on ArgumentLabel.InOut, sw.write('ref ')  # TODO
+		.writeJavaDef(sw, true)
+
+	def writeJavaDef(sw as CurlyWriter, parens as bool)
+		pass
+
+	def writeJavaStmt(sw as CurlyWriter) is override
+		assert .didBindImp
+		sw.node(this)
+		.writeJavaSetLine(sw)
+		.writeJavaDef(sw, false)
+		sw.write(';\n')
+
+	def writeJavaBreakdown(sw as CurlyWriter)
+		sw.write(r'new object[] { 0')
+		.writeJavaBreakdownItems(sw)
+		sw.write('}, ')
+
+	get willWriteJavaBreakdownItems as bool
+		return _argumentLabel <> ArgumentLabel.Out
+
+	def writeJavaBreakdownItems(sw as CurlyWriter)
+		if .willWriteJavaBreakdownItems
+			src = Utils.javaStringLiteralFor(.toCobraSource)
+			sw.write(', [src], ')
+			.writeJavaDefForBreakdown(sw)
+
+	def writeJavaDefForBreakdown(sw as CurlyWriter)
+		.writeJavaDef(sw)
+
+
+class NameExpr is partial
+
+	get asJava as String
+		return _definition.javaName
+
+
+class AsExpr is partial
+
+	def writeJavaStmt(sw as CurlyWriter) is override
+		# this happens for declarations like "i as int"
+		sw.write('// [_name] as [_type.name]\n')
+
+	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
+		sw.write(.asJava)
 
 
 ##
@@ -1465,14 +1636,6 @@ class AssemblyDecl is partial
 class EnumMember is partial
 
 	def writeJavaTestInvocation(sw as CurlyWriter)
-		pass
-
-class Expr is partial
-
-	def javaSourceSite(args as vari dynamic) as dynamic?
-		return nil
-	
-	def writeJavaBreakdown(sw as CurlyWriter)
 		pass
 
 class Extension is partial
