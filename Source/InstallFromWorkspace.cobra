@@ -94,6 +94,8 @@ class InstallFromWorkspace
 
 	var installDirectories = [r'C:\Cobra', '/usr/local/cobra']
 
+	var configFileName = 'install-directory.text'
+
 	def main is shared
 		InstallFromWorkspace().run
 
@@ -102,7 +104,7 @@ class InstallFromWorkspace
 	var _snapshotCompilerPath as String?
 	var _gacutil as String?
 	var _baseVersion as String?       # ex: '0.8.0-post', '0.8.0-post-2009-03-01'
-	var _baseDir as String?           # ex: 'C:\Cobra', '/usr/local/cobra'
+	var _targetDir as String?         # ex: 'C:\Cobra', '/usr/local/cobra'
 	var _versionDir as String?        # ex: 'C:\Cobra\Cobra-0.8.0-post', 'C:\Cobra\Cobra-0.8.0-post-2009-03-01', '/usr/local/cobra/Cobra-0.8.1-post'
 	var _cobraCommandPath as String?  # ex: 'C:\Cobra\bin\cobra.bat', '/usr/local/cobra/bin/cobra'
 
@@ -114,6 +116,7 @@ class InstallFromWorkspace
 		print
 		print 'Working...'
 		print
+		.verifyInstallDirectory
 		.verifyInWorkspace
 		.verifyVirtualMachineVersion
 		.locateSnapshotCompiler
@@ -208,7 +211,10 @@ class InstallFromWorkspace
 			print 'found dir:', dir
 		else
 			print 'make dir :', dir
-			Directory.createDirectory(dir)
+			try
+				Directory.createDirectory(dir)
+			catch ex as SystemException
+				.error('Unable to create installation directory.\n[ex.message]\nRun as admin, or put a correct install path into a file called "[.configFileName]".')
 
 	def startStage(description as String)
 		print '====', description
@@ -282,6 +288,18 @@ class InstallFromWorkspace
 
 
 	## Stages
+
+	def verifyInstallDirectory
+		.startStage('Verify installation directory')
+		default = if(.isRunningOnUnix, .installDirectories[1], .installDirectories[0])
+		if File.exists(.configFileName)
+			# get install directory from first line of the file
+			useDir = File.openText(.configFileName).readLine
+			if useDir and useDir.trim.length, default = useDir.trim
+		# TODO: prompt the user for the location
+		.requireDir(default)
+		_targetDir = default	
+		print
 
 	def verifyInWorkspace
 		.startStage('Verify running in workspace')
@@ -453,23 +471,22 @@ class InstallFromWorkspace
 		print
 
 	def copyFilesToInstallDirectory
+		require _targetDir is not nil
 		.startStage('Copy files to install directory')
 		slash = .slash
-		default = if(.isRunningOnUnix, .installDirectories[1], .installDirectories[0])
-		# TODO: prompt the user for the location
-		_baseDir = baseDir = default
+		targetDir = _targetDir		
 
-		.requireDir(baseDir)
-		if Directory.exists(Path.combine(baseDir, 'Source'))
-			print 'The directory "[baseDir]" appears to contain a workspace or snapshot of the'
+		if targetDir, .requireDir(targetDir)
+		if Directory.exists(Path.combine(targetDir, 'Source'))
+			print 'The directory "[targetDir]" appears to contain a workspace or snapshot of the'
 			print 'Cobra source code, due to containing the subdirectory "Source".'
 			print 'Installing to that location can lead to confusion and technical difficulties.'
-			print 'Consider clearing out "[baseDir]" and creating a workspace *inside* it called,'
+			print 'Consider clearing out "[targetDir]" and creating a workspace *inside* it called,'
 			print 'for example, "Workspace".'
 			print
 			.error('Cannot install to workspace or workspace snapshot. See message above.')
-		
-		versionDir = '[baseDir][slash]Cobra-[_baseVersion]'
+
+		versionDir = '[targetDir][slash]Cobra-[_baseVersion]'
 		.deleteDir(versionDir)
 		.requireDir(versionDir)
 		_versionDir = versionDir
@@ -518,7 +535,7 @@ class InstallFromWorkspace
 		.findAndDeleteDir(versionDir, '.svn')
 
 		# create cobra.bat / cobra for invoking the latest version
-		baseBinDir = '[baseDir][slash]bin'
+		baseBinDir = '[targetDir][slash]bin'
 		.requireDir(baseBinDir)
 		if .isRunningOnUnix
 			_cobraCommandPath = '[baseBinDir][slash]cobra'
@@ -562,7 +579,7 @@ class InstallFromWorkspace
 				found = true
 				break
 		print
-		baseBinDir = '[_baseDir][slash]bin'
+		baseBinDir = '[_targetDir][slash]bin'
 		if found
 			if String.compare(commandPath, '[baseBinDir][slash][commandName]', not .isRunningOnUnix) == 0
 				print 'Your PATH already contains [baseBinDir]'
