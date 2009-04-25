@@ -204,6 +204,7 @@ class TestifyRunner
 					_testifyFlush
 					if _maxCount > 0 and _testifyCount >= _maxCount
 						break
+				_cleanDir(dirName)
 			finally
 				Directory.setCurrentDirectory(saveDir)
 		finally
@@ -580,3 +581,18 @@ class TestifyRunner
 			return .testifyFile(baseName)
 		finally
 			Directory.setCurrentDirectory(saveDir)
+
+	def _cleanDir(dirName as String)
+		curDir = Environment.currentDirectory
+		assert Path.getFileName(dirName) == Path.getFileName(curDir)
+		di = DirectoryInfo(curDir)
+		for fileInfo in di.getFiles
+			try
+				if fileInfo.extension in ['.exe', '.dll', '.mdb', '.pdb', '.class'] _
+					and fileInfo.name not in ['Nested.dll', 'Foo.iSeries.dll']
+					# TODO: perhaps the extensions for generated files should come from the back-end
+					# TODO: find a general way to determine if a binary file is part of the workspace/repository
+					fileInfo.delete
+			catch ex as Exception
+				if fileInfo.name <> 'Cobra.Lang.dll'  # this happens regularly and don't feel like seeing it
+					print 'warning: cannot delete [fileInfo] due to: [ex.message]'
