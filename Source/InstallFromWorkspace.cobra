@@ -180,8 +180,20 @@ class InstallFromWorkspace
 	def deleteDir(dir as String)
 		if Directory.exists(dir)
 			print 'del dir  :', dir
+			spacer = '          '
 			_unReadOnly(dir)
-			Directory.delete(dir, true)  # true = recursive
+			numAttempts = 3
+			for attempt in 1 : numAttempts + 1
+				try
+					Directory.delete(dir, true)  # true = recursive
+				catch IOException
+					# sometimes "The directory is not empty." occurs
+					if attempt == numAttempts, throw
+					print spacer, 'Having trouble deleting directory. Try again in [attempt] seconds.'
+					System.Threading.Thread.sleep(attempt*1_000)
+					if not Directory.exists(dir)  # and sometimes it goes away!
+						print spacer, 'Directory is gone.'
+				if not Directory.exists(dir), break
 
 	def _unReadOnly(dirName as String)
 		_unReadOnly(DirectoryInfo(dirName))
