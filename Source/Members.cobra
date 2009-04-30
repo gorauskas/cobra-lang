@@ -971,24 +971,30 @@ class Initializer inherits AbstractMethod is partial
 						.lastToken.copy('DOT', '.'), 'DOT', _
 						IdentifierExpr(.lastToken.copy('ID', 'CobraCore')), _
 						MemberExpr(.lastToken.copy('ID', '_willCheckNil')))
-	
 					block = BlockStmt(token, stmts)
-	
 					ifStmt = IfStmt(token, cond, block, nil)
-	
 					.addStmt(ifStmt)
 
 		base._bindImp
 
 		first = true
 		for stmt in _stmts
-			if not first
-				if stmt inherits DotExpr
-					if stmt.left inherits BaseLit
-						# TODO: after switching to byte code gen, it would be nice to relax this a bit, by say allowing statements that use args and locals, but can't set class state by, for example, setting class vars or calling members
-						stmt.recordError('The base initializer can only be invoked in the first statement.')
-					else if stmt.left inherits ThisLit and ((stmt.right inherits MemberExpr and (stmt.right to MemberExpr).name == 'init') or (stmt.right inherits CallExpr and (stmt.right to CallExpr).name == 'init'))  # CC: axe casts
-						stmt.recordError('Another initializer can only be invoked in the first statement.')
+			isBase = isThisInit = false
+			if stmt inherits DotExpr
+				if stmt.left inherits BaseLit
+					isBase = true
+				else if stmt.left inherits ThisLit and ((stmt.right inherits MemberExpr and (stmt.right to MemberExpr).name == 'init') or (stmt.right inherits CallExpr and (stmt.right to CallExpr).name == 'init'))  # CC: axe casts
+					isThisInit = true
+			if first
+				if .isClassMember and not isBase and not isThisInit
+					# structs cannot call base constructors
+					.compiler.warning(stmt, 'The first statement of an "init" cue should be a call to another "init" in this class or the base class.')
+			else
+				if isBase
+					# TODO: after switching to byte code gen, it would be nice to relax this a bit, by say allowing statements that use args and locals, but can't set class state by, for example, setting class vars or calling members
+					stmt.recordError('The base initializer can only be invoked in the first statement.')
+				else if isThisInit
+					stmt.recordError('Another initializer can only be invoked in the first statement.')
 			first = false
 				
 
