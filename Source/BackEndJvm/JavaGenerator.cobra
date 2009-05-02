@@ -1101,7 +1101,7 @@ class AbstractMethod is partial
 			.writeJavaLocals(sw, nil, false)
 			willEnsure = _ensurePart and _ensurePart.willGenerateCode
 			if willEnsure
-				sw.write('bool _lh_canEnsure = false;\n')
+				sw.write('boolean _lh_canEnsure = false;\n')
 				# have to set `out` parameters or C# will error on them being passed in the `finally` for the ensure,
 				# even though the _lh_canEnsure guard logically prevents problems at run-time
 				for param in _params
@@ -1874,6 +1874,129 @@ class IsNotNilExpr is partial
 	def writeJavaBreakdownItems(sw as CurlyWriter)
 		base.writeJavaBreakdownItems(sw)
 		_expr.writeJavaBreakdownItems(sw)
+
+
+class BranchStmt is partial
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		if _expr.type.isDynamic
+			# if the expression is dynamic, then use an if-else ladder with CobraImp.Equals(
+			sw.writeLine('// branch [_expr.toCobraSource]')
+			
+			varName = '_lh_branch_[.serialNum]'
+			sw.write('[_expr.type.javaRef] [varName] = ')
+			_expr.writeJavaDef(sw)
+			sw.writeLine(';')
+						
+			elseWord = ''
+			for onPart in _onParts
+				sw.write('[elseWord]if (')
+				sep = ''
+				for e in onPart.exprs
+					sw.write(sep)
+					sw.write('Cobra.Lang.CobraImp.Equals([varName], ')
+					e.writeJavaDef(sw, false)
+					sw.write(')')
+					sep = ' || '
+				sw.write(')')
+				onPart.block.writeJavaDef(sw)
+				elseWord = 'else '
+			if _elsePart
+				sw.write('else ')
+				_elsePart.writeJavaDef(sw)
+		else
+			# for any other kind of expression, use a Java switch
+			sw.write('switch(')
+			_expr.writeJavaDef(sw)
+			sw.write(') {\n')
+			sw.indent
+			for onPart in _onParts
+				sep = ''
+				for e in onPart.exprs
+					sw.write(sep)
+					sw.write('case ')
+					e.writeJavaDef(sw)
+					sw.write(': ')
+					sep = '\n'
+				onPart.block.writeJavaDef(sw)
+				if not onPart.block.stmts.count or not onPart.block.stmts.last inherits ReturnStmt
+					sw.write('break;\n')
+			if _elsePart
+				sw.write('default: ')
+				_elsePart.writeJavaDef(sw)
+				sw.write('break;\n')
+			sw.dedent
+			sw.write('}\n')
+
+
+class BlockStmt is partial
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		.writeJavaDef(sw, true, nil)
+
+	def writeJavaDef(sw as CurlyWriter, close as bool)
+		.writeJavaDef(sw, close, nil)
+
+	def writeJavaDef(sw as CurlyWriter, top as String?)
+		.writeJavaDef(sw, true, top)
+
+	def writeJavaDef(sw as CurlyWriter, close as bool, top as String?)
+		sw.node(this)
+		sw.write(' {\n')
+		sw.indent
+		if top, sw.write(top)
+		if _ifInheritsVar
+			#typeName = _ifInheritsType.javaRef
+			#newName = '_lh_' + _ifInheritsVar.name + '_' + _ifInheritsType.javaNameComponent
+			#sw.write('[typeName] [newName] = ([typeName])[_ifInheritsVar.javaName];\n')
+			#_ifInheritsVar.useBackEndNameStack.push(newName)
+			ifInheritsCount = _ifInheritsVar.ifInheritsStack.count  # AssignExpr could pop our _ifInheritsType. We detect that with the count.
+			_ifInheritsVar.ifInheritsStack.push(_ifInheritsType)
+		for stmt in _stmts, stmt.writeJavaStmt(sw)
+		if _ifInheritsVar and _ifInheritsVar.ifInheritsStack.count > ifInheritsCount
+			#_ifInheritsVar.useBackEndNameStack.pop
+			_ifInheritsVar.ifInheritsStack.pop
+		if close
+			sw.dedent
+			sw.write('}\n')
+
+
+class BreakStmt is partial
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		sw.write('break;\n')
+
+
+class ContinueStmt is partial
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		sw.write('continue;\n')
+
+
+class ExpectStmt is partial
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		exceptionTypeRef = _exceptionType.javaRef
+		gotRightExceptionVarName = '_lh_expect_[_varNumber-1]'  # lh => "local helper"
+		sw.write('boolean [gotRightExceptionVarName] = false;\n')
+		sw.write('try ')
+		_block.writeJavaDef(sw)
+		sw.writeAndIndent('catch ([exceptionTypeRef]) {\n')
+		sw.write('// exactly what is expected\n')
+		sw.write('[gotRightExceptionVarName] = true;\n')
+		sw.dedentAndWrite('}\n')
+		if _exceptionType inherits Box and not (_exceptionType to Box).isSystemExceptionClass
+			wrongExceptionVarName = '_lh_expect_[_varNumber]'
+			assert gotRightExceptionVarName <> wrongExceptionVarName
+			sw.writeAndIndent('catch (java.lang.Throwable [wrongExceptionVarName]) {\n')
+			sw.write('throw new Cobra.Lang.ExpectException(typeof([exceptionTypeRef]), [wrongExceptionVarName]);\n')
+			sw.dedentAndWrite('}\n')
+		sw.write('if (![gotRightExceptionVarName]) throw new Cobra.Lang.ExpectException([exceptionTypeRef].getClass(), null);\n')
 
 
 ##
