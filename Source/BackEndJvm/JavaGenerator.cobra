@@ -886,7 +886,7 @@ class Param is partial
 	def writeJavoDef(sw as CurlyWriter)
 		base.writeJavaDef(sw)
 		if .type.isReference and not .type inherits NilableType
-			sw.write(r'[CobraLangInternal.NotNull] ')
+			sw.write(r'[Cobra.Lang.NotNull] ')
 		branch .kind
 			on KindEnum.Value, pass
 			on KindEnum.InOut, sw.write('ref ')
@@ -929,7 +929,7 @@ class BoxMember is partial
 
 	def writeJavaNotNull(sw as CurlyWriter)
 		if .resultType.isReference and not .resultType inherits NilableType
-			sw.writeLine(r'[' + .javaNotNullPrefix + 'CobraLangInternal.NotNull]')
+			sw.writeLine(r'[' + .javaNotNullPrefix + 'Cobra.Lang.NotNull]')
 
 	get javaNotNullPrefix as String
 		# TODO
@@ -1762,6 +1762,118 @@ class IdentifierExpr is partial
 		if .isTypeReference, name = name + '.getClass()'
 		sw.write(name)
 
+
+class IfExpr is partial
+
+	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
+		cond, tpart, fpart = .cond, .tpart, .fpart
+		cast = tpart.type <> fpart.type
+		# TODO: is this true?: Java doesn't do the "greatest common denominator" thing like Cobra does, so some casting is in order
+		sw.write('(')
+		cond.writeJavaDef(sw)
+		sw.write('?')
+		if cast, sw.write('([.type.javaRef])(')
+		tpart.writeJavaDef(sw)
+		if cast, sw.write(')')
+		sw.write(':')
+		if cast, sw.write('([.type.javaRef])(')
+		fpart.writeJavaDef(sw)
+		if cast, sw.write(')')
+		sw.write(')')
+
+	def writeJavaBreakdownItems(sw as CurlyWriter)
+		base.writeJavaBreakdownItems(sw)
+
+		sw.write(', +1') # indent
+
+		cond, tpart, fpart = .cond, .tpart, .fpart
+		cond.writeJavaBreakdownItems(sw)
+		# only one of the target expressions is actually evaluated
+
+		# tpart:
+		src = Utils.javaStringLiteralFor(tpart.toCobraSource)
+		sw.write(', [src], new Cobra.Lang.CobraDirectString(')
+		cond.writeJavaDefForBreakdown(sw)
+		sw.write(' ? Cobra.Lang.CobraCore.ToTechString(')
+		tpart.writeJavaDefForBreakdown(sw)
+		sw.write(') : "(not-evaluated)")')
+
+		# fpart:
+		src = Utils.javaStringLiteralFor(fpart.toCobraSource)
+		sw.write(', [src], new Cobra.Lang.CobraDirectString(')
+		cond.writeJavaDefForBreakdown(sw)
+		sw.write(' ? "(not-evaluated)" : Cobra.Lang.CobraCore.ToTechString(')
+		fpart.writeJavaDefForBreakdown(sw)
+		sw.write('))')
+
+		sw.write(', -1') # dedent
+
+
+class IndexExpr is partial
+
+	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
+		if _target.type.isDynamic
+			sw.write('Cobra.Lang.CobraImp.GetIndexerValue(')
+			_target.writeJavaDef(sw, false)
+			for expr in _args
+				sw.write(', ')
+				expr.writeJavaDef(sw, false)
+			sw.write(')')
+			return
+		if parens, sw.write('(')
+		if _target inherits IdentifierExpr
+			if _target.isKindOf(.compiler.typeType)
+				# here we're favoring "Foo[]" being an array type rather than a shared indexer
+				sw.write(_target.name)
+				handled = true
+		if not handled
+			_target.writeJavaDef(sw)
+		sw.write(r'[')
+		sep = ''
+		for expr in _args
+			sw.write(sep)
+			expr.writeJavaDefInContext(sw)
+			sep = ', '
+		sw.write(']')
+		if parens, sw.write(')')
+
+	def writeJavaBreakdownItems(sw as CurlyWriter)
+		base.writeJavaBreakdownItems(sw)
+		sw.write(', +1')
+		_target.writeJavaBreakdownItems(sw)
+		for expr in _args
+			expr.writeJavaBreakdownItems(sw)
+		sw.write(', -1')
+
+
+class IsNilExpr is partial
+
+	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
+		if parens, sw.write('(')
+		sw.write('(')
+		_expr.writeJavaDef(sw)
+		sw.write(')')
+		sw.write('==null')
+		if parens, sw.write(')')
+
+	def writeJavaBreakdownItems(sw as CurlyWriter)
+		base.writeJavaBreakdownItems(sw)
+		_expr.writeJavaBreakdownItems(sw)
+
+
+class IsNotNilExpr is partial
+
+	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
+		if parens, sw.write('(')
+		sw.write('(')
+		_expr.writeJavaDef(sw)
+		sw.write(')')
+		sw.write('!=null')
+		if parens, sw.write(')')
+
+	def writeJavaBreakdownItems(sw as CurlyWriter)
+		base.writeJavaBreakdownItems(sw)
+		_expr.writeJavaBreakdownItems(sw)
 
 
 ##
