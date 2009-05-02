@@ -671,7 +671,7 @@ class Box is partial
 		# Running tests from the static initializer seems like a good idea, but has been problematic at various times on both .NET and Mono, so no more:
 		# sw.write('\nstatic [.rootName]() { RunTestsIfNeeded(); }\n')
 		# -- er, it turned out that the problem was likely -dst on SourceSite. Consequently we could try returning to static initializers to trigger tests.
-		sw.write('\nprivate static bool __didStartTests = false;\n')
+		sw.write('\nprivate static boolean __didStartTests = false;\n')
 		newWord = .newForJavaTest
 		sw.write('\npublic static[newWord] void RunTestsIfNeeded() { if (!__didStartTests) RunTests(); }\n')
 		sw.write('\npublic static[newWord] void RunTests()')
@@ -1087,7 +1087,7 @@ class AbstractMethod is partial
 	def innerWriteJavaDef(sw as CurlyWriter)
 		pass
 	
-	def writeJavaImp(sw as CurlyWriter, skipFirst as bool)
+	def writeJavaImp(sw as CurlyWriter)
 		.compiler.codeMemberStack.push(this)
 		try
 			sw.writeAndIndent('{\n')
@@ -1118,11 +1118,7 @@ class AbstractMethod is partial
 						sw.write('= [_returnType.javaInit]')
 					sw.write(';\n')
 				sw.writeAndIndent('try {\n')
-			for stmt in _stmts
-				if skipFirst
-					skipFirst = false
-					continue
-				stmt.writeJavaStmt(sw)
+			for stmt in _stmts, stmt.writeJavaStmt(sw)
 			if willEnsure
 				if not stmt inherits ReturnStmt and not stmt inherits ThrowStmt
 					sw.write('_lh_canEnsure = true;\n')
@@ -1263,7 +1259,7 @@ class AbstractMethod is partial
 			return
 		# sw.writeLine('Console.WriteLine("<< [.parentBox.name].[.name]");')
 		# this catch all clashes with yield statements. which is why .canHaveDetailedStackTrace returns false if a method has a yield statement.
-		sw.dedentAndWrite('} catch {\n')
+		sw.dedentAndWrite('} catch (java.lang.Exception) {\n')
 		sw.indent
 		sw.write('Cobra.Lang.CobraImp.CaughtUncaughtException();\n')
 		sw.write('throw;\n')
@@ -1278,8 +1274,10 @@ class Initializer is partial
 	def innerWriteJavaDef(sw as CurlyWriter)
 		base.innerWriteJavaDef(sw)
 		.writeJavaAttribs(sw)
-		first = if(_stmts.count, _stmts[0], nil)
-		callInitializer as String? = nil
+# delme		first = if(_stmts.count, _stmts[0], nil)
+# delme		callInitializer as String? = nil
+/#
+delme
 		if first inherits DotExpr
 			if first.left inherits ThisOrBaseLit
 				if (firstRight = first.right) inherits IDotRightExpr
@@ -1288,9 +1286,12 @@ class Initializer is partial
 						args = firstRight.args
 						Stmt.inInitCall = true
 						didSetInInitCall = true
+#/
 		.writeJavaIsNames(sw)
 		sw.write(' [.parentBox.rootName]')
 		.writeJavaParams(sw)
+/#
+delme
 		if callInitializer
 			sw.writeAndIndent('\n')
 			sw.write(': [callInitializer](')
@@ -1304,11 +1305,10 @@ class Initializer is partial
 			if didSetInInitCall
 				assert Stmt.inInitCall  # make sure it wasn't reset somewhere else
 				Stmt.inInitCall = false
-		.writeJavaImp(sw, if(callInitializer, true, false))
-		if _requirePart
-			_requirePart.writeJavaMethod(sw)
-		if _ensurePart
-			_ensurePart.writeJavaMethod(sw)
+#/
+		.writeJavaImp(sw)
+		if _requirePart, _requirePart.writeJavaMethod(sw)
+		if _ensurePart, _ensurePart.writeJavaMethod(sw)
 		if .compiler.includeTests
 			.writeJavaTest(sw)
 
@@ -1356,7 +1356,7 @@ class Method is partial
 			sw.write(';\n')
 		else
 			if .isAbstract, sw.writeLine(';')
-			else, .writeJavaImp(sw, false)
+			else, .writeJavaImp(sw)
 			if _requirePart, _requirePart.writeJavaMethod(sw)
 			if _ensurePart, _ensurePart.writeJavaMethod(sw)
 			if .compiler.includeTests, .writeJavaTest(sw)
@@ -1378,11 +1378,16 @@ class Method is partial
 		if .isMain
 			if .compiler.hasExceptionReportOption
 				sw.dedent
-				sw.writeLine('} catch (System.Exception _lh_exceptionReportException) { Cobra.Lang.CobraCore.HandleUnhandledException(_lh_exceptionReportException); }')
+				sw.writeLine('} catch (java.lang.Throwable _lh_exceptionReportThrowable) { Cobra.Lang.CobraCore.HandleUnhandledException(_lh_exceptionReportThrowable); }')
 			else if .compiler.options.boolValue('debugging-tips')
 				sw.dedent
-				sw.writeLine('} catch { Cobra.Lang.CobraCore.PrintDebuggingTips(); throw; }')
-				
+				sw.writeLine('} catch (java.lang.Throwable _lh_debuggingTipsThrowable) {')
+				sw.indent
+				sw.writeLine('Cobra.Lang.CobraCore.PrintDebuggingTips();')
+				sw.writeLine('throw _lh_debuggingTipsThrowable.fillInStackTrace();')
+				sw.dedent
+				sw.writeLine('}')
+
 	get javaName as String is override
 		return .name.capped
 
