@@ -1629,6 +1629,141 @@ class AsExpr is partial
 		sw.write(.asJava)
 
 
+class AnonymousMethodExpr is partial
+
+	# TODO
+	pass
+
+
+class LambdaExpr is partial
+
+	# TODO	
+	pass
+
+
+class CallExpr is partial
+
+	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
+		assert .superNode inherits DotExpr
+		name = .name
+		if _definition inherits BoxMember and (_definition to BoxMember).binaryName
+			name = (_definition to BoxMember).binaryName to !
+		else
+			name = name.capped
+		sw.write('[name]')
+		if _genericArgTypes and _genericArgTypes.count
+			sw.write('<')
+			sep = ''
+			for genericArgType in _genericArgTypes
+				sw.write(sep + genericArgType.javaRef)
+				sep = ', '
+			sw.write('>')
+		sw.write('(')
+		sep = ''
+		for arg in _args
+			sw.write(sep)
+			arg.writeJavaDefInContext(sw)
+			sep = ', '
+		sw.write(')')
+
+	def writeJavaBreakdownItems(sw as CurlyWriter) is override
+		# leaving out the base call is intentional:
+		# base.writeJavaBreakdownItems(sw)
+		sw.write(', +1')
+		for expr in _args
+			expr.writeJavaBreakdownItems(sw)
+		sw.write(', -1')
+
+
+class EnumCallExpr is partial
+
+	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
+		if parens, sw.write('(')
+		if _args.count == 0
+			sw.write('default([_definition.javaRef])')
+		else
+			sep = ''
+			for member in _members
+				sw.write(sep)
+				sw.write(member.javaRef)
+				sep = '|'
+		if parens, sw.write(')')
+
+	def writeJavaBreakdownItems(sw as CurlyWriter)
+		base.writeJavaBreakdownItems(sw)
+		sw.write(', +1')
+		for member in _members
+			sw.write(', ')
+			sw.write(member.javaRef)
+		sw.write(', -1')
+
+
+class ForExpr is partial
+
+	# TODO
+	pass
+
+
+class IdentifierExpr is partial
+
+	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
+		# recall that this cannot be the right side of "foo.bar" since that is a MemberExpr
+		java = .javaQualification + .javaName
+		if _requiresGetClass, java = java + '.getClass()'
+		sw.write(java)
+
+	get javaQualification as String
+		qual = ''
+		if .definition inherits IVar
+			# the only definition that has no parentNameSpace in practice is IVar
+			pass
+		else
+			pn = .definition.parentNameSpace
+			if pn, qual = pn.javaQualifier
+		return qual
+		
+	get javaName as String
+		assert .didBindImp
+		assert .namedDefinition
+		assert not .type inherits UnspecifiedType
+		if .superNode inherits DotExpr
+			assert this is not (.superNode to DotExpr).right  # should be a CallExpr or MemberExpr instead
+		defi = .namedDefinition
+		return defi.javaName
+
+	def _requiresGetClass as bool
+		# C# often requires typeof(Foo) instead of just plain Foo
+		if not .isTypeReference, return false
+		superNode = .superNode
+		if superNode inherits DotExpr, return false
+		if superNode inherits InheritsExpr, return false
+		if superNode inherits PostCallExpr
+			if superNode.expr is this
+				return false
+		return true
+
+	def writeJavaStmt(sw as CurlyWriter) is override
+		assert .isCalling
+		sw.write('[_name]();')
+
+	get javaAssignmentNames as List<of String>?
+		require
+			.didBindImp
+			.namedDefinition
+		body
+			if _definition inherits IVar
+				return _definition.javaAssignmentNames
+			else
+				return nil
+
+	def writeJavaDefForBreakdown(sw as CurlyWriter) is override
+		name = .javaQualification + .javaName
+		# _requiresGetClass may return false, but in the java def breakdown, .getClass is always required
+		if .isTypeReference, name = name + '.getClass()'
+		sw.write(name)
+
+
+
 ##
 ## Temporary
 ##
