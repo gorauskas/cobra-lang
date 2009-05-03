@@ -6,8 +6,7 @@ use System.Diagnostics
 use System.Text.RegularExpressions
 
 
-class OptionSpec
-	inherits Dictionary<of String, dynamic>
+class OptionSpec inherits Dictionary<of String, dynamic>
 	"""
 	Represents a specific, named command line option specification.
 
@@ -87,9 +86,17 @@ class OptionSpec
 		if .containsKey('choices')
 			for choice in this['choices']
 				_choices.add(choice)
+		_unpackPlatforms
 		_isUnpacked = true
 		assert .type=='menu' implies .choices.count > 0
 		assert .choices.count <> 0 implies .type in ['menu', 'set']
+
+	def _unpackPlatforms
+		if not .containsKey('platforms')
+			this['platforms'] = ['jvm', '.net']
+		for platform in this['platforms']
+			assert platform in ['jvm', '.net']
+		this['platforms'] = Set<of String>(this['platforms'] to List<of String>)
 
 
 class CommandLineOptionSpecs
@@ -185,6 +192,7 @@ class CommandLineOptionSpecs
 			'name': 'delay-sign',
 			'type': 'bool',
 			'description': 'Delay-sign the assembly using only the public portion of the strong name key.',
+			'platforms': ['.net'],
 		},
 		{
 			'name': 'detailed-stack-trace',
@@ -277,19 +285,21 @@ class CommandLineOptionSpecs
 			'type': 'string',
 			'args': 'FILE',
 			'description': 'Specify a strong name key container used to strongname the output assembly.',
+			'platforms': ['.net'],
 		},
 		{
 			'name': 'key-file',
 			'type': 'string',
 			'args': 'FILE',
 			'description': 'Specify a strong name key file used to sign the output assembly.',
+			'platforms': ['.net'],
 		},
 		{
 			'name': 'library-directory',
 			'synonyms': ['lib'],
 			'type': 'string',
 			'isAccumulator': true,
-			'description': 'Specify additional directories to search in for references.',
+			'description': 'Specify additional directories to search in for references. Maps to -lib: on .NET and -classpath on JVM.',
 			'args': 'PATH',
 		},
 		{
@@ -298,6 +308,13 @@ class CommandLineOptionSpecs
 			'type': 'string',
 			'description': 'Set the namespace for all Cobra source files as if each one started with "namespace <name>". Can be a qualified name.',
 			'example': 'Foo.Bar',
+		},
+		{
+			'name': 'native-compiler',
+			'synonyms': ['sharp-compiler'],
+			'description': 'Specify the path to the back-end compiler (such as csc.exe or javac).',
+			'type': 'string',
+			'args': 'file-system-path',
 		},
 		{
 			'name': 'number',
@@ -331,6 +348,7 @@ class CommandLineOptionSpecs
 			'description': 'References package via "pkg-config --libs". (Mono only.)',
 			'args': 'NAME',
 			'restriction': 'mono',
+			'platforms': ['.net'],
 		},
 		{
 			'name': 'reference',
@@ -366,24 +384,20 @@ class CommandLineOptionSpecs
 			'type': 'args-list',
 		},
 		{
-			'name': 'sharp-compiler',
-			'description': 'Specify the path to the backend C# compiler.',
-			'type': 'string',
-			'args': 'file-system-path',
-		},
-		{
-			'name': 'sharp-args',
-			'description': 'Pass additional arguments to the backend C# compiler.',
+			'name': 'native-compiler-args',
+			'synonyms': ['sharp-args'],
+			'description': 'Pass additional arguments to the native back-end compiler (such as C# or Java).',
 			'type': 'string',
 			'args': '"arg1 arg2"',
 		},
 		{
 			'name': 'target',
+			'synonyms': ['t'],
 			'description': 'Build a specific target.',
 			'type': 'menu',
 			'choices': ['exe', 'winexe', 'lib', 'module'],
 			'args': 'exe|winexe|lib|module',
-			'synonyms': ['t'],
+			'platforms': ['.net'],
 		},
 		{
 			'name': 'test',

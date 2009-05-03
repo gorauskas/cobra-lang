@@ -24,6 +24,7 @@ class Compiler is partial
 			Node.setCompiler(nil)
 
 	def writeJavaTestInvocation
+		# TODO
 		pass
 
 	def compileJava
@@ -33,8 +34,109 @@ class Compiler is partial
 		require
 			.modules.count
 		body
-			print 'Not compiling Java yet...'
+			if .verbosity >= 2, print 'Compiling generated code'
+			options = .options
 
+			# locate the C# compiler
+			compilerPath = options.getDefault('native-compiler', '') to String
+			if compilerPath <> ''
+				if File.exists(compilerPath)
+					pass
+				else if File.exists(compilerPath+'.exe')
+					compilerPath += '.exe'
+				else
+					print 'Cannot find compiler specified by -native-compiler argument: [compilerPath]'
+					throw StopCompilation(this)
+			else
+				compilerPath = if(Utils.isRunningOnUnix, 'javac', 'javac.exe')
+			
+			optChar = '-'
+			
+			# exeNames
+			outName = ''
+			if options.boolValue('test')
+				outName = _modules.last.javaFileName
+			else if options.containsKey('out')
+				outName = options.getDefault('out', '')
+			if outName == ''
+				outName = _firstFileName to !
+			if outName.endsWith('.java') or outName.endsWith('.JAVA'), outName = outName[:-3]
+			if outName.endsWith('.cobra') or outName.endsWith('.COBRA'), outName = outName[:-6]
+			_baseExeFileName = outName
+
+			# compute backEndOptions
+			backEndOptions = ''
+			outName = Utils.forceExtension(outName, '.class')
+			_fullExeFileName = outName
+			# -optimize isn't supported by JVM, but it could potentially be used by Cobra itself
+			
+			# TODO:
+#			for refer in .loadedReferences  # don't take the library references from options, because the references can grow
+#				backEndOptions += ' "[optChar]r:[refer]"'
+
+			debug = options.getDefault('debug', '') to String
+			if debug.length
+				# TODO: mono does not support full and pdbonly afaik
+				assert debug in ['-', '+', 'full', 'pdbonly'], debug
+				backEndOptions += ' [optChar]g' + if(debug=='-', ':none', '')
+
+			# TODO: not until the java backend is more mature
+			# backEndOptions += ' -nowarn'
+			
+			backEndOptions += ' ' + extraJavacOptions
+			
+			nativeArgs = .options.getDefault('native-compiler-args', '') to String
+			if nativeArgs.length
+				if nativeArgs.length > 2 and nativeArgs[0]=="'" and nativeArgs[nativeArgs.length-1]=="'"
+					# on Windows, you should really use double quotes instead of single, but
+					# we try to compensate here.
+					nativeArgs = nativeArgs[1:-1]
+				backEndOptions += ' ' + nativeArgs
+
+			for libPath in .options.getStringList('library-directory')
+				backEndOptions += ' ' + '-classpath "[libPath]"'
+
+			# Cobra.Lang.dll is in the same directory as cobra.exe
+			libPath = Path.getDirectoryName(CobraCore.exePath) to !
+			backEndOptions += ' ' + '-classpath "[libPath]"'
+
+			# .java files
+			javaFileNameList = List<of String>()
+			for module in _modules[1:]
+				if module.javaFileName.length
+					javaFileNameList.add(module.javaFileName)
+
+			# compilation command
+			if _verbosity
+				print 'Compiling to produce [outName]'
+
+			# TODO: need to encapsulate this in CobraCore to avoid .NET dependency
+			p = System.Diagnostics.Process()
+			p.startInfo.fileName = compilerPath
+			javaFileNames = Utils.join(' ', for fileName in javaFileNameList get '"' + fileName + '"')
+			p.startInfo.arguments = '[backEndOptions] [javaFileNames]'
+			if _verbosity >= 2
+				print '[p.startInfo.fileName] [p.startInfo.arguments]'
+			output = CobraCore.runAndCaptureAllOutput(p)
+			# TODO: check p.exitCode, especially if output is empty
+			_parseJavaCompilerOutput(output)
+
+			if .errors.count
+				_exitFromErrors
+
+			_deleteIntermediateFiles
+
+	def _parseJavaCompilerOutput(output as String)
+		for line in output.split(c'\n')
+			line = line.trim
+			if not line.length, continue
+			if JavaCompilationMessage.willSkipMessage(line)
+				continue
+			else
+				if _verbosity >= 3
+					print 'javac message: [line]'
+				_addMessage(JavaCompilationMessage(line, this))
+			
 
 ##
 ## Node
@@ -1527,9 +1629,6 @@ class AssertStmt is partial
 			sw.write('null')
 		sw.write(');\n')
 		sw.dedent
-
-
-# uu
 
 
 ##

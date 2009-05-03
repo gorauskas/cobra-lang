@@ -98,15 +98,12 @@ class Compiler is partial
 	def compileSharp(extraCscOptions as String)
 		require
 			.modules.count
-			# CC: why does the folowing expression generate C# errors? 2007-11-21 Novell Mono 1.2.4. Could be code gen problem
-			# 'SystemInterfaces' in (for mod in .modules get mod.fileName)  # TODO: food for thought: this is inefficent because all fileNames are collected when we could just get out upon hitting the first SystemInterfaces
-#			.modules[0].fileName.endsWith('SystemInterfaces.cobra')  # no longer the first module
 		body
 			if .verbosity >= 2, print 'Compiling generated code'
 			options = .options
 
 			# locate the C# compiler
-			cscPath = options.getDefault('sharp-compiler', '') to String
+			cscPath = options.getDefault('native-compiler', '') to String
 			if cscPath <> ''
 				if File.exists(cscPath)
 					platform = if('Microsoft' in cscPath, 'ms', 'novell')
@@ -114,7 +111,7 @@ class Compiler is partial
 					cscPath += '.exe'
 					platform = if('Microsoft' in cscPath, 'ms', 'novell')
 				else
-					print 'Cannot find compiler specified by -sharp-compiler argument: [cscPath]'
+					print 'Cannot find compiler specified by -native-compiler argument: [cscPath]'
 					throw StopCompilation(this)
 			else
 				# will use CSharpCodeProvider
@@ -197,7 +194,7 @@ class Compiler is partial
 
 			backEndOptions += ' ' + extraCscOptions
 
-			sharpArgs = .options.getDefault('sharp-args', '') to String
+			sharpArgs = .options.getDefault('native-compiler-args', '') to String
 			if sharpArgs.length
 				if sharpArgs.length > 2 and sharpArgs[0]=="'" and sharpArgs[sharpArgs.length-1]=="'"
 					# on Windows, you should really use double quotes instead of single, but
@@ -288,21 +285,7 @@ class Compiler is partial
 			if .errors.count
 				_exitFromErrors
 
-			# remove intermediate files such as *.cobra.cs
-			if _intermediateFileNames.count == 0
-				if _verbosity >= 1
-					print 'No intermediate files to keep or delete.'
-			else
-				if options.getDefault('keep-intermediate-files', 0)
-					if _verbosity >= 1
-						print 'Keeping intermediate files.'
-				else
-					if _verbosity >= 1
-						print 'Deleting intermediate files.'
-					for fileName in _intermediateFileNames
-						if _verbosity >= 3
-							print 'Deleting', fileName
-						File.delete(fileName)
+			_deleteIntermediateFiles
 
 	def _parseSharpCompilerOutput(output as String)
 		for line in output.split(c'\n')
