@@ -84,8 +84,6 @@ class Compiler
 	var _codeMemberStack as Stack<of AbstractMethod>
 
 	# TODO: could collapse these down to IsBindingEnum: None, Use, Int, Inh. Or PhaseEnum: None, Parsing, BindingUse, DidBindUse, BindingInh, DidBindInh, BindingInt, DidBindInt, BindingImp, DidBindImp, Generating, DidGenerate
-	var _isBindingUse as bool
-	var _isBindingInh as bool
 	var _isBindingInt as bool
 	var _isBindingImp as bool
 
@@ -156,10 +154,6 @@ class Compiler
 	get includeTests as bool
 		return .options.boolValue('include-tests')
 
-	get isBindingUse from var
-
-	get isBindingInh from var
-
 	get isBindingInt from var
 
 	get isBindingImp from var
@@ -182,6 +176,8 @@ class Compiler
 
 	pro willPrintSuccessMsg from var
 
+	get curPhase from var as Phase?
+	
 	pro curModule from var
 
 	get nodeStack from var
@@ -296,7 +292,12 @@ class Compiler
 
 	def runPhase(phaseType as Type)
 		phase = phaseType(this)
-		phase.run
+		_curPhase = phase
+		try
+			phase.run
+			.writeSourceCodeCorrections
+		finally
+			_curPhase = nil
 		if .errors.count, _exitFromErrors
 
 	def _compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool)
@@ -305,8 +306,7 @@ class Compiler
 		_pathsToCompile = paths
 		.runPhase(ParsePhase)
 		.runPhase(BindUsePhase)
-		.writeSourceCodeCorrections
-		.bindInh
+		.runPhase(BindInheritancePhase)
 		.writeSourceCodeCorrections
 		.bindInt
 		.writeSourceCodeCorrections
@@ -336,7 +336,7 @@ class Compiler
 		if verbose, print 'Bind use:'
 		.runPhase(BindUsePhase)
 		if verbose, print 'Bind inheritance:'
-		.bindInh
+		.runPhase(BindInheritancePhase)
 		if verbose, print 'Bind interface:'
 		.bindInt
 		if verbose
@@ -761,40 +761,8 @@ class Compiler
 					_basicTypes.add(.intType(signed, size))
 		return _basicTypes to !
 
-	def bindInh
-		require
-			not .isBindingUse
-			not .isBindingInh
-			not .isBindingInt
-			not .isBindingImp
-		body
-			if .verbosity >= 2
-				print 'Binding inheritance'
-			_isBindingInh = true
-			try
-				Node.setCompiler(this)
-				try
-					for basicType in .basicTypes
-						basicType.bindInh
-					.objectType.bindInh
-					.stringType.bindInh
-					for _curModule in _modules
-						try
-							_curModule.bindInh
-						catch ce as SourceException
-							.recordError(ce)
-					assert .stringType.isDescendantOf(.objectType)
-					assert .stringType.isDescendantOf(.stringType)
-				finally
-					Node.setCompiler(nil)
-			finally
-				_isBindingInh = false
-			if _errors.count
-				_exitFromErrors
-
 	def bindInt
 		require
-			not .isBindingUse
 			not .isBindingInh
 			not .isBindingInt
 			not .isBindingImp
@@ -835,7 +803,6 @@ class Compiler
 
 	def bindImp
 		require
-			not .isBindingUse
 			not .isBindingInh
 			not .isBindingInt
 			not .isBindingImp
