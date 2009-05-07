@@ -83,8 +83,6 @@ class Compiler
 	var _boxMemberStack as Stack<of IBoxMember>
 	var _codeMemberStack as Stack<of AbstractMethod>
 
-	# TODO: could collapse these down to IsBindingEnum: None, Use, Int, Inh. Or PhaseEnum: None, Parsing, BindingUse, DidBindUse, BindingInh, DidBindInh, BindingInt, DidBindInt, BindingImp, DidBindImp, Generating, DidGenerate
-	var _isBindingInt as bool
 	var _isBindingImp as bool
 
 	var _errors as List<of SourceException>
@@ -153,8 +151,6 @@ class Compiler
 
 	get includeTests as bool
 		return .options.boolValue('include-tests')
-
-	get isBindingInt from var
 
 	get isBindingImp from var
 
@@ -307,9 +303,7 @@ class Compiler
 		.runPhase(ParsePhase)
 		.runPhase(BindUsePhase)
 		.runPhase(BindInheritancePhase)
-		.writeSourceCodeCorrections
-		.bindInt
-		.writeSourceCodeCorrections
+		.runPhase(BindInterfacePhase)
 		.computeMatchingBaseMembers
 		.writeSourceCodeCorrections
 		.bindImp
@@ -338,7 +332,7 @@ class Compiler
 		if verbose, print 'Bind inheritance:'
 		.runPhase(BindInheritancePhase)
 		if verbose, print 'Bind interface:'
-		.bindInt
+		.runPhase(BindInterfacePhase)
 		if verbose
 			.dumpModulesForTestify(resultsWriter, 'Modules after binding interface')
 			print 'Bind implementation:'
@@ -760,35 +754,6 @@ class Compiler
 				for size in [8, 16, 32, 64]
 					_basicTypes.add(.intType(signed, size))
 		return _basicTypes to !
-
-	def bindInt
-		require
-			not .isBindingInh
-			not .isBindingInt
-			not .isBindingImp
-		body
-			if .verbosity >= 2
-				print 'Binding interface'
-			_isBindingInt = true
-			try
-				Node.setCompiler(this)
-				try
-					.fixNilableMemberSigs
-					for basicType in .basicTypes
-						basicType.bindInt
-					.objectType.bindInt
-					.stringType.bindInt
-					for _curModule in _modules
-						try
-							_curModule.bindInt
-						catch ce as SourceException
-							.recordError(ce)
-				finally
-					Node.setCompiler(nil)
-			finally
-				_isBindingInt = false
-			if _errors.count
-				_exitFromErrors
 
 	def computeMatchingBaseMembers
 		Node.setCompiler(this)
