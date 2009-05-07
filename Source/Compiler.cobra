@@ -75,8 +75,6 @@ class Compiler
 
 	var _globalNS as NameSpace
 	var _modules as List<of Module>
-	var _parsedModules as List<of Module>? # accumulated as files parsed
-	var _firstFileName as String?
 
 	var _curModule as Module?  # set during bindInt and bindImp
 	var _nodeStack as Stack<of INode>
@@ -121,6 +119,7 @@ class Compiler
 		_verbosity = verbosity
 		_modules = List<of Module>()
 		_options = OptionValues()
+		_pathsToCompile = List<of String>()
 		_globalNS = NameSpace(Token.empty, '(global)')
 		_nodeStack = Stack<of INode>()
 		_nameSpaceStack = Stack<of NameSpace>()
@@ -150,7 +149,9 @@ class Compiler
 
 	get backEnd from var
 
-	get verbosity from var
+	pro defaultOutName from var as String?
+
+	pro verbosity from var
 
 	get includeTests as bool
 		return .options.boolValue('include-tests')
@@ -175,6 +176,8 @@ class Compiler
 
 	pro options from var
 
+	get pathsToCompile from var as IList<of String>
+	
 	pro commandLineArgParser from var
 
 	pro willPrintSuccessMsg from var
@@ -254,24 +257,17 @@ class Compiler
 	def addIntermediateFile(path as String)
 		_intermediateFileNames.add(path)
 
-	get cobraExeDir as String
-		"""
-		Returns the directory where cobra.exe is residing.
-		Related resources such as CobraLang.cs reside there.
-		"""
-		return Path.getDirectoryName(Assembly.getEntryAssembly.location) to !  # actually could be nil: if you stuck Cobra in the root dir, the .getDirectoryName docs say it will return nil
-		
 	def compileFilesNamed(paths as IList<of String>)
 		.compileFilesNamed(paths)
 
-	def compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool, stopAfterBindInt as bool)
+	def compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool)
 		if .options.boolValue('reveal-internal-exceptions')
-			_compileFilesNamed(paths, writeTestInvocation, stopAfterBindInt)
+			_compileFilesNamed(paths, writeTestInvocation)
 			.printMessages
 			return
 		else
 			try
-				_compileFilesNamed(paths, writeTestInvocation, stopAfterBindInt)
+				_compileFilesNamed(paths, writeTestInvocation)
 			catch StopCompilation
 				throw
 			catch exc as Exception
@@ -298,9 +294,17 @@ class Compiler
 			success
 				.printMessages
 
-	def _compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool, stopAfterBindInt as bool)
+	def runPhase(phaseType as Type)
+		phase = phaseType(this)
+		phase.run
+		if .errors.count
+			_exitFromErrors
+
+	def _compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool)
+		# TODO: put the writeTestInvocation somewhere
 		_initBackEnd
-		.parseFilesNamed(paths)
+		_pathsToCompile = paths
+		.runPhase(ParsePhase)
 		.bindUse
 		.writeSourceCodeCorrections
 		.bindInh
@@ -309,7 +313,6 @@ class Compiler
 		.writeSourceCodeCorrections
 		.computeMatchingBaseMembers
 		.writeSourceCodeCorrections
-		if stopAfterBindInt, return  # in support of the -doc option
 		.bindImp
 		.writeSourceCodeCorrections
 		.backEnd.generateCode(writeTestInvocation)
@@ -323,7 +326,8 @@ class Compiler
 		.options = options
 		bar = '----------------------------------------------------------------------------------------------------'
 		_initBackEnd
-		.parseFilesNamed(fileNames)
+		_pathsToCompile = fileNames
+		.runPhase(ParsePhase)
 
 		assert .modules.count
 		if verbose
@@ -356,189 +360,15 @@ class Compiler
 		.printMessages
 		print bar
 
-	def	_addRuntimeRef(opts as OptionValues)
+	def addRuntimeRef(opts as OptionValues)
 		if not opts.containsKey('reference')
 			opts['reference'] = List<of String>()
 		refs = opts['reference'] to List<of String>
-		libName = 'Cobra.Lang.dll'
+		libName = 'Cobra.Lang.dll'  # TODO: why is this hard coded? What is this method used for?
 		if libName not in refs
 			if .verbosity, print 'Adding reference to [libName]'
 			refs.add(libName)
 
-	def parseFilesNamed(filenames as IList<of String>) as List<of Module>
-		"""
-		Returns the modules for the newly parsed files.
-		Also, extends _modules with those modules.
-		"""
-		require
-			filenames.count or .options.buildStandardLibrary
-		ensure
-			true
-		body
-			_firstFileName = if(.options.buildStandardLibrary, 'Cobra.Lang.dll', filenames[0])
-
-			embedRunTime = .options.boolValue('embed-run-time')
-
-			if not embedRunTime
-				_addRuntimeRef(.options)  # then reference runtime dll
-
-			Node.setCompiler(this)
-			try
-				if _modules.count == 0  # attempt at caching modules during testify. incomplete.
-					if embedRunTime
-						# The Cobra.Lang.Info class is compiled into the program and contains, at least, the path to the cobra.exe.
-						# This is used for, at least, the implementation of CobraCore.findCobra.
-						sw = StringWriter()
-						print to sw
-							print 'namespace Cobra.Lang'
-							print '    class CobraInfo'
-							print '        get cobraPath as String is shared'
-							print '            return r"[CobraCore.exePath]"'
-						.options.addExtraSource(sw.toString)
-					.readSystemTypes
-					.readAssemblyTypes(.options)
-
-				if true # _modules.count == 0
-					if embedRunTime
-						paths = .commandLineArgParser.readFilesFile(Path.combine(Path.combine(.cobraExeDir, 'Cobra.Lang'), 'files.text'))
-						paths.reverse
-						for path in paths
-							if Path.getFileName(path) == 'Native.cs'
-								suffix = .embedRunTimeSuffix
-								nativeCode = File.readAllText(path)
-								nativeCode = nativeCode.replace('namespace Cobra.Lang', 'namespace Cobra.Lang'+suffix)
-								newPath = Path.getFullPath('Native[suffix].cs')
-								File.writeAllText(newPath, nativeCode)
-								.addIntermediateFile(newPath)
-								filenames.insert(0, newPath)
-							else
-								filenames.insert(0, path)
-						
-				modules = List<of Module>()
-				_parsedModules = modules
-
-				# implement -extra-source option
-				extraSource = .options.getDefault('extra-source', '').trim to String
-				if extraSource <> ''
-					# CC: parser = CobraParser(verbosity=_verbosity, typeProvider=this, warningRecorder=this, errorRecorder=this, globalNS=_globalNS, parseCommandLineArgs=ref .parseCommandLineArgsCallBack)
-					parser = CobraParser(verbosity=_verbosity, typeProvider=this, warningRecorder=this, errorRecorder=this, globalNS=_globalNS)
-					parser.parseCommandLineArgs = ref .parseCommandLineArgsCallBack
-					module = parser.parseSource('_ch_cobra-extra-source.cobra', extraSource)  # ch = compiler helper
-					for r in parser.references, .loadReference(_fixLibExtension(r))
-					modules.add(module)
-
-				for filename in filenames
-					if filename.endsWith('.cs')
-						if _verbosity, print 'Noting  [filename]'  # extra space to line up with 'Parsing [filename]'
-						modules.add(SharpModule(filename, _verbosity))
-					else
-						parser = CobraParser()
-						parser.verbosity = _verbosity
-						parser.typeProvider = this
-						parser.warningRecorder = this
-						parser.errorRecorder = this
-						parser.parseCommandLineArgs = ref .parseCommandLineArgsCallBack
-						parser.globalNS = _globalNS
-						# @@ TODO: assert _globalNS is parser.nameSpaceStack[0]
-						try
-							module = parser.parseFileNamed(filename)
-						catch SourceException
-							pass
-						success
-							for r in parser.references, .loadReference(_fixLibExtension(r))
-							# There could still be parse errors that were recorded, but not thrown.
-							# But that's okay because _errors.count is checked further below.
-							modules.add(module)
-			finally
-				Node.setCompiler(nil)
-			if _errors.count
-				_exitFromErrors
-			else
-				assert modules.count
-				_modules.addRange(modules)
-				_parsedModules = nil
-			return modules
-
-	def parseCommandLineArgsCallBack(args as IList<of String>, isAvailable as out bool) as String?
-		"""
-		This is the call back for implementing the `args` directive as encountered in the Parser.
-		"""
-		if .commandLineArgParser
-			isAvailable = true
-			try
-				.augmentOptions(.commandLineArgParser.parseToOptions(args))
-			catch ape as ArgParseException
-				return ape.message
-		else
-			isAvailable = false
-		return nil
-
-	def augmentOptions(opts as OptionValues)
-		"""
-		Update Options and accumulator lists generated from it with additional options settings.
-		  Used from inside parseFiles for args compilerDirective handling
- 		"""
-		if .verbosity
-			print 'preAugment Options Dictionary'
-			.options.print
-
-		# special cases 
-		_fixLibRefs(opts)
-		_fixEmbedRunTime(opts) # need this after fix libs
-
-		.options.combineNew(opts)
-		v = .options.getDefault('verbosity', 0) to int
-		if v > _verbosity, _verbosity = v
-		if .verbosity
-			print 'postAugment Options Dictionary'
-			.options.print
-
-	def _fixEmbedRunTime(opts as OptionValues)
-		# print 'before fix embed-run-time', _parsedModules
-		if opts.boolValue('embed-run-time') <> .options.boolValue('embed-run-time')
-			if not opts.boolValue('embed-run-time') # changed true to false
-				# remove parsed rtSrc modules
-				for m in List<of Module>(_parsedModules)
-					if m.isCobraLibrary and not m.fileName.endsWith('.dll')
-						_parsedModules.remove(m)
-				_addRuntimeRef(opts)  # add ref to runtime dll
-			else
-				opts['embed-run-time'] = .options['embed-run-time']
-				# errchannel.throwError('Cannot switch -ert:no to -ert:yes in compilerDirective')
-				# To support this need to determine where/what recorded for Cobra.dll 
-				# ref,clear it out and insert rtl src to be parsed AFTER finish current file
-		# print 'after fix embed-run-time', _parsedModules
-		
-	def _fixLibRefs(opts as OptionValues)
-		haveRefs = false
-		for key in ['library-directory', 'pkg', 'reference']
-			if opts.containsKey(key)
-				if key == 'reference'
-					references = opts.getStringList('reference')
-					_fixLibExtensions(references)
-				if not .options.containsKey(key)
-					.options[key] = List<of String>()
-				existList = .options[key] to List<of String>
-				augList = opts[key] to List<of String>
-				dupCount = 0
-				for item in augList
-					if item not in existList
-						if .verbosity, print 'Adding [key] "[item]"'
-						existList.add(item)
-					else
-						if .verbosity, print '[key] "[item]" already in options.[key]'
-						dupCount += 1 # augList.remove(item) <-- 2008-10-13 CE: what's that comment mean? (part of ticket:35)
-				if not haveRefs
-					haveRefs = key <> 'library-directory' and augList.count - dupCount > 0
-				.options.didSpecify(key) # so not overwrite when combine
-							
-		if haveRefs
-			.readAssemblyTypes(opts)
-			if .verbosity > 1
-				references = .options.getStringList('reference')
-				_printRefs(references)
-		
-			
 	def runProcess as Process
 		return .runProcess(nil, nil)
 		
@@ -744,20 +574,13 @@ class Compiler
 		t = System.Diagnostics.Process.getType
 		.readAssembly(t.assembly) # System.dll
 
-	def _fixLibExtension(reference as String) as String
-		require reference.length
-		ensure reference.endsWith('.dll') or reference.endsWith('.exe')
-		if not reference.endsWith('.dll') and not reference.endsWith('.exe')
-			reference += '.dll'
-		return reference
-
-	def _fixLibExtensions(references as List<of String>)
+	def fixLibExtensions(references as List<of String>)
 		i = 0
 		for reference in List<of String>(references)
-			references[i] = _fixLibExtension(reference)
+			references[i] = reference.fixLibExtension
 			i += 1
 			
-	def _printRefs(references as List<of String>)
+	def printRefs(references as List<of String>)
 		if references.count == 0
 			print 'No additional assembly references.'
 		else
@@ -771,7 +594,7 @@ class Compiler
 		references = options.getStringList('reference')
 
 		# Excluding the extension can be problematic
-		_fixLibExtensions(references)
+		.fixLibExtensions(references)
 
 		# now that references are fixed, make a copy so that .options['references'] is not modified further
 		references = List<of String>(references)
@@ -781,7 +604,7 @@ class Compiler
 				references.addRange(.refsForPackage(pkgName))
 
 		if .verbosity > 1
-			_printRefs(references)
+			.printRefs(references)
 
 		# Here be "reflectionOnlyLoad" code... which does not work on Mono 1.2.4
 		# The run-time error message says:
@@ -1358,6 +1181,9 @@ class Compiler
 	## Services to nodes
 	##
 
+	def embedRunTimeSuffix as String
+		return .options.embedRunTimeSuffix
+		
 	def findLocal(name as String) as AbstractLocalVar?
 		"""
 		Finds a local parameter or variable in the current code member.
@@ -1424,25 +1250,6 @@ class Compiler
 						se.appendToMessage(augment)
 						return true
 			return false
-
-	var _uniqueIdentifier as String?
-
-	def uniqueIdentifier as String
-		"""
-		Returns a unique id such as '95b141d670c19f2f20a820751897b9c6' which is guaranteed to be
-		unique per Compiler instance. Can be used in identifiers. Motivated by -embed-run-time
-		option which suffixes the Cobra.Lang suffix to avoid collisions with other assemblies.
-		"""
-		if _uniqueIdentifier is nil
-			components = [DateTime.now, this, Environment.currentDirectory, Process.getCurrentProcess.id]
-			_uniqueIdentifier = components.toPrintString.md5HashInHex
-		return _uniqueIdentifier to !
-
-	def embedRunTimeSuffix as String
-		if .options.boolValue('embed-run-time') and not .options.boolValue('build-standard-library')
-			return '_ert_' + .uniqueIdentifier
-		else
-			return ''
 
 	shared
 		var _unknownSuggestions = {
@@ -1586,13 +1393,28 @@ class TestCompiler inherits Compiler
 	"""
 	Used by SharpCompilationMessage.test
 	CC: should be inside the test or easy to remove via a test attribute
+	TODO: should inherit an AbstractCompiler
 	"""
 
 	cue init
 		base.init(0)
 
-	get verbosity as int is override
-		return 0
+	pro verbosity as int is override
+		get
+			return 0
+		set
+			pass
 	
 	def cobraLineNumForCurly(fileName as String, lineNum as int) as int is override
 		return lineNum
+
+
+extend String
+
+	def fixLibExtension as String
+		require .length
+		ensure result.endsWith('.dll') or result.endsWith('.exe')
+		if not .endsWith('.dll') and not .endsWith('.exe')
+			return this + '.dll'
+		else
+			return this

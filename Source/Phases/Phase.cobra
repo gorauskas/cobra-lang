@@ -1,0 +1,117 @@
+class Phase is abstract
+	"""
+	A phase of the compiler.
+
+	Invoke .run; override .innerRun.
+
+	Although phases often visit the nodes, they are not required to. Being a phase and being a
+	visitor are potentially two different concerns, so they are separate classes with no
+	inheritance relationship.
+	"""
+
+	cue init(c as Compiler)
+		_compiler = c
+
+	get compiler from var as Compiler
+
+	get options as OptionValues
+		return .compiler.options
+
+	get verbosity as int
+		return .compiler.verbosity
+
+	var _didSucceed as bool
+
+	get didSucceed as bool
+		"""
+		Returns true if the phase ran and succeeded, meaning there were no errors.
+		Cannot inquire for this if not .didRun as it wouldn't make sense to ask.
+		"""
+		require .didRun
+		return _didSucceed
+
+	var _didRun as bool
+	
+	get didRun as bool
+		"""
+		Returns true if the phase ran at all, whether successful or not.
+		"""
+		ensure result implies not .isRunning
+		return _didRun
+	
+	get duration from var as TimeSpan?
+	
+	var _isRunning as bool
+	
+	get isRunning as bool
+		ensure result implies not .didRun and not .didSucceed
+		return _isRunning
+	
+	get name as String
+		return .getType.name
+
+	get startTime from var as DateTime?
+	
+	def run
+		"""
+		Throw a NodeException upon errors.
+		Completion indicates success.
+		"""
+		require
+			not .isRunning
+			not .didRun
+		ensure
+			.didRun
+		body
+			_startTime = DateTime.now
+			_isRunning = true
+			Node.setCompiler(.compiler)
+			try
+				.innerRun
+				_didSucceed = true
+			finally
+				Node.setCompiler(nil)
+				_isRunning = false
+				_didRun = true
+				_duration = DateTime.now.subtract(_startTime to !)
+
+	def innerRun is abstract
+		"""
+		Subclasses must override this method to implement the actions of the phase.
+		"""
+
+
+class ListPhase inherits Phase
+	"""
+	A phase that lists the contents of the program (modules and their namespaces, recursing all
+	the way down to expressions).
+	"""
+
+	cue init(c as Compiler)
+		base.init(c)
+
+	def innerRun is override
+		ListVisitor().list(.compiler)
+
+
+class ListVisitor inherits Visitor
+	
+	get methodName as String is override
+		return 'list'
+
+	def list(c as Compiler)
+		.dispatch(c.modules)
+	
+	def list(mod as Module)
+		# This is to capture "native" modules like SharpModule
+		pass
+
+	def list(mod as AssemblyModule)
+		pass
+
+	def list(mod as CobraModule)
+		for decl in mod.topNameSpace.declsInOrder
+			.dispatch(decl)
+
+	def list(node as INode)
+		print node.idString

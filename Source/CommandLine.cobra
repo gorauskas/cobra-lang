@@ -616,7 +616,7 @@ class CommandLine
 		c.willPrintSuccessMsg = willPrintSuccessMsg
 		c.htmlWriter = _htmlWriter
 		try
-			c.compileFilesNamed(paths, writeTestInvocation, stopAfterBindInt)
+			c.compileFilesNamed(paths, writeTestInvocation)
 			if _verbosity <> c.verbosity, _verbosity = c.verbosity
 		catch StopCompilation
 			# Each phase of the compiler may throw an exception to stop compilation.
@@ -1418,3 +1418,23 @@ class OptionValues inherits Dictionary<of String, Object>
 		es = .getDefault('extra-source', '') to String
 		es = es + source + '\n'
 		this['extra-source'] = es
+
+
+	var _uniqueIdentifier as String?
+
+	def uniqueIdentifier as String
+		"""
+		Returns a unique id such as '95b141d670c19f2f20a820751897b9c6' which is guaranteed to be
+		unique per Cobra process. Can be used in identifiers. Motivated by -embed-run-time
+		option which suffixes the Cobra.Lang suffix to avoid collisions with other assemblies.
+		"""
+		if _uniqueIdentifier is nil
+			components = [DateTime.now, this, Environment.currentDirectory, Process.getCurrentProcess.id]
+			_uniqueIdentifier = components.toPrintString.md5HashInHex
+		return _uniqueIdentifier to !
+
+	def embedRunTimeSuffix as String
+		if .boolValue('embed-run-time') and not .boolValue('build-standard-library')
+			return '_ert_' + .uniqueIdentifier
+		else
+			return ''
