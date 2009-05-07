@@ -182,7 +182,7 @@ class Compiler
 
 	pro willPrintSuccessMsg from var
 
-	get curModule from var
+	pro curModule from var
 
 	get nodeStack from var
 
@@ -297,15 +297,14 @@ class Compiler
 	def runPhase(phaseType as Type)
 		phase = phaseType(this)
 		phase.run
-		if .errors.count
-			_exitFromErrors
+		if .errors.count, _exitFromErrors
 
 	def _compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool)
 		# TODO: put the writeTestInvocation somewhere
 		_initBackEnd
 		_pathsToCompile = paths
 		.runPhase(ParsePhase)
-		.bindUse
+		.runPhase(BindUsePhase)
 		.writeSourceCodeCorrections
 		.bindInh
 		.writeSourceCodeCorrections
@@ -335,7 +334,7 @@ class Compiler
 			print bar
 
 		if verbose, print 'Bind use:'
-		.bindUse
+		.runPhase(BindUsePhase)
 		if verbose, print 'Bind inheritance:'
 		.bindInh
 		if verbose, print 'Bind interface:'
@@ -748,34 +747,6 @@ class Compiler
 	##
 	## Binding
 	##
-
-	def bindUse
-		require
-			not .isBindingUse
-			not .isBindingInh
-			not .isBindingInt
-			not .isBindingImp
-		body
-			if .verbosity >= 2
-				print 'Binding use directives'
-			_isBindingUse = true
-			try
-				Node.setCompiler(this)
-				try
-					i = 0
-					while i < _modules.count  # new modules can be added, say by the UseDirective
-						_curModule = _modules[i]
-						try
-							_curModule.bindUse
-						catch ce as SourceException
-							.recordError(ce)
-						i += 1
-				finally
-					Node.setCompiler(nil)
-			finally
-				_isBindingUse = false
-			if _errors.count
-				_exitFromErrors
 
 	var _basicTypes as List<of PrimitiveType>?
 
