@@ -16,3 +16,86 @@ class BindUsePhase inherits Phase
 			catch ce as SourceException
 				c.recordError(ce)
 			i += 1
+
+
+class Module is partial
+
+	def bindUse
+		pass
+
+
+class AssemblyModule is partial
+
+	def bindUse
+		base.bindUse
+		.topNameSpace.bindUse
+
+
+class CobraModule is partial
+
+	def bindUse
+		base.bindUse
+		_topNameSpace = .topNameSpace.adoptDefaultNameSpace
+		.topNameSpace.bindUse
+
+
+class NameSpace is partial
+
+	get didBindUse from var as bool
+
+	def bindUse
+		if _didBindUse, return
+		.compiler.nameSpaceStack.push(this)
+		try
+			for ud in _useDirectives, ud.bindUse
+			for ns in _subNameSpacesList, ns.bindUse
+		finally
+			.compiler.nameSpaceStack.pop		
+		_didBindUse = true
+
+
+class UseDirective is partial
+
+	get didBindUse from var as bool
+
+	def bindUse
+		_bindUse(false)
+
+	def _bindUse(didAutoLoad as bool)
+		curNS = .compiler.globalNS to ?
+		for name in _nameParts
+			curNS = curNS.subNameSpaceForName(name)
+			if curNS is nil, break
+		if curNS is nil and not didAutoLoad
+			if _fileName <> ''
+				if .compiler.loadReference(_fileName + '.dll')
+					_bindUse(true)
+					if .boundNameSpace is nil
+						.throwError('Cannot find namespace "[_fullName]" in library "[_fileName]".')
+					return
+				else
+					.throwError('Cannot find library file "[_fileName]".')
+			else
+				if _fullName.endsWith('.dll')
+					.throwError('Do not end a namespace name in a "use" directive with ".dll".')
+				if .compiler.loadReference(_fullName + '.dll')
+					_bindUse(true)
+					if .boundNameSpace is nil
+						.throwError('Cannot find namespace "[_fullName]" in loaded library "[_fullName]".')
+					return
+				else
+					# compute how far is valid, but only here where it's needed for the error message
+					partialName = ''
+					curNS = .compiler.globalNS to ?
+					for name in _nameParts
+						curNS = curNS.subNameSpaceForName(name)
+						if curNS is nil, break
+						partialName += '.' + name
+					if partialName == ''
+						.throwError('Cannot find namespace "[_fullName]".')
+					else
+						.throwError('Cannot find namespace "[name]" in "[partialName[1:]]".')
+		if not didAutoLoad
+			assert curNS, 'last name=[name]; [_nameParts]; [_fullName]; [_fileName]'
+		_boundNameSpace = curNS
+		_didBindUse = true

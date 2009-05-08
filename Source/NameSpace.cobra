@@ -20,7 +20,6 @@ class NameSpace
 	var _subNameSpacesByName as Dictionary<of String, NameSpace>
 	var _subNameSpacesList as List<of NameSpace>
 	var _useDirectives as List<of UseDirective>
-	var _didBindUse as bool
 
 	cue init(unifiedNameSpace as NameSpace, name as String)
 		.init(TokenFix.empty, name)
@@ -47,8 +46,6 @@ class NameSpace
 		This works fine for source code, but not for reading assemblies.
 		"""
 		return true
-
-	get didBindUse from var
 
 	get englishName as String is override
 		return 'namespace'
@@ -90,7 +87,7 @@ class NameSpace
 		base.addMinFields
 		.addField('subCount', _subNameSpacesList.count)
 		.addField('isUnified', .isUnified)
-		.addField('didBindUse', _didBindUse)
+		.addField('didBindUse', .didBindUse)
 
 	def addRefFields
 		base.addRefFields
@@ -168,16 +165,6 @@ class NameSpace
 				return newTop
 		return this
 
-	def bindUse
-		if _didBindUse, return
-		.compiler.nameSpaceStack.push(this)
-		try
-			for ud in _useDirectives, ud.bindUse
-			for ns in _subNameSpacesList, ns.bindUse
-		finally
-			.compiler.nameSpaceStack.pop		
-		_didBindUse = true
-
 	def _stackPush
 		base._stackPush
 		.compiler.nameSpaceStack.push(this)
@@ -188,7 +175,7 @@ class NameSpace
 		
 	def _bindInh is override
 		base._bindInh
-		assert _didBindUse
+		assert .didBindUse
 		_checkCase
 		_checkForDeclarationsThatDifferOnlyByCase
 		for decl in _declsInOrder, decl.bindInh
@@ -387,7 +374,6 @@ class UseDirective
 	var _boundNameSpace as NameSpace?
 	var _fullName as String
 	var _fileName as String
-	var _didBindUse as bool
 
 	cue init(token as IToken, nameParts as List<of String>)
 		.init(token, nameParts, '')
@@ -401,7 +387,7 @@ class UseDirective
 	def addMinFields
 		base.addMinFields
 		.addField('fullName', _fullName)
-		.addField('didBindUse', _didBindUse)
+		.addField('didBindUse', .didBindUse)
 		.addField('fileName', _fileName)
 
 	def addRefFields
@@ -410,8 +396,6 @@ class UseDirective
 
 	get boundNameSpace from var
 
-	get didBindUse from var
-
 	def extensionMemberFor(box as Box, name as String) as IMember?
 		require .didBindUse
 		return _boundNameSpace.extensionMemberFor(box, name)
@@ -419,45 +403,3 @@ class UseDirective
 	def findSymbol(name as String) as IMember?
 		require .didBindUse
 		return _boundNameSpace.symbolForName(name)
-
-	def bindUse
-		_bindUse(false)
-
-	def _bindUse(didAutoLoad as bool)
-		curNS = .compiler.globalNS to ?
-		for name in _nameParts
-			curNS = curNS.subNameSpaceForName(name)
-			if curNS is nil, break
-		if curNS is nil and not didAutoLoad
-			if _fileName <> ''
-				if .compiler.loadReference(_fileName + '.dll')
-					_bindUse(true)
-					if .boundNameSpace is nil
-						.throwError('Cannot find namespace "[_fullName]" in library "[_fileName]".')
-					return
-				else
-					.throwError('Cannot find library file "[_fileName]".')
-			else
-				if _fullName.endsWith('.dll')
-					.throwError('Do not end a namespace name in a "use" directive with ".dll".')
-				if .compiler.loadReference(_fullName + '.dll')
-					_bindUse(true)
-					if .boundNameSpace is nil
-						.throwError('Cannot find namespace "[_fullName]" in loaded library "[_fullName]".')
-					return
-				else
-					# compute how far is valid, but only here where it's needed for the error message
-					partialName = ''
-					curNS = .compiler.globalNS to ?
-					for name in _nameParts
-						curNS = curNS.subNameSpaceForName(name)
-						if curNS is nil, break
-						partialName += '.' + name
-					if partialName == ''
-						.throwError('Cannot find namespace "[_fullName]".')
-					else
-						.throwError('Cannot find namespace "[name]" in "[partialName[1:]]".')
-		if not didAutoLoad
-			assert curNS, 'last name=[name]; [_nameParts]; [_fullName]; [_fileName]'
-		_boundNameSpace = curNS
-		_didBindUse = true
