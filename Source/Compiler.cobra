@@ -245,6 +245,47 @@ class Compiler
 	def addIntermediateFile(path as String)
 		_intermediateFileNames.add(path)
 
+
+	## Phases
+
+	def phaseClasses as List<of Type>
+		""" Returns a list of phase classes in the order they should be run. """
+		return [
+			ParsePhase,
+			BindUsePhase,
+			BindInheritancePhase,
+			BindInterfacePhase,
+			ComputeMatchingBaseMembersPhase,
+			BindImplementationPhase
+		]
+
+	def makePhases as List<of Phase>
+		""" Returns a list of phase instances in the order they should be run. """
+		return for phaseClass in .phaseClasses get phaseClass(this) to Phase
+
+	def runPhase(phaseType as Type)
+		require phaseType.isSubclassOf(Phase)
+		.runPhase(phaseType(this) to Phase)
+
+	def runPhase(phase as Phase)
+		require
+			phase.compiler is this
+			not phase.isRunning
+		ensure
+			phase.didRun
+			not phase.isRunning
+		body
+			_curPhase = phase
+			try
+				phase.run
+				.writeSourceCodeCorrections
+			finally
+				_curPhase = nil
+			if .errors.count, _exitFromErrors
+
+
+	## Compiler
+	
 	def compileFilesNamed(paths as IList<of String>)
 		.compileFilesNamed(paths)
 
@@ -282,26 +323,12 @@ class Compiler
 			success
 				.printMessages
 
-	def runPhase(phaseType as Type)
-		phase = phaseType(this)
-		_curPhase = phase
-		try
-			phase.run
-			.writeSourceCodeCorrections
-		finally
-			_curPhase = nil
-		if .errors.count, _exitFromErrors
-
 	def _compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool)
 		# TODO: put the writeTestInvocation somewhere
 		_initBackEnd
 		_pathsToCompile = paths
-		.runPhase(ParsePhase)
-		.runPhase(BindUsePhase)
-		.runPhase(BindInheritancePhase)
-		.runPhase(BindInterfacePhase)
-		.runPhase(ComputeMatchingBaseMembersPhase)
-		.runPhase(BindImplementationPhase)
+		for phase in .makePhases
+			.runPhase(phase)
 		.backEnd.generateCode(writeTestInvocation)
 	
 	def testifyFilesNamed(fileNames as IList<of String>, options as OptionValues, resultsWriter as IndentedWriter, verbose as bool)
@@ -314,27 +341,15 @@ class Compiler
 		bar = '----------------------------------------------------------------------------------------------------'
 		_initBackEnd
 		_pathsToCompile = fileNames
-		.runPhase(ParsePhase)
 
-		assert .modules.count
+		for phase in .makePhases
+			if verbose, print 'Testify phase:', phase.description
+			.runPhase(phase)
+			assert .modules.count
+			if verbose
+				.dumpModulesForTestify(resultsWriter, 'Modules after: [phase.description]')
+				print bar
 		if verbose
-			.dumpModulesForTestify(resultsWriter, 'Modules after parsing')
-			print bar
-
-		if verbose, print 'Bind use:'
-		.runPhase(BindUsePhase)
-		if verbose, print 'Bind inheritance:'
-		.runPhase(BindInheritancePhase)
-		if verbose, print 'Bind interface:'
-		.runPhase(BindInterfacePhase)
-		if verbose
-			.dumpModulesForTestify(resultsWriter, 'Modules after binding interface')
-			print 'Bind implementation:'
-		.runPhase(ComputeMatchingBaseMembersPhase)
-		.runPhase(BindImplementationPhase)
-		if verbose
-			.dumpModulesForTestify(resultsWriter, 'Modules after binding implementation')
-			print bar
 			print 'Generated C#:'
 		_backEnd.generateIntermediateCode
 		if verbose
