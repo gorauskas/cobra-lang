@@ -83,8 +83,6 @@ class Compiler
 	var _boxMemberStack as Stack<of IBoxMember>
 	var _codeMemberStack as Stack<of AbstractMethod>
 
-	var _isBindingImp as bool
-
 	var _errors as List<of SourceException>
 	var _warnings as List<of SourceException>
 	var _messages as List<of SourceException>  # all errors and warnings
@@ -151,8 +149,6 @@ class Compiler
 
 	get includeTests as bool
 		return .options.boolValue('include-tests')
-
-	get isBindingImp from var
 
 	get clrPrimitiveToITypeCache from var
 		"""
@@ -305,8 +301,7 @@ class Compiler
 		.runPhase(BindInheritancePhase)
 		.runPhase(BindInterfacePhase)
 		.runPhase(ComputeMatchingBaseMembersPhase)
-		.bindImp
-		.writeSourceCodeCorrections
+		.runPhase(BindImplementationPhase)
 		.backEnd.generateCode(writeTestInvocation)
 	
 	def testifyFilesNamed(fileNames as IList<of String>, options as OptionValues, resultsWriter as IndentedWriter, verbose as bool)
@@ -336,7 +331,7 @@ class Compiler
 			.dumpModulesForTestify(resultsWriter, 'Modules after binding interface')
 			print 'Bind implementation:'
 		.runPhase(ComputeMatchingBaseMembersPhase)
-		.bindImp
+		.runPhase(BindImplementationPhase)
 		if verbose
 			.dumpModulesForTestify(resultsWriter, 'Modules after binding implementation')
 			print bar
@@ -754,31 +749,6 @@ class Compiler
 					_basicTypes.add(.intType(signed, size))
 		return _basicTypes to !
 
-	def bindImp
-		require
-			not .isBindingInh
-			not .isBindingInt
-			not .isBindingImp
-		body
-			if .verbosity >= 2
-				print 'Binding implementation'
-			# TODO: bindImp to all existing types
-			_isBindingImp = true
-			try
-				Node.setCompiler(this)
-				try
-					for _curModule in _modules
-						try
-							_curModule.bindImp
-						catch ce as SourceException
-							.recordError(ce)
-				finally
-					Node.setCompiler(nil)
-			finally
-				_isBindingImp = false
-			if _errors.count
-				_exitFromErrors
-
 	def symbolForName(name as String, canBeMember as bool, haveThis as bool) as IMember?
 		return .symbolForName(name, canBeMember, haveThis, false)
 
@@ -1074,16 +1044,6 @@ class Compiler
 
 	def embedRunTimeSuffix as String
 		return .options.embedRunTimeSuffix
-		
-	def findLocal(name as String) as AbstractLocalVar?
-		"""
-		Finds a local parameter or variable in the current code member.
-		"""
-		require
-			.isBindingImp
-			.codeMemberStack.count
-		body
-			return .codeMemberStack.peek.findLocal(name)
 
 	def nativeType(qualifiedName as String) as NativeType
 		return ClrNativeType(_clrType(qualifiedName))
