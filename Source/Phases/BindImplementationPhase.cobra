@@ -1,0 +1,32 @@
+class BindImplementationPhase inherits Phase
+
+	cue init(c as Compiler)
+		base.init(c)
+
+	get description as String is override
+		return 'Binding implementation'
+
+	def innerRun is override
+		c = .compiler
+		for mod in c.modules
+			c.curModule = mod
+			try
+				mod.bindImp
+			catch ce as SourceException
+				c.recordError(ce)
+
+
+class Compiler is partial
+
+	def isBindingImp as bool
+		return .curPhase inherits BindImplementationPhase
+
+	def findLocal(name as String) as AbstractLocalVar?
+		"""
+		Finds a local parameter or variable in the current code member.
+		"""
+		require
+			.isBindingImp
+			.codeMemberStack.count
+		body
+			return .codeMemberStack.peek.findLocal(name)
