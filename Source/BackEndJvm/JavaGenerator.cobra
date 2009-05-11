@@ -611,7 +611,6 @@ class UnspecifiedType is partial
 ##
 
 
-
 class Box is partial
 
 	get javaNameComponent as String is override
@@ -1630,6 +1629,176 @@ class AssertStmt is partial
 		sw.dedent
 
 
+class ForStmt is partial
+
+	pass
+
+
+class OldForNumericStmt is partial
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		varName = _var.javaName
+		trackLocals = .compiler.willTrackLocals
+		if trackLocals
+			sw.write('for (Cobra.Lang.CobraImp.SetLocal("[.var.name]", [varName]=')
+		else
+			sw.write('for ([varName]=')
+		_start.writeJavaDef(sw)
+		if trackLocals
+			sw.write(')')
+		if _var.type.isDynamic
+			sw.write('; Cobra.Lang.CobraImp.DynamicCompare([varName], ')
+			_stop.writeJavaDef(sw, false)
+			sw.write(')[if(_dir==1, "<", ">")]0')
+			opName = if(_dir==1, 'op_Addition', 'op_Subtraction')
+			sw.write('; [varName]=Cobra.Lang.CobraImp.DynamicOp("[opName]", [varName], ')
+			if _step, _step.writeJavaDef(sw, false)
+			else, sw.write('1')
+			sw.write(')')
+		else
+			sw.write('; [varName]')
+			sw.write(if(_dir==1, '<', '>'))
+			_stop.writeJavaDef(sw)
+			sw.write('; ')
+			if _step
+				if _dir==1, sw.write('[varName]+=')
+				else, sw.write('[varName]-=')
+				_step.writeJavaDef(sw)
+			else
+				if _dir==1, sw.write('[varName]++')
+				else, sw.write('[varName]--')
+		sw.write(')')
+		_block.writeJavaDef(sw)
+
+
+class ForNumericStmt is partial
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		if _var.type.isDynamic, _writeJavaDefForDynamic(sw)
+		else, _writeJavaDefForStatic(sw)
+	
+	def _writeJavaDefForDynamic(sw as CurlyWriter)
+		# TODO: this is the old numeric for loop behavior. 
+		varName = _var.javaName
+		trackLocals = .compiler.willTrackLocals
+		if trackLocals, sw.write('for (Cobra.Lang.CobraImp.SetLocal("[.var.name]", [varName]=')
+		else, sw.write('for ([varName]=')
+		_start.writeJavaDef(sw)
+		if trackLocals
+			sw.write(')')
+		sw.write('; Cobra.Lang.CobraImp.DynamicCompare([varName], ')
+		_stop.writeJavaDef(sw, false)
+		sw.write(')[if(_dir==1, "<", ">")]0')
+		opName = if(_dir==1, 'op_Addition', 'op_Subtraction')
+		sw.write('; [varName]=Cobra.Lang.CobraImp.DynamicOp("[opName]", [varName], ')
+		if _step, _step.writeJavaDef(sw, false)
+		else, sw.write('1')
+		sw.write(')')
+		sw.write(')')
+		_block.writeJavaDef(sw)
+
+	def _writeJavaDefForStatic(sw as CurlyWriter)
+		"""
+		Pseudo example:
+			Cobra:
+				for x in start : stop : step
+					statements
+			C#:
+				{
+				type _lh_start_1 = start;
+				type _lh_stop_2 = stop;
+				type _lh_step_3 = step;
+				int _lh_dir_4 = (_lh_stop_2 - _lh_start_1) < 0 ? -1 : +1;
+				for (x = start; (_lh_dir_4==-1) ? x > stop : x < stop; x += step) {
+					statements
+				}
+				}
+		Note that it's important that the C# code gen uses a for() loop so that
+		the "continue" statement still increments the control variable.
+		
+		In the case that the 'stop' or 'step' are integer literals, no variables are needed for them.
+		TODO: If 'stop' or 'step' are const or readonly, same thing.
+		"""
+		trackLocals = .compiler.willTrackLocals
+		sw.write('{ // for [.var.name] in [.start.toCobraSource] : [.stop.toCobraSource]' + if(.step, ' : [.step.toCobraSource]', '') + '\n')
+		javaVar = _var.javaName
+		javaStart = '_lh_start_[.serialNum]'
+		javaStop = '_lh_stop_[.serialNum]'
+		javaStep = '_lh_step_[.serialNum]'
+		javaDir = '_lh_dir_[.serialNum]'
+		javaType = _var.type.javaRef
+
+		sw.write('[javaType] [javaStart] = ')
+		.start.writeJavaDef(sw)
+		sw.write(';\n')
+		
+		if .stop inherits IntegerLit
+			javaStop = (.stop to IntegerLit).asJava
+		else
+			sw.write('[javaType] [javaStop] = ')
+			.stop.writeJavaDef(sw)
+			sw.write(';\n')
+
+		isSimpleStep = false
+		step = .step
+		if step is nil
+			javaStep = '1'
+			isSimpleStep = true
+		else if step inherits IntegerLit
+			javaStep = step.asJava
+			isSimpleStep = step.value > 0
+		else
+			sw.write('[javaType] [javaStep] = ')
+			step.writeJavaDef(sw)
+			sw.write(';\n')
+
+		if not isSimpleStep
+			sw.write('int [javaDir] = [javaStep] < 0 ? -1 : +1;\n')
+
+		sw.write('for(')
+		if trackLocals, sw.write('Cobra.Lang.CobraImp.SetLocal("[.var.name]", [javaVar] = [javaStart])')
+		else, sw.write('[javaVar] = [javaStart]')		
+		if isSimpleStep, sw.write('; [javaVar] < [javaStop] ; ')
+		else, sw.write('; ([javaDir]==1) ? [javaVar] < [javaStop] : [javaVar] > [javaStop]; ')
+		if trackLocals, sw.write('Cobra.Lang.CobraImp.SetLocal("[.var.name]", [javaVar] += [javaStep])')
+		else, sw.write('[javaVar] += [javaStep]')		
+		sw.write(') ')
+
+		_block.writeJavaDef(sw, false)
+
+		sw.dedent
+		sw.write('}\n')
+		sw.write('} // for [.var.name]\n')
+
+
+class ForEnumerableStmt is partial
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		# in a C# foreach, (1) you must declare a new variable, (2) you cannot reassign it and (3) you cannot access it after the loop
+		# these constraints don't exist in Cobra
+		helperName = '_lh_for_[_var.name]_[_varNumber]'
+		sw.write('foreach ([_var.type.javaRef] [helperName] in ')
+
+		# TODO: the javaRef of a type is not qualified and there is no using System.Collections;
+		# _what.writeJavaDefInContext(sw, false)
+		if _what.type.isDynamic
+			sw.write('Cobra.Lang.CobraImp.GetEnumerable(')
+			_what.writeJavaDef(sw, false)
+			sw.write(')')
+		else
+			_what.writeJavaDef(sw, false)
+
+		sw.write(')')
+		stmt = '[.var.javaName] = [helperName]'
+		if .compiler.willTrackLocals
+			stmt = 'Cobra.Lang.CobraImp.SetLocal("[.var.name]", [stmt])'
+		stmt += ';\n'
+		_block.writeJavaDef(sw, stmt)
+
+
 ##
 ## Expressions
 ##
@@ -2105,6 +2274,11 @@ class AssemblyDecl is partial
 
 	def writeJavaTestInvocation(sw as CurlyWriter)
 		pass
+
+class IntegerLit is partial
+
+	def asJava as String
+		return 'TODO'
 
 class EnumMember is partial
 
