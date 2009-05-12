@@ -165,7 +165,10 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 	pro options from var
 
 	get pathsToCompile from var as IList<of String>
-	
+		"""
+		Phases are free to modify this list (usually by adding new paths to include in compilation).
+		"""
+
 	pro commandLineArgParser from var
 
 	pro willPrintSuccessMsg from var
@@ -253,8 +256,13 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 	## Phases
 
 	def phaseClasses as List<of Type>
-		""" Returns a list of phase classes in the order they should be run. """
+		"""
+		Returns a list of phase classes in the order they should be run.
+		Note that the back-ends also add their own phases.
+		"""
 		return [
+			BindRunTimeLibraryPhase,
+			ReadLibrariesPhase,
 			ParsePhase,
 			BindUsePhase,
 			BindInheritancePhase,
@@ -352,7 +360,6 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		for phase in .makePhases
 			if verbose, print 'Testify phase:', phase.description
 			.runPhase(phase)
-			assert .modules.count
 			if verbose
 				.dumpModulesForTestify(resultsWriter, 'Modules after: [phase.description]')
 				print bar
@@ -364,7 +371,7 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		.printMessages
 		print bar
 
-	def addRuntimeRef(opts as OptionValues)
+	def addRunTimeRef(opts as OptionValues)
 		if not opts.containsKey('reference')
 			opts['reference'] = List<of String>()
 		refs = opts['reference'] to List<of String>
