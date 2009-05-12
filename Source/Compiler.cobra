@@ -37,6 +37,9 @@ enum PlatformEnum
 
 
 class BackEnd is abstract
+	"""
+	Subclasses will often inspect the compiler for various options such as .willWriteTestInvocation.
+	"""
 
 	cue init(compiler as Compiler)
 		base.init
@@ -48,12 +51,8 @@ class BackEnd is abstract
 	
 	def generateBinary is abstract
 
-	def generateCode(writeTestInvocation as bool) is abstract
 
-
-class Compiler
-	is partial
-	implements ITypeProvider, IWarningRecorder, IErrorRecorder, ICompilerForNodes
+class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, ICompilerForNodes is partial
 	"""
 	General notes:
 
@@ -71,6 +70,7 @@ class Compiler
 	var _options as OptionValues
 	var _commandLineArgParser as ArgParser?
 	var _willPrintSuccessMsg = true
+	var _willWriteTestInvocation = false
 	var _htmlWriter as HtmlWriter?
 
 	var _globalNS as NameSpace
@@ -168,6 +168,8 @@ class Compiler
 
 	pro willPrintSuccessMsg from var
 
+	pro willWriteTestInvocation from var
+	
 	get curPhase from var as Phase?
 	
 	pro curModule from var
@@ -287,7 +289,7 @@ class Compiler
 	## Compiler
 	
 	def compileFilesNamed(paths as IList<of String>)
-		.compileFilesNamed(paths)
+		.compileFilesNamed(paths, false)
 
 	def compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool)
 		if .options.boolValue('reveal-internal-exceptions')
@@ -324,12 +326,13 @@ class Compiler
 				.printMessages
 
 	def _compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool)
-		# TODO: put the writeTestInvocation somewhere
+		.willWriteTestInvocation = writeTestInvocation
 		_initBackEnd
 		_pathsToCompile = paths
 		for phase in .makePhases
 			.runPhase(phase)
-		.backEnd.generateCode(writeTestInvocation)
+		.backEnd.generateIntermediateCode
+		.backEnd.generateBinary
 	
 	def testifyFilesNamed(fileNames as IList<of String>, options as OptionValues, resultsWriter as IndentedWriter, verbose as bool)
 		"""
