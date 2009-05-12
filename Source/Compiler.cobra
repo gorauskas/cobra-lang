@@ -47,9 +47,11 @@ class BackEnd is abstract
 
 	get compiler from __compiler as Compiler
 
-	def generateIntermediateCode is abstract
-	
-	def generateBinary is abstract
+	def makePhases(phases as IList<of Phase>) is abstract
+		"""
+		Given a list of core phases for compilation complete it with additions (or even removals and
+		rearrangements if necessary) for this given backend.
+		"""
 
 
 class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, ICompilerForNodes is partial
@@ -262,8 +264,13 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		]
 
 	def makePhases as List<of Phase>
-		""" Returns a list of phase instances in the order they should be run. """
-		return for phaseClass in .phaseClasses get phaseClass(this) to Phase
+		"""
+		Returns a list of phase instances in the order they should be run.
+		Consults the back-end.
+		"""
+		phases = for phaseClass in .phaseClasses get phaseClass(this) to Phase
+		.backEnd.makePhases(phases)
+		return phases
 
 	def runPhase(phaseType as Type)
 		require phaseType.isSubclassOf(Phase)
@@ -331,8 +338,6 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		_pathsToCompile = paths
 		for phase in .makePhases
 			.runPhase(phase)
-		.backEnd.generateIntermediateCode
-		.backEnd.generateBinary
 	
 	def testifyFilesNamed(fileNames as IList<of String>, options as OptionValues, resultsWriter as IndentedWriter, verbose as bool)
 		"""
@@ -344,7 +349,6 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		bar = '----------------------------------------------------------------------------------------------------'
 		_initBackEnd
 		_pathsToCompile = fileNames
-
 		for phase in .makePhases
 			if verbose, print 'Testify phase:', phase.description
 			.runPhase(phase)
@@ -352,16 +356,11 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 			if verbose
 				.dumpModulesForTestify(resultsWriter, 'Modules after: [phase.description]')
 				print bar
-		if verbose
-			print 'Generated C#:'
-		_backEnd.generateIntermediateCode
-		if verbose
-			for module in .modules
-				if not module.isCobraLibrary
-					Utils.printSource(module.sharpSource)
-			print bar
-			print 'Compile C#:'
-		_backEnd.generateBinary
+		# TODO: to display the intermediate source:
+		#	for module in .modules
+		#		if not module.isCobraLibrary
+		#			Utils.printSource(module.sharpSource)
+		#	print bar
 		.printMessages
 		print bar
 
