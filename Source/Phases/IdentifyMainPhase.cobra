@@ -1,0 +1,156 @@
+class IdentifyMainPhase inherits Phase
+
+	cue init(c as Compiler)
+		base.init(c)
+
+	get description as String is override
+		return 'Identifying .main'
+
+	def innerRun is override
+		c = .compiler
+		
+		if .options.getDefault('target', '') to String in {'lib', 'module'}, return
+		if .options.getDefault('test', '') <> '', return
+		if c.mainMethodTypeName <> '', return
+		if c.errors.count > 0, return   # otherwise, messes up testify
+
+		typeName = .options.getDefault('main', '') to String
+		mainList = MainCollector().collect(c, typeName)
+		if mainList.count == 0
+			.recordError('Cannot find a "main" method.')
+			return
+		if mainList.count > 1
+			first = true
+			for main in mainList
+				if first
+					main.recordError('Too many "main" methods; first is in "[main.parentBox.name]".')
+					first = false
+				else
+					c.warning(main, 'Also located "main" here in "[main.parentBox.name]".')
+			return
+		mainMethod = mainList[0]
+		if .checkMain(mainMethod)
+			mainMethod.isMain = true
+			if not mainMethod.isShared
+				_createSharedMainWrapper(mainMethod)
+			else
+				c.mainMethodTypeName = mainMethod.parentBox.qualifiedName
+
+	def checkMain(main as Method) as bool
+		"""
+		Returns true if the main method checks out okay.
+		"""
+		didError = false
+		if main.params.count > 0
+			main.recordError('The "main" method cannot have arguments. Use "CobraCore.commandLineArgs" instead.')
+			didError = true
+		if not main.resultType.isDescendantOf(.compiler.voidType)
+			main.recordError('The "main" method cannot have a return type. Use "CobraCore.exit(code)" instead.')
+			didError = true
+		if not main.isShared
+			init = main.parentBox.memberForName('init')
+			if init inherits MemberOverload
+				hasParameterless = any for eachInit in init.members get eachInit.params.count == 0
+			else if init inherits Initializer
+				hasParameterless = init.params.count == 0
+			else
+				.recordError('Encountered non-initializer member named "init" in "[main.parentBox.name]".')
+				return false
+			if not hasParameterless
+				main.recordError('The "main" method is an instance method, but "[main.parentBox.name]" has no parameterless initializer ("cue init"). Add one or change "main" to "is shared".')
+				didError = true
+		return not didError
+
+	def _createSharedMainWrapper(mainMethod as Method)
+		c = .compiler
+
+		name = 'MainWrapper'
+		while c.symbolForName(name, false, false), name += 'X'
+
+		if false
+			# can't use cobra source because the other
+			# phases like parsing have already taken place
+			src = 'class [name]\n\t\def main is static\n\t\t[mainMethod.parentBox.qualifiedName]().[mainMethod.name]\n'
+			.options.addExtraSource(src)
+
+		implements_ = List<of ITypeProxy>()
+		adds_ = List<of ITypeProxy>()
+		theClass = Class(Token.empty, name, List<of IType>(), ['public'], AttributeList(), nil, implements_, adds_, '')
+
+		instantiate = PostCallExpr(Token.empty, TypeExpr(mainMethod.parentBox), List<of Expr>())
+		mainCall = CallExpr(Token.empty, 'main', List<of Expr>(), false)
+		dot = DotExpr(Token.empty, 'DOT', instantiate, mainCall)
+
+		method = Method(Token.empty, Token.empty, theClass, 'main', List<of Param>(), .compiler.voidType, nil, ['shared'], AttributeList(), '')
+		method.addStmt(dot)
+
+		theClass.addDecl(method)
+
+		mainModule = CobraModule(name+'.cobra', 0, '', .compiler.globalNS)
+		mainModule.topNameSpace.addDecl(theClass)
+
+		mainModule.bindUse
+		mainModule.bindInh
+		mainModule.bindInt
+		mainModule.bindImp
+		
+		c.modules.add(mainModule)
+		c.mainMethodTypeName = name
+
+
+class MainCollector inherits Visitor
+	"""
+	Visit the nodes in the source modules for the purpose of collecting all methods named 'main'.
+	"""
+	
+	var _typeName = ''
+	var _mains = List<of Method>()
+
+	cue init
+		base.init
+
+	def collect(c as Compiler, typeName as String) as List<of Method>
+		"""
+		Collects all the methods named `main` among all source modules.
+		If typeName <> '', only methods belonging to the type with that name will be collected.
+		"""
+		ensure
+			typeName <> '' implies all for main in result get main.parentBox.name == typeName
+		body
+			_typeName = typeName
+			_mains.clear
+			.visit(c)
+			return _mains
+		
+	get methodName as String is override
+		return 'visit'
+
+	def visit(c as Compiler) as MainCollector
+		.dispatch(c.modules)
+		return this
+	
+	def visit(mod as Module)
+		pass
+
+	def visit(mod as CobraModule)
+		for decl in mod.topNameSpace.declsInOrder
+			.dispatch(decl)
+
+	def visit(ns as NameSpace)
+		.dispatch(ns.declsInOrder)
+	
+	def visit(c as Class)
+		if _typeName == '' or _typeName == c.qualifiedName
+			.dispatch(c.declsInOrder)
+	
+	def visit(s as Struct)
+		if _typeName == '' or _typeName == s.qualifiedName
+			.dispatch(s.declsInOrder)
+
+	def visit(method as Method)
+		if method.name == 'main'
+			_mains.add(method)
+		
+	def visit(node as INode)
+		# catch all
+		pass
