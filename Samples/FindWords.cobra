@@ -1,0 +1,313 @@
+"""
+FindWords
+  by Caligari
+  with mods by Chuck
+
+This tool can be used to find which files in a directory tree contain any
+of a list of words.
+
+The list of words to search for is provided by default in a file called
+"wordlist.txt" (located in the same directory as the executable) with one
+regular expression per line.
+
+A list of filename extensions to ignore can also be provided, if needed.
+That list has one extension per line (not including the "."), and is
+not a regular expression.
+
+A description of further options is available using the "-help" command-line argument.
+
+Comments in the code explain the use of regular expressions.
+"""
+
+use System.Text.RegularExpressions
+
+
+class FindWords
+
+	var wordsFilename = ''
+	var ignoreFilename = ''
+	var searchDirectory = ''
+	var onlyNames as bool
+	var showLines as bool
+	var words = SortedDictionary<of String, Regex>()
+	var ignoreExtensions = List<of String>()
+	var startDir as DirectoryInfo?
+	var listFile as FileInfo?
+
+	
+	def main
+		.wordsFilename = Path.combine(Path.getDirectoryName(CobraCore.exePath), "wordlist.txt")
+		.ignoreFilename = ""
+		.searchDirectory = Path.getFullPath(".")
+		.onlyNames = false
+		.showLines = true
+
+		.processCommandLine
+		.readRegExList
+		.readExtToIgnore
+		
+		.listFile = FileInfo(.wordsFilename)
+		.startDir = DirectoryInfo(.searchDirectory)
+		
+		.checkDirectory(.startDir to !)
+		
+		print "\nDone."
+
+
+	def showSyntax
+		appName = CobraCore.commandLineArgs[0]
+		if appName.lastIndexOf(Path.directorySeparatorChar) > 0
+			appName = appName[appName.lastIndexOf(Path.directorySeparatorChar)+1:]
+		if appName.lastIndexOf(".") > 0
+			appName = appName[:appName.lastIndexOf(".")]
+		print "Syntax:\n[appName] \[searchDirectory\] \[-l|list listFilename\] \[-i|ignore ingorelistFilename\] \[-n|-names] \[-s|-summary] \[-h|-help]"
+		print "  -l|list file    filename of the list of words to search for"
+		print "  -i|ignore file  filename of an optional list of extensions for files to ignore"
+		print "  -n|names        only check file and directory names"
+		print "  -s|summary      only show files, not lines within files"
+		print "  -h|help         show this help text"		
+		CobraCore.exit(0)
+
+
+	def processCommandLine
+		args = CobraCore.commandLineArgs
+
+		listArgs    = ["-l", "-list"]
+		ignoreArgs  = ["-i", "-ignore"]
+		nameArgs    = ["-n", "-name", "-names"]
+		summaryArgs = ["-s", "-summary"]
+		helpArgs    = ["-h", "-help"]
+		allArgs     = listArgs.concated(ignoreArgs).concated(nameArgs).concated(summaryArgs).concated(helpArgs)
+		
+		lookingForIgnore = false
+		lookingForList = false
+		foundDir = false
+		argError = false
+		
+		if args.count > 1
+			for arg in args[1:]
+				if arg in allArgs and lookingForList
+					print "unable to determine filename for list of words, expected '-l filename'"
+					lookingForList = false
+					argError = true
+				if arg in allArgs and lookingForIgnore
+					print "unable to determine filename for list of ignore extensions, expected '-i filename'"
+					lookingForIgnore = false
+					argError = true
+				
+				if arg in helpArgs
+					.showSyntax
+				else if arg in nameArgs
+					.onlyNames = true
+				else if arg in summaryArgs
+					.showLines = false
+				else if arg in ignoreArgs
+					lookingForIgnore = true
+				else if arg in listArgs
+					lookingForList = true
+				else if arg[0] == "-"
+					print "unrecognized argument [arg]"
+					argError = true
+				else
+					if lookingForIgnore
+						.ignoreFilename = arg.toString
+						lookingForIgnore = false
+					else if lookingForList
+						.wordsFilename = arg.toString
+						lookingForList = false						
+					else if not foundDir  # must be the directory to look in
+						.searchDirectory = arg.toString
+						foundDir = true
+					else  # already found directory
+						print "more than one directory provied on commandline, expected 'directory'"
+						argError = true
+
+		if argError
+			print
+			.showSyntax
+
+
+	def readRegExList		
+		try
+			using wordsFile = StreamReader(.wordsFilename)
+
+				wordLine = wordsFile.readLine
+				
+				while wordLine
+					# We can tell if there is a word on a line using an
+					# inline regular expression:
+					#   Regex.match(textToSearch, regularExpression)
+					# The textToSearch can be a hard-coded string,
+					# but most often it will be a String.
+					# The regularExpression is a string (hard-coded
+					# or not) that follows the regular expression
+					# syntax.
+					wordMatch = Regex.match(wordLine, r".+")
+					
+					# The return from a match() call is a Match class
+					# object. The success property tells us whether the
+					# search located what we were looking for.
+					# The toString method gives us the resulting subString.
+					if wordMatch.success
+						# We can create a Regex object which can later be
+						# used to execute a search with a given regular
+						# expression. In this case we are setting two
+						# options (ignoring case in the search we are
+						# creating, and pre-compiling the search, as we
+						# may be using it many times).
+						# Note that here we are saving the resulting
+						# Regex object to a Dictionary for later use.
+						# We could just as easily save the string itself,
+						# but this way we only pay the Regex creation cost
+						# once, rather than every time we carry out the
+						# search.
+						.words[wordMatch.toString] = Regex(wordMatch.toString, RegexOptions(Compiled, IgnoreCase))
+						
+					wordLine = wordsFile.readLine
+		catch ioe as IOException
+			.reportError(.wordsFilename, ioe)
+			return
+		print "\nFound [.words.count] search words.\n"
+
+
+	def readExtToIgnore
+		# optionally find extensions to ignore
+		if .ignoreFilename.length > 0
+			try
+				using ignoreFile = StreamReader(.ignoreFilename)
+					ignoreLine = ignoreFile.readLine					
+					while ignoreLine
+						if ignoreLine.length > 0
+							.ignoreExtensions.add("." + ignoreLine.trim)
+						ignoreLine = ignoreFile.readLine
+			catch ioe as IOException
+				.reportError(.ignoreFilename, ioe)
+				return
+			print "\nFound [.ignoreExtensions.count] ignored extenstions.\n"
+
+
+	def checkDirectory(curDir as DirectoryInfo)
+		if not curDir.exists
+			print "Unable to find search directory [curDir.fullName]"
+			return
+		
+		# print "Checking [curDir.fullName]..."
+		
+		foundWords = List<of String>()
+
+		for word, wordMatch in .words
+			# check directory name
+			# Here we use a regular expression match
+			# to determine whether the directory names have
+			# any of the words we are looking for.
+			# Each directory name is passed to the match
+			# method call made on each of the Regex objects
+			# in the dictionary we created earlier.
+			dirNameCheck = wordMatch.match(curDir.name) 
+
+			if dirNameCheck.success
+				foundWords.add(word) 
+				
+		if foundWords.count
+			print "[curDir.fullName]: directory name may have [foundWords]"
+						
+		# check files
+			
+		for subFile in curDir.getFiles
+			# Note that here we check if the file we are about
+			# to look at has a name which matches our list of words
+			# or an extension we are ignoring. Neither of these
+			# tests use regular expressions, although we could
+			# use the same scheme for the ignore extensions, if
+			# we wanted to support regular expressions there as well.
+			if subFile.fullName == .listFile.fullName or subFile.extension in .ignoreExtensions
+				continue
+			.checkFile(subFile, curDir)
+
+		for subDir in curDir.getDirectories
+			.checkDirectory(subDir)
+
+
+	def checkFile(curFile as FileInfo, curDir as DirectoryInfo)
+		if not curFile.exists
+			print "Unable to find file [curFile.fullName]"
+			return
+			
+		# check filename
+		foundWords = List<of String>()
+
+		for word, wordMatch in .words
+			# Here we use a regular expression match
+			# to determine whether the filename has
+			# any of the words we are looking for.
+			# The name is passed to the match method
+			# call made on each of the Regex objects
+			# in the dictionary we created earlier.
+			fileNameCheck = wordMatch.match(curFile.name) 
+
+			if fileNameCheck.success
+				foundWords.add(word) 
+				
+		if foundWords.count
+			print "[curFile.fullName]: file name may have [foundWords]"
+			
+		if .onlyNames
+			return
+			
+		# check contents
+		try
+			openFile = StreamReader(curFile.fullName)
+		catch ioe as IOException
+			.reportError(curFile.fullName, ioe)
+			return
+		
+		if .showLines
+			try
+				lineNum, curLine = 1, openFile.readLine
+				while curLine
+					foundWords = List<of String>()
+	
+					for word, wordMatch in .words
+						# Finally, we use a regular expression match
+						# on the contents of each file for each
+						# of the words we want to find. We do this
+						# check for each line in the file, so that
+						# we can report the findings by line, if we
+						# want to do so.
+						curLineCheck = wordMatch.match(curLine)
+	
+						if curLineCheck.success
+							foundWords.add(word) 
+	
+					if foundWords.count
+						print "[curFile.fullName]([lineNum]) has [foundWords]"
+	
+					curLine = openFile.readLine
+					lineNum += 1
+			catch ioe as IOException
+				.reportError(curFile.fullName, ioe)
+				return
+		else  # not show lines
+			# When we don't need to report each line in a file
+			# we read the entire contents into a "line" and
+			# run the same regular expression match on it.
+			try
+				curLine = openFile.readToEnd
+			catch ioe as IOException
+				.reportError(curFile.fullName, ioe)
+				return
+			foundWords = List<of String>()
+			for word, wordMatch in .words
+				curLineCheck = wordMatch.match(curLine)
+				if curLineCheck.success
+					foundWords.add(word) 
+			if foundWords.count
+				print "[curFile.fullName] has [foundWords]"
+
+		openFile.close
+
+
+	def reportError(fileName, exc as Exception)
+		print 'Error reading "[fileName]":'
+		print exc.message
+		print 'Run with -h for options.'
