@@ -749,7 +749,6 @@ class Box
 		for interf in box.baseInterfaces
 			_unNilReturnTypes(interf)
 
-
 	## Generics
 
 	def isAssignableTo(type as IType) as bool
@@ -1079,6 +1078,33 @@ class ClassOrStruct
 				interf.injectInto(this)
 		base._bindInt
 
+	def _bindImp
+		base._bindImp
+		_checkForSuspiciousDefInit
+
+	def _checkForSuspiciousDefInit
+		"""
+		If a class or struct has no explicit initializers and has a 'def init' and
+		it is not an override, then give a warning.
+		"""
+		if .isFromBinaryLibrary, return
+		# have an explicit initializer?
+		found = false
+		for decl in .declsInOrder
+			if decl inherits Initializer and not (decl to Node).isImplicit
+				found = true
+				break
+		if found, return
+		# have a non-overriding 'def init'?
+		found = false
+		for decl in .declsInOrder
+			if decl inherits Method
+				if decl.name == 'init' and not decl.isOverride
+					found = true
+					break
+		if found
+			.compiler.warning(decl to ISyntaxNode, 'Did you mean "cue init"?')
+
 
 class Class
 	is partial
@@ -1189,7 +1215,7 @@ class Class
 				break
 		if not foundInitializer
 			# TODO: this should be changed to provide cover initializers for each of the public, inherited initializers
-			init = Initializer(.token, Token.empty, this, List<of Param>(), ['public'], AttributeList(), '')
+			init = Initializer(.token, Token.empty, this, List<of Param>(), ['public'], AttributeList(), '', isImplicit=true)
 			init.addStmt(DotExpr(.token.copy('DOT', '.'), 'DOT', BaseLit(.token.copy('BASE', 'base')), MemberExpr(.token.copy('ID', 'init'))))
 			.addDecl(init)
 		# Note that the _baseClass is not told to bindInt. That would fail for classes in other namespaces and it's unnecessary
@@ -1426,9 +1452,6 @@ class MethodSig
 			param.bindInt
 		if not _returnType
 			_returnType = _returnTypeProxy.realType
-
-	def _bindImp
-		base._bindImp
 
 
 class GenericParam
