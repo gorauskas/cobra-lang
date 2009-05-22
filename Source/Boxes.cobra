@@ -40,8 +40,9 @@ class Box
 		An Indexer in CLR is known by being a property with arguments whose name matches the .memberName of a box-level DefaultMemberAttribute.
 		"""
 
-	cue init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseInterfaceNodes as List<of ITypeProxy>, docString as String?)
+	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseInterfaceNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, isNames, docString)
+		_idToken = idToken
 		_attribs = attribs
 		_genericParams = paramList
 		for i in _genericParams.count
@@ -144,6 +145,8 @@ class Box
 
 	get defaultAccessLevel as String is override
 		return 'public'
+
+	get idToken from var as IToken
 
 	get isFromBinaryLibrary as bool
 		"""
@@ -321,6 +324,9 @@ class Box
 		# to find the static extension methods like "static void Foo(this String s, ...)",
 		# or for Extensions to be instantiated when DLLs are scanned
 		return nil
+
+	def mangleName(name as String) as String
+		return name
 
 	def memberForName(name as String) as IMember? is override
 		if .compiler and .compiler.nodeStack.count and (.compiler.nodeStack.peek to Node).isBindingImp
@@ -614,7 +620,11 @@ class Box
 				.compiler.boxMemberStack.pop
 		_finishOverloads
 		if _testMethod
-			_testMethod.bindInt
+			.compiler.boxMemberStack.push(_testMethod)
+			try
+				_testMethod.bindInt
+			finally
+				.compiler.boxMemberStack.pop
 		if _constructedTypes
 			if .compiler.errors.count <= errorCount  # completing construction on constructed types leads to chaos if this generic def had errors during bind interface
 				for ct in _constructedTypes.values
@@ -687,7 +697,11 @@ class Box
 			catch ne as NodeException
 				.compiler.recordError(ne)
 		if _testMethod
-			_testMethod.bindImp
+			.compiler.boxMemberStack.push(_testMethod)
+			try
+				_testMethod.bindImp
+			finally
+				.compiler.boxMemberStack.pop
 
 	var _didPrep as bool
 
@@ -1048,8 +1062,8 @@ class ClassOrStruct
 	
 	var _addsProxies as List<of ITypeProxy>
 	
-	cue init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, implementsNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
-		base.init(token, name, paramList, isNames, attribs, implementsNodes, docString)
+	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, implementsNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
+		base.init(token, idToken, name, paramList, isNames, attribs, implementsNodes, docString)
 		_addsProxies = addsProxies
 
 	def _bindInh
@@ -1073,13 +1087,13 @@ class Class
 	var _baseNode as ITypeProxy?
 	var _subclasses = List<of Class>()
 
-	cue init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseNode as ITypeProxy?, implementsNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
-		base.init(token, name, paramList, isNames, attribs, implementsNodes, addsProxies, docString)
+	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseNode as ITypeProxy?, implementsNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
+		base.init(token, idToken, name, paramList, isNames, attribs, implementsNodes, addsProxies, docString)
 		_baseNode = baseNode
 
 	cue init(nativeType as NativeType)
 		# TODO: fix native
-		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), List<of ITypeProxy>(), nil)
+		base.init(TokenFix.empty, TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), List<of ITypeProxy>(), nil)
 		if nativeType.baseType
 			_baseNode = ClrTypeProxy(nativeType.baseType to ClrNativeType)  # TODO: fix native. Change to NativeTypeProxy
 		_initNativeType(nativeType)
@@ -1226,8 +1240,8 @@ class Mixin
 	# Hilarious! The implementation of Mixin would benefit from having mixins in the language
 	# because we need them for class, struct and mixin, but not for interfaces. Awesome!  :-)
 	
-	cue init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseNode as ITypeProxy?, implementsNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
-		base.init(token, name, paramList, isNames, attribs, implementsNodes, docString)
+	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseNode as ITypeProxy?, implementsNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
+		base.init(token, idToken, name, paramList, isNames, attribs, implementsNodes, docString)
 		# there are restrictions on mixins which may be relaxed in the future
 		assert baseNode is nil
 		assert implementsNodes.count == 0
@@ -1278,11 +1292,11 @@ class Interface
 	is partial
 	inherits Box
 
-	cue init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseNodes as List<of ITypeProxy>, docString as String?)
-		base.init(token, name, paramList, isNames, attribs, baseNodes, docString)
+	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseNodes as List<of ITypeProxy>, docString as String?)
+		base.init(token, idToken, name, paramList, isNames, attribs, baseNodes, docString)
 
 	cue init(nativeType as NativeType)
-		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
+		base.init(TokenFix.empty, TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
 		_initNativeType(nativeType)
 
 	get canHaveStatements as bool is override
@@ -1317,11 +1331,11 @@ class Struct
 	is partial
 	inherits ClassOrStruct
 
-	cue init(token as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseName as String?, interfaceNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
-		base.init(token, name, paramList, isNames, attribs, interfaceNodes, addsProxies, docString)
+	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as List<of String>, attribs as AttributeList, baseName as String?, interfaceNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
+		base.init(token, idToken, name, paramList, isNames, attribs, interfaceNodes, addsProxies, docString)
 
 	cue init(nativeType as NativeType)
-		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), List<of ITypeProxy>(), nil)
+		base.init(TokenFix.empty, TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), List<of ITypeProxy>(), nil)
 		_initNativeType(nativeType)
 
 	get englishName as String is override
@@ -1382,8 +1396,8 @@ class MethodSig
 	var _returnTypeProxy as ITypeProxy
 	var _returnType as IType?
 
-	cue init(token as IToken, parent as IParentSpace?, name as String, params as List<of Param>, returnTypeProxy as ITypeProxy, isNames as List<of String>, attribs as AttributeList, docString as String)
-		base.init(token, name, List<of IType>(), isNames, attribs, LibraryTypeProxy('System.MulticastDelegate'), List<of ITypeProxy>(), List<of ITypeProxy>(), docString)
+	cue init(token as IToken, idToken as IToken, parent as IParentSpace?, name as String, params as List<of Param>, returnTypeProxy as ITypeProxy, isNames as List<of String>, attribs as AttributeList, docString as String)
+		base.init(token, idToken, name, List<of IType>(), isNames, attribs, LibraryTypeProxy('System.MulticastDelegate'), List<of ITypeProxy>(), List<of ITypeProxy>(), docString)
 		_initParent(parent)
 		_params = params
 		_returnTypeProxy = returnTypeProxy
@@ -1614,14 +1628,14 @@ class Extension
 	var _extendedBoxProxy as ITypeProxy?
 	var _extendedBox as Box?
 
-	cue init(token as IToken, extendedBoxProxy as ITypeProxy, isNames as List<of String>, docString as String?)
-		base.init(token, '(unnamed extension)', List<of IType>(), isNames, AttributeList(), List<of ITypeProxy>(), docString)
+	cue init(token as IToken, idToken as IToken, extendedBoxProxy as ITypeProxy, isNames as List<of String>, docString as String?)
+		base.init(token, idToken, '(unnamed extension)', List<of IType>(), isNames, AttributeList(), List<of ITypeProxy>(), docString)
 		_name = '(unnamed extension [.serialNum])'
 		_extendedBoxProxy = extendedBoxProxy
 
 	cue init(nativeType as NativeType)
 		# this only for Cobra specific extensions. Example: class Extend_String_FileName
-		base.init(TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
+		base.init(TokenFix.empty, TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
 		_initNativeType(nativeType)
 		# the real extended type is not this type, but the type of the first argument of any method
 		for methInfo in .clrType.getMethods  # TODO: fix native. break this out to a method

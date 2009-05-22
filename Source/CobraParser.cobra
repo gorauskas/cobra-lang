@@ -616,14 +616,14 @@ class CobraParser
 			.throwError('Expecting end-of-line or next clause instead of "[.peek.which]".')
 
 	def classDecl as Class
-		token = .expect('CLASS')
+		wordToken = .expect('CLASS')
 		peek = .peek.which
 		if peek == 'ID'
-			token = .expect('ID')
-			name = token.value to String
+			idToken = .expect('ID')
+			name = idToken.value to String
 		else if peek == 'OPEN_GENERIC'
-			token = .expect('OPEN_GENERIC')
-			name = token.value to String
+			idToken = .expect('OPEN_GENERIC')
+			name = idToken.value to String
 		else if peek == 'OPEN_CALL'
 			.throwError(_syntaxForClassInheritanceMsg)
 		else
@@ -633,9 +633,9 @@ class CobraParser
 		if name[0] not in _uppercaseLetters
 			.throwError('Class names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 
-		genericParams = .declGenericParams(token)
-		name = .nameForDeclGenericParams(token, genericParams)
-		typeSpecs = .typeSpecDecls(token, genericParams)
+		genericParams = .declGenericParams(idToken)
+		name = .nameForDeclGenericParams(idToken, genericParams)
+		typeSpecs = .typeSpecDecls(idToken, genericParams)
 		inheritsProxy as ITypeProxy?
 		if typeSpecs.inheritsProxies.count > 1
 			.throwError('Cannot inherit from multiple types. Put classes after "inherits", interfaces after "implements" and mixins after "adds".')
@@ -643,7 +643,7 @@ class CobraParser
 			inheritsProxy = typeSpecs.inheritsProxies[0]
 		docString = .docString
 		
-		theClass = Class(token, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, inheritsProxy, typeSpecs.implementsProxies, typeSpecs.addsProxies, docString)
+		theClass = Class(wordToken, idToken, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, inheritsProxy, typeSpecs.implementsProxies, typeSpecs.addsProxies, docString)
 
 		# TODO when supporting nested classes, look at the _boxStack and set a back pointer here
 		_boxStack.push(theClass)
@@ -807,14 +807,14 @@ class CobraParser
 		return name
 
 	def mixinDecl as Mixin
-		token = .expect('MIXIN')
+		wordToken = .expect('MIXIN')
 		peek = .peek.which
 		if peek == 'ID'
-			token = .expect('ID')
-			name = token.value to String
+			idToken = .expect('ID')
+			name = idToken.value to String
 		else if peek == 'OPEN_GENERIC'
-			token = .expect('OPEN_GENERIC')
-			name = token.value to String
+			idToken = .expect('OPEN_GENERIC')
+			name = idToken.value to String
 		else if peek == 'OPEN_CALL'
 			.throwError(_syntaxForClassInheritanceMsg)
 		else
@@ -822,9 +822,9 @@ class CobraParser
 		if name[0] not in _uppercaseLetters
 			.throwError('Mixin names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 
-		genericParams = .declGenericParams(token)
-		name = .nameForDeclGenericParams(token, genericParams)
-		typeSpecs = .typeSpecDecls(token, genericParams)
+		genericParams = .declGenericParams(idToken)
+		name = .nameForDeclGenericParams(idToken, genericParams)
+		typeSpecs = .typeSpecDecls(idToken, genericParams)
 		inheritsProxy as ITypeProxy?
 		# note: these restrictions may be temporary
 		if typeSpecs.inheritsProxies.count > 0
@@ -835,7 +835,7 @@ class CobraParser
 			.throwError('Mixins cannot add other mixins.')
 		docString = .docString
 		
-		theMixin = Mixin(token, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, inheritsProxy, typeSpecs.implementsProxies, typeSpecs.addsProxies, docString)
+		theMixin = Mixin(wordToken, idToken, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, inheritsProxy, typeSpecs.implementsProxies, typeSpecs.addsProxies, docString)
 
 		# TODO when supporting nested classes, look at the _boxStack and set a back pointer here
 		_boxStack.push(theMixin)
@@ -848,14 +848,14 @@ class CobraParser
 	var _syntaxForInterfaceInheritanceMsg = 'The syntax for inheritance is to put "inherits BaseInterfaceA, BaseInterfaceB" on the following line, indented.'
 
 	def interfaceDecl as Interface
-		token = .expect('INTERFACE')
+		wordToken = .expect('INTERFACE')
 		peek = .peek.which
 		if peek == 'ID'
-			token = .expect('ID')
-			name = token.value to String
+			idToken = .expect('ID')
+			name = idToken.value to String
 		else if peek == 'OPEN_GENERIC'
-			token = .expect('OPEN_GENERIC')
-			name = token.value to String
+			idToken = .expect('OPEN_GENERIC')
+			name = idToken.value to String
 		else if peek == 'OPEN_CALL'
 			.throwError(_syntaxForInterfaceInheritanceMsg)
 		else
@@ -868,14 +868,14 @@ class CobraParser
 		if .peek.which=='COLON' and .peek(1)<>nil and .peek(1).which=='ID'
 			.throwError(_syntaxForInterfaceInheritanceMsg)
 
-		genericParams = .declGenericParams(token)
-		name = .nameForDeclGenericParams(token, genericParams)
-		typeSpecs = .typeSpecDecls(token, genericParams)
+		genericParams = .declGenericParams(idToken)
+		name = .nameForDeclGenericParams(idToken, genericParams)
+		typeSpecs = .typeSpecDecls(idToken, genericParams)
 		if typeSpecs.implementsProxies.count
 			.throwError('Encountered "implements" in interface declaration. Use "inherits" instead.')
 		docString = .docString
 		# TODO: can an interface be nested in another interface?
-		theInterface = Interface(token, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, typeSpecs.inheritsProxies, docString)
+		theInterface = Interface(wordToken, idToken, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, typeSpecs.inheritsProxies, docString)
 
 		_boxStack.push(theInterface)
 #		.isNamesStack = Stack(str)
@@ -885,27 +885,27 @@ class CobraParser
 		return theInterface
 
 	def structDecl as Struct
-		token = .expect('STRUCT')
+		wordToken = .expect('STRUCT')
 		peek = .peek.which
 		if peek == 'ID'
-			token = .expect('ID')
-			name = token.value to String
+			idToken = .expect('ID')
+			name = idToken.value to String
 		else if peek == 'OPEN_GENERIC'
-			token = .expect('OPEN_GENERIC')
-			name = token.value to String
+			idToken = .expect('OPEN_GENERIC')
+			name = idToken.value to String
 		else
 			.throwError('Expecting a struct name.')
 		if name[0] not in _uppercaseLetters
 			.throwError('Struct names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 
-		genericParams = .declGenericParams(token)
-		name = .nameForDeclGenericParams(token, genericParams)
-		typeSpecs = .typeSpecDecls(token, genericParams)
+		genericParams = .declGenericParams(idToken)
+		name = .nameForDeclGenericParams(idToken, genericParams)
+		typeSpecs = .typeSpecDecls(idToken, genericParams)
 		if typeSpecs.inheritsProxies.count > 0
 			.throwError('Structs cannot inherit. If you mean to implement an interface, use "implements" instead.')
 		docString = .docString
 
-		theStruct = Struct(token, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, nil, typeSpecs.implementsProxies, typeSpecs.addsProxies, docString)
+		theStruct = Struct(wordToken, idToken, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, nil, typeSpecs.implementsProxies, typeSpecs.addsProxies, docString)
 
 		# TODO when supporting nested classes, look at the boxStack and set a back pointer here
 		_boxStack.push(theStruct)
@@ -942,9 +942,9 @@ class CobraParser
 		return BoxEvent(token, idToken, .curBox, name, isNames, attribs, docString, handlerType)
 
 	def enumDecl as EnumDecl
-		.expect('ENUM')
-		token = .expect('ID')
-		name = token.value to String
+		wordToken = .expect('ENUM')
+		idToken = .expect('ID')
+		name = idToken.value to String
 		if name[0] not in _uppercaseLetters
 			.throwError('Enum types must start with uppercase letters to avoid collisions with other identifiers such as properties and methods.')
 		.indent
@@ -973,11 +973,11 @@ class CobraParser
 			parent = .curBox to IParentSpace
 		else
 			parent = .curNameSpace to IParentSpace
-		return EnumDecl(parent, token, name, isNames, attribs, storageType, docString, enumMembers)
+		return EnumDecl(parent, wordToken, idToken, name, isNames, attribs, storageType, docString, enumMembers)
 
 	def extendDecl as Extension
 		# TODO: extend Qualified.Name
-		token = .expect('EXTEND')
+		wordToken = .expect('EXTEND')
 		extendedTypeId = .typeId
 
 		.indent
@@ -998,7 +998,7 @@ class CobraParser
 
 		docString = .docString
 
-		ext = Extension(token, extendedTypeId, isNames, docString)
+		ext = Extension(wordToken, extendedTypeId.token, extendedTypeId, isNames, docString)
 
 		_boxStack.push(ext)
 		.bodiedBoxMemberDecls(ext)
@@ -1104,7 +1104,7 @@ class CobraParser
 						.throwError(decl.token, 'The other declaration is not marked "partial".')
 					otherBox = otherDecl to Box  # will always work because of above checks
 					for memberDecl in decl.declsInOrder
-						overload = _overloadIfNeeded(otherBox, memberDecl.name)
+						overload = _overloadIfNeeded(memberDecl.idToken, otherBox, memberDecl.name)
 						if overload
 							(memberDecl to BoxMember).overloadGroup = nil
 							overload.addMember(memberDecl to BoxMember)
@@ -1256,8 +1256,11 @@ class CobraParser
 
 	def declareCue as AbstractMethod?
 		m = .declareMethod
-		if m and m.name not in ['init', 'finalize', 'hash', 'compare', 'equals', 'enumerate']
-			.throwError('Unknown cue "[m.name]". Expecting "init", "finalize", "hash", "compare", "equals" or "enumerate".')
+		if m
+			name = m.name
+			if name.startsWith('cue.'), name = name[4:]
+			if name not in ['init', 'finalize', 'hash', 'compare', 'equals', 'enumerate']
+				.throwError('Unknown cue "[m.name]". Expecting "init", "finalize", "hash", "compare", "equals" or "enumerate".')
 		return m
 
 	def declareMethod as AbstractMethod?
@@ -1274,7 +1277,6 @@ class CobraParser
 		curBox = .curBox
 		if name == curBox.name or name.capped == curBox.name
 			.throwError('Method names cannot be the same as their enclosing [curBox.englishName]. Use `cue init` for creating an initializer/constructor or choose another name.')  # TODO list the enclosing types location
-		overload = _overloadIfNeeded(curBox, name)  # also checks for various errors
 
 		unnecessary = false
 		if opener.which == 'OPEN_CALL'
@@ -1328,18 +1330,15 @@ class CobraParser
 			.genericConstraints(opener, genericParams)
 			attribs = .hasAttribs
 			implementsType = if(.optional('IMPLEMENTS'), .typeId, nil)
-			if implementsType
-				.endOfLine
+			if implementsType, .endOfLine
 			docString = .docString
-		if name == 'init'
+		if token.which == 'CUE' and name == 'init'
 			if curBox inherits Interface
 				.throwError('Cannot declare an initializer for an interface.')
 			if returnType is not .typeProvider.voidType
 				.throwError('Cannot declare a return type for an initializer.')
 			if implementsType
 				.throwError('Cannot specify `implements` for an initializer.')
-			if token.text == 'def'
-				_warning(token, 'Use "cue" to declare initializers.')  # added 2009-04-05
 			method = Initializer(token, opener, .curBox, params, isNames, attribs, docString)
 		else
 			method = Method(token, opener, .curBox, name, .makeList<of IType>(genericParams), params, returnType, implementsType, isNames, attribs, docString)
@@ -1359,6 +1358,7 @@ class CobraParser
 				.throwError('Missing statements. Use "pass" or other statements.')
 
 		assert method
+		overload = _overloadIfNeeded(method.token, curBox, method.name)  # also checks for various errors
 		if overload
 			overload.addMember(method to !)
 			return nil
@@ -1385,7 +1385,7 @@ class CobraParser
 				
 	def declareMethodSig as MethodSig
 		require _typeProvider
-		.expect('SIG')
+		wordToken = .expect('SIG')
 		opener = .grab
 		if opener.which not in ['ID', 'OPEN_CALL'] and not opener.isKeyword
 			.throwError('Encountered [opener.which] when expecting an identifier.')
@@ -1435,7 +1435,7 @@ class CobraParser
 			docString = .docString
 			.dedent
 
-		methodSig = MethodSig(opener, curContainer to IParentSpace, name, params, returnType, isNames, attribs, docString)
+		methodSig = MethodSig(wordToken, opener, curContainer to IParentSpace, name, params, returnType, isNames, attribs, docString)
 
 		return methodSig
 		
@@ -1463,7 +1463,7 @@ class CobraParser
 			idToken = .last to !
 			params = .paramDecls(true, 'RBRACKET')
 			name = r'[]'
-			overload = _overloadIfNeeded(curBox, name)
+			overload = _overloadIfNeeded(idToken, curBox, name)
 		else
 			idToken = .idOrKeyword
 			name = idToken.text
@@ -1611,7 +1611,7 @@ class CobraParser
 			idToken = .last to !
 			params = .paramDecls(true, 'RBRACKET')
 			name = r'[]'
-			overload = _overloadIfNeeded(curBox, name)
+			overload = _overloadIfNeeded(idToken, curBox, name)
 		else
 			idToken = .idOrKeyword
 			name = idToken.text
@@ -3432,7 +3432,7 @@ class CobraParser
 		token = nToken to !
 		return token.isKeyword and token.text in keywords
 		
-	def _overloadIfNeeded(box as Box, name as String) as MemberOverload?
+	def _overloadIfNeeded(token as IToken, box as Box, name as String) as MemberOverload?
 		"""
 		Creates an overload for a new member going into box--if needed.
 		May throw various appropriate errors.
@@ -3446,13 +3446,14 @@ class CobraParser
 				overload = MemberOverload(other to BoxMember)
 				box.registerOverload(overload to !)
 			else
-				.throwError('There is already another class member with the name "[name]".')  # TODO list its location and possibly what it is
+				.throwError(token, 'There is already another class member with the name "[name]".')  # TODO list its location and possibly what it is
 		else
 			other = box.declForName(name)  # TODO: should be a CI there for case-insensitive
 			if other
-				.throwError('There is already another class member with the name "[other.name]". You must differentiate member names by more than just case.')
+				.throwError(token, 'There is already another class member with the name "[other.name]". You must differentiate member names by more than just case.')
 			if name[0] in _uppercaseLetters
-				.recordError('Method names must start with lowercase letters. ([name])')
+				.recordError(token, 'Method names must start with lowercase letters. ([name])')
+
 		return overload
 
 	def _pushCodePart(codePart as AbstractMethod)

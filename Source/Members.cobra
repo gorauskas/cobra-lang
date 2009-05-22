@@ -10,7 +10,10 @@ interface IBoxMember
 	It even includes Box as nested boxes are an anticipated feature.
 	"""
 	get docString as String?
+	get idToken as IToken
 	get parentBox as Box
+	def mangleName(name as String) as String
+		# TODO require .compiler.curBoxMember is this
 	def mergedIntoPartialBox(newBox as Box)
 		require
 			newBox is not .parentBox
@@ -195,6 +198,10 @@ class BoxMember
 		"""
 		pass
 
+	def mangleName(name as String) as String
+		require .compiler.curBoxMember is this
+		return name
+		
 	def mergedIntoPartialBox(newBox as Box)
 		require
 			newBox is not .parentBox
@@ -236,6 +243,7 @@ class BoxMember
 			for name in ['nonvirtual', 'virtual', 'shared', 'override', 'abstract']
 				if name in _isNames
 					found = true
+					break
 			if not found
 				_isNames.add('virtual')
 		for attrib in _attribs
@@ -924,7 +932,7 @@ class AbstractMethod
 class Initializer inherits AbstractMethod is partial
 
 	cue init(token as IToken, idToken as IToken, box as Box, paramsList as List<of Param>, isNames as List<of String>, attribs as AttributeList, docString as String)
-		base.init(token, idToken, box, nil, 'init', paramsList, isNames, attribs, docString)
+		base.init(token, idToken, box, nil, 'cue.init', paramsList, isNames, attribs, docString)
 		_isNames = isNames
 		_stmts = List<of Stmt>()
 
@@ -954,6 +962,10 @@ class Initializer inherits AbstractMethod is partial
 			return _stmts[_stmts.count-1].lastToken  # CC: use .last
 		else
 			return .token
+
+	def mangleName(name as String) as String is override
+		if name == 'init', return 'cue.init'
+		else, return name
 
 	def _bindImp
 		if .canHaveDetailedStackTrace  # no extra checks for classes that are sensitive with respect to the DST

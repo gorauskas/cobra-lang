@@ -452,10 +452,20 @@ class AsExpr
 			.throwError('Must initialize this non-nil object type, or change the type to nilable (suffix with ?).')
 
 
-class CallExpr
-	is partial
-	inherits Expr
-	implements IDotRightExpr
+class CallOrMemberExpr inherits Expr is abstract, partial
+
+	cue init(token as IToken)
+		base.init(token)
+
+	def _mangleName(name as String) as String
+		if .compiler.boxMemberStack.count > 0 and .binarySuperNode.left inherits ThisOrBaseLit
+			return .compiler.curBoxMember.mangleName(name)
+		# may have empty boxMemberStack for attributes like:
+		#   has AttributeUsage(AttributeTargets.Method, allowMultiple=false)
+		return name
+
+
+class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 	"""
 	A CallExpr may be on the right side of a dot expression as in `obj.foo(x, y)`.
 
@@ -625,7 +635,7 @@ class CallExpr
 
 	def _inferDefinitionAndType(dotNode as DotExpr, type as out IType?) as IMember?
 		type = nil
-		possibleDefinition = dotNode.left.memberForName(_name)
+		possibleDefinition = dotNode.left.memberForName(_mangleName(.name))
 		if possibleDefinition is nil
 			lrt = dotNode.left.receiverType
 			if lrt.isDynamic
@@ -1386,10 +1396,7 @@ class IsNotNilExpr
 		return '[_expr.toCobraSource] is not nil'
 
 
-class MemberExpr
-	is partial
-	inherits Expr
-	implements IDotRightExpr
+class MemberExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 	"""
 	Example members are fields, properties and methods without arguments.
 
@@ -1457,7 +1464,7 @@ class MemberExpr
 				# we get here for Cobra code like "obj.foo.bar" where "foo" is not found
 				_type = .compiler.passThroughType
 				return
-			_definition = .binarySuperNode.left.memberForName(_name)
+			_definition = .binarySuperNode.left.memberForName(_mangleName(.name))
 			if _definition
 				_definition.isUsed = true
 			else
