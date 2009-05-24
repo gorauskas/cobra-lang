@@ -682,6 +682,9 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 			num += 1
 
 	def _computeBestOverload(definition as MemberOverload, args as List<of Expr>) as BoxMember
+		# References:
+		# http://blogs.msdn.com/ericlippert/archive/2007/11/05/c-3-0-return-type-inference-does-not-work-on-member-groups.aspx
+
 		# I cooked up the algorithm below as a quick way to fix some bugs caused by the previous 
 		# implementation of um, doing nothing.
 		# But this likely needs to be rewritten.
@@ -705,8 +708,8 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 			score = -1000
 			if member.params.count == args.count
 				score = 0
-				i = 0
-				for param in member.params
+				if member inherits Method and (member to Method).genericParams.count > 0, score += 1
+				for i, param in member.params.numbered
 					arg = args[i]
 					if not arg.didBindImp
 						trace arg
@@ -722,10 +725,9 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 						score += 1
 					else
 						score -= 100
-					i += 1
 			# print 'candidate:', score, member.name, member.serialNum, Utils.join(', ', (for param in member.params get param.type.name))
 			candidates.add([score, member])
-
+			
 		maxScore = -10_000
 		winner = nil to BoxMember?
 		for pair in candidates
