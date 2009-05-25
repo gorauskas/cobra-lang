@@ -3924,8 +3924,7 @@ class ToNonNilableExpr
 ## Binary Expressions
 ##
 
-class BinaryOpExpr
-	is partial
+class BinaryOpExpr is partial
 
 	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		if parens, sw.write('(')
@@ -3949,8 +3948,7 @@ class BinaryOpExpr
 		_right.writeSharpBreakdownItems(sw)
 
 
-class AbstractAssignExpr
-	is partial
+class AbstractAssignExpr is partial
 
 	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		if _trackLocal
@@ -3962,8 +3960,7 @@ class AbstractAssignExpr
 			sw.write(')')
 
 
-class AssignExpr
-	is partial
+class AssignExpr is partial
 
 	def _writeSharpDef(sw as CurlyWriter) is override
 		# TODO:
@@ -4019,8 +4016,7 @@ class AssignExpr
 			_left.definition.ifInheritsStack = Stack<of IType>(_backUpIfInheritsStack)
 
 
-class NumericPromoExpr
-	is partial
+class NumericPromoExpr is partial
 
 	def _writeSharpDefDynamic(sw as CurlyWriter)
 		specs = OperatorSpecs.binaryOpSpecsByCobraText
@@ -4034,8 +4030,7 @@ class NumericPromoExpr
 		sw.write(')')
 
 
-class AugAssignMathExpr
-	is partial
+class AugAssignMathExpr is partial
 
 	def _writeSharpDef(sw as CurlyWriter) is override
 		if _left.type.isDynamic
@@ -4180,13 +4175,25 @@ class BinaryBitwiseExpr
 		_right.writeSharpDef(sw)
 
 
-class BinaryMathExpr
-	is partial
+class BinaryMathExpr is partial
 
 	def _writeSharpDef(sw as CurlyWriter) is override
-		if _type.isDynamic
+		if .isConcated
+			_writeSharpDefConcated(sw)
+		else if _type.isDynamic
 			_writeSharpDefDynamic(sw)
-			return
+		else
+			_writeSharpDefOperation(sw)
+
+	def _writeSharpDefConcated(sw as CurlyWriter)
+		sw.write('(' + _left.type.sharpRef + ')')
+		sw.write('CobraLangInternal.CobraImp.Concated(')
+		_left.writeSharpDef(sw, false)
+		sw.write(', ')
+		_right.writeSharpDef(sw, false)
+		sw.write(')')
+
+	def _writeSharpDefOperation(sw as CurlyWriter)
 		intType = .compiler.anyIntType
 		left = _left
 		right = _right

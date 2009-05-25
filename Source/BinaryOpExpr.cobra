@@ -280,12 +280,12 @@ class AssignExpr
 					.compiler.warning(this, 'Setting a parameter ("[leftName]") to a class variable ("[rightName]") is often a mistake. You may want to reverse the assignment.')
 
 
-class NumericPromoExpr
-	is partial
-	inherits BinaryOpExpr
+class NumericPromoExpr inherits BinaryOpExpr is partial
 
 	cue init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
+
+	get isConcated from var as bool
 
 	def _bindImp
 		base._bindImp
@@ -338,23 +338,45 @@ class NumericPromoExpr
 				_type = tstring
 			else
 				cannotMix = true
-		if _left.isKindOf(tpassthrough) and not _right.isKindOf(tpassthrough)
-			_type = rightType
-		else if _right.isKindOf(tpassthrough) and not _left.isKindOf(tpassthrough)
-			_type = leftType
-		else if _left.isKindOf(tpassthrough) or _right.isKindOf(tpassthrough)
-			_type = tpassthrough
-		else if leftType == rightType and leftType inherits EnumDecl
-			_type = leftType
-		else if cannotMix
-			.throwError('Cannot mix types [_left.type.name] and [_right.type.name] for arithmetic.')
+		else if leftType inherits Box
+			if leftType.isGeneric and leftType.isDescendantOf(.compiler.collectionOfType.constructedTypeFor([leftType.genericParams[0]]))
+				if leftType.genericParams.count > 1
+					.throwError('Cannot concatenate [leftType.name] on the left side of "+" because it has more than one generic parameter.')
+				if rightType inherits Box
+					if rightType.isGeneric and rightType.isDescendantOf(.compiler.enumerableOfType.constructedTypeFor([rightType.genericParams[0]]))
+						if rightType.genericParams.count > 1
+							.throwError('Cannot concatenate [rightType.name] on the left side of "+" because it has more than one generic parameter.')
+						leftInner = leftType.genericParams[0]
+						rightInner = rightType.genericParams[0]
+						newInner = leftInner.greatestCommonDenominatorWith(rightInner)
+						_type = leftType.genericDef.constructedTypeFor([newInner])
+						_isConcated = true
+					else if rightType.isDescendantOf(.compiler.enumerableType)
+						# casting will be done at run-time and either succeed or throw an exception
+						_type = leftType
+						_isConcated = true
+					else
+						cannotMix = true
+				else
+					cannotMix = true			
 		if _type is nil
-			sugg = 'Try finding a method that performs this function.'
-			if leftType == rightType
-				.throwError('Cannot apply [_op] to [leftType.name]. [sugg]')
-			else
-				.throwError('Cannot apply [_op] to [leftType.name] and [rightType.name]. [sugg]')
-
+			if _left.isKindOf(tpassthrough) and not _right.isKindOf(tpassthrough)
+				_type = rightType
+			else if _right.isKindOf(tpassthrough) and not _left.isKindOf(tpassthrough)
+				_type = leftType
+			else if _left.isKindOf(tpassthrough) or _right.isKindOf(tpassthrough)
+				_type = tpassthrough
+			else if leftType == rightType and leftType inherits EnumDecl
+				_type = leftType
+			else if cannotMix
+				.throwError('Cannot mix types [_left.type.name] and [_right.type.name] for arithmetic.')
+			if _type is nil
+				sugg = 'Try finding a method that performs this function.'
+				if leftType == rightType
+					.throwError('Cannot apply [_op] to [leftType.name]. [sugg]')
+				else
+					.throwError('Cannot apply [_op] to [leftType.name] and [rightType.name]. [sugg]')
+	
 
 class AugAssignMathExpr
 	is partial
@@ -459,6 +481,7 @@ class BinaryMathExpr
 
 	def _bindImp
 		base._bindImp
+		if .isConcated and .type, return
 		lt = _left.type.nonNil
 		rt = _right.type.nonNil
 		if lt is rt

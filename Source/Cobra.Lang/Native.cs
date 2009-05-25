@@ -282,6 +282,16 @@ static public class CobraImp {
 				return true;
 		return false;
 	}
+
+	static public IList<T> Concated<T>(IList<T> a, IEnumerable<T> b) {
+		Type t = a.GetType();
+		ConstructorInfo ctor = t.GetConstructor(System.Type.EmptyTypes);
+		if (ctor == null) throw new ArgumentException("No default constructor for " + t.Name, "a");
+		IList<T> newList = (IList<T>)ctor.Invoke(null);
+		foreach (T item in a) newList.Add(item);
+		foreach (T item in b) newList.Add(item);
+		return newList;
+	}
  
 	static public bool In(string a, string b) {
 		return b.Contains(a);
