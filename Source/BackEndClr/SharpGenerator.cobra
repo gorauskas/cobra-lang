@@ -4033,19 +4033,37 @@ class NumericPromoExpr is partial
 class AugAssignMathExpr is partial
 
 	def _writeSharpDef(sw as CurlyWriter) is override
-		if _left.type.isDynamic
-			_left.writeSharpDef(sw)
-			sw.write(' = ')
-			specs = OperatorSpecs.binaryOpSpecsByCobraText
-			assert specs.containsKey(.token.text)
-			spec = specs[.token.text]
-			opText = Utils.sharpStringLiteralFor(spec.opMethodName)
-			sw.write('CobraLangInternal.CobraImp.DynamicOp([opText], ')
-			_left.writeSharpDef(sw)  # TODO: add , false
-			sw.write(', ')
-			_right.writeSharpDef(sw)  # TODO: add , false
-			sw.write(')')
-			return
+		if .isConcated
+			_writeSharpDefConcated(sw)
+		else if _type.isDynamic
+			_writeSharpDefDynamic(sw)
+		else
+			_writeSharpDefOperation(sw)
+
+	def _writeSharpDefConcated(sw as CurlyWriter)
+		_left.writeSharpDef(sw, false)
+		sw.write(' = ')
+		sw.write('(' + _left.type.sharpRef + ')')
+		sw.write('CobraLangInternal.CobraImp.Concated(')
+		_left.writeSharpDef(sw, false)
+		sw.write(', ')
+		_right.writeSharpDef(sw, false)
+		sw.write(')')
+
+	def _writeSharpDefDynamic(sw as CurlyWriter) is override
+		_left.writeSharpDef(sw)
+		sw.write(' = ')
+		specs = OperatorSpecs.binaryOpSpecsByCobraText
+		assert specs.containsKey(.token.text)
+		spec = specs[.token.text]
+		opText = Utils.sharpStringLiteralFor(spec.opMethodName)
+		sw.write('CobraLangInternal.CobraImp.DynamicOp([opText], ')
+		_left.writeSharpDef(sw)  # TODO: add , false
+		sw.write(', ')
+		_right.writeSharpDef(sw)  # TODO: add , false
+		sw.write(')')
+
+	def _writeSharpDefOperation(sw as CurlyWriter)
 		op = ''
 		sep = ','  # for the method call case
 		branch _op
