@@ -79,6 +79,9 @@ class CobraParser
 	var _typeProvider as ITypeProvider?
 
 	var _parseCommandLineArgs as ParseCommandLineArgsSig?
+	
+	var _didStartLoop as bool
+	var _curLoopBlockDepth as int
 
 	cue init
 		base.init
@@ -87,6 +90,8 @@ class CobraParser
 		_codeParts = Stack<of AbstractMethod>()
 		_expectAnonymousMethodExprStack = Stack<of AnonymousMethodExpr>()
 		_references = List<of String>()
+		_didStartLoop = false
+		_curLoopBlockDepth = 0
 
 	pro typeProvider from var
 
@@ -1876,13 +1881,18 @@ class CobraParser
 				s = .branchStmt
 				expectEOL = false
 			on 'BREAK'
+				if _curLoopBlockDepth == 0
+					.recordError(token, 'Cannot use "break" outside of a loop.')
 				s = .breakStmt
 			on 'CONTINUE'
+				if _curLoopBlockDepth == 0
+					.recordError(token, 'Cannot use "continue" outside of a loop.')
 				s = .continueStmt
 			on 'EXPECT'
 				s = .expectStmt
 				expectEOL = false
 			on 'FOR'
+				_didStartLoop = true
 				s = .forStmtBeginning
 				expectEOL = false
 #			on 'DEF'
@@ -1907,6 +1917,7 @@ class CobraParser
 			on 'PASS'
 				s = .passStmt
 			on 'POST'
+				_didStartLoop = true
 				s = .postWhileStmt
 				expectEOL = false
 			on 'PRINT'
@@ -1928,6 +1939,7 @@ class CobraParser
 				s = .usingStmt
 				expectEOL = false
 			on 'WHILE'
+				_didStartLoop = true
 				s = .whileStmt
 				expectEOL = false
 			on 'YIELD'
@@ -2398,11 +2410,17 @@ class CobraParser
 		"""
 		stmts = List<of Stmt>()
 		done = false
+		if _didStartLoop
+			_didStartLoop = false
+			_curLoopBlockDepth += 1
+		else if _curLoopBlockDepth > 0
+			_curLoopBlockDepth += 1
 		if .optional('COMMA')
 			token = .last
 			stmt = .stmt
 			if stmt
 				stmts.add(stmt)
+				if _curLoopBlockDepth > 0, _curLoopBlockDepth -= 1
 			else
 				.throwError('Missing statement after comma.')
 			done = true
@@ -2413,6 +2431,7 @@ class CobraParser
 				stmt = .stmt
 				if stmt
 					stmts.add(stmt)
+					if _curLoopBlockDepth > 0, _curLoopBlockDepth -= 1
 				else
 					.throwError('Missing statement after colon.')
 				done = true
@@ -2420,9 +2439,9 @@ class CobraParser
 			token = .indent
 			while true
 				stmt = .stmt
-				if stmt
-					stmts.add(stmt)
+				if stmt, stmts.add(stmt)
 				if .peek.which=='DEDENT'
+					if _curLoopBlockDepth > 0, _curLoopBlockDepth -= 1
 					break
 			if not stmts.count
 				.throwError('Missing statements in block. Add a real statement or a "pass".')
