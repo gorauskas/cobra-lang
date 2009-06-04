@@ -1,0 +1,54 @@
+# test -compile-if-needed compilation (single file)
+
+class Test
+
+	def main
+		file = '110-hello'
+		src  = '[file].cobra'
+		exe  = '[file].exe'
+		
+		.rm(exe)
+		assert not File.exists(exe)
+		cobraPath = CobraCore.findCobraExe to !
+		
+		p as System.Diagnostics.Process?
+		# No exe - compile
+		output = CobraCore.runCobraExe(cobraPath, '-c -cif -v [src]', out p)
+		assert 'Checking timestamps' in output
+		assert '"[exe]" does not exist' in output
+		assert 'Compiling to produce' in output
+		assert p.exitCode == 0 and File.exists(exe)
+		#print '.' stop
+		
+		# src younger than exe - no compile
+		output = CobraCore.runCobraExe(cobraPath, '-c -cif -v [src]', out p)
+		assert 'Checking timestamps' in output
+		assert 'No source file is newer' in output
+		assert p.exitCode == 0 and File.exists(exe)
+		#print '.' stop
+		
+		.touch(src)
+		# src older than exe - compile
+		output = CobraCore.runCobraExe(cobraPath, '-c -cif -v [src]', out p)
+		assert 'Checking timestamps' in output
+		assert '"[src]" is newer than "[exe]"' in output
+		assert 'Compiling to produce' in output
+		assert p.exitCode == 0 and File.exists(exe)
+		#print '.' stop
+		
+		output = CobraCore.runCobraExe(cobraPath, '-c -v [src]', out p)
+		assert 'Checking timestamps' not in output
+		assert 'Compiling to produce' in output
+		assert p.exitCode == 0 and File.exists(exe)
+		#print '.' stop
+	
+		#print
+		
+	def rm(fileName as String)
+		try 
+			File.delete(fileName)
+		catch
+			pass
+	
+	def touch(fileName as String)
+		File.setLastWriteTime(fileName, DateTime.now)	

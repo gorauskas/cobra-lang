@@ -69,6 +69,30 @@ class Compiler is partial
 
 	get platform from var
 
+	def computeOutNameSharp as String
+		outName = ''
+		if .options.boolValue('test')
+			outName = _modules.last.sharpFileName
+		else if .options.containsKey('out')
+			outName = .options.getDefault('out', '')
+		if outName == '', outName = .defaultOutName to !
+		if outName.endsWith('.cs') or outName.endsWith('.CS'), outName = outName[:-3]
+		if outName.endsWith('.cobra') or outName.endsWith('.COBRA'), outName = outName[:-6]
+		_baseExeFileName = outName
+
+		target = .options.getDefault('target', '') to String
+		if target.length
+			# TODO: what is the output for a module?
+			branch target
+				on 'exe' or 'winexe', outName = Utils.forceExtension(outName, '.exe')
+				on 'lib', 		outName = Utils.forceExtension(outName, '.dll')
+				on 'module', 	outName = Utils.forceExtension(outName, '.netmodule')  # http://msdn2.microsoft.com/en-us/library/58scf68s(VS.80).aspx
+				else, throw FallThroughException(target)
+		else
+			outName = Utils.forceExtension(outName, '.exe')
+		_fullExeFileName = outName
+		return outName
+	
 	def compileSharp
 		.compileSharp('')
 
@@ -98,33 +122,15 @@ class Compiler is partial
 			optChar = if(platform=='ms', '/', '-')  # option prefix character
 
 			# exe names
-			outName = ''
-			if options.boolValue('test')
-				outName = _modules[_modules.count-1].sharpFileName
-			else if options.containsKey('out')
-				outName = options.getDefault('out', '')
-			if outName == '', outName = .defaultOutName to !
-			if outName.endsWith('.cs') or outName.endsWith('.CS'), outName = outName[:-3]
-			if outName.endsWith('.cobra') or outName.endsWith('.COBRA'), outName = outName[:-6]
-			_baseExeFileName = outName
-
+			outName = .computeOutNameSharp
+			
 			# compute backEndOptions
 			backEndOptions = ''
-
 			target = options.getDefault('target', '') to String
 			if target.length
 				if target=='lib', target = 'library'
 				backEndOptions += ' [optChar]target:[target]'
-				# TODO: what is the output for a module?
-				branch target
-					on 'exe' or 'winexe', outName = Utils.forceExtension(outName, '.exe')
-					on 'library', outName = Utils.forceExtension(outName, '.dll')
-					on 'module', outName = Utils.forceExtension(outName, '.netmodule')  # http://msdn2.microsoft.com/en-us/library/58scf68s(VS.80).aspx
-					else, throw FallThroughException(target)
-			else
-				outName = Utils.forceExtension(outName, '.exe')
-			_fullExeFileName = outName
-
+				
 			delaySign = options.boolValue('delay-sign')
 			if delaySign
 				backEndOptions += ' [optChar]delaysign+'

@@ -10,6 +10,21 @@ All of that happens during .bindFoo phases.
 
 class Compiler is partial
 
+	def computeOutNameJava as String
+		outName =''
+		if .options.boolValue('test')
+			outName = _modules.last.javaFileName
+		else if .options.containsKey('out')
+			outName = .options.getDefault('out', '')
+		if outName == '', outName = .defaultOutName to !
+		if outName.endsWith('.java') or outName.endsWith('.JAVA'), outName = outName[:-5]
+		if outName.endsWith('.cobra') or outName.endsWith('.COBRA'), outName = outName[:-6]
+		_baseExeFileName = outName
+
+		outName = Utils.forceExtension(outName, '.class')
+		_fullExeFileName = outName
+		return outName
+		
 	def writeJava
 		Node.setCompiler(this)
 		try
@@ -53,20 +68,10 @@ class Compiler is partial
 			optChar = '-'
 			
 			# exeNames
-			outName = ''
-			if options.boolValue('test')
-				outName = _modules.last.javaFileName
-			else if options.containsKey('out')
-				outName = options.getDefault('out', '')
-			if outName == '', outName = .defaultOutName to !
-			if outName.endsWith('.java') or outName.endsWith('.JAVA'), outName = outName[:-3]
-			if outName.endsWith('.cobra') or outName.endsWith('.COBRA'), outName = outName[:-6]
-			_baseExeFileName = outName
+			outName = .computeOutNameJava
 
 			# compute backEndOptions
 			backEndOptions = ''
-			outName = Utils.forceExtension(outName, '.class')
-			_fullExeFileName = outName
 			# -optimize isn't supported by JVM, but it could potentially be used by Cobra itself
 			
 			# TODO:

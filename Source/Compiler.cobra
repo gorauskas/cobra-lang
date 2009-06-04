@@ -52,6 +52,11 @@ class BackEnd is abstract
 		Given a list of core phases for compilation complete it with additions (or even removals and
 		rearrangements if necessary) for this given backend.
 		"""
+		
+	def computeOutName as String is abstract
+		"""
+		Return binary output name for compilation of files for this backend.
+		"""
 
 
 class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, ICompilerForNodes is partial
@@ -311,42 +316,48 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		.compileFilesNamed(paths, false)
 
 	def compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool)
+		_initBackEnd
+		.defaultOutName = if(.options.buildStandardLibrary, 'Cobra.Lang.dll', paths[0])
+		if .options.boolValue('compile-if-needed')
+			outName = .backEnd.computeOutName	
+			if not .isCompilationNeeded(outName, paths)
+				return
+				
 		if .options.boolValue('reveal-internal-exceptions')
 			_compileFilesNamed(paths, writeTestInvocation)
 			.printMessages
 			return
-		else
-			try
-				_compileFilesNamed(paths, writeTestInvocation)
-			catch StopCompilation
-				throw
-			catch exc as Exception
-				# unexpected exception -- only StopCompilation should be thrown
-				if exc inherits SourceException
-					if exc.hasSourceSite
-						.recordError(InternalError(exc.fileName, exc.lineNum, exc.message, exc))
-					else
-						.recordError(InternalError(exc.message, exc))
-				else if exc inherits AssertException
-					sn as SyntaxNode?
-					if exc.this inherits SyntaxNode
-						sn = exc.this to SyntaxNode
-					else if exc.info inherits SyntaxNode
-						sn = exc.info to SyntaxNode
-					if sn
-						.recordError(InternalError(sn.token.fileName, sn.token.lineNum, exc.message, exc))
-					else
-						.recordError(InternalError(exc.message, exc))
+
+		try
+			_compileFilesNamed(paths, writeTestInvocation)
+		catch StopCompilation
+			throw
+		catch exc as Exception
+			# unexpected exception -- only StopCompilation should be thrown
+			if exc inherits SourceException
+				if exc.hasSourceSite
+					.recordError(InternalError(exc.fileName, exc.lineNum, exc.message, exc))
 				else
 					.recordError(InternalError(exc.message, exc))
-				.printMessages
-				throw StopCompilation(this)
-			success
-				.printMessages
+			else if exc inherits AssertException
+				sn as SyntaxNode?
+				if exc.this inherits SyntaxNode
+					sn = exc.this to SyntaxNode
+				else if exc.info inherits SyntaxNode
+					sn = exc.info to SyntaxNode
+				if sn
+					.recordError(InternalError(sn.token.fileName, sn.token.lineNum, exc.message, exc))
+				else
+					.recordError(InternalError(exc.message, exc))
+			else
+				.recordError(InternalError(exc.message, exc))
+			.printMessages
+			throw StopCompilation(this)
+		success
+			.printMessages
 
 	def _compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool)
 		.willWriteTestInvocation = writeTestInvocation
-		_initBackEnd
 		_pathsToCompile = paths
 		for phase in .makePhases
 			.runPhase(phase)
@@ -360,6 +371,7 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		.options = options
 		bar = '----------------------------------------------------------------------------------------------------'
 		_initBackEnd
+		.defaultOutName = if(.options.buildStandardLibrary, 'Cobra.Lang.dll', fileNames[0])
 		_pathsToCompile = fileNames
 		for phase in .makePhases
 			if verbose, print 'Testify phase:', phase.description
@@ -375,6 +387,27 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		.printMessages
 		print bar
 
+	def isCompilationNeeded(outName as String, paths as IList<of String>) as bool
+		"""
+		Returns true if compilation is needed because the output file does not exist
+		or a source file is newer than it.
+		"""
+		v = .verbosity
+		if v, print 'Checking timestamps for -compile-if-needed'
+		if not File.exists(outName)
+			if v, print '    "[outName]" does not exist.'
+			return true
+		targetTime = File.getLastWriteTime(outName)
+		if v >= 2, print '    "[outName]" last write time: [targetTime].'
+		for path in paths
+			srcTime = File.getLastWriteTime(path)
+			if v >= 2, print '    "[path]" last write time: [srcTime].'
+			if srcTime.compareTo(targetTime) >= 0
+				if v, print '    "[path]" is newer than "[outName]"; will compile.'
+				return true
+		if v, print '    No source file is newer than "[outName]"; skipping compile.'
+		return false
+	
 	def addRunTimeRef(opts as OptionValues)
 		if not opts.containsKey('reference')
 			opts['reference'] = List<of String>()
