@@ -674,8 +674,6 @@ class CobraParser
 		if .optional('HAS')
 			while true
 				expr = .attribExpr(0)
-				if not expr inherits IdentifierExpr and not expr inherits PostCallExpr and not expr inherits CallExpr and not expr inherits DotExpr
-					.throwError('Invalid attribute.')
 				attribs.add(AttributeDecl(expr))
 				if not .optional('COMMA'), break
 			.endOfTypeSpecClause
@@ -708,6 +706,8 @@ class CobraParser
 			expr = exprs[0]
 			for i in 1 : exprs.count
 				expr = DotExpr(dots[i-1], 'DOT', expr, exprs[i])
+		if not expr inherits IdentifierExpr and not expr inherits PostCallExpr and not expr inherits CallExpr and not expr inherits DotExpr
+			.throwError('Invalid attribute.')
 		if expr inherits DotExpr
 			assert expr.left inherits IdentifierExpr or expr.left inherits DotExpr
 		return expr
@@ -1694,20 +1694,16 @@ class CobraParser
 		return .paramDecls(skipParen, rightParen, false) 
 		
 	def paramDecls(skipParen as bool, rightParen as String, isSpaceAgnostic as bool) as List<of Param>
-		if not skipParen
-			.expect('LPAREN')
+		if not skipParen, .expect('LPAREN')
 		params = List<of Param>()
 		expectComma = false
 		while true
-			if isSpaceAgnostic
-				_spaceAgnostic
-			if .peek.which==rightParen
+			if isSpaceAgnostic, _spaceAgnostic
+			if .peek.which == rightParen
 				.grab
 				break
-			if expectComma
-				.expect('COMMA')
-			if isSpaceAgnostic
-				_spaceAgnostic
+			if expectComma, .expect('COMMA')
+			if isSpaceAgnostic, _spaceAgnostic
 			param = .paramDecl
 			params.add(param)
 			if params.count==1 and param.name=='self' and param.isMissingType
@@ -1723,13 +1719,8 @@ class CobraParser
 			foo as vari String
 			foo as List<of int>
 			foo   # default type (dynamic?)
-		Arguments:
-			theClass is typically BoxVarDecl, LocalVar or Param
-			whatName could be set to 'Parameter' for example.
-		Returns:
-			A theClass(name, type)
-		Errors:
-			None
+			foo as Type has Attribute(arg1, arg2)
+			foo has Attribute(arg1, arg2)
 		"""
 		if .peek.which == 'OPEN_GENERIC'
 			# the programmer likely declared a parameter in the C syntax: List<of int> numbers
@@ -1747,8 +1738,7 @@ class CobraParser
 		.checkStartsLowercase(identifier, 'Parameter')
 		kind = Param.KindEnum.Value
 		type as ITypeProxy?
-		if .peek.which == 'AS'
-			.grab
+		if .optional('AS')
 			# code below expresses an undocumented dependency and ordering
 			# allows only    VARI <type>  or  {OUT,INOUT} <type>
 			# i.e cant have VARI and {OUT,INOUT}, if have VARI or OUT,INOUT must specify type
@@ -1771,9 +1761,13 @@ class CobraParser
 		else
 			type = TypeProxy(_typeProvider.defaultType)
 			isMissingType = true
+		attribs = AttributeList()
+		if .optional('HAS')
+			# TODO: multiple attribs like: x as Type has (Attrib1, Attrib2)
+			attribs.add(AttributeDecl(.attribExpr(0)))
 		# note: isMissingType is currently used to generate a warning in .paramDecls above
 		# and may be used for anonymous method parameter type inference at some point
-		return Param(token, type, isMissingType=isMissingType, kind=kind)
+		return Param(token, type, isMissingType=isMissingType, kind=kind, attributes=attribs)
 
 
 	##

@@ -1303,13 +1303,13 @@ class AbstractLocalVar
 		# return _useBackEndNameStack.peek to !
 
 
-class Param
-	is partial
+class Param is partial
 
 	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		if .type.isReference and not .type inherits NilableType
 			sw.write(r'[CobraLangInternal.NotNull] ')
+		for attr in .attributes, attr.writeSharpDef(sw, '', false)
 		branch .kind
 			on KindEnum.Value, pass
 			on KindEnum.InOut, sw.write('ref ')
@@ -4556,13 +4556,15 @@ class InverseCoalesceAssignExpr
 ## Attributes
 ##
 
-class AttributeDecl
-	is partial
+class AttributeDecl is partial
 
 	def writeSharpDef(sw as CurlyWriter) is override
-		.writeSharpDef(sw, '')
+		.writeSharpDef(sw, '', true)
 
 	def writeSharpDef(sw as CurlyWriter, prefix as String)
+		.writeSharpDef(sw, prefix, true)
+
+	def writeSharpDef(sw as CurlyWriter, prefix as String, willNewLine as bool)
 		sw.write(r'[')
 		sw.write(prefix)
 		expr = _expr to PostCallExpr
@@ -4580,7 +4582,8 @@ class AttributeDecl
 				arg.writeSharpDefInContext(sw)
 				sep = ', '
 			sw.write(')')
-		sw.writeLine(r']')
+		sw.write(r']')
+		if willNewLine, sw.writeLine('')
 
 
 class AssemblyDecl

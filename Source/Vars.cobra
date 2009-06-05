@@ -151,31 +151,32 @@ class AbstractLocalVar
 		return if(_ifInheritsStack.count, _ifInheritsStack.peek, _type to !)
 
 
-class Param
-	is partial
-	inherits AbstractLocalVar
+class Param inherits AbstractLocalVar is partial
 
 	enum KindEnum
 		Value
 		InOut
 		Out
 		
-	var _isMissingType as bool
-	var _kind as KindEnum
-
 	cue init(token as IToken, type as IType)
 		base.init(token, type)
 
 	cue init(token as IToken, typeNode as ITypeProxy)
 		base.init(token, typeNode)
-
+	
 	cue init(name as String, typeNode as ITypeProxy)
 		base.init(name, typeNode)
+
+	def _init is override
+		base._init
+		_attributes = AttributeList()
+
+	pro attributes from var as AttributeList
 
 	get englishName as String is override
 		return 'parameter'
 
-	pro isMissingType from var
+	pro isMissingType from var as bool
 		"""
 		Returns true if parameter was declared with no type.
 		Currently, such a parameter is given the `dynamic?` type.
@@ -184,7 +185,7 @@ class Param
 
 	pro isAnonymousParam from var as bool
 
-	pro kind from var
+	pro kind from var as KindEnum
 
 	get isInOut as bool
 		return .kind == KindEnum.InOut
@@ -202,10 +203,24 @@ class Param
 			p._type = p._type.secondaryConstructedTypeFor(box, gpToType)
 			return p
 
+	def _bindInt
+		base._bindInt
+		for attrib in .attributes
+			try
+				attrib.bindInt
+			catch ne as NodeException
+				.compiler.recordError(ne)
 
-class LocalVar
-	is partial
-	inherits AbstractLocalVar
+	def _bindImp
+		base._bindImp
+		for attrib in .attributes
+			try
+				attrib.bindImp
+			catch ne as NodeException
+				.compiler.recordError(ne)
+
+
+class LocalVar inherits AbstractLocalVar is partial
 
 	cue init(token as IToken, type as IType)
 		base.init(token, type)
