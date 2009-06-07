@@ -1,0 +1,513 @@
+"""
+Uses the genetic algorithm (GA) to solve various problems.
+
+Run with -turbo for maximum speed as in:
+
+	cobra -turbo GeneticAlgorithm.cobra
+
+Links
+
+	http://en.wikipedia.org/wiki/Genetic_algorithm
+		http://en.wikipedia.org/wiki/Tournament_selection
+		http://en.wikipedia.org/wiki/Crossover_(genetic_algorithm)
+		http://en.wikipedia.org/wiki/Mutation_(genetic_algorithm)
+	http://en.wikipedia.org/wiki/Travelling_salesman_problem
+
+Credit
+
+	Written by Chuck Esterbrook
+	Based in part on http://code.activestate.com/recipes/199121/
+
+TODO
+
+	[ ] Wrap doc strings to 80 for the sake of the web site
+	[ ] Record with each member the generation it was created in
+	[ ] implement the travelling salesman problem (TSP)
+	[ ] Solve a "minimize/maximize function" problem where bitstring is broken into numeric args
+"""
+
+@number float
+
+
+extend Type
+
+	def isKindOf(t as Type) as bool
+		"""
+		Returns true if this type is the same as or a subclass of the given type.
+		TODO: Should this return true if t is an interface that this type implements?
+		"""
+		return t is this or .isSubclassOf(t)
+
+
+extend IList<of T>
+
+	def joined(sep as String) as String
+		sb = StringBuilder()
+		sep2 = ''
+		for item in this
+			sb.append(sep2)
+			sb.append(CobraCore.printStringMaker.makeString(item))
+			sep2 = sep
+		return sb.toString
+
+
+class BaseObject
+	"""
+	The base class of all other classes in this library/program.
+	Provides basics like serial numbers, .random (shared) and .innerString.
+	"""
+
+	shared
+	
+		var _nextSerialNum = 1_000
+
+		var _random as Random?
+		
+		pro random as Random
+			"""
+			Shared random number generator.
+			"""
+			get
+				if _random is nil, _random = Random()
+				return _random to !
+			set
+				_random = value
+
+	cue init
+		base.init
+		__serialNum = _nextSerialNum
+		_nextSerialNum += 1
+	
+	get serialNum from __serialNum as int
+
+	def toString as String is override
+		""" Invoke .toString; override .innerString. """
+		return '[.typeOf.name]([.serialNum][.innerString])'
+	
+	def innerString as String
+		"""
+		Subclasses can override to:
+			return base.innerString + ', foo=[value1], bar=[value2]'
+		"""
+		return ''
+
+	def dump
+		print this
+
+
+class Params inherits BaseObject
+	"""
+	Contains the parameters for a GA run.
+	"""
+
+	shared
+	
+		get default as Params
+			p = Params()
+			p.populationSize = 1_000
+			p.tournamentSize = 5
+			p.crossoverRate = 0.90
+			p.mutationRate = 0.03
+			p.maxGenerations = 100
+			p.randomSeed = 0
+			return p
+
+	invariant
+		.populationSize >= 4
+		.tournamentSize >= 1
+		.crossoverRate  >= 0 and .crossoverRate <= 1
+		.mutationRate   >= 0 and .mutationRate <= 1
+		.maxGenerations >= 0
+		.scoreGoal      >  0
+	
+	cue init
+		base.init
+		_populationSize = 10
+		_tournamentSize = 2
+		_scoreGoal = 1.0
+
+	pro populationSize from var as int
+	
+	pro tournamentSize from var as int
+	
+	pro crossoverRate from var as number
+	
+	pro mutationRate from var as number
+	
+	pro maxGenerations from var as int
+	
+	pro randomSeed from var as int
+		"""
+		A .randomSeed of zero is ignored in which the stream of random numbers will be different on each run.
+		"""
+
+	pro memberType from var as Type?
+		"""
+		The type of the members of the population.
+		Used when creating a new members for an initial population.
+		"""
+
+	pro scoreGoal from var as number
+		"""
+		The score you want to achieve among the population. Once reached, evolution will stop.
+		"""
+
+
+class Population inherits BaseObject
+	"""
+	Holds a population of members and provides population-level operations such
+	as reporting the best and worst member.
+	"""
+
+	var _members = List<of Member>()
+
+	cue init(size as int, memberType as Type)
+		base.init
+		for i in size, _members.add(memberType())
+
+	cue init(member as Member)
+		ensure
+			.members.toList == [member]
+			.count == 1
+		body
+			base.init
+			_members.add(member)
+		
+	get count as int
+		ensure result > 0
+		return _members.count
+
+	get members as Member*
+		for m in _members, yield m
+
+	get best from var as Member?
+
+	get worst from var as Member?
+
+	get averageScore from var as number
+	
+	def add(m as Member)
+		_members.add(m)
+
+	def examine
+		"""
+		Examine the population for the best and worst members as well compute the average score.
+		"""
+		require
+			.count > 0
+		ensure
+			.best and .best.score >= .averageScore
+			.worst and .worst.score <= .averageScore
+		body
+			total = 0.0
+			best as Member?
+			worst as Member?
+			for m in .members
+				if best is nil or best.score < m.score, best = m
+				if worst is nil or worst.score > m.score, worst = m
+				total += m.score
+			_averageScore = total / .count
+			_best, _worst = best, worst
+
+	def randomMember(r as Random) as Member
+		require .count > 0
+		return _members.random(r)
+
+	def removeLast
+		_members.removeLast
+		
+	def dump
+		base.dump
+		for i, m in _members.numbered
+			print '[i] ' stop
+			m.dump
+
+	def report
+		print 'best  =', .best
+		print 'worst =', .worst
+		print 'avg   =', .averageScore
+
+
+class Member inherits BaseObject is abstract
+
+	get age from var as int
+		""" Returns the age in number of generations that this member has survived. """
+	
+	pro score from var as number
+		""" The score represents how well this member performs or how "good" it is. """
+	
+	def evaluate as number is abstract
+		""" Computes the score of this member. """
+		ensure .score == result
+
+	def copy as dynamic
+		ensure result is not this
+		return .memberwiseClone
+	
+	def crossover(other) as List<of Member> is abstract
+		require
+			other is not this
+		ensure
+			result.count == 2
+			result[0].typeOf.isKindOf(.typeOf)
+			result[1].typeOf.isKindOf(.typeOf)
+			result[0] is not this and result[0] is not other
+			result[1] is not this and result[1] is not other
+	
+	def incAge
+		_age += 1
+	
+	def mutate(rate as number) as bool is abstract
+		""" Potentially mutates the member. Returns true if member is mutated. """
+		require rate >= 0
+	
+	def innerString as String
+		return base.innerString + ', age=[.age], score=[.score]'
+
+
+class DummyMember inherits Member
+	"""
+	A DummyMember does nothing practical on its own, but can be used for simple
+	unit tests.
+	"""
+
+	def evaluate as number is override
+		return 1
+		
+	def crossover(other) as List<of Member> is override
+		t = List<of Member>()
+		t.add(this)
+		t.add(this)
+		return t
+	
+	def mutate(rate as number) as bool is override
+		return false
+
+
+class BitstringMember inherits Member is abstract
+	"""
+	A member whose genome is comprised of 1s and 0s that are subsequently
+	translated/interpreted as one or more phenotypes.
+	
+	TODO: add util method to convert a range of the bitstring to an integer
+	"""
+
+	shared
+			
+		def randomBits(length as int) as int[]
+			bits = int[](length)
+			for i in length, bits[i] = .random.next % 2
+			return bits
+
+	var _bits as int[]
+	
+	cue init(bits as int[])
+		require bits.length >= 2
+		ensure .bits is bits
+		base.init
+		_bits = bits
+
+	cue init(length as int)
+		""" Initializes the bitstring with `length` random bits. """
+		require length >= 2
+		.init(.randomBits(length))
+
+	get bits from var
+	
+	get length as int
+		ensure result >= 2
+		return _bits.length
+
+	def copy as dynamic
+		and ensure
+			result.bits is not .bits
+		body
+			copy = base.copy to BitstringMember
+			n = .length
+			bits = int[](n)
+			for i in n, bits[i] = _bits[i]
+			copy._bits = bits
+			return copy
+
+	def crossover(other) as List<of Member> is override
+		""" Override this method to customize the crossover operation. """
+		return .twoPointCrossover(other)
+	
+	def mutate(rate as number) as bool is override
+		""" Override this method to customize the crossover operation. """
+		return .randomMutation(rate)
+	
+	def twoPointCrossover(other as BitstringMember) as List<of Member>
+		left, right = _pickPivots
+		n = .length
+		a, b = int[](n), int[](n)
+		for i in left
+			a[i], b[i] = _bits[i], other._bits[i]
+		for i in left : right
+			a[i], b[i] = other._bits[i], _bits[i]
+		for i in right : n
+			a[i], b[i] = _bits[i], other._bits[i]
+		list = List<of Member>()
+		type = .typeOf
+		childA, childB = type(a), type(b)
+		childA.repair(this, other)
+		childB.repair(this, other)
+		list.add(childA)
+		list.add(childB)
+		return list
+
+	def randomMutation(rate as number) as bool
+		didMutate = false
+		for i in .length
+			if .random.nextDouble < rate
+				_bits[i] = if(_bits[i], 0, 1)
+				didMutate = true
+		return didMutate
+
+	def _pickPivots as List<of int>
+		ensure
+			result.count == 2
+			result[1] >= result[0]
+		body
+			left = .random.next(1, .length-2)
+			right = .random.next(left, .length-1)
+			return [left, right]
+
+	def repair(parent1 as BitstringMember, parent2 as BitstringMember)
+		""" Override this method to fix duplicated genes, if necessary. """
+		pass
+
+
+class MaximizeOnesMember inherits BitstringMember
+	"""
+	A problem-specific member to maximize the number of 1s that appear in the genome.
+	"""
+	
+	cue init
+		base.init(50)
+
+	cue init(bits as int[])
+		base.init(bits)
+
+	cue init(length as int)
+		base.init(length)
+
+	def evaluate as number is override
+		total = 0
+		for b in _bits, total += b
+		_score = total
+		return total
+
+	def innerString as String
+		return base.innerString + (for b in .bits get '01'[b]).joined('')
+
+
+class Engine inherits BaseObject
+	"""
+	An engine runs the GA using parameters and a population.
+	It pushes the population from one generation to the next,
+	applying genetic operators.
+	"""
+
+	var _params as Params?
+	var _pop as Population
+	var _generation as int
+
+	cue init(params as Params)
+		.init(params, nil)
+
+	cue init(params as Params, pop as Population?)
+		require
+			params.memberType
+			params.populationSize > 0 or (pop and pop.count > 0)
+		body
+			base.init
+			_params = params
+			BaseObject.random = if(params.randomSeed, Random(params.randomSeed), Random())
+			_pop = pop ? Population(params.populationSize, params.memberType)
+			.evaluate
+
+	get generation as int
+		ensure result >= 0
+		return _generation
+
+	get params from var
+	
+	get population from _pop
+
+	def run
+		while not .isDone, .step
+
+	def isDone as bool
+		return .generation >= .params.maxGenerations or (.population.best and .population.best.score >= .params.scoreGoal)
+
+	def evaluate
+		for m in _pop.members, m.evaluate
+		.population.examine
+
+	def step
+		.generateNextPopulation
+		for member in _pop.members, member.incAge
+		_generation += 1
+		.population.examine
+		.report
+
+	def generateNextPopulation
+		thisPop = .population
+		nextPop = Population(.population.best)
+		while nextPop.count < thisPop.count
+			mate1 = .select
+			if _random.nextDouble < .params.crossoverRate
+				while true
+					mate2 = .select
+					if mate2 is not mate1, break
+				offspring = mate1.crossover(mate2)
+			else
+				offspring = [mate1.copy to Member]
+			for member in offspring
+				member.mutate(.params.mutationRate)
+				member.evaluate
+				nextPop.add(member)
+		while nextPop.count > thisPop.count
+			nextPop.removeLast
+		_pop = nextPop
+
+	def select as Member
+		"""
+		Calls .tournamentSelect by default.
+		A subclass can override this to implement a different selection method.
+		"""
+		return .tournamentSelect
+
+	def tournamentSelect as Member
+		require .population.count > 0
+		# This is an interesting method because for quality control, it's not clear what useful `ensure` could be added to it, nor is it clear what kind of unit test would prove that tournament selection was working as expected. Have ideas? Post them to http://cobra-language.com/forums/viewforum.php?f=4
+		best as Member?
+		for i in .params.tournamentSize
+			competitor = .population.randomMember(.random)
+			if best is nil or best.score < competitor.score
+				best = competitor
+		return best to !
+	
+	def report
+		print 'gen   =', .generation
+		.population.report
+		print
+
+
+class Program
+
+	def main
+		.maximizeOnesExample
+
+	def maximizeOnesExample
+		params = Params.default
+		params.maxGenerations = 100
+		params.memberType = MaximizeOnesMember
+		params.scoreGoal = 50
+		engine = Engine(params)
+		engine.run
+		# testing:
+		assert engine.generation < 100
+		assert engine.population.best.score == 50
+		print 'done.'
