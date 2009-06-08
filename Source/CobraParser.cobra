@@ -256,7 +256,7 @@ class CobraParser
 						textParts.add(tok.text)
 					else
 						.throwError('Expecting more doc string contents or the end of the doc string instead of [tok].')
-			text = Utils.join('', textParts)
+			text = textParts.join('')
 			return text
 		else if .optional('DOC_STRING_LINE')
 			return .last.value to String
@@ -486,7 +486,7 @@ class CobraParser
 					fileNameParts.add(id.text)
 					dot = .optional('DOT')
 					if not dot, break
-				fileName = Utils.join('.', fileNameParts)
+				fileName = fileNameParts.join('.')
 			else
 				.throwError('Expecting a file name (sans extension, with or without quotes) after "from".')
 			if fileName.endsWith('.dll') or fileName.endsWith('.exe')
@@ -802,7 +802,7 @@ class CobraParser
 				if expectComma
 					.expect('COMMA')
 				ident = .expect('ID').text
-				if Utils.startsWithLowerLetter(ident)
+				if ident.startsWithLowerLetter
 					.throwError('Generic parameter names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
 				params.add(GenericParam(ident))
 				expectComma = true
@@ -1108,7 +1108,7 @@ class CobraParser
 		if 'partial' in decl.isNames
 			if decl inherits Box
 				if not (decl inherits Class or decl inherits Struct or decl inherits Interface)
-					.throwError(decl.token, '[decl.englishName.capped] cannot be "partial".')
+					.throwError(decl.token, '[decl.englishName.capitalized] cannot be "partial".')
 				checkForDups = false
 				otherDecl = ns.unifiedNameSpace.declForName(decl.name)
 				if otherDecl
@@ -1127,7 +1127,7 @@ class CobraParser
 						memberDecl.mergedIntoPartialBox(otherBox)
 					return otherDecl
 			else
-				.throwError(decl.token, '[decl.englishName.capped] cannot be "partial".')
+				.throwError(decl.token, '[decl.englishName.capitalized] cannot be "partial".')
 		if checkForDups
 			if ns.declForName(decl.name)
 				.throwError((decl to dynamic).token to IToken, 'The namespace "[ns.fullName]" already contains a declaration named "[decl.name]".')  # TODO: give an "error" for the location 
@@ -1289,7 +1289,7 @@ class CobraParser
 			genericParams = List<of GenericParam>()
 		name = opener.value to String
 		curBox = .curBox
-		if name == curBox.name or name.capped == curBox.name
+		if name == curBox.name or name.capitalized == curBox.name
 			.throwError('Method names cannot be the same as their enclosing [curBox.englishName]. Use `cue init` for creating an initializer/constructor or choose another name.')  # TODO list the enclosing types location
 
 		unnecessary = false
@@ -2908,7 +2908,7 @@ class CobraParser
 				_spaceAgnostic
 			if .peek is nil
 				literal = {'RPAREN': ')', 'RBRACKET': ']'}
-				what = Utils.join(" or ", for t in terminators get '"[if(literal.containsKey(t), literal[t], t)]"')
+				what = (for t in terminators get '"[if(literal.containsKey(t), literal[t], t)]"').join(' or ')
 				.throwError('Expecting "," or [what].')
 			if .peek.which in terminators
 				.grab
@@ -3005,7 +3005,7 @@ class CobraParser
 		if .opStack.count and .opStack.peek=='DOT'
 			return MemberExpr(nameToken)
 		if .peek.which=='AS'
-			if not Utils.startsWithLowerLetter(name)
+			if not name.startsWithLowerLetter
 				.throwError('Local variable declarations must start with a lowercase letter. This avoids collisions with other identifiers such as classes and enums.')
 			return AsExpr(.grab, nameToken, .typeId)
 		else
@@ -3047,7 +3047,7 @@ class CobraParser
 							sep = which
 							break
 					if sep is nil
-						.throwError('Expecting one of: [Utils.join(", ", separators)], but encountered [.peek.which]')
+						.throwError('Expecting one of: [separators.join(", ")], but encountered [.peek.which]')
 				if sep=='COLON'
 					lastThingWasColon = true
 			if .peek.which=='RBRACKET'
@@ -3187,7 +3187,7 @@ class CobraParser
 		nameToken = .expect('ID')
 		name = nameToken.text
 		if .peek.which=='AS'
-			if not Utils.startsWithLowerLetter(name)
+			if not name.startsWithLowerLetter
 				.throwError('Local variable declarations must start with a lowercase letter. This avoids collisions with other identifiers such as classes and enums.')
 			return AsExpr(.grab, nameToken, .typeId)
 		else
@@ -3402,7 +3402,7 @@ class CobraParser
 		other = box.declForNameCI(name)
 		if other
 			.throwError('There is already another class member with the name "[other.name]". You must differentiate member names by more than just case.')
-		if Utils.startsNonLower(name)
+		if name.startsWithNonLowerLetter
 			.throwError('Property names must start with lowercase letters. ([name])')
 
 	def checkStartsLowercase(identifier as String, whatName as String)
@@ -3422,7 +3422,7 @@ class CobraParser
 				sugg = sugg[0].toString.toLower + sugg[1:]
 				sugg = ' Try "[sugg]".'
 			.recordError('[whatName] declarations cannot start with an underscore. Those are reserved for class variables.[sugg]')
-		if Utils.startsNonLower(identifier)
+		if identifier.startsWithNonLowerLetter
 			sugg = identifier[0].toString.toLower + identifier[1:]
 			.recordError('[whatName] declarations must start with a lowercase letter to distinguish them from other types of identifiers. Try "[sugg]".')
 
@@ -3443,12 +3443,12 @@ class CobraParser
 		"""
 		token = .peek(peekAhead)
 		if token.which == 'ID'
-			return Utils.startsNonLower(token.value to String)
+			return (token.value to String).startsWithNonLowerLetter
 		return .isOneOfKeywords(token, ['bool', 'char', 'decimal', 'int', 'uint', 'float', 'number'])
 
 	def looksLikeVarNameIsNext(peekAhead as int) as bool
 		token = .peek(peekAhead)
-		return token is not nil and token.which=='ID' and Utils.startsWithLowerLetter(token.text)
+		return token is not nil and token.which=='ID' and token.text.startsWithLowerLetter
 		
 	def isOneOfKeywords(nToken as IToken?, keywords as List<of String>) as bool
 		token = nToken to !

@@ -8,39 +8,6 @@ use System.Reflection
 
 extend String
 
-	def capped as String
-		"""
-		Returns the string with the first character capitalized.
-		Returns a blank string for a blank string.
-		"""
-		ensure
-			result.length == .length
-			result.length implies result[0] == result[0].toUpper
-		test
-			assert 'chuck'.capped == 'Chuck'
-			assert 'Chuck'.capped == 'Chuck'
-			assert ''.capped == ''
-			assert ' foo'.capped == ' foo'
-			assert 'f'.capped == 'F'
-			assert '1aoeu'.capped == '1aoeu'
-		body
-			if .length == 0, return this
-			return this[0:1].toUpper + this[1:]
-
-	def md5HashInHex as String
-		ensure
-			result.length == 32
-		test
-			assert 'Black holes and revelations.'.md5HashInHex == '95b141d670c19f2f20a820751897b9c6'
-		body
-			md5 = System.Security.Cryptography.MD5CryptoServiceProvider()
-			data = System.Text.Encoding.ascii.getBytes(this)  # why ASCII? why not utf8 or something?
-			data = md5.computeHash(data)
-			ret = ''
-			for i in data.length
-				ret += data[i].toString('x2')
-			return ret
-
 	## Language specific
 
 	def canBeUndottedMemberName as bool
@@ -52,7 +19,30 @@ extend String
 		names are typically protected data fields or methods while the uppercase names would be
 		enums or (in the future) nested boxes.
 		"""
-		return .startsWith('_') or Utils.isCapped(this)
+		return .startsWith('_') or .isCapitalized
+
+	def startsWithLowerLetter as bool
+		require
+			.length
+		test
+			assert 'a'.startsWithLowerLetter
+			assert 'z'.startsWithLowerLetter
+			assert not 'A'.startsWithLowerLetter
+			assert not '1'.startsWithLowerLetter
+			assert not '_'.startsWithLowerLetter
+		body
+			return this[0].isLower
+
+	def startsWithNonLowerLetter as bool
+		require
+			.length
+		test
+			assert not 'a'.startsWithNonLowerLetter
+			assert not 'z'.startsWithNonLowerLetter
+			assert not '1'.startsWithNonLowerLetter
+			assert 'A'.startsWithNonLowerLetter
+		body
+			return this[0] <> this[0].toLower
 
 
 class Utils is partial
@@ -88,39 +78,6 @@ class Utils is partial
 			# Could be made more sophisitcated in the future
 			return name + 's'
 
-		def isCapped(s as String) as bool
-			test
-				assert Utils.isCapped('Aoeu')
-				assert Utils.isCapped('Zaoeu')
-				assert not Utils.isCapped('aoeu')
-				assert not Utils.isCapped('')
-				assert not Utils.isCapped('1234')
-			body
-				return s.length and s[0].isUpper
-
-		def startsWithLowerLetter(s as String) as bool
-			require
-				s.length
-			test
-				assert Utils.startsWithLowerLetter('a')
-				assert Utils.startsWithLowerLetter('z')
-				assert not Utils.startsWithLowerLetter('A')
-				assert not Utils.startsWithLowerLetter('1')
-				assert not Utils.startsWithLowerLetter('_')
-			body
-				return s[0].isLower
-
-		def startsNonLower(s as String) as bool
-			require
-				s.length
-			test
-				assert not Utils.startsNonLower('a')
-				assert not Utils.startsNonLower('z')
-				assert not Utils.startsNonLower('1')
-				assert Utils.startsNonLower('A')
-			body
-				return s[0] <> s[0].toLower
-
 		def toIdentifier(s as String) as String
 			test
 				cases = [
@@ -139,21 +96,6 @@ class Utils is partial
 					else
 						sb.append(c'_')
 				return sb.toString
-
-		# TODO: count should be a CobraCore util method
-		# TODO: count should be an extension method of String
-		def countChars(s as String, c as char) as int
-			test
-				assert Utils.countChars('', c'x')==0
-				assert Utils.countChars('x', c'x')==1
-				assert Utils.countChars('X', c'x')==0  # case sensitive
-				assert Utils.countChars(' ! ! ', c'!')==2
-			body
-				count = 0
-				for ch in s
-					if c==ch
-						count += 1
-				return count
 
 		# CC: the getXX() methods should be one generic method
 
@@ -180,40 +122,6 @@ class Utils is partial
 				return d[key]
 			else
 				return defaultValue
-
-		# CC: make join an extension method of String which already has a join() except that it only works on arrays of strings
-		def join(sep as String, parts as System.Collections.IEnumerable) as String  # TODO: given that this seems necessary, should Cobra add "use System.Collections" to all programs?
-			test
-				assert Utils.join('.', ['a', 'b'])=='a.b'
-			body
-				sb = StringBuilder()
-				s = ''
-				for part in parts
-					sb.append(s)
-					sb.append(part.toString)
-					s = sep
-				return sb.toString
-
-		# CC: make join an extension method of String which already has a join() except that it only works on arrays of strings
-		def join(sep as String, lastSep as String, parts as System.Collections.IEnumerable) as String
-			test
-				assert Utils.join(', ', ' and ', ['a', 'b'])=='a and b'
-				assert Utils.join(', ', ' and ', ['a', 'b', 'c'])=='a, b and c'
-				assert Utils.join(', ', ' and ', ['a', 'b', 'c', 'd'])=='a, b, c and d'
-			body
-				sb = StringBuilder()
-				s = ''
-				partsList = []
-				for part in parts, partsList.add(part)
-				count = partsList.count
-				for i in count
-					sb.append(s)
-					sb.append(partsList[i].toString)
-					s = if(i==count-2, lastSep, sep)
-				return sb.toString
-
-		def join(sep as String, parts as vari String) as String  # CC: shouldn't need this because vari should implement IEnumerable
-			return .join(sep, parts to System.Collections.IEnumerable)
 
 
 		## C#
@@ -368,8 +276,7 @@ class Utils is partial
 			return Assembly.loadWithPartialName(name)
 
 
-class ShouldNotCallException
-	inherits Exception
+class ShouldNotCallException inherits Exception
 	# TODO: perhaps there should also be an attribute so the compiler can give compile-time warnings
 
 	var _type as Type?
@@ -384,8 +291,7 @@ class ShouldNotCallException
 	get containingType from _type
 
 
-class NotSupportedException
-	inherits Exception
+class NotSupportedException inherits Exception
 
 	cue init
 		base.init
