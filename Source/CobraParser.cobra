@@ -6,6 +6,14 @@ Rules:
 """
 
 
+class ErrorMessages
+
+	shared
+	
+		get expectingStatementInsteadOfIndentation as String
+			return 'Expecting a statement instead of extra indentation. One indent level is 4 spaces or 1 tab with display width of 4.'
+
+
 class CobraParser
 	inherits Parser
 	"""
@@ -538,7 +546,7 @@ class CobraParser
 		implementsProxies = List<of ITypeProxy>()
 		addsProxies = List<of ITypeProxy>()
 
-		encountered = List<of String>()  # token types		
+		encountered = List<of String>()  # token types
 		didIndent = false
 		isDone = false
 		while true
@@ -1313,39 +1321,69 @@ class CobraParser
 			returnType = _typeProvider.voidType
 		assert returnType
 
+		isNames = List<of String>(_isNamesStack)
+		attribs = AttributeList()
+		implementsType = nil to ITypeProxy?
+
 		method as AbstractMethod?
 
 		# Rules:
 		#  * if curBox is an Interface then no body
 		#  * if 'abstract' is in the is-names then no body
-		#  * is-names can be on the same line or the next
+		#  * is-names and has-attrs can be on the same line or the next
 		#  * no `init` in interfaces
 		#  * no return type for `init`
 		#  * no `implements` in interfaces or for `init`
 
-		hasIsNames = false
-		if .peek.which == 'IS'
-			isNames = .isDeclNames
-			hasIsNames = true
-		else
-			.endOfLine
+		encountered = List<of String>()  # token types		
+		didIndent = false
+		isDone = false
+		while true
+			peek = .peek
+			if peek is nil, .throwError('Unexpected end of source.')
+			last = .peek.which
+			branch last
+				on 'EOL'
+					.grab
+				on 'INDENT'
+					.grab
+					if didIndent
+						if _spaceAgnosticIndentLevel == 0
+							.throwError(ErrorMessages.expectingStatementInsteadOfIndentation)
+						else
+							_spaceAgnosticIndentLevel += 1
+					didIndent = true
+				on 'IS'
+					isNames = .isDeclNames
+				on 'HAS'
+					attribs = .hasAttribs
+				on 'WHERE'
+					.genericConstraints(opener, genericParams)
+				on 'IMPLEMENTS'
+					.grab
+					implementsType = .typeId
+				else
+					isDone = true
+			if last in ['EOL', 'INDENT'], continue
+			if isDone, break
+			if last in encountered and last <> 'WHERE'
+				.throwError('Encountered "[last]" twice.')
+			encountered.add(last)
+		assert .last.which in ['EOL', 'INDENT']
 
-		if _noMoreSpecs()  
-			# No additional specs like attributes, contracts or body
-			nothingMore = true
-			if not hasIsNames, isNames = List<of String>(_isNamesStack)
-			attribs = AttributeList()
-			implementsType = nil to ITypeProxy?
-			docString = '' to ?
+		if _spaceAgnosticIndentLevel
+			sail = _spaceAgnosticIndentLevel
+			if sail > 0, _spaceAgnosticIndentLevel -= 1  # for missing indent
+			if sail < 0, _spaceAgnosticIndentLevel += 1  # for missing dedent
+			_finishSpaceAgnostic
+			if sail > 0
+				nothingMore = false  # TODO: feels wrong
+			else
+				nothingMore = .last.which == 'INDENT' and .peek.which <> 'INDENT'  # _spaceAgnosticIndentLevel == 0
 		else
-			# parse additional method declaration
-			nothingMore = false
-			if not hasIsNames, isNames = .isDeclNames
-			.genericConstraints(opener, genericParams)
-			attribs = .hasAttribs
-			implementsType = if(.optional('IMPLEMENTS'), .typeId, nil)
-			if implementsType, .endOfLine
-			docString = .docString
+			nothingMore = not didIndent and .last.which == 'EOL'
+
+		docString = .docString
 		if token.which == 'CUE' and name == 'init'
 			if curBox inherits Interface
 				.throwError('Cannot declare an initializer for an interface.')
@@ -1379,24 +1417,6 @@ class CobraParser
 		else
 			return method
 
-	def _noMoreSpecs as bool
-		"""
-		Return a bool indicating that there is no (correctly indented) additional specs 
-		like attributes, contracts or body following.
-		"""
-		if _spaceAgnosticIndentLevel == 0          # param decls all on same line 
-			noMoreSpecs = not .optional('INDENT')  # anything else must be indented
-		else
-			sail = _spaceAgnosticIndentLevel
-			if sail > 0
-				_spaceAgnosticIndentLevel -= 1  # for missing indent
-			_finishSpaceAgnostic
-			if sail >= 1
-				noMoreSpecs = .optional('DEDENT') is not nil 
-			else
-				noMoreSpecs = not .optional('INDENT')
-		return noMoreSpecs	
-				
 	def declareMethodSig as MethodSig
 		require _typeProvider
 		wordToken = .expect('SIG')
@@ -1819,7 +1839,7 @@ class CobraParser
 		"""
 		_pushCodePart(codePart)
 		if codePartContainingTest is nil
-			codePartContainingTest = codePart to BoxMember  # TODO: figure out better typing for this assignement and the method sig of this method
+			codePartContainingTest = codePart to BoxMember  # TODO: figure out better typing for this assignment and the method sig of this method
 		try
 			while .peek.which in 'EOL', .grab
 			if .peek.which in ['BODY', 'TEST', 'REQUIRE', 'ENSURE', 'OR', 'AND']
@@ -1914,7 +1934,7 @@ class CobraParser
 					_statementsFor(ame)
 					expectEOL = false
 				else
-					.throwError('Expecting a statement instead of extra indentation. One indent level is 4 spaces or 1 tab with display width of 4.')
+					.throwError(ErrorMessages.expectingStatementInsteadOfIndentation)
 			on 'IGNORE'
 				s = .ignoreStmt
 			on 'PASS'
