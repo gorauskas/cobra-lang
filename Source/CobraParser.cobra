@@ -976,6 +976,7 @@ class CobraParser
 			storageType = .typeId to ?
 		docString = .docString
 		enumMembers = List<of EnumMember>()
+		nameSet = Set<of String>()
 		while .peek.which <> 'DEDENT'
 			.zeroOrMore('EOL')
 			enumNameToken = .expect('ID')
@@ -985,8 +986,11 @@ class CobraParser
 			else
 				enumValue = nil
 			.endOfLine
-			enumMembers.add(EnumMember(enumNameToken, enumValue))
-			# TODO: check for repeated names
+			if enumNameToken.text in nameSet
+				.recordError(enumNameToken, 'Already defined "[enumNameToken.text]" earlier.')
+			else
+				enumMembers.add(EnumMember(enumNameToken, enumValue))
+				nameSet.add(enumNameToken.text)
 			# TODO: check for values that repeat or go backwards
 		.dedent
 		if not enumMembers.count
