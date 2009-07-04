@@ -2,7 +2,7 @@
 """
 le.cobra
 
-"line endings" - Report the line endings of text files as 'dos', 'unix', 'both' or '?'.
+"line endings" - Report the line endings of text files as 'dos', 'unix', 'oldmac', 'both' or '?'.
 
 Skips binary files and reports files with unknown extensions.
 
@@ -41,8 +41,9 @@ class LineEndings
 
 	var _action as Action
 
-	var _crLfRegEx = Regex(r'\r\n')
-	var _notCrLfRegEx = Regex(r'[^\r]\n')
+	var _crLfRegEx = Regex(r'\r\n')  # dos / windows
+	var _notCrLfRegEx = Regex(r'[^\r]\n')  # unix / mac / linux / etc
+	var _crRegEx = Regex(r'\r')  # old mac
 
 	var _exts = Set<of String>()
 
@@ -166,19 +167,19 @@ class LineEndings
 		if ext.startsWith('.'), ext = ext[1:]
 		_exts.add(ext)
 		if ext in .binExtensions
-			print 'skipping bin file      : [fi]'
+			print 'skipping bin file        : [fi]'
 		else if ext in .textExtensions or ext == ''
 			# In practice, I find that files without extensions are text files.
 			# Usually captured text output from a command or a shell script.
 			type = .lineEndingsType(fi)
-			pad = if(type=='dos', ' ', '')
+			pad = if(type=='dos', '   ', if(type=='unix', '  ', ''))  # 'oldmac' is longest
 			print 'found text file ([type]) [pad]: [fi]'
 			.act(type, fi)
 		else
-			print 'unknown file type      : "[ext]" for [fi]'
+			print 'unknown file type        : "[ext]" for [fi]'
 
 	def lineEndingsType(fi as FileInfo) as String
-		ensure result in ['unix', 'dos', 'both', '?']
+		ensure result in ['unix', 'dos', 'both', 'oldmac', '?']
 		text = File.readAllText(fi.fullName)
 		match = _crLfRegEx.match(text)
 		if match.success
@@ -201,6 +202,12 @@ class LineEndings
 		if isDos and isUnix, return 'both'
 		if isDos, return 'dos'
 		if isUnix, return 'unix'
+		match = _crRegEx.match(text)
+		if match.success
+			matchText = match.groups[0].value
+			assert matchText == '\r'
+			# print 'OldMac ([CobraCore.toTechString(matchText)])'
+			return 'oldmac'
 		return '?'
 
 	def act(type as String, fi as FileInfo)
@@ -211,11 +218,13 @@ class LineEndings
 			on Action.ToUnix
 				if type not in ['unix', '?']
 					text = File.readAllText(fi.fullName)
-					text = text.replace('\r', '')
+					if type == 'oldmac', text = text.replace('\r', '\n')
+					else, text = text.replace('\r', '')
 			on Action.ToDos
 				if type not in ['dos', '?']
 					text = File.readAllText(fi.fullName)
-					text = text.replace('\r', '').replace('\n', '\r\n')
+					if type == 'oldmac', text = text.replace('\r', '\r\n')
+					else, text = text.replace('\r', '').replace('\n', '\r\n')
 		if text
 			suffix = '-convert-line-endings-' + DateTime.now.toString('yyyy-MM-dd')
 			assert ' ' not in suffix
@@ -224,7 +233,7 @@ class LineEndings
 				File.writeAllText(newName, text)
 				File.delete(fi.fullName)
 				File.move(newName, fi.fullName)
-				print '                         Converted'
+				print '                           Converted'
 
 	def summarizeExtensions
 		exts = List<of String>(_exts)
