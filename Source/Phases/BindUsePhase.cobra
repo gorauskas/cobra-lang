@@ -66,10 +66,19 @@ class UseDirective is partial
 		_bindUse(false)
 
 	def _bindUse(didAutoLoad as bool)
+		ignoreError = false
 		curNS = .compiler.globalNS to ?
 		for name in _nameParts
 			curNS = curNS.subNameSpaceForName(name)
 			if curNS is nil, break
+		if _explicitUses
+			# since this was an explicit uses directive, we need to make
+			# extra sure that we try to load a reference for it
+			_explicitUses = false # do not want to take this path again for this UseDirective
+			if curNS is not nil
+				# errors can be ignored because this namespace has already been loaded
+				ignoreError = true
+			curNS = nil # force reference attempt
 		if curNS is nil and not didAutoLoad
 			if _fileName <> ''
 				if .compiler.loadReference(_fileName + '.dll')
@@ -78,6 +87,9 @@ class UseDirective is partial
 						.throwError('Cannot find namespace "[_fullName]" in library "[_fileName]".')
 					return
 				else
+					if ignoreError
+						_bindUse(true)
+						return
 					.throwError('Cannot find library file "[_fileName]".')
 			else
 				if _fullName.endsWith('.dll')
@@ -88,6 +100,9 @@ class UseDirective is partial
 						.throwError('Cannot find namespace "[_fullName]" in loaded library "[_fullName]".')
 					return
 				else
+					if ignoreError
+						_bindUse(true)
+						return
 					# compute how far is valid, but only here where it's needed for the error message
 					partialName = ''
 					curNS = .compiler.globalNS to ?
