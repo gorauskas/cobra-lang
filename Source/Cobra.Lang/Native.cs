@@ -305,10 +305,6 @@ static public class CobraImp {
 		return b.Contains(a);
 	}
 
-	static public bool In(object a, IDictionary b) {
-		return b.Contains(a);
-	}
-
 	static public bool In(object a, IEnumerable b) {
 		foreach (object item in b) {
 			if (Equals(item, a))
@@ -317,20 +313,16 @@ static public class CobraImp {
 		return false;
 	}
 
-	static public bool In<innerType>(innerType a, IList<innerType> b) {
+	static public bool In<T>(T a, IList<T> b) {
 		return b.Contains(a);
 	}
 
-	static public bool In<innerType>(innerType a, IEnumerable<innerType> b) {
-		foreach (innerType item in b) {
+	static public bool In<T>(T a, IEnumerable<T> b) {
+		foreach (T item in b) {
 			if (Equals(item, a))
 				return true;
 		}
 		return false;
-	}
-
-	static public bool In<keyType,valueType>(keyType a, IDictionary<keyType,valueType> b) {
-		return b.ContainsKey(a);
 	}
 
 	static private bool _noNestedIn = false;
