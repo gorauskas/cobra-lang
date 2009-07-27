@@ -734,30 +734,45 @@ class InExpr inherits BinaryOpExpr is partial
 	def _bindImp
 		base._bindImp
 		_type = .compiler.boolType
-		if not .hasError and not _right.type.isDynamic
-			# try to use right.contains(left)
-			# this is more direct and offers speed up on some classes like Set
-			contains = DotExpr(.token, 'DOT', _right, CallExpr(.token, 'contains', List<of Expr>([_left]), true, isImplicit=true))
-			try
-				contains.bindImp
-			catch SourceException
-				pass
-			success
-				# TODO: Not sure what's going on here. Cobra thinks these have "contains" and C# says no way
-				# error: "System.Collections.Generic.Dictionary<string,int>.KeyCollection" does not contain a definition for "Contains" (C#)
-				# error: "System.Collections.Generic.Dictionary<string,int>.ValueCollection" does not contain a definition for "Contains" (C#)
-				if contains.type is .compiler.boolType and not _right.type.name.startsWith('KeyCollection<') and not _right.type.name.startsWith('ValueCollection<')
-					_containsExpr = contains
-			# optimize `key in dict.keys` to `dict.containsKey(key)` which eliminates a linear search
-			if _containsExpr is nil
-				if _right inherits DotExpr
-					if _right.right inherits MemberExpr and _
-						(_right.right to MemberExpr).name == 'keys' and _
-						_right.left.type inherits Box and _
-						.isIDictionary(_right.left.type to Box)
-						contains = DotExpr(.token, 'DOT', _right.left, CallExpr(.token, 'containsKey', List<of Expr>([_left]), true, isImplicit=true))
-						contains.bindImp
+		if not .hasError
+			if .right.type.innerType is nil
+				.recordError('The right-hand expression for "in" is of type "[.right.type.name]" which contains nothing.')
+			else if not .canContain(.right.type to !, .left.type to !)
+				.recordError('The left expression ([.left.toCobraSource]) cannot be "in" the right-hand expression because the left type is "[.left.type.name]" and the right-hand expression contains type "[.right.type.innerType.name]".')
+			else if not _right.type.isDynamic
+				# try to use right.contains(left)
+				# this is more direct and offers speed up on some classes like Set
+				contains = DotExpr(.token, 'DOT', _right, CallExpr(.token, 'contains', List<of Expr>([_left]), true, isImplicit=true))
+				try
+					contains.bindImp
+				catch SourceException
+					pass
+				success
+					# TODO: Not sure what's going on here. Cobra thinks these have "contains" and C# says no way
+					# error: "System.Collections.Generic.Dictionary<string,int>.KeyCollection" does not contain a definition for "Contains" (C#)
+					# error: "System.Collections.Generic.Dictionary<string,int>.ValueCollection" does not contain a definition for "Contains" (C#)
+					if contains.type is .compiler.boolType and not _right.type.name.startsWith('KeyCollection<') and not _right.type.name.startsWith('ValueCollection<')
 						_containsExpr = contains
+				# optimize `key in dict.keys` to `dict.containsKey(key)` which eliminates a linear search
+				if _containsExpr is nil
+					if _right inherits DotExpr
+						if _right.right inherits MemberExpr and _
+							(_right.right to MemberExpr).name == 'keys' and _
+							_right.left.type inherits Box and _
+							.isIDictionary(_right.left.type to Box)
+							contains = DotExpr(.token, 'DOT', _right.left, CallExpr(.token, 'containsKey', List<of Expr>([_left]), true, isImplicit=true))
+							contains.bindImp
+							_containsExpr = contains
+
+	def canContain(containerType as IType, whatType as IType) as bool
+		it = containerType.innerType
+		if it and whatType.isDescendantOf(it to !), return true
+		contains = containerType.memberForName('contains')
+		# TODO: handle method overloads
+		if contains inherits Method
+			if contains.params.count == 1 and whatType.isAssignableTo(contains.params[0].type)
+				return true
+		return false
 
 	def isIDictionary(box as Box) as bool
 		if box.isGeneric
