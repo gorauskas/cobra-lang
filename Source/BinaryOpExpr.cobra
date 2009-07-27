@@ -725,11 +725,11 @@ class InExpr inherits BinaryOpExpr is partial
 		<left> not in <right>
 	"""
 
-	var _containsExpr as Expr?
-
 	cue init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
 		assert op in ['IN', 'NOTIN']
+
+	get containsExpr from var as Expr?
 
 	def _bindImp
 		base._bindImp
@@ -748,6 +748,25 @@ class InExpr inherits BinaryOpExpr is partial
 				# error: "System.Collections.Generic.Dictionary<string,int>.ValueCollection" does not contain a definition for "Contains" (C#)
 				if contains.type is .compiler.boolType and not _right.type.name.startsWith('KeyCollection<') and not _right.type.name.startsWith('ValueCollection<')
 					_containsExpr = contains
+			# optimize `key in dict.keys` to `dict.containsKey(key)` which eliminates a linear search
+			if _containsExpr is nil
+				if _right inherits DotExpr
+					if _right.right inherits MemberExpr and _
+						(_right.right to MemberExpr).name == 'keys' and _
+						_right.left.type inherits Box and _
+						.isIDictionary(_right.left.type to Box)
+						contains = DotExpr(.token, 'DOT', _right.left, CallExpr(.token, 'containsKey', List<of Expr>([_left]), true, isImplicit=true))
+						contains.bindImp
+						_containsExpr = contains
+
+	def isIDictionary(box as Box) as bool
+		if box.isGeneric
+			genDef = box.genericDef
+			if genDef.genericParams.count == 2  # <of TKey, TValue>
+				genIDict = .compiler.idictionaryOfType
+				idict = genIDict.constructedTypeFor(genDef.genericParams) to Interface
+				return genDef.isDescendantOfInterface(idict)
+		return false
 
 
 class InheritsExpr
