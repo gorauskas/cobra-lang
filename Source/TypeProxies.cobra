@@ -110,8 +110,7 @@ class VariTypeProxy
 		return VariType(_innerType.realType)
 
 
-class ClrTypeProxy
-	inherits AbstractTypeProxy
+class ClrTypeProxy inherits AbstractTypeProxy
 	"""
 	Acts as an ITypeProxy where the CLR type is known.
 	Typically used when scanning DLLs.
@@ -155,9 +154,16 @@ class ClrTypeProxy
 		.addField('clrType', _clrType)
 
 	get realType as IType is override
-		return _realType(_clrType)
+		return _realTypeWithCache(_clrType)
 
-	def _realType(clrType as Type) as IType
+	def _realTypeWithCache(clrType as Type) as IType
+		t = (.compiler to Compiler).typeForClrType(clrType)
+		if t is nil
+			t = _realTypeWithoutCache(clrType)
+			(.compiler to Compiler).addTypeForClrType(t to !, clrType)
+		return t to !
+	
+	def _realTypeWithoutCache(clrType as Type) as IType
 		assert .compiler.basicTypes.count > 9   # should have bool, char, all the ints, etc.
 		
 		# Must return the Cobra primitive types in place of System.Boolean, System.Char, System.Int16, etc.
@@ -178,9 +184,9 @@ class ClrTypeProxy
 		# handle wrapped types, like arrays and pointers, with recursive calls
 		if clrType.isArray
 			# assert clrType.name.endsWith(r'[]') # could be [,] so TODO: handle multidim arrays
-			return ArrayType(_realType(clrType.getElementType to !))
+			return ArrayType(_realTypeWithCache(clrType.getElementType to !))
 		else if clrType.isNested and not clrType.isGenericParameter
-			declaringType = _realType(clrType.declaringType to !)
+			declaringType = _realTypeWithCache(clrType.declaringType to !)
 			declaringType.bindInh  # trigger scanning the clr type if needed
 			potential = declaringType.memberForName(clrType.name)
 			if potential is nil
@@ -196,11 +202,11 @@ class ClrTypeProxy
 		else if clrType.isPointer
 			assert clrType.name.endsWith('*')
 			# TODO: handle pointer types
-			return _realType(clrType.getElementType to !)
+			return _realTypeWithCache(clrType.getElementType to !)
 		else if clrType.isByRef
 			assert clrType.name.endsWith('&')
 			# TODO: handle ref types
-			return _realType(clrType.getElementType to !)
+			return _realTypeWithCache(clrType.getElementType to !)
 
 		# generic parameters
 		if clrType.isGenericParameter
@@ -245,7 +251,7 @@ class ClrTypeProxy
 					# otherwise, we would just end up returning the generic definition.
 					args = List<of IType>()
 					for genArg in clrType.getGenericArguments
-						args.add(_realType(genArg))
+						args.add(_realTypeWithCache(genArg))
 					if member.qualifiedName == 'System.Nullable<of>'
 						assert args.count == 1
 						member = NilableType(args[0])

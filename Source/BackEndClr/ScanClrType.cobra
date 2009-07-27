@@ -1,5 +1,4 @@
-class Compiler
-	is partial
+class Compiler is partial
 
 	var _didReadAssemblies = Set<of String>()
 	
@@ -125,8 +124,22 @@ class Compiler
 			print 'WARNING: Cannot fix [className] which is not a class/struct/interface. (type=[type])'  # TODO: make a real warning
 
 
-class Box
-	is partial
+	var _clrTypeToType = Dictionary<of System.Type, IType>()
+	
+	def typeForClrType(clrType as System.Type) as IType?
+		"""
+		Returns the Cobra type for a CLR type if the CLR type was previously scanned.
+		In other words, this is access to the cache.
+		This not only eliminates unwanted duplication, but it is essential to the compiler when it
+		checks for certain things like "does this type implement IDictionary<of TKey, TValue>?"
+		"""
+		return if(_clrTypeToType.containsKey(clrType), _clrTypeToType[clrType], nil)
+
+	def addTypeForClrType(type as IType, clrType as System.Type)
+		_clrTypeToType.add(clrType, type)
+
+
+class Box is partial
 
 	get clrType as Type
 		"""
@@ -156,7 +169,11 @@ class Box
 	def _scanGenericArgs
 		if .clrType.isGenericType
 			for genArg in .clrType.getGenericArguments
-				_genericParams.add(GenericParam(ClrNativeType(genArg)))
+				t = (.compiler to Compiler).typeForClrType(genArg)
+				if t is nil
+					t = GenericParam(ClrNativeType(genArg))
+					(.compiler to Compiler).addTypeForClrType(t to !, genArg)
+				_genericParams.add(t)
 
 	def _scanImplements
 		for interf in .clrType.getInterfaces
