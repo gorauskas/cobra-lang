@@ -351,9 +351,7 @@ class AnonymousMethodExpr inherits AnonymousExpr is partial
 		_type = _method.resultType
 
 
-class LambdaExpr
-	is partial
-	inherits AnonymousExpr
+class LambdaExpr inherits AnonymousExpr is partial
 	"""
 	... do(a as int, b as int)=a.compareTo(b) ...
 	"""
@@ -364,6 +362,10 @@ class LambdaExpr
 
 	get expr from var as Expr
 	
+	get method from var as AnonymousMethod?
+		# a reference to the method created in _bindImp is maintained purely for
+		# inspection/debugging purposes
+
 	def addSubFields
 		base.addSubFields
 		.addField('expr', .expr)
@@ -379,10 +381,13 @@ class LambdaExpr
 
 	def _bindImp is override
 		base._bindImp
-		method = AnonymousMethod(.token, .curCodeMember, .params, .compiler.dynamicType, if(.curCodeMember.isShared, ['shared'], List<of String>()))
-		method.addStmt(ReturnStmt(.token.copy('RETURN', 'return'), .expr))
-		method.bindInt
-		method.bindImp
+		_method = AnonymousMethod(.token, .curCodeMember, .params, .compiler.dynamicType, if(.curCodeMember.isShared, ['shared'], List<of String>()))
+		ret = ReturnStmt(.token.copy('RETURN', 'return'), .expr)
+		_method.addStmt(ret)
+		_method.bindInt
+		_method.bindImp
+		# the expression may have been transformed, but if so, only the containing ReturnStmt got the notice
+		_expr = ret.expr to !
 		_type = .compiler.passThroughType # TODO: Set a real type such as .compiler.delegateType
 		# method.lambdaReturnType
 
