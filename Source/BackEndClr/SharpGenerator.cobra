@@ -70,6 +70,7 @@ class Compiler is partial
 	get platform from var
 
 	def computeOutNameSharp as String
+		ensure result == .fullExeFileName
 		outName = ''
 		if .options.boolValue('test')
 			outName = _modules.last.sharpFileName
@@ -156,9 +157,7 @@ class Compiler is partial
 				assert debug in ['-', '+', 'full', 'pdbonly'], debug
 				backEndOptions += ' [optChar]debug' + if(debug.length==1, debug, ':[debug]')
 
-			backEndOptions += ' "[optChar]out:[outName]"'
-
-			if _verbosity<3
+			if _verbosity < 3
 				backEndOptions += ' [optChar]nologo'
 
 			backEndOptions += ' [optChar]nowarn:0108,0162,0169,0183,0184,0219,0414,0429,1717,1718'
@@ -213,6 +212,7 @@ class Compiler is partial
 				print 'Compiling to produce [outName]'
 			if cscPath <> ''
 				# use Process class instead of CSharpCodeProvider because the user specified a path to a C# compiler
+				backEndOptions += ' "[optChar]out:[outName]"'
 				p = System.Diagnostics.Process()
 				p.startInfo.fileName = cscPath
 				sharpFileNames = (for fileName in sharpFileNameList get '"' + fileName + '"').join(' ')
@@ -230,7 +230,7 @@ class Compiler is partial
 				cp.referencedAssemblies.add('System.dll')
 				cp.generateExecutable = options.getDefault('target', 'exe') in ['exe', 'winexe']
 				cp.outputAssembly = _fullExeFileName
-				if _verbosity > 2
+				if _verbosity >= 2
 					print 'Code Provider =', provider
 					print '    compilerOptions =', backEndOptions
 					print '    referencedAssemblies =', cp.referencedAssemblies
@@ -262,7 +262,8 @@ class Compiler is partial
 					# cr.output is empty if there was no error
 					# otherwise, the first element is the C# compilation line
 					if _verbosity >= 2 and cr.output.count > 0
-						print '>>', cr.output[0], '<<'
+						print 'C# compilation line created by CSharpCodeProvider:'
+						print cr.output[0]
 					output = if(cr.output.count==0, '', cr.output[1:].join('\n').trim)
 					# trace output
 					_parseSharpCompilerOutput(output)
