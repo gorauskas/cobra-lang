@@ -103,21 +103,6 @@ class Compiler is partial
 		body
 			options = .options
 
-			# locate the C# compiler
-			cscPath = options.getDefault('native-compiler', '') to String
-			if cscPath <> ''
-				if File.exists(cscPath)
-					platform = if('Microsoft' in cscPath, 'ms', 'novell')
-				else if File.exists(cscPath+'.exe')
-					cscPath += '.exe'
-					platform = if('Microsoft' in cscPath, 'ms', 'novell')
-				else
-					print 'Cannot find compiler specified by -native-compiler argument: [cscPath]'
-					throw StopCompilation(this)
-			else
-				# will use CSharpCodeProvider
-				pass
-
 			platform = if(CobraCore.isRunningOnMono, 'novell', 'ms')
 			_platform = if(platform=='ms', PlatformEnum.Microsoft, PlatformEnum.Novell)
 			optChar = if(platform=='ms', '/', '-')  # option prefix character
@@ -210,68 +195,84 @@ class Compiler is partial
 			# compilation command
 			if _verbosity
 				print 'Compiling to produce [outName]'
-			if cscPath <> ''
+			if .options.getDefault('native-compiler', '') to String <> ''
 				# use Process class instead of CSharpCodeProvider because the user specified a path to a C# compiler
-				backEndOptions += ' "[optChar]out:[outName]"'
-				p = System.Diagnostics.Process()
-				p.startInfo.fileName = cscPath
-				sharpFileNames = (for fileName in sharpFileNameList get '"' + fileName + '"').join(' ')
-				p.startInfo.arguments = '[backEndOptions] [sharpFileNames]'
-				if _verbosity >= 2
-					print '[p.startInfo.fileName] [p.startInfo.arguments]'
-				output = CobraCore.runAndCaptureAllOutput(p)
-				# TODO: check p.exitCode, especially if output is empty
-				_parseSharpCompilerOutput(output)
+				_compileSharpWithProcessCSC(optChar, backEndOptions, sharpFileNameList)
 			else
-				# use code provider
-				provider = Microsoft.CSharp.CSharpCodeProvider()
-				cp = System.CodeDom.Compiler.CompilerParameters()
-				cp.compilerOptions = backEndOptions
-				cp.referencedAssemblies.add('System.dll')
-				cp.generateExecutable = options.getDefault('target', 'exe') in ['exe', 'winexe']
-				cp.outputAssembly = _fullExeFileName
-				if _verbosity >= 2
-					print 'Code Provider =', provider
-					print '    compilerOptions =', backEndOptions
-					print '    referencedAssemblies =', cp.referencedAssemblies
-					print '    generateExecutable =', cp.generateExecutable
-					print '    outputAssembly =', _fullExeFileName
-					print '    sharpFileNameList =', sharpFileNameList
-				cr = provider.compileAssemblyFromFile(cp, sharpFileNameList.toArray)
-				if false
-					trace cr.compiledAssembly
-					trace cr.evidence
-					trace cr.pathToAssembly
-					trace cr.errors
-					trace cr.output
-					trace cr.nativeCompilerReturnValue
-					trace cr.tempFiles
-				# On MS .NET 2.0, the CompilerResult.errors never include "(Location of symbol related to previous error)", while the CompilerResult.output contains everything
-				# On Novell Mono 1.9, the CompilerResult.output is empty, leaving CompilerResult.errors as the only means to get the C# compiler messages.
-				# Do the Mono .errors have "(Location of symbol related to previous error)"? I haven't checked.
-				if CobraCore.isRunningOnMono
-					for bem in cr.errors  # cr.errors also includes warnings. supposedly.
-						backEndMessage = bem to System.CodeDom.Compiler.CompilerError
-						if not SharpCompilationMessage.willSkipMessage(backEndMessage.errorText to !)
-							_addMessage(SharpCompilationMessage(backEndMessage, this))
-				else				
-					#for x in cr.output to dynamic
-					#	print 'output>', x
-					# [1:] below is to chop out the first line which is the C# compilation line
-					
-					# cr.output is empty if there was no error
-					# otherwise, the first element is the C# compilation line
-					if _verbosity >= 2 and cr.output.count > 0
-						print 'C# compilation line created by CSharpCodeProvider:'
-						print cr.output[0]
-					output = if(cr.output.count==0, '', cr.output[1:].join('\n').trim)
-					# trace output
-					_parseSharpCompilerOutput(output)
+				# otherwise use Code Provider
+				_compileSharpWithCodeProvider(optChar, backEndOptions, sharpFileNameList)
 
 			if .errors.count
 				_exitFromErrors
 
 			_deleteIntermediateFiles
+
+	def _compileSharpWithProcessCSC(optChar as String, backEndOptions as String, sharpFileNameList as List<of String>)
+		# locate the C# compiler
+		cscPath = .options.getDefault('native-compiler', '') to String
+		assert cscPath <> ''
+		if File.exists(cscPath)
+			pass
+		else if File.exists(cscPath+'.exe')
+			cscPath += '.exe'
+		else
+			print 'Cannot find compiler specified by -native-compiler argument: [cscPath]'
+			throw StopCompilation(this)
+		backEndOptions += ' "[optChar]out:[.fullExeFileName]"'
+		p = System.Diagnostics.Process()
+		p.startInfo.fileName = cscPath
+		sharpFileNames = (for fileName in sharpFileNameList get '"' + fileName + '"').join(' ')
+		p.startInfo.arguments = '[backEndOptions] [sharpFileNames]'
+		if _verbosity >= 2
+			print '[p.startInfo.fileName] [p.startInfo.arguments]'
+		output = CobraCore.runAndCaptureAllOutput(p)
+		# TODO: check p.exitCode, especially if output is empty
+		_parseSharpCompilerOutput(output)
+
+	def _compileSharpWithCodeProvider(optChar as String, backEndOptions as String, sharpFileNameList as List<of String>)
+		provider = Microsoft.CSharp.CSharpCodeProvider()
+		cp = System.CodeDom.Compiler.CompilerParameters()
+		cp.compilerOptions = backEndOptions
+		cp.referencedAssemblies.add('System.dll')
+		cp.generateExecutable = .options.getDefault('target', 'exe') in ['exe', 'winexe']
+		cp.outputAssembly = .fullExeFileName
+		if _verbosity >= 2
+			print 'Code Provider =', provider
+			print '    compilerOptions =', backEndOptions
+			print '    referencedAssemblies =', cp.referencedAssemblies
+			print '    generateExecutable =', cp.generateExecutable
+			print '    outputAssembly =', .fullExeFileName
+			print '    sharpFileNameList =', sharpFileNameList
+		cr = provider.compileAssemblyFromFile(cp, sharpFileNameList.toArray)
+		if false
+			trace cr.compiledAssembly
+			trace cr.evidence
+			trace cr.pathToAssembly
+			trace cr.errors
+			trace cr.output
+			trace cr.nativeCompilerReturnValue
+			trace cr.tempFiles
+		# On MS .NET 2.0, the CompilerResult.errors never include "(Location of symbol related to previous error)", while the CompilerResult.output contains everything
+		# On Novell Mono 1.9, the CompilerResult.output is empty, leaving CompilerResult.errors as the only means to get the C# compiler messages.
+		# Do the Mono .errors have "(Location of symbol related to previous error)"? I haven't checked.
+		if CobraCore.isRunningOnMono
+			for bem in cr.errors  # cr.errors also includes warnings. supposedly.
+				backEndMessage = bem to System.CodeDom.Compiler.CompilerError
+				if not SharpCompilationMessage.willSkipMessage(backEndMessage.errorText to !)
+					_addMessage(SharpCompilationMessage(backEndMessage, this))
+		else				
+			#for x in cr.output to dynamic
+			#	print 'output>', x
+			# [1:] below is to chop out the first line which is the C# compilation line
+			
+			# cr.output is empty if there was no error
+			# otherwise, the first element is the C# compilation line
+			if _verbosity >= 2 and cr.output.count > 0
+				print 'C# compilation line created by CSharpCodeProvider:'
+				print cr.output[0]
+			output = if(cr.output.count==0, '', cr.output[1:].join('\n').trim)
+			# trace output
+			_parseSharpCompilerOutput(output)
 
 	def _parseSharpCompilerOutput(output as String)
 		for line in output.split(c'\n')
