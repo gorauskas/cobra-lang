@@ -152,6 +152,10 @@ class Expr
 		TODO: Consider enhancing toCobraSource to make use of this!
 		"""
 
+	def isEquivalentTo(expr as Expr) as bool
+		# TODO: should compare reductions of expressions (or be used after a reduction phase)
+		return expr is this or (expr.typeOf == .typeOf and expr.serialNum == .serialNum)
+
 	def memberForName(name as String) as IMember?
 		require
 			.didBindImp
@@ -2409,6 +2413,12 @@ class AtomicLiteral
 		base.init(token)
 		_text = token.text
 
+	def isEquivalentTo(expr as Expr) as bool
+		r = base.isEquivalentTo(expr)
+		if not r
+			r = expr.typeOf == .typeOf and (expr to AtomicLiteral)._text == _text
+		return r
+
 	get isNumeric as bool
 		"""
 		Returns true if the literal is numeric such that + and - could apply to it.
@@ -2886,9 +2896,7 @@ class ArrayLit
 		return [r'@[', ']']
 
 
-class SetLit
-	is partial
-	inherits SequenceLit
+class SetLit inherits SequenceLit is partial
 	"""
 	Sets aren't exactly sequences although they appear that way in source code which itself is a sequence of characters.
 	Like lists, sets have one generic type param.
@@ -2911,7 +2919,21 @@ class SetLit
 	get brackets as List<of String> is override
 		return [r'{', '}']
 
-	
+	def _bindImp
+		base._bindImp
+		if not .hasError
+			exprs = .exprs
+			c = exprs.count
+			done = false
+			for i in c-1
+				for j in i+1 : c
+					if exprs[i].isEquivalentTo(exprs[j])
+						.compiler.warning(exprs[i], 'Duplicate member in set.')
+						done = true
+						break
+				if done, break
+
+
 class DictLit
 	is partial
 	inherits CompositeLiteral
