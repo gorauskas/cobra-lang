@@ -14,8 +14,7 @@ class ErrorMessages
 			return 'Expecting a statement instead of extra indentation. One indent level is 4 spaces or 1 tab with display width of 4.'
 
 
-class CobraParser
-	inherits Parser
+class CobraParser inherits Parser
 	"""
 	Notes:
 
@@ -2539,6 +2538,7 @@ class CobraParser
 	##
 
 	shared
+		
 		var _binaryOpPrec = {
 			# CANNOT USE 0 AS A VALUE IN THIS DICTIONARY
 			'DOT':				80,
@@ -2608,6 +2608,8 @@ class CobraParser
 			'DOUBLE_GT_EQUALS':		20,
 		}
 
+		get binaryOpPrec from var
+		
 		var _unaryOpPrec = {
 			'MINUS': _binaryOpPrec['MINUS']+1,
 			'PLUS':  _binaryOpPrec['PLUS']+1,
@@ -2817,7 +2819,11 @@ class CobraParser
 			try
 				return .typeExpr
 			catch pe as ParserException
-				if pe.message.contains('Unrecognized type')
+				if .allowKeywordAssignment and peekToken.isKeyword and .peek is not nil and .peek.which == 'ASSIGN'
+					assert .last is peekToken
+					word, op = .last, .grab
+					return AssignExpr(op, 'ASSIGN', IdentifierExpr(word), .expression)
+				else if pe.message.contains('Unrecognized type')
 					msg = 'Expecting an expression.'
 					if peekToken.isKeyword
 						msg += ' "[peekToken.text]" is a reserved keyword that is not expected here.'
@@ -2877,6 +2883,8 @@ class CobraParser
 			else
 				throw FallThroughException(token)				
 
+	get allowKeywordAssignment from var as bool
+	
 	def argument as Expr
 		"""
 		In support of .callExpr and others, for when it's legal to write `out x` and such.
@@ -2889,20 +2897,27 @@ class CobraParser
 				# TODO? on 'VARI': ...
 			if label <> ArgumentLabel.None
 				.grab
-		expr = .expression
+		_allowKeywordAssignment = true
+		try
+			expr = .expression
+		finally
+			_allowKeywordAssignment = false
 		expr.argumentLabel = label
 		return expr
 
-	def commaSepExprsPartial(terminators as IList<of String>, binOpBrk as String) as List<of Expr>
-		# As commaSepExprs but setup to break out of middle of binOpExpression on terminating token
-		assert _binaryOpPrec.containsKey(binOpBrk)
-		realPrec = _binaryOpPrec[binOpBrk]
-		_binaryOpPrec[binOpBrk] = -1  # reset precedence to exit expression parser when hit this op
-		try
-			exprs = .commaSepExprs(terminators)
-		finally
-			_binaryOpPrec[binOpBrk] = realPrec
-		return exprs
+	def commaSepExprsPartial(terminators as IList<of String>, binOpBreakWhich as String) as List<of Expr>
+		require
+			binOpBreakWhich in ['ASSIGN', 'IN']
+			.binaryOpPrec.containsKey(binOpBreakWhich)
+		body
+			# As commaSepExprs but setup to break out of middle of binOpExpression on terminating token
+			realPrec = _binaryOpPrec[binOpBreakWhich]
+			_binaryOpPrec[binOpBreakWhich] = -1  # reset precedence to exit expression parser when hit this op
+			try
+				exprs = .commaSepExprs(terminators)
+			finally
+				_binaryOpPrec[binOpBreakWhich] = realPrec
+			return exprs
 			
 	def commaSepExprs(terminator as String) as List<of Expr>
 		return .commaSepExprs([terminator], false, false)
