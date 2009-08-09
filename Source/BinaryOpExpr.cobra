@@ -730,16 +730,18 @@ class InExpr inherits BinaryOpExpr is partial
 
 	get containsExpr from var as Expr?
 
+	get needsNilCheck from var as bool
+	
 	def _bindImp
 		base._bindImp
 		_type = .compiler.boolType
 		if not .hasError
-			# TODO: need to handle the case where .contains method does not accept a nilable type,
-			# but the value could be nilable. Obviously in such a case, a nil value would result in
-			# 'false'. may require a refinement to the code generation, but the setup for it
-			# should probably be here
 			if .right.type.innerType is nil
 				.recordError('The right-hand expression for "in" is of type "[.right.type.name]" which contains nothing.')
+			else if .left.type.nonNil inherits CharType and .right.type is .compiler.stringType
+				# special case because there is no String.contains that takes a char
+				# by not setting _contains, the code gen will use CobraImp.In
+				pass
 			else if not _canContain(.right.type to !, .left.type to !)
 				.recordError('The left expression ([.left.toCobraSource]) cannot be "in" the right-hand expression because the left type is "[.left.type.name]" and the right-hand expression contains type "[.right.type.innerType.name]".')
 			else if not _right.type.isDynamic
@@ -763,6 +765,7 @@ class InExpr inherits BinaryOpExpr is partial
 							(_right.right to MemberExpr).name == 'keys' and _
 							_right.left.type inherits Box and _
 							_isIDictionary(_right.left.type to Box)
+							# then
 							contains = DotExpr(.token, 'DOT', _right.left, CallExpr(.token, 'containsKey', List<of Expr>([_left]), true, isImplicit=true))
 							contains.bindImp
 							_containsExpr = contains
@@ -781,6 +784,7 @@ class InExpr inherits BinaryOpExpr is partial
 		if a.isAssignableTo(b), return true
 		if a inherits NilableType
 			if a.theWrappedType.isAssignableTo(b)
+				_needsNilCheck = true
 				return true
 		return false
 

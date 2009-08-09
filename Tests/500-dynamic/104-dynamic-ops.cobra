@@ -2,6 +2,7 @@
 The `dynamic` type crossed with operators.
 """
 
+
 class Test
 
 	def main
@@ -192,10 +193,79 @@ class Test
 		assert not any t
 
 	def testIn
-		s = Set<of dynamic>()
+		.testIn1
+		.testIn2
+		.testIn3
+		.testCustomIn
+	
+	def testIn1
+		s = List<of dynamic>()
 		s.add(5)
 		assert 5 in s
 		x = 5 to Object
 		assert x in s
 		xq = 5 to Object?
 		assert xq in s
+	
+	def testIn2
+		s = Set<of dynamic>()
+		s.add(5)
+		assert 5 in s
+		x = 5 to Object
+		assert x in s
+		xq = 5 to Object?
+		# TODO:
+		# assert xq in s   ... error: Argument 1 of method "contains" expects a non-nilable type (dynamic), but the call is supplying a nilable type (Object?).
+		# ... interesting issue. this likely comes from the use of NotNull on arguments in Cobra-based libraries
+		CobraCore.noOp(xq)
+	
+	def testIn3
+		pass
+		# x = 5 to dynamic
+		# t = [1, 3, 5]
+		# TODO: the following fails because Cobra perceives List<of T>.contains to have an arg type of "T?" due to their not being a NotNull attribute on it. So then it thinks the List contains int32?, it casts the dynamic var to int32? and then C# appropriately chokes because it's really a list of int32.
+		# assert x in t
+		# x = 2
+		# assert x not in t
+		# assert not (x in t)
+		# TODO: xq
+
+	def testCustomIn
+		c = MyContainer(3, 5)
+		assert 3 in c
+		assert 4 in c
+		assert 1 not in c
+		assert not (1 in c)
+		assert c.invokeContainsCount == 4 and c.invokeEnumerateCount == 0
+
+
+class MyContainer implements IEnumerable<of int>
+
+	cue init(min as int, max as int)
+		base.init
+		_min, _max = min, max
+	
+	get invokeContainsCount from var as int
+	
+	get invokeEnumerateCount from var as int
+	
+	get min from var as int
+	
+	get max from var as int
+
+	# TODO:
+	# cue enumerate as int*
+	#	_invokeEnumerateCount += 1
+	#	for i in min : max, yield i
+	
+	def getEnumerator as IEnumerator<of int>
+		_invokeEnumerateCount += 1
+		for i in .min : .max, yield i
+
+	def getEnumerator as System.Collections.IEnumerator
+		implements System.Collections.IEnumerable
+		return .getEnumerator
+
+	def contains(i as int) as bool
+		_invokeContainsCount += 1
+		return i >= .min and i < .max

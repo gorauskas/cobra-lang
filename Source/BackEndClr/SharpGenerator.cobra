@@ -4427,22 +4427,80 @@ class DotExpr
 			_left.writeSharpBreakdownItems(sw)
 
 
-class InExpr
-	is partial
+class InExpr is partial
 
 	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
+		v = true
 		branch _op
 			on 'NOTIN', sw.write('!')
 			on 'IN', pass
 			else, throw FallThroughException(_op)
-		if _containsExpr
-			_containsExpr.writeSharpDef(sw, parens)
+		if .needsNilCheck
+			# Constraints:
+			# (1) Don't evaluate the left expression twice
+			# (2) Don't evaluate the right expression if the left is nil
+			# In general, don't cause side effects from extra evaluation.
+			if .left inherits IdentifierExpr and (.left to IdentifierExpr).definition inherits IVar
+				# If the left is a var, there is no danger in double evaluation causing side effects.
+				# sharp: (someVar==null ? false : <check>)
+				sw.write('(')
+				.left.writeSharpDef(sw, false)
+				sw.write('==null ? false : ')
+				# may have to cast int? to int, for example
+				if  .left.type inherits NilableType _
+					and not .left.type.nonNil.isReference _
+					and .containsExpr
+					# well this last condition doesn't work so well due to generic args like List.Contains(T item)
+					# and not (((.containsExpr to DotExpr).dotRight.memberDefinition to Method).params[0].type inherits NilableType)
+					
+					# then need cast
+					assert .left.type inherits NilableType
+					.right.writeSharpDef(sw, false)
+					sw.write('.Contains(([.left.type.nonNil.sharpRef])')
+					.left.writeSharpDef(sw)
+					sw.write(')')
+					if v, sw.write('/* A */')
+				else
+					.writeInCheck(sw, false, v)
+					if v, sw.write('/* B */')
+				sw.write(')')
+			else
+				# cobra: left in right
+				# sharp: CobraLangInternal.CobraImp.InWithNullCheck(<left>, delegate(__lh_value) { return <right>.Contains(__lh_value); })
+				# use:   static public bool InWithNullCheck<T>(T a, Predicate<T> predicate)
+
+				# cobra: left in right
+				# sharp: CobraLangInternal.CobraImp.In(left, delegate() { return right; })
+				sw.write('CobraLangInternal.CobraImp.InWithNullCheck(')
+				.left.writeSharpDef(sw, false)
+				sw.write(', delegate([.left.type.sharpRef] __lh_value_[.serialNum]) { return ')
+				if .containsExpr
+					# Do not write the .containsExpr here because it's argument to .contains in the
+					# full left expression. Instead, we want to pass the argument passed to the delegate.
+					.right.writeSharpDef(sw, false)
+					sw.write('.Contains(([.left.type.nonNil.sharpRef]) __lh_value_[.serialNum]);')
+					if v, sw.write('/* C */')
+				else
+					# No .containsExpr means we use CobraImp.In(a, b) for the delegate
+					sw.write('CobraLangInternal.CobraImp.In(__lh_value_[.serialNum], ')
+					.right.writeSharpDef(sw, false)
+					if v, sw.write('/* D */')
+				sw.write(' })')
+		else
+			.writeInCheck(sw, parens, v)
+			if v, sw.write('/* E */')
+
+	def writeInCheck(sw as CurlyWriter, parens as bool, v as bool)
+		if .containsExpr
+			.containsExpr.writeSharpDef(sw, parens)
+			if v, sw.write('/* F */')
 		else
 			sw.write('CobraLangInternal.CobraImp.In(')
-			_left.writeSharpDef(sw, false)
+			.left.writeSharpDef(sw, false)
 			sw.write(',')
-			_right.writeSharpDef(sw, false)
+			.right.writeSharpDef(sw, false)
 			sw.write(')')
+			if v, sw.write('/* G */')
 
 
 class InheritsExpr

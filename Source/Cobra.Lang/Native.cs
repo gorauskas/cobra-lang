@@ -293,12 +293,12 @@ static public class CobraImp {
 		return newList;
 	}
  
-	static public bool In(string a, string b) {
-		return b.Contains(a);
-	}
-
 	static public bool In(char a, string b) {
 		return b.IndexOf(a)!=-1;
+	}
+
+	static public bool In(char? a, string b) {
+		return a.HasValue && b.IndexOf(a.Value)!=-1;
 	}
 
 	static public bool In(object a, IList b) {
@@ -323,6 +323,11 @@ static public class CobraImp {
 				return true;
 		}
 		return false;
+	}
+
+	public static bool InWithNullCheck<T>(T a, Predicate<T> predicate) {
+		if (a == null) return false;
+		return predicate(a);
 	}
 
 	static private bool _noNestedIn = false;
