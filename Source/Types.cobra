@@ -1321,9 +1321,7 @@ class IntType
 			return base.greatestCommonDenominatorWith(type)
 
 
-class NilableType
-	is partial
-	inherits WrappedType
+class NilableType inherits WrappedType is partial
 
 	cue init(t as IType?)
 		base.init(t)
@@ -1390,6 +1388,9 @@ class NilableType
 
 	def suggestionsForBadMemberName(name as String) as List<of String> is override
 		return _wrappedType.suggestionsForBadMemberName(name)
+
+	get suffix as String is override
+		return '?'
 
 
 class NilType
@@ -1480,9 +1481,7 @@ class PassThroughType
 		return true
 
 
-class StreamType
-	is partial
-	inherits WrappedType
+class StreamType inherits WrappedType is partial
 	"""
 	- Streams are portable between backends, whereas .NET's IEnumerable<of> and JVM's Iterable<of> are not.
 	- Streams are two-way compatible with IEnumerable/Iterable:
@@ -1515,6 +1514,9 @@ class StreamType
 
 	get innerType as IType? is override
 		return .theWrappedType
+
+	get suffix as String is override
+		return '*'
 
 	def isAssignableTo(type as IType) as bool is override
 		return base.isAssignableTo(type)
@@ -1577,9 +1579,7 @@ class VoidType
 ## Wrapped Types
 ##
 
-class WrappedType
-	is abstract, partial
-	inherits CobraType
+class WrappedType inherits CobraType is abstract, partial
 
 	var _wrappedType as IType
 	var _hashCode as int?
@@ -1624,16 +1624,16 @@ class WrappedType
 	get innerType as IType? is override
 		return _wrappedType.innerType  # TODO: 2008-11-22, I think this should just be _wrappedType
 
+	get suffix as String is abstract
+	
 	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType is override
 		thisType = .getType
 		return thisType(_wrappedType.secondaryConstructedTypeFor(box, gpToType))
 
 
-class ArrayType
-	is partial
-	inherits WrappedType
+class ArrayType inherits WrappedType is partial
 	"""
-	Represents a .NET array.
+	Represents an array.
 	Only single dimension arrays have been tested and are officially supported. These are common in
 	the BCL as return types and sometimes as parameters. Multi-dim and jagged arrays are not popular.
 	Also, most projects can get by just fine with nested List<of>s.
@@ -1668,6 +1668,9 @@ class ArrayType
 
 	get name as String is override
 		return _wrappedType.name + r'[]'
+
+	get suffix as String is override
+		return r'[]'
 
 	def isAssignableTo(type as IType) as bool is override
 		if base.isAssignableTo(type)
@@ -1872,15 +1875,11 @@ class TypeUtil
 				sb = StringBuilder()
 				for type in typeArgs
 					# note: wrapped types like NilableType are not kept unique by the compiler, so we cannot use their serial number down below
-					suffix = ''
 					if type inherits WrappedType
-						if type inherits ArrayType
-							suffix = r'[]'
-						else if type inherits NilableType
-							suffix = '?'
-						else
-							assert false, type
+						suffix = type.suffix
 						type = type.theWrappedType
+					else
+						suffix = ''
 					if sb.length, sb.append(',')
 					sb.append('[type.serialNum]-[type.name][suffix]')  # the serial num is necessary. the name is just a convenience when debugging
 				return sb.toString
