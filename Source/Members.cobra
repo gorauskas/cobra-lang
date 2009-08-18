@@ -1435,6 +1435,104 @@ class MemberOverload
 		for member in _members
 			member.unNilReturnType
 
+	def computeBestOverload(args as List<of Expr>, genericArgTypes as List<of IType>?, strictBindChecking as bool) as BoxMember
+		# References:
+		# http://blogs.msdn.com/ericlippert/archive/2007/11/05/c-3-0-return-type-inference-does-not-work-on-member-groups.aspx
+
+		# I cooked up the algorithm below as a quick way to fix some bugs caused by the previous 
+		# implementation of um, doing nothing.
+		# But this likely needs to be rewritten.
+		candidates = []
+		# handle generic arguments to the method		
+		if genericArgTypes and genericArgTypes.count
+			members = List<of BoxMember>()
+			for member as BoxMember? in .members
+				if member inherits Method
+					if member.containsGenericParameters
+						if member.genericParams.count == genericArgTypes.count
+							member = member.constructedMethodWith(genericArgTypes to !)
+						else
+							member = nil
+				if member, members.add(member)
+		else
+			members = .members
+
+		for member in members
+			score = -1000
+			if member.params.count == args.count
+				score = 0
+				if member inherits Method and (member to Method).genericParams.count > 0, score += 1
+				for i, param in member.params.numbered
+					arg = args[i]
+					if strictBindChecking and not arg.didBindImp
+						trace arg
+						trace arg.hasError
+					if strictBindChecking and (arg.type == param.type or arg.type == param.type.nonNil)
+						score += 20
+					else if strictBindChecking and arg.canBeAssignedTo(param.type)
+						score += 10
+					else if strictBindChecking and arg.type.nonNil.isAssignableTo(param.type) 
+						# Cobra's code and data flow analysis sometimes leaves us with a nilable type that's not actually nil anymore
+						# due to an assignment, possibly wrapped in an if statement. Eventually this will be corrected, but for now
+						# compensate here.
+						score += 1
+					else if not strictBindChecking
+						if arg.type is not nil
+							if arg.type == param.type
+								score += 20
+							else if arg.type.isDynamic
+								score += 10
+						else
+							score -= 100
+					else
+						score -= 100
+			# print 'candidate:', score, member.name, member.serialNum, Utils.join(', ', (for param in member.params get param.type.name))
+			candidates.add([score, member])
+			
+		maxScore = -10_000
+		winner = nil to BoxMember?
+		for pair in candidates
+			if false, print pair[0], (pair[1] to BoxMember).idString
+			if pair[0] to int > maxScore
+				maxScore = pair[0] to int
+				winner = pair[1] to BoxMember
+
+		if false
+			# detect overload invocation ambiguity
+			# TODO: not ready for this yet
+			count = 0
+			for pair in candidates
+				if pair[0] to int == maxScore
+					count += 1
+			if count > 1
+				# TODO: do this for indexing too
+				msg = 'The call is ambiguous between these methods: '
+				sep = ''
+				for pair in candidates
+					if pair[0] to int == maxScore
+						msg += sep + (pair[1] to AbstractMethod).cobraSourceSignature(false)
+						sep = ', '
+				.throwError(msg)
+
+		if false
+			print
+			trace .token.fileName
+			trace maxScore, _name
+			trace .token.toTechString
+			trace winner
+			print 'args:'
+			for arg in args
+				print '   [arg]'
+			print 'params:'
+			for param in winner.params
+				print '   [param]'
+			print 'overloads:'
+			for member in .members
+				print '   [member]'
+		# print 'winner:', score, winner
+		assert winner
+		return winner to !
+	
 	def _bindInt is override
 		base._bindInt
 		# sanity check that members all have the right name

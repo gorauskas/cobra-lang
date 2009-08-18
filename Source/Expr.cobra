@@ -590,7 +590,7 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 							# http://www.google.com/search?hl=en&q=C%23+overloaded+method+resolution
 							# TODO: handle type inference for generic members. See the C# spec for details.
 						
-							winner = _computeBestOverload(definition, args)
+							winner = definition.computeBestOverload(.args, .genericArgTypes, true)
 							sharp'definition = winner'
 							type = winner.resultType
 						else
@@ -694,97 +694,6 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 				ne.prefixMessage('For "[_name]" arg [num]: ')
 				.compiler.recordError(ne)
 			num += 1
-
-	def _computeBestOverload(definition as MemberOverload, args as List<of Expr>) as BoxMember
-		# References:
-		# http://blogs.msdn.com/ericlippert/archive/2007/11/05/c-3-0-return-type-inference-does-not-work-on-member-groups.aspx
-
-		# I cooked up the algorithm below as a quick way to fix some bugs caused by the previous 
-		# implementation of um, doing nothing.
-		# But this likely needs to be rewritten.
-		candidates = []
-		# handle generic arguments to the method
-		genericArgTypes = .genericArgTypes
-		if genericArgTypes and genericArgTypes.count
-			members = List<of BoxMember>()
-			for member as BoxMember? in definition.members
-				if member inherits Method
-					if member.containsGenericParameters
-						if member.genericParams.count == genericArgTypes.count
-							member = member.constructedMethodWith(genericArgTypes to !)
-						else
-							member = nil
-				if member, members.add(member)
-		else
-			members = definition.members
-
-		for member in members
-			score = -1000
-			if member.params.count == args.count
-				score = 0
-				if member inherits Method and (member to Method).genericParams.count > 0, score += 1
-				for i, param in member.params.numbered
-					arg = args[i]
-					if not arg.didBindImp
-						trace arg
-						trace arg.hasError
-					if arg.type == param.type or arg.type == param.type.nonNil
-						score += 20
-					else if arg.canBeAssignedTo(param.type)
-						score += 10
-					else if arg.type.nonNil.isAssignableTo(param.type) 
-						# Cobra's code and data flow analysis sometimes leaves us with a nilable type that's not actually nil anymore
-						# due to an assignment, possibly wrapped in an if statement. Eventually this will be corrected, but for now
-						# compensate here.
-						score += 1
-					else
-						score -= 100
-			# print 'candidate:', score, member.name, member.serialNum, Utils.join(', ', (for param in member.params get param.type.name))
-			candidates.add([score, member])
-			
-		maxScore = -10_000
-		winner = nil to BoxMember?
-		for pair in candidates
-			if false, print pair[0], (pair[1] to BoxMember).idString
-			if pair[0] to int > maxScore
-				maxScore = pair[0] to int
-				winner = pair[1] to BoxMember
-
-		if false
-			# detect overload invocation ambiguity
-			# TODO: not ready for this yet
-			count = 0
-			for pair in candidates
-				if pair[0] to int == maxScore
-					count += 1
-			if count > 1
-				# TODO: do this for indexing too
-				msg = 'The call is ambiguous between these methods: '
-				sep = ''
-				for pair in candidates
-					if pair[0] to int == maxScore
-						msg += sep + (pair[1] to AbstractMethod).cobraSourceSignature(false)
-						sep = ', '
-				.throwError(msg)
-
-		if false
-			print
-			trace .token.fileName
-			trace maxScore, _name
-			trace .token.toTechString
-			trace winner
-			print 'args:'
-			for arg in args
-				print '   [arg]'
-			print 'params:'
-			for param in winner.params
-				print '   [param]'
-			print 'overloads:'
-			for member in definition.members
-				print '   [member]'
-		# print 'winner:', score, winner
-		assert winner
-		return winner to !
 
 	def _didVariArgs(definition as BoxMember) as bool
 		hasVari = false
@@ -1762,6 +1671,7 @@ class PostCallExpr
 				_type = .compiler.dynamicType
 			else if exprType inherits Box
 				_type = expr.receiverType  # for example, an IdentifierExpr of 'SomeClass' has a .receiverType of that class
+				_handleClassInitializer
 			else if exprType.isDynamic
 				_type = .compiler.nilableDynamicType
 			else if expr.definition inherits NameSpace
@@ -1845,6 +1755,31 @@ class PostCallExpr
 			sep = ', '
 		sb.append(')')
 		return sb.toString
+
+	def _handleClassInitializer
+		initCall as Initializer?
+		if .args.count > 0
+			theClass = .compiler.symbolForName(.name, true, false, true) to ClassOrStruct?
+			if theClass is not nil
+				possibleCalls = theClass.memberForName("cue.init")
+				if possibleCalls is nil
+					pass # TODO: determine if this is an error or if support for base class init functions need to be added
+				else if possibleCalls inherits MemberOverload
+					initCall = possibleCalls.computeBestOverload(.args, nil, false) to Initializer?
+				else if possibleCalls inherits Initializer
+					initCall = possibleCalls
+				#else
+					# TODO: determine if this is an error
+		#print initCall
+		if initCall is not nil and .args.count == initCall.params.count
+			i = 0
+			for arg in .args
+				if arg.type is not nil and arg.type.isDynamic
+					# set context type so that backend can type cast it correctly
+					arg.contextType = initCall.params[i].type
+				i += 1
+		#else
+			# TODO: warning or error?
 
 
 class RefExpr
