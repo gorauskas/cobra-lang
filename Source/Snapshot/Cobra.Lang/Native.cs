@@ -293,19 +293,15 @@ static public class CobraImp {
 		return newList;
 	}
  
-	static public bool In(string a, string b) {
-		return b.Contains(a);
-	}
-
 	static public bool In(char a, string b) {
 		return b.IndexOf(a)!=-1;
 	}
 
-	static public bool In(object a, IList b) {
-		return b.Contains(a);
+	static public bool In(char? a, string b) {
+		return a.HasValue && b.IndexOf(a.Value)!=-1;
 	}
 
-	static public bool In(object a, IDictionary b) {
+	static public bool In(object a, IList b) {
 		return b.Contains(a);
 	}
 
@@ -317,20 +313,21 @@ static public class CobraImp {
 		return false;
 	}
 
-	static public bool In<innerType>(innerType a, IList<innerType> b) {
+	static public bool In<T>(T a, IList<T> b) {
 		return b.Contains(a);
 	}
 
-	static public bool In<innerType>(innerType a, IEnumerable<innerType> b) {
-		foreach (innerType item in b) {
+	static public bool In<T>(T a, IEnumerable<T> b) {
+		foreach (T item in b) {
 			if (Equals(item, a))
 				return true;
 		}
 		return false;
 	}
 
-	static public bool In<keyType,valueType>(keyType a, IDictionary<keyType,valueType> b) {
-		return b.ContainsKey(a);
+	public static bool InWithNullCheck<T>(T a, Predicate<T> predicate) {
+		if (a == null) return false;
+		return predicate(a);
 	}
 
 	static private bool _noNestedIn = false;

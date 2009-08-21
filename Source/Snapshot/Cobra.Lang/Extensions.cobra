@@ -15,31 +15,24 @@ namespace Cobra.Lang
 
 	extend String
 	
-		def split(chars as List<of char>) as List<of String>
-			test
-				s = 'a,b:c:d,e,f'
-				assert s.split([c',', c':']) == ['a', 'b', 'c', 'd', 'e', 'f']
-			body
-				return List<of String>(.split(chars.toArray) to !)
-	
-		def split(chars as IList<of char>) as List<of String>
-			charsArray = char[](chars.count)
-			for i in chars.count, charsArray[i] = chars[i]
-			return List<of String>(.split(charsArray))
-
-		def md5HashInHex as String
+		def capitalized as String
+			"""
+			Returns the string with the first character capitalized.
+			Returns a blank string for a blank string.
+			"""
 			ensure
-				result.length == 32
+				result.length == .length
+				result.length implies result[0] == result[0].toUpper
 			test
-				assert 'Black holes and revelations.'.md5HashInHex == '95b141d670c19f2f20a820751897b9c6'
+				assert 'chuck'.capitalized == 'Chuck'
+				assert 'Chuck'.capitalized == 'Chuck'
+				assert ''.capitalized == ''
+				assert ' foo'.capitalized == ' foo'
+				assert 'f'.capitalized == 'F'
+				assert '1aoeu'.capitalized == '1aoeu'
 			body
-				md5 = System.Security.Cryptography.MD5CryptoServiceProvider()
-				data = System.Text.Encoding.ascii.getBytes(this)  # why ASCII? why not utf8 or something?
-				data = md5.computeHash(data)
-				ret = ''
-				for i in data.length
-					ret += data[i].toString('x2')
-				return ret
+				if .length == 0, return this
+				return this[:1].toUpper + this[1:]
 
 		def count(c as char) as int
 			test
@@ -63,24 +56,105 @@ namespace Cobra.Lang
 			body
 				return .length and this[0].isUpper
 
-		def capitalized as String
-			"""
-			Returns the string with the first character capitalized.
-			Returns a blank string for a blank string.
-			"""
+		def md5HashInHex as String
 			ensure
-				result.length == .length
-				result.length implies result[0] == result[0].toUpper
+				result.length == 32
 			test
-				assert 'chuck'.capitalized == 'Chuck'
-				assert 'Chuck'.capitalized == 'Chuck'
-				assert ''.capitalized == ''
-				assert ' foo'.capitalized == ' foo'
-				assert 'f'.capitalized == 'F'
-				assert '1aoeu'.capitalized == '1aoeu'
+				assert 'Black holes and revelations.'.md5HashInHex == '95b141d670c19f2f20a820751897b9c6'
 			body
-				if .length == 0, return this
-				return this[:1].toUpper + this[1:]
+				md5 = System.Security.Cryptography.MD5CryptoServiceProvider()
+				data = System.Text.Encoding.ascii.getBytes(this)  # why ASCII? why not utf8 or something?
+				data = md5.computeHash(data)
+				ret = ''
+				for i in data.length
+					ret += data[i].toString('x2')
+				return ret
+
+		def split(chars as List<of char>) as List<of String>
+			test
+				s = 'a,b:c:d,e,f'
+				assert s.split([c',', c':']) == ['a', 'b', 'c', 'd', 'e', 'f']
+			body
+				return List<of String>(.split(chars.toArray) to !)
+	
+		def split(chars as IList<of char>) as List<of String>
+			charsArray = char[](chars.count)
+			for i in chars.count, charsArray[i] = chars[i]
+			return List<of String>(.split(charsArray))
+
+		def splitLines as List<of String>
+			return .splitLines(false)
+		
+		def splitLines(keepEnds as bool) as List<of String>
+			"""
+			Returns the string split into lines, recognizing the various line endings (posix, dos/http, old mac) even if mixed within the same string.
+			"""
+			test
+				cases = [
+					['', false, []],
+					['   ', false, ['   ']],
+					['x', false, ['x']],
+					['x y', false, ['x y']],
+
+					['a\n', false, ['a']],
+					['a\n', true, ['a\n']],
+					['a\nb', false, ['a', 'b']],
+					['a\nb', true, ['a\n', 'b']],
+					['a\nb\n', false, ['a', 'b']],
+					['a\nb\n', true, ['a\n', 'b\n']],
+
+					['a\r', false, ['a']],
+					['a\r', true, ['a\r']],
+					['a\rb', false, ['a', 'b']],
+					['a\rb', true, ['a\r', 'b']],
+					['a\rb\r', false, ['a', 'b']],
+					['a\rb\r', true, ['a\r', 'b\r']],
+
+					['a\r\n', false, ['a']],
+					['a\r\n', true, ['a\r\n']],
+					['a\r\nb', false, ['a', 'b']],
+					['a\r\nb', true, ['a\r\n', 'b']],
+					['a\r\nb\r\n', false, ['a', 'b']],
+					['a\r\nb\r\n', true, ['a\r\n', 'b\r\n']],
+				
+					['a\r\n\r\n', false, ['a', '']],
+					['a\r\n\r\n', true, ['a\r\n', '\r\n']],
+					['a\r\n\r\n\r\n', false, ['a', '', '']],
+					['a\r\n\r\n\r\n', true, ['a\r\n', '\r\n', '\r\n']],
+				
+					['a\rb\nc\r\nd', false, ['a', 'b', 'c', 'd']],
+					['a\rb\nc\r\nd', true, ['a\r', 'b\n', 'c\r\n', 'd']],
+				]
+				for a, b, c in cases
+					input = a to String
+					keepEnds = b to bool
+					expected = c
+					# trace input, keepEnds, expected
+					actual = input.splitLines(keepEnds)
+					assert actual == expected
+			body
+				# posix = \n
+				# old mac = \r
+				# dos, http = \r\n
+				lines = List<of String>()
+				len = .length
+				i = j = 0
+				while i < len
+					while i < len
+						c = this[i]
+						if c == c'\n' or c == c'\r', break
+						i += 1
+					eoli = i
+					if i < len
+						if this[i] == '\r' and i+1 < len and this[i+1] == '\n'
+							i += 2
+						else
+							i += 1
+						if keepEnds, eoli = i
+					lines.add(this[j:eoli])
+					j = i
+				if j < len, lines.add(this[j:])
+				return lines
 
 	
 	class DecimalTools
