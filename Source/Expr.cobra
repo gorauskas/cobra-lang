@@ -466,9 +466,12 @@ class AsExpr
 
 class CallOrMemberExpr inherits Expr is abstract, partial
 
-	cue init(token as IToken)
+	cue init(token as IToken, name as String)
 		base.init(token)
+		_name = name
 
+	get name from var as String
+	
 	def _mangleName(name as String) as String
 		if .compiler.boxMemberStack.count > 0 and .binarySuperNode.left inherits ThisOrBaseLit
 			return .compiler.curBoxMember.mangleName(name)
@@ -491,7 +494,6 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 	A valid call expr may have a nil .definition because the receiver is dynamic.
 	"""
 
-	var _name as String
 	var _genericArgProxies as List<of ITypeProxy>?
 	var _genericArgTypes as List<of IType>?
 	var _args as List<of Expr>
@@ -502,8 +504,7 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 		.init(token, name, nil, args, hasParens as bool)
 
 	cue init(token as IToken, name as String, genericArgProxies as List<of ITypeProxy>?, args as List<of Expr>, hasParens as bool)
-		base.init(token)
-		_name = name
+		base.init(token, name)
 		_genericArgProxies = genericArgProxies
 		_args = args
 		_hasParens = hasParens
@@ -535,8 +536,6 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 
 	get isCalling as bool is override
 		return true
-
-	get name from var
 
 	get args from var
 		has Subnodes
@@ -622,16 +621,23 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 
 	## _bindImp support
 
+	def _checkNoArgs(definition as BoxMember, args as List<of Expr>)
+		if .name == 'toString'
+			# HACK
+			# this enables someFloat.toString('0.0')
+			# can remove when primitives know their CLR types and look up their methods
+			pass
+		else if args.count
+			.throwError('The method "[definition.name]" is expecting 0 arguments, but [args.count] are being supplied in this call.')
+	
 	def _setGenericArgTypes
 		_genericArgTypes = List<of IType>()
-		num = 1
-		for typeProxy in _genericArgProxies
+		for num, typeProxy in _genericArgProxies.numbered
 			try
 				_genericArgTypes.add(typeProxy.realType)
 			catch ne as NodeException
-				ne.prefixMessage('For "[_name]" type arg [num]: ')
+				ne.prefixMessage('For "[_name]" type arg [num+1]: ')
 				.compiler.recordError(ne)
-			num += 1
 		# TODO: Check types are compatible with call
 
 	def _transformToEnumDecl(dotNode as DotExpr, enumDefi as EnumDecl)
@@ -715,15 +721,6 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 			else
 				.throwError('Cannot pass type arguments to "[definition.name]" because it is a [definition.getType.name].') # @@ _definition.englishName; also might need this error in other locations
 		return definition
-					
-	def _checkNoArgs(definition as BoxMember, args as List<of Expr>)
-		if .name == 'toString'
-			# HACK
-			# this enables someFloat.toString('0.0')
-			# can remove when primitives know their CLR types and look up their methods
-			pass
-		else if args.count
-			.throwError('The method "[definition.name]" is expecting 0 arguments, but [args.count] are being supplied in this call.')
 	
 	def _checkParamsCount(definition as BoxMember, args as List<of Expr>, params as List<of Param>) as bool
 		if args.count <> params.count
@@ -1339,7 +1336,6 @@ class MemberExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 	Note that DotExpr will do some transformations such as Foo.Bar to a TypeExpr if Bar is a type.
 	"""
 
-	var _name as String
 	var _definition as IMember?
 	var _isReference as bool
 
@@ -1347,8 +1343,7 @@ class MemberExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 		.init(token, token.text)
 
 	cue init(token as IToken, name as String)
-		base.init(token)
-		_name = name
+		base.init(token, name)
 
 	def addMinFields is override
 		base.addMinFields
@@ -1372,8 +1367,6 @@ class MemberExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 	get isCalling as bool is override
 		assert _definition
 		return _definition.isMethod
-
-	get name from var
 
 	def _bindImp is override
 		base._bindImp
@@ -1422,30 +1415,36 @@ class MemberExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 			.binarySuperNode.receiverType = receiverType
 			
 			if _definition inherits BoxMember
-				_bindImpBoxMember(_definition, left)  # resolve overloads
+				_bindImpBoxMember(_definition, left)  # resolve overloads and check visibility
 			else
 				# TODO: type access like enum, class, delegate
 				pass
 		assert _type
 
 	def _bindImpBoxMember(defn as BoxMember, left as Expr)
-		# resolve overloads
-		if defn inherits MemberOverload
-			for member in defn.members
-				if member inherits AbstractMethod
-					if member.params.count == 0
-						_definition = member
-						didResolveOverload = true
-						break
-			if not didResolveOverload
-				for member in defn.members 
+		if .compiler.refExprLevel < 1
+			# resolve overloads
+			if defn inherits MemberOverload
+				for member in defn.members
 					if member inherits AbstractMethod
-						if member.params.count == 1 and member.params[0].type inherits VariType
+						if member.params.count == 0
 							_definition = member
 							didResolveOverload = true
 							break
-			if not didResolveOverload
-				.throwError('Could not find an overload for "[.name]" with zero arguments.')
+				if not didResolveOverload
+					for member in defn.members 
+						if member inherits AbstractMethod
+							if member.params.count == 1 and member.params[0].type inherits VariType
+								_definition = member
+								didResolveOverload = true
+								break
+				if not didResolveOverload
+					.throwError('Could not find an overload for "[.name]" with zero arguments.')
+			else if defn inherits AbstractMethod
+				params = defn.params
+				if params.count <> 0 and not (params.count == 1 and params[0].type inherits VariType)
+					.throwError('The method "[defn.name]" is expecting [params.count] argument[Utils.plural(params)], but no arguments are being supplied in this call.')
+			
 		# check visibility: public, protected, private, internal
 		if defn.isPublic
 			pass
@@ -1782,26 +1781,23 @@ class PostCallExpr
 			# TODO: warning or error?
 
 
-class RefExpr
-	is partial
-	inherits Expr
+class RefExpr inherits Expr is partial
 	"""
 	A `ref` expression is used to refer to a method without invoking it:
 		ref obj.foo
 		ref _foo
 	"""
 
-	var _expr as Expr
-	
 	cue init(token as IToken, expr as Expr)
 		base.init(token)
+		# TODO: can the types of expressions be limited?
 		_expr = expr
 
 	def addSubFields
 		base.addSubFields
 		.addField('expr', _expr)
 
-	get expr from var
+	get expr from var as Expr
 
 	get hasError as bool is override
 		if base.hasError, return true
@@ -1814,16 +1810,18 @@ class RefExpr
 
 	def _bindImp is override
 		base._bindImp
+		.compiler.refExprLevel += 1
 		try
 			_expr.bindImp
 		catch ne as NodeException
+			# TODO: is this really needed? if so, should this be handled universally rather than just at this site?
 			if ne inherits NodeMultiException
 				if ne.exceptions.count == 1
 					ne = ne.exceptions[0]
-			if 'not find an overload' in ne.message
-				pass  # Tests\220-delegates-etc\120-events\110-listen-ref-overload.cobra
-			else
-				throw
+					throw ne
+			throw
+		finally
+			.compiler.refExprLevel -= 1
 		if _expr inherits DotExpr
 			right = _expr.right
 			if right inherits MemberExpr
