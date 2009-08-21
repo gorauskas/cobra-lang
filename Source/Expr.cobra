@@ -738,13 +738,14 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 				break
 			if arg inherits AssignExpr  # assignments in arguments have special treatment
 				break
-			assert arg.didBindImp, arg
-			assert param.didBindInt, param
+			assert arg.didBindImp
+			assert param.didBindInt
 			if arg.canBeAssignedTo(param.type)
 				arg.contextType = param.type
 			else if param.type inherits GenericParam
 				# ..\Tests\240-generics\400-generic-methods\100-generic-method.cobra
 				# HACK for generic method args which need proper type checking like anything else
+				# Cobra needs to add type inference on generic method args instead of dropping this down to C#
 				pass
 			else
 				if false
@@ -2776,14 +2777,9 @@ class SequenceLit
 				type = .compiler.defaultType
 			else
 				type = exprs[0].type to !
-				i = 1
-				while i < exprs.count
+				for i in 1 : exprs.count
 					exprs[i].bindImp
 					type = exprs[i].type.greatestCommonDenominatorWith(type)
-					i += 1
-				# TODO: get rid of this hack:
-				if type.getType.name=='CobraType'
-					type = .compiler.objectType
 			if type inherits NilType, type = .compiler.defaultType
 			_type = _makeTypeWith(type)
 
