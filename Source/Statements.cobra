@@ -458,14 +458,7 @@ class OldForNumericStmt
 		return _start.type.greatestCommonDenominatorWith(_stop.type to !)
 
 
-class ForNumericStmt
-	is partial
-	inherits ForStmt
-
-	var _start as Expr
-	var _stop as Expr
-	var _dir as int
-	var _step as Expr?
+class ForNumericStmt inherits ForStmt is partial
 
 	cue init(token as IToken, varr as NameExpr, start as Expr, stopp as Expr, dir as int, stepp as Expr?, block as BlockStmt)
 		require
@@ -485,22 +478,32 @@ class ForNumericStmt
 		.addField('step', _step)
 		.addField('block', _block)
 
-	get start from var
+	get start from var as Expr
 	
-	get stop from var
+	get stop from var as Expr
 	
-	get step from var
+	get step from var as Expr?
 	
-	get dir from var
+	get dir from var as int
 	
 	def _bindImp
 		_start.bindImp
 		_stop.bindImp
-		if _step
-			_step.bindImp
+		if _step, _step.bindImp
 		_var = .bindVar(_varExpr)
 		base._bindImp
 		_block.bindImp
+		if not _start.hasError and not _stop.hasError
+			startType, stopType = _start.type to !, _stop.type to !
+			if _checkCompatibleTypes(startType, stopType)
+				if _step and not _step.hasError
+					stepType = _step.type to !
+					if not _checkCompatibleTypes(startType, stepType)
+						.throwError('For loop start condition type "[startType.name]" is not compatible with step condition type "[stepType.name]".[_divHelper(_start)][_divHelper(_step)]')
+					else if not _checkCompatibleTypes(stopType, stepType)
+						.throwError('For loop stop condition type "[stopType.name]" is not compatible with step condition type "[stepType.name]".[_divHelper(_stop)][_divHelper(_step)]')
+			else
+				.throwError('For loop start condition type "[startType.name]" is not compatible with stop condition type "[stopType.name]".[_divHelper(_start)][_divHelper(_stop)]')
 		# optimization:
 		if _dir == 0  # the value for: for x in start : stop : step
 			if _step is nil
@@ -512,6 +515,20 @@ class ForNumericStmt
 
 	def inferredType as IType? is override
 		return _start.type.greatestCommonDenominatorWith(_stop.type to !)
+	
+	def _checkCompatibleTypes(type1 as IType, type2 as IType) as bool
+		if type1 == type2
+			return true
+		if type1.isDynamic or type2.isDynamic
+			return true
+		if type1.isDescendantOf(.compiler.anyIntType) and type2.isDescendantOf(.compiler.anyIntType)
+			return true
+		return false
+
+	def _divHelper(expr as Expr?) as String
+		if expr inherits BinaryMathExpr and expr.token.which == 'SLASH'
+			return ' Note that the "/" operator produces a decimal or floating point number. If you want integer division, use the "//" operator.'
+		return ''
 
 
 class ForEnumerableStmt
