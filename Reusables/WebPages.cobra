@@ -19,12 +19,14 @@ TODO
 [ ] Incorporate extras.web.PageExtrasMixIn
 """
 
+@ref 'System.Web'
+
 use System.Web
 
 
 interface IToHtml
 	"""
-	Exposes a `toHtml` property which returns a string containing HTML source
+	Exposes a .toHtml property which returns a string containing HTML source
 	body representing the object that received the message.
 
 	Implementations should incorporate the HTML of their "subobjects" as
@@ -41,7 +43,7 @@ interface IToHtml
 
 interface IWriteHtml
 	"""
-	Exposes a `writeHtml` method whose duty is to write HTML source that represents the object, to a TextWriter.
+	Exposes a .writeHtml method whose duty is to write HTML source that represents the object, to a TextWriter.
 
 	Implementations should incorporate the HTML of their "subobjects" as
 	appropriate.
@@ -58,7 +60,8 @@ interface IWriteHtml
 class HtmlUtils
 
 	shared
-		def toHtml(obj as Object?) as String
+	
+		def toHtml(obj) as String
 			"""
 			Returns the HTML source for the given object.
 			Recognizes objects that implement IToHtml and IWriteHtml.
@@ -74,7 +77,7 @@ class HtmlUtils
 			else
 				return obj.toString
 
-		def writeHtml(dest as TextWriter, obj as Object?)
+		def writeHtml(dest as TextWriter, obj)
 			"""
 			Writes the HTML source for the given object.
 			Recognizes objects that implement IToHtml and IWriteHtml.
@@ -89,19 +92,15 @@ class HtmlUtils
 				dest.write(obj.toString)
 
 
-class HtmlWriter
-	inherits WebObject
-	implements IWriteHtml
+class HtmlWriter inherits BaseObject implements IWriteHtml
 	"""
 	HtmlWriter provides a concrete implementation of IWriteHtml with some
 	conveniences that you can inherit and make use of.
 
-	Subclasses should override `writeHtml`.
+	Subclasses should override .writeHtml.
 	"""
 
-	var _dest as TextWriter?
-
-	get dest from _dest
+	get dest from var as TextWriter?
 
 	def writeHtml(dest as TextWriter)
 		_dest = dest
@@ -131,15 +130,15 @@ class HtmlWriter
 		return HttpUtility.urlDecode(s) to !
 
 
-class WebObject
+class BaseObject
 	"""
 	A base class common to all the classes in this framework.
 	May come in handy down the road.
 	"""
 	pass
 
-class Transaction
-	inherits WebObject
+
+class Transaction inherits BaseObject
 	"""
 	This class would hold the request, response, session, application and
 	servlet references.
@@ -147,8 +146,7 @@ class Transaction
 	pass
 
 
-class EndResponse
-	inherits Exception
+class EndResponse inherits Exception
 	"""
 	Used internally by Servlet. When subclassing servlets, invoke .endResponse
 	to do so.
@@ -156,7 +154,7 @@ class EndResponse
 	pass
 
 
-class Servlet inherits WebObject
+class Servlet inherits BaseObject
 
 	test
 		s = Servlet()
@@ -226,14 +224,12 @@ class Servlet inherits WebObject
 		for item in stuff
 			_dest.write(.itemToString(item))
 
-	def itemToString(item as Object?) as String
+	def itemToString(item) as String
 		"""
-		Used by `write` to convert objects to strings.
+		Used by .write to convert objects to strings.
 		Returns 'nil' for `nil`.
 		"""
-		if item is nil
-			return 'nil'
-		return item.toString
+		return if(item is nil, 'nil', item.toString)
 
 	def writeLine(s as String)
 		_dest.writeLine(s)
@@ -246,19 +242,18 @@ class Servlet inherits WebObject
 
 	def endResponse
 		"""
-		When this method is called during `setUp` or `respond`, servlet
+		When this method is called during .setUp or .respond, servlet
 		processing will end immediately, and the accumulated response will be
 		sent.
 
-		Note that `tearDown` will still be called, providing a chance to clean
+		Note that .tearDown will still be called, providing a chance to clean
 		up or free any resources. Also, it can check the boolean .didEndResponse
 		to see if that took place.
 		"""
 		throw EndResponse()
 
 
-class HTTPServlet
-	inherits Servlet
+class HTTPServlet inherits Servlet
 	"""
 	This would get fleshed out if this class hierarchy became part of an application server.
 	See "Webware for Python".
@@ -266,30 +261,28 @@ class HTTPServlet
 	pass
 
 
-class Page
-	inherits HTTPServlet
-	implements IWriteHtml
+class Page inherits HTTPServlet implements IWriteHtml
 	"""
 	Page is a type of HTTPServlet that is more convenient for servlets which
 	represent HTML pages generated in response to GET and POST requests. In
 	fact, this is the most common type of servlet.
 
-	Subclasses typically override `writeHeader`, `writeBody` or
-	`writeBodyParts`, and `writeFooter`.
+	Subclasses typically override .writeHeader, .writeBody or
+	.writeBodyParts, and writeFooter.
 
-	They might also choose to override `writeHtml` entirely.
+	They might also choose to override .writeHtml entirely.
 
 	When developing a full-blown website, it's common to create a subclass of
-	`Page` called `SitePage` which defines the common look and feel of the
+	`Page` called SitePage which defines the common look and feel of the
 	website and provides site-specific convenience methods. Then all other pages
-	in your application inherit from `SitePage`.
+	in your application inherit from SitePage.
 	"""
 
 	test
 		p = Page()
-		assert p.name=='Page'
-		assert p.title=='Page', p.title
-		assert p.htTitle=='Page', p.htTitle
+		assert p.name == 'Page'
+		assert p.title == 'Page'
+		assert p.htTitle == 'Page'
 		sw = StringWriter()
 		p.writeHtml(sw)
 		s = sw.toString.trim
@@ -325,19 +318,16 @@ class Page
 		"""
 		Writes all the HTML for the page.
 
-		Subclasses may override this method (which is invoked by `respond`)
-		or more commonly its constituent methods, `writeDocType`, `writeHead`
-		and `writeBody`.
+		Subclasses may override this method (which is invoked by .respond)
+		or more commonly its constituent methods, .writeDocType, .writeHead
+		and .writeBody.
 
 		You will want to override this method if:
 		* you want to format the entire HTML page yourself
-		* if you want to send an HTML page that has already
-		  been generated
-		* if you want to use a template that generates the entire
-		  page
+		* if you want to send an HTML page that has already been generated
+		* if you want to use a template that generates the entire page
 		* if you want to send non-HTML content (be sure to
-		  call ``.response.setHeader('Content-type',
-		  'mime/type')`` in this case).
+		  call `.response.setHeader('Content-type', 'mime/type')` in this case).
 		"""
 		.writeDocType
 		.writeLine('<html>')
@@ -355,7 +345,7 @@ class Page
 		"""
 		Writes the DOCTYPE tag.
 
-		Invoked by `writeHtml` to write the ``<!DOCTYPE ...>`` tag.
+		Invoked by .writeHtml to write the `<!DOCTYPE ...>` tag.
 
 		By default this gives the HTML 4.01 Transitional DOCTYPE, which is a
 		good guess for what most people send.  Be warned, though, that some
@@ -372,8 +362,8 @@ class Page
 
 	def writeHead
 		"""
-		Writes the ``<head>`` portion of the page by writing the
-		``<head>...</head>`` tags and invoking `writeHeadParts` in between.
+		Writes the `<head>` portion of the page by writing the
+		`<head>...</head>` tags and invoking `writeHeadParts` in between.
 		"""
 		.writeLine('<head>')
 		.writeHeadParts
@@ -381,8 +371,8 @@ class Page
 
 	def writeHeadParts
 		"""
-		Writes the parts inside the ``<head>...</head>`` tags. Invokes
-		`writeTitle` and `writeStyleSheet`. Subclasses can override this to add
+		Writes the parts inside the `<head>...</head>` tags. Invokes
+		.writeTitle and .writeStyleSheet. Subclasses can override this to add
 		additional items and should invoke super.
 		"""
 		.writeTitle
@@ -390,8 +380,8 @@ class Page
 
 	def writeTitle
 		"""
-		Writes the ``<title>`` portion of the page.
-		Uses `.title`, which is what you should override.
+		Writes the `<title>` portion of the page.
+		Uses .title, which is what you should override.
 		"""
 		.writeLine('\t<title>[.title]</title>')
 
@@ -401,28 +391,28 @@ class Page
 
 		This default implementation will write:
 			'\t<link rel="stylesheet" href="[.styleSheetUrl]" type="text/css">'
-		...if ``.styleSheetUrl`` returns a non-blank string.
+		...if .styleSheetUrl returns a non-blank string.
 
 		Subclasses can also override if necessary.
 		"""
-		url = .styleSheetUrl
-		if url
+		for url in .styleSheetUrls
 			.writeLine('\t<link rel="stylesheet" href="[url]" type="text/css">')
 
-	get styleSheetUrl as String?
+	get styleSheetUrls as String*
 		"""
-		Returns the stylesheet URL for this page. Used by writeStyleSheet.
-		This default implementation returns nil.
+ 		Yields the stylesheet URLs for this page. Used by .writeStyleSheet.
+		This default implementation yields nothing.
 		Subclasses can override. For example:
-			return 'styles.css'
+			yield 'styles-global.css'
+			yield 'styles-section.css'
 		"""
-		return nil
+		yield break
 
 	def writeBody
 		"""
-		Writes the ``<body>`` portion of the page by writing the
-		``<body>...</body>`` (making use of `.bodyArgs`) and
-		invoking `.writeBodyParts` in between.
+		Writes the `<body>` portion of the page by writing the
+		`<body>...</body>` (making use of .bodyArgs) and
+		invoking .writeBodyParts in between.
 		"""
 		bodyArgs = .bodyArgs
 		.writeLine(if(bodyArgs and bodyArgs.count, '<body [bodyArgs]>', '<body>'))
@@ -433,17 +423,17 @@ class Page
 		"""
 		Write the parts included in the <body> element.
 
-		Invokes `writeContent`. Subclasses should only override this method to
+		Invokes .writeContent. Subclasses should only override this method to
 		provide additional page parts such as a header, sidebar and footer, that
 		a subclass doesn't normally have to worry about writing.
 
 		For writing page-specific content, subclasses should override
-		`writeContent` instead. This method is intended to be overridden by your
+		.writeContent instead. This method is intended to be overridden by your
 		SitePage.
 
-		See `DeluxePage` for an example override of this method.
+		See DeluxePage for an example override of this method.
 
-		Invoked by `writeBody`.
+		Invoked by .writeBody.
 		"""
 		.writeContent
 
@@ -454,7 +444,7 @@ class Page
 		Subclasses should override this method (not invoking base) to write
 		their unique page content.
 
-		Invoked by `writeBodyParts`.
+		Invoked by .writeBodyParts.
 		"""
 		.writeLine('<p> This page has not yet customized its content. </p>')
 
@@ -478,13 +468,14 @@ class Page
 			.writeHtml(f)
 
 
-class MLArgs inherits WebObject implements IToHtml
+class MLArgs inherits BaseObject implements IToHtml
 	"""
 	An MLArgs instance is a dictionary of named arguments, that when printed
 	(toString) yield an argument string suitable for HTML, XML, SGML, et al:
 		href="http://foo.com" class="menuLink"
 
-	The motiviation for MLArgs is that if you store these arguments as Strings:
+	The motiviation for MLArgs is that if you store these arguments as in a
+	single string:
 		'href="http://foo.com" class="menuLink"'
 
 	...then inspecting and updating individual arguments requires extra effort.
@@ -496,7 +487,7 @@ class MLArgs inherits WebObject implements IToHtml
 	And outputing MLArgs is just as convenient as using a string:
 		dest.write('<a [.linkArgs]>')
 
-	You can do the same thing with:
+	You can do the same thing using the .tag method:
 		dest.write(.linkArgs.tag('a'))
 
 	Markup languages don't have a concept of nil while Cobra does. Consequently,
@@ -511,15 +502,15 @@ class MLArgs inherits WebObject implements IToHtml
 		args = MLArgs()
 		assert args.count==0
 		args['width'] = 50
-		assert args.count==1
-		assert args['width']==50
-		assert args.toString=='width="50"'
+		assert args.count == 1
+		assert args['width'] == 50
+		assert args.toString == 'width="50"'
 		args['color'] = 'blue'
-		assert args.toString=='color="blue" width="50"'
+		assert args.toString == 'color="blue" width="50"'
 
 	shared
-		var _willSortKeysDefault = true
-		pro willSortKeysDefault from var
+
+		pro willSortKeysDefault from var = true
 
 	var _values as Dictionary<of String, Object>  # TODO: Make this IDictionary
 	var _willSortKeys as bool
@@ -531,10 +522,9 @@ class MLArgs inherits WebObject implements IToHtml
 	cue init(d as IDictionary<of String, String>)
 		test
 			args = MLArgs(Dictionary<of String, String>())
-			assert args.count==0
+			assert args.count == 0
 			args = MLArgs({'x': '1', 'y': '2'})
-			assert args.count==2
-			assert args['y']=='2'
+			assert args.count == 2 and args['y'] == '2'
 		body
 			base.init
 			_init()
@@ -544,10 +534,9 @@ class MLArgs inherits WebObject implements IToHtml
 	cue init(keyValues as vari Object)
 		test
 			args = MLArgs('x', 1)
-			assert args['x']==1
+			assert args['x'] == 1
 			args = MLArgs('x', 1, 'y', 2)
-			assert args.count==2
-			assert args['y']==2
+			assert args.count == 2 and args['y'] == 2
 		body
 			base.init
 			_init()
@@ -556,8 +545,7 @@ class MLArgs inherits WebObject implements IToHtml
 	cue init(keyValues as String)
 		test
 			args = MLArgs('width=100 height=200')
-			assert args['width']=='100'
-			assert args['height']=='200'
+			assert args['width'] == '100' and args['height'] == '200'
 		body
 			base.init
 			_init()
@@ -568,14 +556,14 @@ class MLArgs inherits WebObject implements IToHtml
 				value = part.substring(i+1)
 				if value.startsWith('"') and value.endsWith('"')
 					value = value.substring(1, value.length-2)
-				# TODO: parse int
+				# TODO: parse int?
 				this[key] = value
 
 	def _init
 		_values = Dictionary<of String, Object>()
 		_willSortKeys = _willSortKeysDefault
 
-	pro [key as String] as Object
+	pro [key as String] as dynamic
 		"""
 		This indexer will never return nil (nor can you pass nil to it).
 		See also: remove, put, set
@@ -585,7 +573,7 @@ class MLArgs inherits WebObject implements IToHtml
 		set
 			_values[key] = value
 
-	def put(key as String, value as Object)
+	def put(key as String, value as dynamic)
 		require
 			key.length
 			value is not this
@@ -593,7 +581,7 @@ class MLArgs inherits WebObject implements IToHtml
 		body
 			_values[key] = value
 
-	def get(key as String) as Object
+	def get(key as String) as dynamic
 		return _values[key]
 
 	def containsKey(key as String) as bool
@@ -607,16 +595,15 @@ class MLArgs inherits WebObject implements IToHtml
 		test
 			args = MLArgs()
 			args.set('key', 'value')
-			assert args['key']=='value'
+			assert args['key'] == 'value'
 			args.set('key', 'value2', 'anotherKey', 5)
-			assert args['key']=='value2'
-			assert args['anotherKey']==5
+			assert args['key'] == 'value2' and args['anotherKey'] == 5
 
 			assert args.containsKey('anotherKey')
 			args.set('anotherKey', nil)
 			assert not args.containsKey('anotherKey')
 		body
-			for i = 0 .. keyValues.length ++ 2
+			for i in 0 : keyValues.length : 2
 				key = keyValues[i] to String
 				assert key.length, keyValues
 				value = keyValues[i+1]
@@ -654,7 +641,7 @@ class MLArgs inherits WebObject implements IToHtml
 	def tag(tagName as String) as String
 		test
 			args = MLArgs('href', 'http://cobra-language.com/')
-			assert args.tag('a')=='<a href="http://cobra-language.com/">'
+			assert args.tag('a') == '<a href="http://cobra-language.com/">'
 		body
 			return '<[tagName] [this]>'
 
@@ -666,26 +653,17 @@ class MLArgs inherits WebObject implements IToHtml
 		test
 			args = MLArgs('x', 1)
 			args = args.copyAndSet('x', 2, 'y', 3)
-			assert args['x']==2
-			assert args['y']==3
+			assert args['x'] == 2 and args['y'] == 3
 			args = args.copyAndSet('__replace__', 1, 'x', 3)
-			assert args.count==1
-			assert args['x']==3
+			assert args.count == 1 and args['x'] == 3
 		body
 			# check for __replace__
-			for i = 0 .. keyValues.length ++ 2
-				if '__replace__'==keyValues[i]
+			for i in 0 : keyValues.length : 2
+				if '__replace__' == keyValues[i]
 					args = .memberwiseClone to MLArgs
 					args.clear
 					args.set(keyValues).remove('__replace__')
 					return args
-
-			# in the future, the above would be:
-			#if '__replace__' in keyValues.even
-			#	args = .getType
-			#	args.set(keyValues).remove('__replace__')
-			#	return args
-
 			copy = .memberwiseClone to MLArgs
 			return copy.set(keyValues)
 
@@ -699,13 +677,11 @@ class MLArgs inherits WebObject implements IToHtml
 			return this
 
 
-class Tag
-	inherits MLArgs
+class Tag inherits MLArgs
 
 	test
 		t = Tag('br')
-		assert t.toHtml=='<br>'
-		assert t.toHtml==t.toString
+		assert t.toHtml == '<br>' and t.toHtml == t.toString
 
 		t = Tag('input', 'type', 'submit', 'value', 'Ok')
 		assert t.toHtml=='<input type="submit" value="Ok">'
@@ -713,8 +689,6 @@ class Tag
 
 		t = Tag('input', 'type', 'text', 'name', 'username', 'size', '20')
 		assert t.toHtml=='<input name="username" size="20" type="text">'
-
-	var _tagName as String
 
 	cue init(tagName as String)
 		base.init
@@ -728,7 +702,7 @@ class Tag
 		base.init(keyValues)
 		_tagName = tagName
 
-	pro tagName from var
+	pro tagName from var as String
 
 	def toString as String
 		args = base.toString
@@ -736,20 +710,3 @@ class Tag
 			return '<[_tagName] [args]>'
 		else
 			return '<[_tagName]>'
-
-
-#class Program
-#
-#	def main is shared
-#		p = Page()  # to kick start the tests
-#		m = MLArgs()
-#		t = Tag('a', 'href', 'http://cobra-language.com/')
-#		p = MyPage()
-#		p.writeHtml(Console.out)
-
-
-# extern classes are a crutch to help out until Cobra reads .NET DLLs #
-
-class KeyCollection
-	is extern
-	pass
