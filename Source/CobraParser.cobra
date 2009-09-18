@@ -665,7 +665,12 @@ class CobraParser inherits Parser
 		
 		theClass = Class(wordToken, idToken, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, inheritsProxy, typeSpecs.implementsProxies, typeSpecs.addsProxies, docString)
 
-		# TODO when supporting nested classes, look at the _boxStack and set a back pointer here
+		# For nested classes, set pointer to enclosure
+		if _boxStack.count
+			encl = .curBox 
+			if encl inherits ClassOrStruct
+				theClass.enclosure = encl
+
 		_boxStack.push(theClass)
 #		.isNamesStack = Stack<of String>
 		.bodiedBoxMemberDecls(theClass)
@@ -928,7 +933,12 @@ class CobraParser inherits Parser
 
 		theStruct = Struct(wordToken, idToken, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, nil, typeSpecs.implementsProxies, typeSpecs.addsProxies, docString)
 
-		# TODO when supporting nested classes, look at the boxStack and set a back pointer here
+		# For nested classes, set pointer to enclosure
+		if _boxStack.count
+			encl = .curBox 
+			if encl inherits ClassOrStruct
+				theStruct.enclosure = encl
+
 		_boxStack.push(theStruct)
 #		.isNamesStack = Stack(str)
 		.bodiedBoxMemberDecls(theStruct)
@@ -1174,6 +1184,8 @@ class CobraParser inherits Parser
 					on 'SIG', .addDecl(box, .declareMethodSig)
 					on 'SHARED', .bodiedBoxMemberDeclsShared(box)
 					on 'TEST', .testSection(box)
+					on 'CLASS',  .addDecl(box, .classDecl)  # nested types
+					on 'STRUCT', .addDecl(box, .structDecl) # nested types
 					else
 						branch .peek.text
 							on 'ensure', sugg = 'invariant'
@@ -1181,7 +1193,7 @@ class CobraParser inherits Parser
 							else, sugg = ''
 						if sugg <> ''
 							sugg = ' Instead of "[.peek.text]", try "[sugg]".'
-						.throwError('Got [.peek] when expecting def, enum, get, invariant, pro, set, shared, sig, test, or var.[sugg]')
+						.throwError('Got [.peek] when expecting class, def, enum, get, invariant, pro, set, shared, sig, struct, test or var.[sugg]')
 			.dedent
 
 	def addDecl(box as Box, member as IBoxMember?)

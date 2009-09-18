@@ -1032,7 +1032,7 @@ delme
 			return
 		if .isGenericDef  # sorry, but static methods always require a type arg even if you don't need it. workaround. make another class with a 'test' section that tests the generic class TODO: make Cobra do this, but then watch for use of the generic param!
 			return
-		assert .parentNameSpace
+		#assert .parentNameSpace  # suppress for nested classes 
 		sw.write('\t\t[.sharpRef].RunTestsIfNeeded();\n')
 		_didWriteSharpTestInvocation = true
 
@@ -1042,6 +1042,14 @@ delme
 
 class Class
 	is partial
+
+	get sharpRef as String is override
+		# for getting fully dotted name for nested classes
+		sb = StringBuilder()
+		if .enclosure
+			sb.append(.enclosure.sharpRef + '.')
+		sb.append(base.sharpRef)
+		return sb.toString
 
 	get sharpInit as String is override
 		return 'null'
@@ -1127,6 +1135,14 @@ class Mixin
 
 class Struct
 	is partial
+
+	get sharpRef as String is override
+		# for getting fully dotted name for nested classes
+		sb = StringBuilder()
+		if .enclosure
+			sb.append(.enclosure.sharpRef + '.')
+		sb.append(base.sharpRef)
+		return sb.toString
 
 	get sharpInit as String is override
 		return ''  # blank to indicate there is no valid init
@@ -3568,10 +3584,10 @@ class TypeExpr
 			sharpRef = 'global::' + sharpRef
 		if _requiresTypeOf()
 			sw.write('typeof(')
-			sw.write(_containedType.sharpRef)
+			sw.write(sharpRef)
 			sw.write(')')
 		else
-			sw.write(_containedType.sharpRef)
+			sw.write(sharpRef)
 
 	def _requiresTypeOf as bool
 		# Cobra never requires that you wrap a type reference in typeof(Foo).
