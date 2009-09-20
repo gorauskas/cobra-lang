@@ -168,17 +168,21 @@ class TestifyRunner
 		_testifyDir(dirName, nil)
 
 	def _testifyDir(dirName as String, args as String?)
+		willCopyLibs = true  # not CobraCore.isRunningMono  # On Mono, we use MONO_PATH instead of coping the Cobra.Lang.dll around
+		libNames = ['Cobra.Lang.dll']
 		_extraTestifyArgs = args
 		_statusWriter.writeLine(if(args, '[dirName] with args: [args]', '[dirName]'))
 		_statusWriter.indent
 		try
 			print 'Running tests in [dirName]'
 			saveDir = Environment.currentDirectory
-			if not CobraCore.isRunningOnMono  # On Mono, we use MONO_PATH instead of coping the Cobra.Lang.dll around
-				targetPath = Path.combine(dirName, 'Cobra.Lang.dll')
-				if File.exists(targetPath)
-					File.delete(targetPath)
-				File.copy(Path.combine(saveDir,'Cobra.Lang.dll'), targetPath)
+			if willCopyLibs
+				# _cleanDir will remove these later
+				for libName in libNames
+					targetPath = Path.combine(dirName, libName)
+					if File.exists(targetPath), File.delete(targetPath)
+					if libName == 'Cobra.Lang.dll' or File.exists(libName)
+						File.copy(Path.combine(saveDir, libName), targetPath)
 			Directory.setCurrentDirectory(dirName)
 			try
 				setUpScript = if(Utils.isRunningOnUnix, 'testify-set-up', 'testify-set-up.bat')
@@ -600,5 +604,5 @@ class TestifyRunner
 					# TODO: find a general way to determine if a binary file is part of the workspace/repository
 					fileInfo.delete
 			catch ex as Exception
-				if fileInfo.name <> 'Cobra.Lang.dll'  # this happens regularly and I don't feel like seeing it
+				if not fileInfo.name.startsWith('Cobra.')  # this happens regularly and I don't feel like seeing it
 					print 'warning: cannot delete [fileInfo] due to: [ex.message]'

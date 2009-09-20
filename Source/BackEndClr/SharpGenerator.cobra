@@ -95,13 +95,13 @@ class Compiler is partial
 		return outName
 	
 	def compileSharp
-		.compileSharp('')
+		.compileSharp(List<of String>())
 
-	def compileSharp(extraCscOptions as String)
+	def compileSharp(extraCscOptions as List<of String>)
 		require
 			.modules.count
 		body
-			options = .options
+			v, options = .verbosity, .options
 
 			platform = if(CobraCore.isRunningOnMono, 'novell', 'ms')
 			_platform = if(platform=='ms', PlatformEnum.Microsoft, PlatformEnum.Novell)
@@ -111,41 +111,36 @@ class Compiler is partial
 			outName = .computeOutNameSharp
 			
 			# compute backEndOptions
-			backEndOptions = ''
+			backEndOptions = List<of String>()
 			target = options.getDefault('target', '') to String
 			if target.length
 				if target=='lib', target = 'library'
-				backEndOptions += ' [optChar]target:[target]'
+				backEndOptions.add('[optChar]target:[target]')
 				
 			delaySign = options.boolValue('delay-sign')
-			if delaySign
-				backEndOptions += ' [optChar]delaysign+'
+			if delaySign, backEndOptions.add('[optChar]delaysign+')
 
 			keyContainer = options.getDefault('key-container', nil)
-			if keyContainer
-				backEndOptions += ' "[optChar]keycontainer:[keyContainer]"'
+			if keyContainer, backEndOptions.add('[optChar]keycontainer:[keyContainer]')
 
 			keyFile = options.getDefault('key-file', nil)
-			if keyFile
-				backEndOptions += ' "[optChar]keyfile:[keyFile]"'
+			if keyFile, backEndOptions.add('[optChar]keyfile:[keyFile]')
 
 			optimize = options.boolValue('optimize')
-			if optimize
-				backEndOptions += ' [optChar]optimize+'
+			if optimize, backEndOptions.add('[optChar]optimize+')
 
 			for refer in .loadedReferences  # don't take the library references from options, because the references can grow
-				backEndOptions += ' "[optChar]r:[refer]"'
+				backEndOptions.add('[optChar]r:[refer]')
 
 			debug = options.getDefault('debug', '') to String
 			if debug.length
 				# TODO: mono does not support full and pdbonly afaik
 				assert debug in ['-', '+', 'full', 'pdbonly'], debug
-				backEndOptions += ' [optChar]debug' + if(debug.length==1, debug, ':[debug]')
+				backEndOptions.add('[optChar]debug' + if(debug.length==1, debug, ':[debug]'))
 
-			if _verbosity < 3
-				backEndOptions += ' [optChar]nologo'
+			if v < 3, backEndOptions.add('[optChar]nologo')
 
-			backEndOptions += ' [optChar]nowarn:0108,0162,0169,0183,0184,0219,0414,0429,1717,1718'
+			backEndOptions.add('[optChar]nowarn:0108,0162,0169,0183,0184,0219,0414,0429,1717,1718')
 				# CS0108: Hides inherited member. Mono reports this for workspace/Tests/720-libraries/400-other/500-follow-dependencies/102-lib-b.cobra. MS does not. For multiple reasons, disabling is the best choice here.
 				# CS0162: Unreachable code detected
 				# CS0169: The private field `Cobra.Lang.CannotReadPropertyException._ih_invariantGuard' is never used
@@ -157,10 +152,9 @@ class Compiler is partial
 				# CS1717: Assignment made to same variable; did you mean to assign something else?
 				# CS1718: A comparison made to same variable.
 
-			if .mainMethodTypeName <> ''
-				backEndOptions += ' [optChar]main:[.mainMethodTypeName]'
+			if .mainMethodTypeName <> '', backEndOptions.add('[optChar]main:[.mainMethodTypeName]')
 			
-			backEndOptions += ' ' + extraCscOptions
+			backEndOptions.addRange(extraCscOptions)
 
 			sharpArgs = .options.getDefault('native-compiler-args', '') to String
 			if sharpArgs.length
@@ -168,14 +162,14 @@ class Compiler is partial
 					# on Windows, you should really use double quotes instead of single, but
 					# we try to compensate here.
 					sharpArgs = sharpArgs[1:-1]
-				backEndOptions += ' ' + sharpArgs
+				backEndOptions.add(sharpArgs)  # TODO: note that sharpArgs can really only take one arg now
 
 			for libPath in .options.getStringList('library-directory')
-				backEndOptions += ' ' + '-lib:"[libPath]"'
+				backEndOptions.add('-lib:[libPath]')
 
 			# Cobra.Lang.dll is in the same directory as cobra.exe
 			libPath = Path.getDirectoryName(CobraCore.exePath) to !
-			backEndOptions += ' ' + '-lib:"[libPath]"'
+			backEndOptions.add('-lib:[libPath]')
 
 			# Passing -pkg: to the C# compiler seems unnecessary.
 			# Compiler.refsForPackage already gets the .dll refs and
@@ -183,7 +177,7 @@ class Compiler is partial
 			# http://cobra-language.com/forums/viewtopic.php?f=4&t=263
 			# 2008-12 / 2009-01
 			# for pkgName in .options.getStringList('pkg')
-			# 	backEndOptions += ' ' + '-pkg:[pkgName]'
+			# 	backEndOptions.add('-pkg:[pkgName]')
 
 			# .cs files
 			sharpFileNameList = List<of String>()
@@ -193,19 +187,76 @@ class Compiler is partial
 			assert sharpFileNameList.count
 
 			# compilation command
-			if _verbosity
-				print 'Compiling to produce [outName]'
-			if .options.getDefault('native-compiler', '') to String <> ''
-				# use Process class instead of CSharpCodeProvider because the user specified a path to a C# compiler
-				_compileSharpWithProcessCSC(optChar, backEndOptions, sharpFileNameList)
-			else
+			if v, print 'Compiling to produce [outName]'
+			
+			nativeCompiler = originalNativeCompiler = .options.getDefault('native-compiler', '') to String
+			if nativeCompiler == 'auto'
+				if CobraCore.isRunningOnMono
+					cobraSharp = Path.combine(Path.getDirectoryName(Assembly.getEntryAssembly.location), 'Cobra.Sharp.dll')
+					if File.exists(cobraSharp)
+						if v >= 3, print '-native-compiler:auto ... Found [cobraSharp]'
+						nativeCompiler = cobraSharp
+					else
+						nativeCompiler = ''
+				else
+					if v >= 3, print '-native-compiler:auto ... Not running on Mono'
+					nativeCompiler = 'provider'
+			if nativeCompiler == 'provider'
 				# otherwise use Code Provider
-				_compileSharpWithCodeProvider(optChar, backEndOptions, sharpFileNameList)
+				_compileSharpWithCodeProvider(optChar, .joinOptions(backEndOptions), sharpFileNameList)
+			else if nativeCompiler.endsWith('.dll')
+				# assume the user is specifying some kind of Cobra.Sharp.dll
+				_compileSharpWithSharpCompilerLib(nativeCompiler, optChar, backEndOptions, sharpFileNameList)
+			else if nativeCompiler <> ''
+				# use Process class instead of CSharpCodeProvider because the user specified a path to a C# compiler
+				_compileSharpWithProcessCSC(optChar, .joinOptions(backEndOptions), sharpFileNameList)
+			else
+				print 'Unknown -native-compiler:[originalNativeCompiler]'
+				_exitFromErrors
 
 			if .errors.count
 				_exitFromErrors
 
 			_deleteIntermediateFiles
+
+	def joinOptions(options as List<of String>) as String
+		sb = StringBuilder()
+		sep = ''
+		for opt in options
+			sb.append(sep)
+			if '"' not in opt
+				sb.append('"[opt]"')  # helps with: '-foo:path with spaces'
+			else
+				sb.append(opt)
+			sep = ' '
+		return sb.toString
+
+	var _cobraSharpProxy as CobraSharpProxy?
+	
+	def _compileSharpWithSharpCompilerLib(dllName as String, optChar as String, backEndOptions as List<of String>, sharpFileNameList as List<of String>)
+		if _cobraSharpProxy is nil
+			_cobraSharpProxy = CobraSharpProxy(dllName)
+			if _cobraSharpProxy.error
+				print 'Cannot use C# compiler library because:'
+				print _cobraSharpProxy.error
+				throw StopCompilation(this)
+		_cobraSharpProxy.reset
+
+		backEndOptions.add('[optChar]out:[.fullExeFileName]')
+
+		args = List<of String>(backEndOptions)
+		args.addRange(sharpFileNameList)
+
+		if _verbosity >= 2, print '[dllName] [args]'
+		output = StringWriter()
+		saveOut = Console.out
+		Console.setOut(output)
+		try
+			filenameToSource = nil to System.Collections.Hashtable?  # TODO
+			_cobraSharpProxy.invokeCompiler(args.toArray, output, filenameToSource)
+		finally
+			Console.setOut(saveOut)
+		_parseSharpCompilerOutput(output.toString)
 
 	def _compileSharpWithProcessCSC(optChar as String, backEndOptions as String, sharpFileNameList as List<of String>)
 		# locate the C# compiler

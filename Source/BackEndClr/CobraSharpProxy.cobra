@@ -1,0 +1,97 @@
+use System.Collections
+use System.Reflection
+
+
+class CobraSharpProxy
+	"""
+	A proxy to the Cobra Sharp library. This approach avoids a hard reference to such a library,
+	thereby making it optional and also easy to replace.
+	
+	After instantiation, check the .error property to see if the proxy was able to find a valid
+	Cobra Sharp library.
+	"""
+
+	shared
+		# TODO: not sure yet how we're going to handle different mono versions yet
+		var _dllNames = [
+			'Cobra.Sharp.2_4_2_3.dll',
+			'Cobra.Sharp.dll',
+		]
+	
+	var _invokeCompiler as MethodInfo?
+	# InvokeCompiler(args as String[], error as TextWriter, filename_to_source as Hashtable?) 
+
+	var _reset as MethodInfo?
+	# Reset()
+
+	
+	cue init
+		base.init
+		for dllName in _dllNames
+			_load(dllName)
+			if .error is nil, break
+
+	cue init(dllName as String)
+		base.init
+		_load(dllName)
+
+	get dllName from var = ''
+		"""
+		The DLL filename that this proxy represents.
+		An empty string if no DLL was found.
+		"""
+		
+	get error from var as String?
+		"""
+		Returns nil if the proxy represents a valid Cobra Sharp library.
+		Otherwise, returns an error message explaining why.
+		"""
+	
+	def invokeCompiler(args as String[], error as TextWriter, filenameToSource as IDictionary<of String, String>?) as bool
+		if filenameToSource is nil
+			return .invokeCompiler(args, error, nil to Hashtable?)
+		else
+			h = Hashtable()
+			for key, value in filenameToSource, h[key] = value
+			return .invokeCompiler(args, error, h)
+
+	def invokeCompiler(args as String[], error as TextWriter, filenameToSource as Hashtable?) as bool
+		return _invokeCompiler.invoke(nil, @[args, error, filenameToSource]) to bool
+	
+	def reset
+		_reset.invoke(nil, nil)
+
+	def _load(dllName as String)
+		a as Assembly?
+		try
+			a = Assembly.loadFrom(dllName)
+			# a = Utils.loadWithPartialName(dllName)
+		catch
+			_error = 'Cannot find "[dllName]".'
+			return
+
+		if a is nil
+			_error = 'Cannot find "[dllName]".'
+			return
+
+		t = a.getType('Mono.CSharp.CompilerCallableEntryPoint') to ?
+		if t is nil
+			_error = 'Cannot find "Mono.CSharp.CompilerCallableEntryPoint" in "[dllName]".'
+			return
+
+		for m in t.getMethods(BindingFlags(Public, Static))
+			if m.name == 'InvokeCompiler' and m.getParameters.length == 3
+				_invokeCompiler = m
+			else if m.name == 'Reset' and m.getParameters.length == 0
+				_reset = m
+
+		if _invokeCompiler is nil
+			_error = 'Cannot find a suitable InvokeCompiler() method in "[dllName]".'
+			return
+			
+		if _reset is nil
+			_error = 'Cannot find a suitable Reset() method in "[dllName]".'
+			return
+		
+		_dllName = dllName
+
