@@ -1,3 +1,6 @@
+use System.Reflection
+
+
 class ClrBackEnd inherits BackEnd
 
 	cue init(compiler as Compiler)
@@ -21,6 +24,23 @@ class GenerateSharpCodePhase inherits Phase
 
 	def innerRun is override
 		c = .compiler
+		v = c.verbosity
+		
+		nativeCompiler = c.options.getDefault('native-compiler', '') to String
+		if nativeCompiler == 'auto'
+			if CobraCore.isRunningOnMono
+				cobraSharp = Path.combine(Path.getDirectoryName(Assembly.getEntryAssembly.location), 'Cobra.Sharp.dll')
+				if File.exists(cobraSharp)
+					if v >= 3, print '-native-compiler:auto ... Found [cobraSharp]'
+					nativeCompiler = cobraSharp
+				else
+					nativeCompiler = ''
+			else
+				if v >= 3, print '-native-compiler:auto ... Not running on Mono'
+				nativeCompiler = 'provider'
+		c.nativeCompiler = nativeCompiler
+		c.willWriteSharpToDisk = not nativeCompiler.endsWith('.dll')  # only Cobra.Sharp.dll will take in-memory source code
+
 		c.writeSharp  # extension method
 		if c.willWriteTestInvocation
 			c.writeSharpTestInvocation

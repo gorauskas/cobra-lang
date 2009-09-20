@@ -13,6 +13,29 @@ class Compiler is partial
 	var _baseExeFileName as String = ''
 	var _fullExeFileName as String = ''
 
+	
+	# The next two properties are set in GenerateSharpCodePhase
+	
+	pro nativeCompiler from var = ''
+
+	pro willWriteSharpToDisk from var as bool
+
+
+	var _sharpSource = Dictionary<of String, StringWriter>()
+	
+	def createSharpFile(fileName as String) as TextWriter
+		"""
+		Creates a new TextWriter for writing sharp source code.
+		Will create a physical file or string writer as appropriate.
+		"""
+		if .willWriteSharpToDisk
+			return File.createText(fileName)
+		else
+			sw = StringWriter()
+			_sharpSource[fileName] = sw
+			return sw
+			
+
 	def writeSharp
 		Node.setCompiler(this)
 		try
@@ -28,7 +51,7 @@ class Compiler is partial
 	def writeSharpTestInvocation
 		dt = DateTime.now
 		fileName = 'test-[dt.year][dt.month][dt.day][dt.hour][dt.minute].cs'  # TODO: format the numbers to have leading zeros
-		using f = CurlyWriter(File.createText(fileName), CurlyLineNumberTreatment.PoundLine)
+		using f = CurlyWriter(.createSharpFile(fileName), CurlyLineNumberTreatment.PoundLine)
 			print to f
 				print 'using CobraLangInternal = Cobra.Lang[.embedRunTimeSuffix];'
 				print ''
@@ -189,18 +212,8 @@ class Compiler is partial
 			# compilation command
 			if v, print 'Compiling to produce [outName]'
 			
-			nativeCompiler = originalNativeCompiler = .options.getDefault('native-compiler', '') to String
-			if nativeCompiler == 'auto'
-				if CobraCore.isRunningOnMono
-					cobraSharp = Path.combine(Path.getDirectoryName(Assembly.getEntryAssembly.location), 'Cobra.Sharp.dll')
-					if File.exists(cobraSharp)
-						if v >= 3, print '-native-compiler:auto ... Found [cobraSharp]'
-						nativeCompiler = cobraSharp
-					else
-						nativeCompiler = ''
-				else
-					if v >= 3, print '-native-compiler:auto ... Not running on Mono'
-					nativeCompiler = 'provider'
+			# the 'auto' choice for -native-compiler is handled in GenerateSharpCodePhase
+			nativeCompiler = .nativeCompiler
 			if nativeCompiler == 'provider'
 				# otherwise use Code Provider
 				_compileSharpWithCodeProvider(optChar, .joinOptions(backEndOptions), sharpFileNameList)
@@ -211,7 +224,7 @@ class Compiler is partial
 				# use Process class instead of CSharpCodeProvider because the user specified a path to a C# compiler
 				_compileSharpWithProcessCSC(optChar, .joinOptions(backEndOptions), sharpFileNameList)
 			else
-				print 'Unknown -native-compiler:[originalNativeCompiler]'
+				print 'Unknown -native-compiler:[nativeCompiler]'
 				_exitFromErrors
 
 			if .errors.count
@@ -234,6 +247,8 @@ class Compiler is partial
 	var _cobraSharpProxy as CobraSharpProxy?
 	
 	def _compileSharpWithSharpCompilerLib(dllName as String, optChar as String, backEndOptions as List<of String>, sharpFileNameList as List<of String>)
+		v = .verbosity
+		
 		if _cobraSharpProxy is nil
 			_cobraSharpProxy = CobraSharpProxy(dllName)
 			if _cobraSharpProxy.error
@@ -247,12 +262,20 @@ class Compiler is partial
 		args = List<of String>(backEndOptions)
 		args.addRange(sharpFileNameList)
 
+		filenameToSource = nil to System.Collections.Hashtable?  # TODO
+		if .willWriteSharpToDisk
+			if v >= 3, print 'Intermediate code is on disk.'
+		else
+			if v >= 3, print 'Intermediate code is in memory.'
+			filenameToSource = System.Collections.Hashtable()
+			for fileName, writer in _sharpSource
+				filenameToSource.add(fileName, writer.toString)
+
 		if _verbosity >= 2, print '[dllName] [args]'
 		output = StringWriter()
 		saveOut = Console.out
 		Console.setOut(output)
 		try
-			filenameToSource = nil to System.Collections.Hashtable?  # TODO
 			_cobraSharpProxy.invokeCompiler(args.toArray, output, filenameToSource)
 		finally
 			Console.setOut(saveOut)
@@ -328,14 +351,10 @@ class Compiler is partial
 	def _parseSharpCompilerOutput(output as String)
 		for line in output.split(c'\n')
 			line = line.trim
-			if not line.length
-				continue
-			if SharpCompilationMessage.willSkipMessage(line)
-				continue
-			else
-				if _verbosity >= 3
-					print 'C# message: [line]'
-				_addMessage(SharpCompilationMessage(line, this))
+			if not line.length, continue
+			if SharpCompilationMessage.willSkipMessage(line), continue
+			if _verbosity >= 3, print 'C# message: [line]'
+			_addMessage(SharpCompilationMessage(line, this))
 
 
 ##
@@ -377,18 +396,19 @@ class NamedNode is partial
 ## Module
 ##
 
-class Module
-	is partial
+class Module is partial
 
+	var _sharpSource as String?
 	var _sharpFileName = ''
 
 	get sharpFileName from var
 
 	get sharpSource as String
+		if _sharpSource, return _sharpSource
 		if _sharpFileName.length
 			return File.readAllText(_sharpFileName)
 		else
-			throw FallThroughException('csFileName is blank')
+			throw FallThroughException('No sharp source or filename.')
 
 	def writeSharpDef as Dictionary<of int, int>? is abstract
 
@@ -414,12 +434,6 @@ class SharpModule inherits NativeModule is partial
 		_sharpFileName = fileName
 
 	def writeSharpDef as Dictionary<of int, int>? is override
-		if false
-			# kind of silly, but it works:
-			d = Dictionary<of int, int>()
-			for i in 1 : File.readAllText(_sharpFileName).count(c'\n')+1
-				d[i] = i
-			return d	
 		return nil
 
 
@@ -440,7 +454,7 @@ class CobraModule is partial
 		return _sharpFileName
 
 	def writeSharpDef as Dictionary<of int, int>? is override
-		file = File.createText(.sharpFileName)
+		file = (.compiler to Compiler).createSharpFile(.sharpFileName)
 		using sw = CurlyWriter(file, CurlyLineNumberTreatment.PoundLine)
 			.compiler.addIntermediateFile(_sharpFileName)
 			sw.start(.fileName)
