@@ -1753,8 +1753,7 @@ class AbstractMethod
 		sw.dedentAndWrite('}\n')
 
 
-class Initializer
-	is partial
+class Initializer is partial
 
 	def innerWriteSharpDef(sw as CurlyWriter)
 		base.innerWriteSharpDef(sw)
@@ -1769,6 +1768,7 @@ class Initializer
 						args = firstRight.args
 						Stmt.inInitCall = true
 						didSetInInitCall = true
+		_fixIsNames
 		.writeSharpIsNames(sw)
 		sw.write(' [.parentBox.rootName]')
 		.writeSharpParams(sw)
@@ -1793,6 +1793,13 @@ class Initializer
 		if .compiler.includeTests
 			.writeSharpTest(sw)
 
+	def _fixIsNames
+		# suppress adding default access modifiers on static initializer
+		# any access modifier in static ctor is error but that should have been caught in bind* methods
+		#	we'll just cater to the default 'public'
+		if 'shared' in _isNames and _isNames.count > 1
+			_isNames.remove('public')
+		
 	def writeSharpImpHeader(sw as CurlyWriter)
 		base.writeSharpImpHeader(sw)
 		if .isStructMember and .compiler.options['contracts'] <> 'none'
