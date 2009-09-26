@@ -1,14 +1,12 @@
 use System.Diagnostics
 use System.Reflection
+use System.Threading
 
 
 class TestifyRunner
 	"""
 	Implements the -testify option of the command line.
 	"""
-
-
-	## Vars
 
 	var _startTime as DateTime
 	var _cl as CommandLine
@@ -55,25 +53,105 @@ class TestifyRunner
 	## Run
 	
 	def run
+		paths = _pathList
+		if paths.count == 0
+			paths = .cobraTestPaths + [Path.getFullPath(Path.combine('..', 'HowTo'))]
+		numThreads = .options.getDefault('testify-threads', 1) to int
+		if numThreads > 1
+			.runThreaded(numThreads, paths)
+		else
+			.runNonThreaded(paths)
+	
+	# these vars support running sub-processes, managed by multiple threads in the original cobra executable
+	var _subDirQueue = Queue<of String>()
+	var _subCobraExe = ''
+	var _subCommandLineArgs = List<of String>()
+	var _subResultsFileNames = List<of String>()
+	
+	def runThreaded(numThreads as int, paths as List<of String>)
+		require numThreads > 1
+
+		_statusWriter = IndentedWriter(AutoFlushWriter(Console.out), indentString='    ')
+
+		args = CobraCore.commandLineArgs
+		_subCobraExe = args[0]
+		_subCommandLineArgs = for arg in args[1:] where arg.startsWith('-') and not '-testify-threads:' in arg
+
+		_statusWriter.writeLine('Queueing for threads:')
+		for path in paths
+			_statusWriter.writeLine('    [path]')
+			_subDirQueue.enqueue(path)
+			_subResultsFileNames.add('')  # empty placeholder. these values are set in order
+		assert _subDirQueue.count > 0
+
+		threads = List<of Thread>()
+		for i in numThreads, threads.add(Thread(ref .runTestifyProcessInThread))
+		# CC: threads = for i in numThreads get Thread(ref .runTestifyProcessInThread)
+		for t in threads, t.start
+		for t in threads, t.join
+
+		_concatSubResults
+
+	def _concatSubResults
+		sep, sepNl = '', CobraCore.newLine + CobraCore.newLine + CobraCore.newLine
+		concat = StringBuilder()
+		for fileName in _subResultsFileNames.reversed  # they are set in a reversed order
+			concat.append(sep)
+			concat.append(File.readAllText(fileName))
+			sep = sepNl
+		File.writeAllText(.options['testify-results'] to String, concat.toString)
+		for fileName in _subResultsFileNames
+			try
+				File.delete(fileName)
+			catch exc as Exception
+				_statusWriter.writeLine('warning: Cannot delete "[fileName]" due to: [exc]')
+
+	def runTestifyProcessInThread
+		tid = Thread.currentThread.getHashCode
+		while true  # keep getting a work queue item
+			lock _subDirQueue
+				if _subDirQueue.count == 0, break  # ...until they run out
+				path = _subDirQueue.dequeue
+				pathIndex = _subDirQueue.count
+				resultsFileName = 'r-testify-[pathIndex]'
+				lock _subResultsFileNames, _subResultsFileNames[pathIndex] = resultsFileName
+				args = _subCommandLineArgs + ['-testify-results:[resultsFileName]', '-testify-threads:1', path]
+				lock _statusWriter, _statusWriter.writeLine('Thread [tid]: [args.join(" ")]')
+			p = Process()
+			p.startInfo.useShellExecute = false
+			p.startInfo.redirectStandardOutput = true
+			p.startInfo.redirectStandardError = true
+			p.startInfo.fileName = _subCobraExe
+			p.startInfo.arguments = args.join(' ')
+			p.start
+			# TODO: get the process output line by line and display as we go
+			output = p.standardOutput.readToEnd
+			output += p.standardError.readToEnd
+			p.waitForExit
+			lock _statusWriter
+				_statusWriter.writeLine
+				_statusWriter.writeLine('t[tid]|start:')
+				for line in output.splitLines
+					_statusWriter.writeLine('t[tid]|[line]')
+		
+	def runNonThreaded(paths as List<of String>)
 		_statusWriter = IndentedWriter(AutoFlushWriter(Console.out))
 		_statusWriter.indentString = '    '
 		try
-			using resultsWriter = File.createText('r-testify')
+			resultsFileName = .options['testify-results'] to String
+			using resultsWriter = File.createText(resultsFileName)
 				_resultsWriter = IndentedWriter(AutoFlushWriter(resultsWriter))
 				print to _resultsWriter
 					print 'Cobra: Testify'
 					print 'Started at', DateTime.now
 					print
-					_innerRun(_pathList)
+					_innerRun(paths)
 		finally
+			_statusWriter.writeLine('Results in [resultsFileName]')
 			_statusWriter = nil
 
 	def _innerRun(paths as List<of String>)
 		# TODO Console.error = Console.out
-		if paths.count == 0
-			paths = [.cobraTestsPath]
-			# since .cobraTestsPath didn't throw an exception we can add the HowTo's
-			paths.add(Path.combine('..', 'HowTo'))
 		_testifyCount = 0
 		for pathName in paths
 			if Directory.exists(pathName)
@@ -105,9 +183,9 @@ class TestifyRunner
 			argsList = if('|' in args, args.split(c'|'), args.split)
 			_cl.parseArgs(argsList to passthrough, out options, out paths)
 
-	get cobraTestsPath as String
+	get cobraTestPaths as List<of String>
 		"""
-		Only used when --testify is passed with no path.
+		Only used when -testify is passed with no path.
 		--testify is an "internal" feature of the cobra command line front end.
 		"""
 		# -testify is often invoked out of the next-door directory "Source"
@@ -115,8 +193,13 @@ class TestifyRunner
 		slash = Path.directorySeparatorChar
 		path = "..[slash]Tests"
 		if Directory.exists(path)
-			return Path.getFullPath(path)
-		throw Exception(r'Cannot find Tests directory next door or in HOME\Projects\Cobra\Workspace\Tests')
+			paths = List<of String>()
+			for subdir in Directory.getDirectories(path)
+				fileName = Path.getFileName(subdir)
+				if not fileName.startsWith('.') and not fileName.startsWith('_')
+					paths.add(Path.getFullPath(subdir))
+			return paths
+		throw Exception('Cannot find Tests directory next door.')
 
 	def _testifyFlush
 		_statusWriter.flush
