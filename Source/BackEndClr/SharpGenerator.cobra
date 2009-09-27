@@ -981,7 +981,9 @@ class Box is partial
 			sw.writeAndIndent('{\n')
 			.writeSharpInvariantMethod(sw)
 			if _testMethod
-				_testMethod.writeSharpDef(sw)
+				.compiler.boxMemberStack.push(_testMethod)
+				try, _testMethod.writeSharpDef(sw)
+				finally, .compiler.boxMemberStack.pop
 			for decl in _declsInOrder
 				if not .willWriteDeclSharpDef(decl), continue
 				.compiler.boxMemberStack.push(decl)
@@ -2233,6 +2235,17 @@ class Stmt is partial
 			memberName.length
 			sharpThis.length
 		body
+			return 'new CobraLangInternal.SourceSite([.sharpSourceSiteArgs(boxName, memberName, sharpThis)])'
+
+	def sharpSourceSiteArgs as String
+		return .sharpSourceSiteArgs(.compiler.curBox.name, .compiler.curBoxMember.name, .sharpThis)
+	
+	def sharpSourceSiteArgs(boxName as String, memberName as String, sharpThis as String) as String
+		require
+			boxName.length
+			memberName.length
+			sharpThis.length
+		body
 			boxName = Utils.sharpStringLiteralFor(boxName)
 			memberName = Utils.sharpStringLiteralFor(memberName)
 			tok = .token
@@ -2240,8 +2253,8 @@ class Stmt is partial
 			if not Path.isPathRooted(fileName)
 				fileName = Path.combine(Environment.currentDirectory, fileName)
 			fileName = Utils.sharpStringLiteralFor(fileName)
-			return 'new CobraLangInternal.SourceSite([fileName], [tok.lineNum], [boxName], [memberName], [sharpThis])'
-
+			return '[fileName], [tok.lineNum], [boxName], [memberName], [sharpThis]'
+	
 	get sharpThis as String
 		if _inInitCall  # C# won't allow 'this' in a base constructor call
 			return '"(uninitialized [.compiler.curBox.name] instance)"'
@@ -4000,7 +4013,7 @@ class ToNonNilableExpr
 		else if .compiler.options.boolValue('include-nil-checks')
 			sw.write('(CobraLangInternal.CobraCore._willCheckNil?CobraLangInternal.CobraImp.CheckNonNil<[type.sharpRef]>([.sharpThis], [Utils.sharpStringLiteralFor(_expr.toCobraSource)], ')
 			_expr.writeSharpDef(sw, false)
-			sw.write(', [.sharpSourceSite]):')
+			sw.write(', [.sharpSourceSiteArgs]):')
 			_expr.writeSharpDef(sw, false)
 			sw.write(')')
 		else
@@ -4602,7 +4615,7 @@ class ToExpr
 		if not rightType inherits NilableType and rightType.isReference and .compiler.options.boolValue('include-nil-checks')
 			sw.write('CobraLangInternal.CobraImp.CheckNonNil<[_left.type.sharpRef]>([.sharpThis], [Utils.sharpStringLiteralFor(_left.toCobraSource)], ')
 			_left.writeSharpDef(sw, false)
-			sw.write(', [.sharpSourceSite])')
+			sw.write(', [.sharpSourceSiteArgs])')
 		else
 			_left.writeSharpDef(sw)
 
