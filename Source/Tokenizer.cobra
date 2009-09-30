@@ -413,6 +413,7 @@ class Tokenizer
 		_keywordToWhichToken = Dictionary<of String, String>()
 		_onTokenTypeCache = Dictionary<of String, MethodInfo?>()
 		_didReset = true
+		_avgCount = _avgCountNum = 0
 
 	def _reuse
 		"""
@@ -623,7 +624,7 @@ class Tokenizer
 		This is the core brain of the tokenizer.
 		The primary logic for matching tokens is here.
 		"""
-		count = 0
+		count, didCheckTokenDefs = 0, false
 		try
 			if _tokenQueue.count
 				# eat up queue first
@@ -634,6 +635,7 @@ class Tokenizer
 			try
 				assert _tokenDefs
 				tokenDefs = _getCandidateTokenDefs(_sourceLine)
+				didCheckTokenDefs = true
 				for tokenDef in tokenDefs
 					count += 1
 					if _skipMatchAttempt(tokenDef, _sourceLineIndex)
@@ -695,8 +697,9 @@ class Tokenizer
 			#   from TokenizerError.tokenzier.curToken or .lastToken
 			return nil
 		finally
-			_avgCount += count
-			_avgCountNum += 1
+			if didCheckTokenDefs
+				_avgCount += count
+				_avgCountNum += 1
 
 	def _getCandidateTokenDefs(sourceLine as String?) as List<of TokenDef>
 		if _narrowTokenDefs and _tokenDefs.count >= _minNumTokenDefsToNarrow
