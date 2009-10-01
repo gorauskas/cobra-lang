@@ -62,10 +62,14 @@ static public class CobraImp {
 		_techStringMaker = new TechStringMaker();
 	}
 
-	static public T CheckNonNil<T>(Object obj, string sourceCode, T value, SourceSite site) {
+	static public T CheckNonNil<T>(Object obj, string sourceCode, T value,
+		/* SourceSite */ string fileName, int lineNum, string className, string memberName, Object thiss) {
 		// used for "x to !" and "someNilable to SomethingNotNilable"
 		if (value == null)
-			throw new NonNilCastException(site, new object[] {0, sourceCode, value}, obj, null);
+			throw new NonNilCastException(
+				new SourceSite(fileName, lineNum, className, memberName, thiss),
+				new object[] {0, sourceCode, value}, obj, null
+			);
 		return value;
 	}
 
