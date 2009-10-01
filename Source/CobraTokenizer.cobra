@@ -137,7 +137,7 @@ class CobraTokenizer inherits Tokenizer
 
 			# substituted strings
 			r'RBRACKET_SPECIAL		]',
-			r"STRING_START_SINGLE	'",  # see "def make_STRING_FOO_BAR"
+			r"STRING_START_SINGLE	'",  # see "def makeSTRING_FOO_BAR"
 			r"STRING_PART_SINGLE	'",
 			r"STRING_STOP_SINGLE	'",
 
@@ -232,6 +232,13 @@ class CobraTokenizer inherits Tokenizer
 		_indentCount = 0
 		_substLBracketCount = 0
 
+	def makeSPACE(definition as String) as TokenDef?
+		return SpaceTokenDef('SPACE', definition)
+
+# TODO
+#	def makeOPEN_GENERIC(definition as String) as TokenDef?
+#		return OpenGenericTokenDef('OPEN_GENERIC', definition)
+		
 	def makeSTRING_START_SINGLE(definition as String) as TokenDef?
 		return StringStartTokenDef('STRING_START_SINGLE', definition[0])
 		
@@ -887,9 +894,85 @@ class CobraTokenizer inherits Tokenizer
 		return if(.willReturnDirectives, tok, nil)
 
 
-class StringTokenDef
-	is abstract
-	inherits TokenDef
+class SpaceTokenDef inherits TokenDef
+	"""
+	This is just an idea for speeding up the tokenizer...
+	implement some of the token defs by hand in the hope that they will be faster than the regex.
+	"""
+	
+	test
+		# .timeIt
+		pass
+		
+	def timeIt is shared
+		input1, input2 = '\t\tx = 5', '# foo'
+		reps = 10_000_000
+
+		re = Regex(r'[ \t]+', RegexOptions.Compiled)
+		sw = System.Diagnostics.Stopwatch()
+		sw.start
+		for i in reps
+			re.match(input1)
+			re.match(input2)
+		sw.stop
+		timeRE = sw.elapsedMilliseconds
+
+		td = SpaceTokenDef('SPACE', r'[ \t]+')
+		sw = System.Diagnostics.Stopwatch()
+		sw.start
+		for i in reps
+			td.match(input1)
+			td.match(input2)
+		sw.stop
+		timeTD = sw.elapsedMilliseconds
+		
+		ratio = timeRE / timeTD
+		trace timeRE, timeTD, ratio
+
+		# trace: timeRE=6875 (Int64); timeTD=462 (Int64); ratio=14.88 (Decimal);
+		# so at least for SpaceTokenDef, its .match is more than 14 X faster than a compiled regex!
+
+	cue init(which as String, definition as String)
+		base.init(which)
+		assert definition == r'[ \t]+'
+	
+	get length as int is override
+		throw Exception('ordered token')
+
+	get firstChars as List<of char> is override
+		return [c' ', c'\t']
+
+	def match(input as String) as TokenMatch? is override
+		for i in input.length
+			c = input[i]
+			if c <> c' ' and c <> c'\t', break
+		return if(i==0, nil, TokenMatch(input.substring(0, i)))
+
+
+/#
+TODO
+class OpenGenericTokenDef inherits TokenDef
+	""" [A-Za-z_][A-Za-z0-9_]*<of[ \n\r\t] """
+
+	cue init(which as String, definition as String)
+		base.init(which)
+	
+	get length as int is override
+		throw Exception('ordered token')
+	
+	get firstChars as List<of char> is override
+		t = List<of char>()
+		for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_'
+			t.add(c)
+		return t
+	
+	def match(input as String) as TokenMatch? is override
+		state = 0
+		for i in input.length
+			...
+#/
+
+class StringTokenDef inherits TokenDef is abstract
 	"""
 	Regexes were:
 		r"STRING_START_SINGLE	'[^'\n\[]*\[",
@@ -901,7 +984,7 @@ class StringTokenDef
 		r'STRING_STOP_DOUBLE	\][^"\n\[]*"',
 
 	But there is also the need to escape left brackets which turned out difficult to express in
-	regexes. I did manage to do it, but the the regexes became *extremely* slow.
+	regexes. I did manage to do it, but then the regexes became *extremely* slow.
 	"""
 
 	var _quote as char
@@ -915,13 +998,10 @@ class StringTokenDef
 
 	def match(input as String) as TokenMatch? is override
 		s = _match(input)
-		if s
-			return TokenMatch(s)
-		else
-			return nil
+		if s, return TokenMatch(s)
+		else, return nil
 
-	def _match(input as String) as String?
-		is abstract
+	def _match(input as String) as String? is abstract
 
 	def _matchBetween(input as String, startch as char, stopch as char, breakch as char) as String?
 		"""
@@ -946,8 +1026,7 @@ class StringTokenDef
 		return '[.getType.name]([CobraCore.toTechString(_quote)])'
 
 
-class StringStartTokenDef
-	inherits StringTokenDef
+class StringStartTokenDef inherits StringTokenDef
 	
 	cue init(which as String, quote as char)
 		base.init(which, quote)
@@ -978,8 +1057,7 @@ class StringStartTokenDef
 			return _matchBetween(input, _quote, c'[', _quote)
 
 
-class StringPartTokenDef
-	inherits StringTokenDef
+class StringPartTokenDef inherits StringTokenDef
 	
 	cue init(which as String, quote as char)
 		base.init(which, quote)
@@ -1010,8 +1088,7 @@ class StringPartTokenDef
 			return _matchBetween(input, c']', c'[', _quote)
 
 
-class StringStopTokenDef
-	inherits StringTokenDef
+class StringStopTokenDef inherits StringTokenDef
 	
 	cue init(which as String, quote as char)
 		base.init(which, quote)
