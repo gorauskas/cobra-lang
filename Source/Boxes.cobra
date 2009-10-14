@@ -863,7 +863,7 @@ class Box
 		body
 			# TODO: can take this out. it's just a check that the below comparison is working. 2007-12-08
 			equal = true
-			for i = 0 .. typeArgs.count
+			for i in typeArgs.count
 				if typeArgs[i] <> .genericParams[i]
 					equal = false
 					break
@@ -876,17 +876,13 @@ class Box
 
 			# the cache of constructed types has to come from the root generic type def or you end up with duplicate
 			# constructed types which is not only wasteful, but causes problems with inheritance tests
-			genericDef = this
-			while genericDef.genericDef
-				genericDef = genericDef.genericDef to !
+			if .genericDef, return .genericDef.constructedTypeFor(typeArgs)
 
-			if genericDef._constructedTypes is nil
-				genericDef._constructedTypes = Dictionary<of String, Box>()
+			if _constructedTypes is nil, _constructedTypes = Dictionary<of String, Box>()
 			
 			key = TypeUtil.keyForTypeArgs(typeArgs)
 
-			if genericDef._constructedTypes.containsKey(key)
-				return genericDef._constructedTypes[key]
+			if _constructedTypes.containsKey(key), return _constructedTypes[key]
 
 			assert not .isBindingInh
 
@@ -902,7 +898,7 @@ class Box
 
 			t = .memberwiseClone to Box
 			assert t is not this
-			genericDef._constructedTypes[key] = t
+			_constructedTypes[key] = t
 			argNames = (for type in typeArgs get type.name).join(',')
 			t._name = '[.rootName]<of [argNames]>'
 			t._genericDef = this
@@ -914,10 +910,8 @@ class Box
 				t._genericParams[i] = typeArgs[i]
 			assert t._constructedTypes is nil or t._constructedTypes.count == 0
 
-			if .didBindInt
-				t._completeConstruction(typeArgs)
-			else
-				t._needsConstruction(typeArgs)
+			if .didBindInt, t._completeConstruction(typeArgs)
+			else, t._needsConstruction(typeArgs)
 			assert t._constructedTypes is nil or t._constructedTypes.count == 0
 
 			return t
