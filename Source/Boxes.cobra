@@ -266,6 +266,8 @@ class Box
 		return 'extern' in _isNames
 
 	def isDescendantOfInterface(inter as Interface) as bool
+		require .didBindInh or .nativeType
+		if .nativeType, _prepLibraryBox
 		if this == inter, return true
 		if _baseInterfaces.count == 0 and _baseInterfaceProxies.count, .bindInh
 		if .compiler, inter.bindInh
@@ -720,6 +722,7 @@ class Box
 		DLL types get bindInh & bindInt only on demand. (Otherwise reading system DLLs slows things down.)
 		"""
 		require .nativeType
+		ensure .didBindInh
 		if _didPrep, return
 		_didPrep = true
 		if not .didBindInh
@@ -1131,8 +1134,10 @@ class Class
 
 	get isCallable as bool is override
 		return true
-		
+
 	def isDescendantOf(type as IType) as bool is override
+		or require .nativeType
+		if .nativeType, _prepLibraryBox
 		if this == type, return true
 		if not .baseClass and _baseNode, .bindInh
 		if .compiler, type.bindInh
@@ -1331,6 +1336,8 @@ class Interface
 		return true
 
 	def isDescendantOf(type as IType) as bool is override
+		or require .nativeType
+		if .nativeType, _prepLibraryBox
 		if this == type, return true
 		if type inherits Interface
 			if .isDescendantOfInterface(type)
@@ -1363,6 +1370,8 @@ class Struct
 
 	def isDescendantOf(type as IType) as bool is override
 		# TODO: hmmm, almost duplicated from Class
+		or require .nativeType
+		if .nativeType, _prepLibraryBox
 		if this == type, return true
 		if not .baseClass /# TODO? and _baseNode #/, .bindInh
 		if .compiler, type.bindInh
