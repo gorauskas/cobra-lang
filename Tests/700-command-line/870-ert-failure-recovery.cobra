@@ -1,0 +1,21 @@
+# check that a failed compile with -ert doesnt leave any additional 
+# Native_ert* files behind. ticket:181
+
+class FailedErt
+
+	def main
+		baseName = '871-ert-failure-sample'
+		src, exe  = '[baseName].cobra', '[baseName].exe'
+		
+		cobraPath = CobraCore.findCobraExe to !
+		p as System.Diagnostics.Process?
+		# check no files 'Native_ert*.cs' in cwd
+		ertCount = .getNativeIntermediateFiles.count
+		assert ertCount == 0
+		output = CobraCore.runCobraExe(cobraPath, '-c -ert:yes [src]', out p)
+		assert 'error: Cannot find "z".' in output
+		assert p.exitCode <> 0 and not File.exists(exe)
+		assert .getNativeIntermediateFiles.count == 0
+	
+	def getNativeIntermediateFiles as IList<of String> is shared
+		return for fileName in Directory.getFiles('.') where 'Native_ert_' in fileName
