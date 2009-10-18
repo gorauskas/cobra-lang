@@ -141,7 +141,7 @@ class Box
 		The return value is a shallow copy to prevent outside modification of a generic's constructedTypes cache.
 		This property exists primarily for debugging/display.
 		"""
-		return Dictionary<of String, Box>(_constructedTypes)
+		return if(_constructedTypes, Dictionary<of String, Box>(_constructedTypes), Dictionary<of String, Box>())
 
 	get defaultAccessLevel as String is override
 		return 'public'
@@ -267,7 +267,7 @@ class Box
 
 	def isDescendantOfInterface(inter as Interface) as bool
 		require .didBindInh or .nativeType
-		if .nativeType, _prepLibraryBox
+		_prepLibraryBox
 		if this == inter, return true
 		if _baseInterfaces.count == 0 and _baseInterfaceProxies.count, .bindInh
 		if .compiler, inter.bindInh
@@ -715,9 +715,14 @@ class Box
 			finally
 				.compiler.boxMemberStack.pop
 
+	def _prepLibraryBox
+		ensure .didBindInh
+		if _nativeType and not _didPrep
+			__prepLibraryBox
+			
 	var _didPrep as bool
 
-	def _prepLibraryBox
+	def __prepLibraryBox
 		"""
 		DLL types get bindInh & bindInt only on demand. (Otherwise reading system DLLs slows things down.)
 		"""
@@ -864,6 +869,8 @@ class Box
 		ensure
 			result.genericParams == typeArgs
 		body
+			_prepLibraryBox
+
 			# TODO: can take this out. it's just a check that the below comparison is working. 2007-12-08
 			equal = true
 			for i in typeArgs.count
@@ -1137,7 +1144,7 @@ class Class
 
 	def isDescendantOf(type as IType) as bool is override
 		or require .nativeType
-		if .nativeType, _prepLibraryBox
+		_prepLibraryBox
 		if this == type, return true
 		if not .baseClass and _baseNode, .bindInh
 		if .compiler, type.bindInh
@@ -1145,7 +1152,7 @@ class Class
 			if .isDescendantOfInterface(type)
 				return true
 		baseClass = .baseClass
-		assert baseClass is not this, this  # check for direct cycles
+		assert baseClass is not this  # check for direct cycles
 		if baseClass, return baseClass.isDescendantOf(type)
 		return false
 
@@ -1337,7 +1344,7 @@ class Interface
 
 	def isDescendantOf(type as IType) as bool is override
 		or require .nativeType
-		if .nativeType, _prepLibraryBox
+		_prepLibraryBox
 		if this == type, return true
 		if type inherits Interface
 			if .isDescendantOfInterface(type)
@@ -1371,7 +1378,7 @@ class Struct
 	def isDescendantOf(type as IType) as bool is override
 		# TODO: hmmm, almost duplicated from Class
 		or require .nativeType
-		if .nativeType, _prepLibraryBox
+		_prepLibraryBox
 		if this == type, return true
 		if not .baseClass /# TODO? and _baseNode #/, .bindInh
 		if .compiler, type.bindInh
