@@ -918,19 +918,29 @@ class ToExpr
 			.throwError('Cannot locate a type for the type cast "to [_rightTypeExpr.toCobraSource]".')
 
 
-class ToQExpr
-	is partial
-	inherits AbstractToExpr
+class ToQExpr inherits AbstractToExpr is partial
 
 	cue init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
-		# TODO: use IPotentialTypeExpr like ToExpr does
 
 	def _bindImp
 		base._bindImp
 		if not _type inherits NilableType
 			_type = NilableType(_type).bindAll to NilableType  # CC: axe cast when 'as this' is supported
-		# TODO: warn about redundancy
+		# warn about redundancy
+		if not .left.hasError and not .right.hasError
+			rightTypeExpr = _right to IPotentialTypeExpr
+			rightType = rightTypeExpr.potentialType
+			if rightType
+				if _left.type inherits NilableType and not rightType inherits NilableType
+					if _left.type.nonNil == rightType
+						.compiler.warning(this, 'The given expression is already a "[rightTypeExpr.toCobraSource]", but nilable. You can use "to !" to remove the nilability or remove the redundant cast.')
+				else if not _left.type inherits NilableType and rightType inherits NilableType
+					pass # TODO: check rhs type is castable to lhs regardless of nilability
+				else if _left.type == rightType
+					.compiler.warning(this, 'The given expression is already a "[rightTypeExpr.toCobraSource]" so the typecast is redundant. You can remove it.')
+			else
+				.throwError('Cannot locate a type for the type cast "to? [rightTypeExpr.toCobraSource]".')
 
 
 class CoalesceExpr
