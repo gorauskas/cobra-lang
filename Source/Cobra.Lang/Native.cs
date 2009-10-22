@@ -520,12 +520,13 @@ static public class CobraImp {
 		return results;
 	}
 
-	/* Numeric forExpr */
-	static public List<int> For<TIn, TOut>(int start, int stop, int step, ForGet<int, int> forGet) {
+
+	/* Numeric forExpr - ints in, any type returned */        
+	static public List<TOut> For<TIn, TOut>(int start, int stop, int step, ForGet<int, TOut> forGet) {
 		if ((step > 0 && start > stop) || 
 			(step < 0 && start < stop) || step == 0)
 				throw new IndexOutOfRangeException(string.Format("for expression will never terminate; start={0} stop={1} step={2}", start, stop, step));
-		List<int> results = new List<int>();
+		List<TOut> results = new List<TOut>();
 		for (int item = start; 
 			(step > 0 && item < stop) || (step < 0 && item > stop);
 			item += step)
@@ -533,15 +534,15 @@ static public class CobraImp {
 		return results;
 	}
 
-	static public List<int> For<TIn, TOut>(int start, int stop, int step, ForWhereGet<int, int> forWhereGet) {
+	static public List<TOut> For<TIn, TOut>(int start, int stop, int step, ForWhereGet<int, TOut> forWhereGet) {
 		if ((step > 0 && start > stop) || 
 			(step < 0 && start < stop) || step == 0)
 				throw new IndexOutOfRangeException(string.Format("for expression will never terminate; start={0} stop={1} step={2}", start, stop, step));
-		List<int> results = new List<int>();
+		List<TOut> results = new List<TOut>();
 		for (int item = start;
 			(step > 0 && item < stop) || (step < 0 && item > stop);
 			item += step) {
-			int value;
+			TOut value;
 			if (forWhereGet(item, out value))
 				results.Add(value);
 		}
