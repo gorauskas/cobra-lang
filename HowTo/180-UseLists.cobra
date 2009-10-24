@@ -4,9 +4,10 @@ class HowToUseLists
 		.basics
 		.looping
 		.literals
-		.printingAndStringConversion
+		.stringConversion
 		.operators
-		
+		.methods
+
 	def basics
 		# a list literal starts with [ and ends with ]
 		# elements are separated by commas
@@ -78,6 +79,11 @@ class HowToUseLists
 				on 2, assert name == 'baz'
 			order.add(i)
 		assert order == [2, 1, 0]
+		
+		# loop through the indexes only because the list will be modified
+		for i in names.count
+			names[i] = names[i].toUpper
+		assert names == ['FOO', 'BAR', 'BAZ']
 	
 	def literals
 		# you've seen these above
@@ -130,17 +136,7 @@ class HowToUseLists
 		stuff = ['foo', 5, nil]        # List<of dynamic?>
 		stuff = []    # an empty list is List<of dynamic?>
 	
-	def other
-		ints = [1, 2, 3]
-		# .reversed returns a new list with the reversed elements
-		# with no change to the original list
-		assert ints.reversed == [3, 2, 1]
-		assert ints == [1, 2, 3]
-		
-		for i in ints
-			assert i > 0
-
-	def printingAndStringConversion
+	def stringConversion
 		ints = [1, 2, 3]
 		
 		# list to string is ugly in .NET
@@ -162,7 +158,7 @@ class HowToUseLists
 		
 		# trace
 		trace ints  # trace: ints=List<of int>[1, 2, 3]; at x-how-to-list.cobra:163;
-		            #        in HowToUseLists.printingAndStringConversion
+		            #        in HowToUseLists.stringConversion
 
 		# joining list elements into a string
 		assert ints.join(' ') == '1 2 3'
@@ -196,7 +192,49 @@ class HowToUseLists
 		ints = [0, 0]
 		assert not all ints
 		assert not any ints
+		
+		# the equality operators can be used on lists
+		assert [1, 2] == [2, 1].reversed
+		assert [1, 2] <> [2, 1]
 
+	def methods
+		# add an element to a list
+		names = ['foo', 'bar', 'baz']
+		names.add('qux')
+		assert names == ['foo', 'bar', 'baz', 'qux']
+		
+		# add multiple elements to a list
+		names.addRange(['x', 'y'])
+		assert names == ['foo', 'bar', 'baz', 'qux', 'x', 'y']
+		
+		# insert an element
+		names.insert(1, 'fooey')
+		assert names == ['foo', 'fooey', 'bar', 'baz', 'qux', 'x', 'y']
+		names.insert(7, 'z')  # 7 is just past the end of the list
+		assert names == ['foo', 'fooey', 'bar', 'baz', 'qux', 'x', 'y', 'z']
+		expect ArgumentOutOfRangeException, names.insert(20, 'exception')
+		
+		# clear a list
+		names.clear
+		assert names.count == 0
+		
+		# find an item's index
+		names = ['foo', 'bar', 'baz', 'foo']
+		assert names.indexOf('foo') == 0
+		assert names.indexOf('baz') == 2
+		assert names.indexOf('not there') == -1
+		assert names.lastIndexOf('foo') == 3
+		
+		# find an item's index in a subrange of the list
+		assert names.indexOf('foo', 1) == 3      # start at 1
+		assert names.indexOf('foo', 1, 2) == -1  # start at 1, search 2 items
+		
+		# left off on .insertRange
+		
+		# additional methods. search web for "msdn generic list"
+		# .asReadOnly .binarySearch .convertAll .copyTo .exists .find .findAll .findIndex .findLast .findListIndex .forEach
+		
+		
 
 class Point
 
@@ -204,6 +242,14 @@ class Point
 		base.init
 		_x, _y = x, y
 	
+	def equals(other) as bool is override
+		if other is nil, return false
+		if other inherits Point, return .x == other.x and .y == other.y
+		return false
+
+	def getHashCode as int is override
+		return .x ^ .y
+
 	get x from var as int
 	
 	get y from var as int
@@ -211,12 +257,60 @@ class Point
 	def toString as String is override
 		return '[.typeOf.name]([.x], [.y])'
 
+
+# although it's not common to subclass the list type,
+# you are certainly free to do so
+
+# a generic subclass
+
+class MyList<of T> inherits List<of T>
+
+	get middle as T
+		require .count > 0
+		return this[.count // 2]
+
+# a subclass with specific type
+
+class PointList inherits List<of Point>
+
+	test
+		pl = PointList()
+		pl.add(Point(1, 0))
+		pl.add(Point(-2, 3))
+		assert pl.count == 2
+		assert pl.leftMost == Point(-2, 3)
+	
+	def leftMost as Point
+		require .count > 0
+		leftMost = this[0]
+		for i in 1 : .count
+			if this[i].x < leftMost.x
+				leftMost = this[i]
+		return leftMost
+
+# a generic subclass with a type constraint is even better,
+# because then you can specify a type parameter when using it
+
+class PointList<of TPoint> inherits List<of TPoint>
+	where TPoint must be Point  # the type constraint
+
+	test
+		pl = PointList<of Point>()
+		pl.add(Point(1, 0))
+		pl.add(Point(-2, 3))
+		assert pl.count == 2
+		assert pl.leftMost == Point(-2, 3)
+	
+	def leftMost as TPoint  # notice the return type is TPoint
+		require .count > 0
+		leftMost = this[0]
+		for i in 1 : .count
+			if this[i].x < leftMost.x
+				leftMost = this[i]
+		return leftMost
+
 		# TODO:
 
-		# use numeric for loop because you're going to modify a list
-		
-		# .add, .addRange
-		
 		# slicing
 		
 		# customers.sort(ref .orderByTotalSpent) 
@@ -224,9 +318,8 @@ class Point
 		
 		# declaring types
 		# List vs. IList
-		# for expression returns a list
+		# List methods
 		# all extension methods
 		# check msdn docs on IList and List
 		# any enumerable .toList
-	
-		# subclass the list type
+		# for expression returns a list
