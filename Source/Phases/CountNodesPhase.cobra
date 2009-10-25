@@ -1,0 +1,382 @@
+class CountNodesPhase inherits Phase
+	"""
+	accumulate a count of all Nodes in AST tree
+	"""
+
+	cue init(c as Compiler)
+		base.init(c)
+
+	get description as String is override
+		return 'Counting Nodes'
+
+	def innerRun is override
+		.compiler.nodesCompiled = NodesCounter().count(.compiler)
+
+
+class NodesCounter inherits Visitor
+	"""
+	Visit the nodes in the source modules for the purpose of counting them all
+
+	AST tree structure with child node fields looks something like this
+	Compiler
+		CobraModule
+		Module
+			NameSpace
+				Boxes (Class, Struct, Enum, Mixin, Extends) - declsInOrder
+					BoxField (BoxConst, BoxVar) - initExpr
+					ProperDexer    -  getPart,setPart
+					AbstractMethod - params, statements
+						(Statement)
+							AssertStmt - expr
+							CompileTimeTraceStmt - expr							
+							BranchStmt - expr, onParts, ElsePart
+							ExpectStmt - block
+							ForStmt - varExpr, block
+								OldForNumericStmt - start, stop, step
+								ForNumericStmt    - start, stop, step
+								ForEnumerableStmt -  what, multiArgs
+							IfStmt - cond, trueStmts, falseStmts
+							ListenOrIgnoreStmt - event, target
+							LockStmt - expr, block
+							PassStmt/BreakStmt/ContinueStmt
+							PrintStmt - destination, args
+							PrintRedirectStmt - destination, args
+							RaiseStmt - exprs
+							ReturnStmt - expr
+							TraceExprsStmt - exprs
+							TryStmt - tryBlock, catchBlocks, successBlock, finallyBlock
+							CatchBlock - block
+							ThrowStmt - expr
+							UsingStmt - varExpr, initExpr, block
+							whileStmt - expr, block
+							YieldReturnStmt - expr
+							MultiTargetAssignmentStmt - targets, source
+							BlockStmt - statements
+				
+					Expr
+						AnonymousMethodExpr-  params, stmts
+						LambdaExpr - params, expr
+						CallExpr - args
+						EnumCallExpr - args, members
+						ForExpr - nameExpr, what, whereExpr, getExpr, start, stop, step
+						IfExpr - cond, tpart, fpart
+						IndexExpr - target, args
+						IsNilExpr - expr	
+						IsNotNilExpr - expr	
+						MemberExpr - args
+						OldExpr - expr
+						PostCallExpr - expr, args	
+						RefExpr - expr
+						SliceExpr - target, start, stop, step
+						AllOrAnyExpr - expr
+						UnaryOpExpr - expr
+						StringSubstExpr - items
+						FormattedExpr - expr
+						SequenceLit - exprs
+						DictLit - _entries (List of List)
+						ToNilableOrNot - expr
+						BinaryOpExpr - left, right
+						
+						INode covers remainder
+	"""					
+	
+	cue init
+		base.init
+
+	pro nodeCount from var = 0
+
+	def count(c as Compiler) as int
+		"""
+		Walk all nodes and accumulate count
+		"""
+		.nodeCount = 0
+		.visit(c)
+		return .nodeCount
+			
+	get methodName as String is override
+		return 'visit'
+
+	def visit(c as Compiler)
+		.dispatch(c.modules)
+	
+	def visit(mod as Module)
+		.inc
+
+	def visit(mod as CobraModule)
+		for decl in mod.topNameSpace.declsInOrder
+			.inc
+			.dispatch(decl)
+
+	def visit(ns as NameSpace)
+		.inc
+		.dispatch(ns.declsInOrder)
+	
+	# Members....
+
+	# Box covers Class, Struct, Interface, Enum, Mixin, Extends
+	def visit(b as Box)
+		.inc
+		.dispatch(b.declsInOrder)
+
+	def visit(b as BoxField)
+		.inc
+		.dispatch(b.initExpr)
+		
+	def visit(p as ProperDexer)
+		.inc
+		.dispatch(p.getPart)
+		.dispatch(p.setPart)
+
+	def visit(am as AbstractMethod)
+		.inc
+		.dispatch(am.params)
+		.dispatch(am.statements)
+	
+	def visit(cp as ContractPart)
+		.inc
+		.dispatch(cp.exprs)
+		.dispatch(cp.codeMember)
+	
+	def visit(mo as MemberOverload)
+		.inc
+		.dispatch(mo.members)
+		
+	# Statements ....
+	def visit(asst as AssertStmt)
+		.inc
+		.dispatch(asst.expr)
+
+	def visit(bs as BranchStmt)
+		.inc
+		.dispatch(bs.expr)
+		.dispatch(bs.onParts)
+		.dispatch(bs.elsePart)
+
+	def visit(es as ExpectStmt)
+		.inc
+		.dispatch(es.block)
+
+	def visit(istmt as IfStmt)
+		.inc
+		.dispatch(istmt.cond)
+		.dispatch(istmt.trueStmts)
+		.dispatch(istmt.falseStmts)
+
+	# deprecated 
+	def visit(ofns as OldForNumericStmt)
+		.inc
+		#.dispatch(ofns._start)
+		#.dispatch(ofns._stop)
+		#.dispatch(ofns._step)
+		#.dispatch(ofns.varExpr)
+		#.dispatch(ofns._block)
+
+	def visit(fns as ForNumericStmt)
+		.inc
+		.dispatch(fns.start)
+		.dispatch(fns.stop)
+		.dispatch(fns.step)
+		.dispatch(fns.varExpr)
+		.dispatch(fns.block)
+
+	def visit(bop as BranchOnPart)
+		.inc
+		.dispatch(bop.exprs)
+		.dispatch(bop.block)
+		
+	def visit(fes as ForEnumerableStmt)
+		.inc
+		.dispatch(fes.what)
+		if fes.multiArgs
+			.dispatch(fes.multiArgs)
+		.dispatch(fes.varExpr)
+		.dispatch(fes.block)
+
+	def visit(lis as ListenOrIgnoreStmt)
+		.inc
+		if lis.event
+			.dispatch(lis.event)
+		if lis.target
+			.dispatch(lis.target)
+		
+	def visit(ls as LockStmt)
+		.inc
+		.dispatch(ls.expr)
+		.dispatch(ls.block)
+		
+	#	Single token stmts handled below -	
+	#		/BreakStmt/ContinueStmt/YieldStmt/YieldBreakStmt	
+
+	def visit(ps as PrintStmt)
+		.inc
+		.dispatch(ps.destination)
+		.dispatch(ps.args)
+		
+	def visit(prs as PrintRedirectStmt)
+		.inc
+		.dispatch(prs.destination)
+		.dispatch(prs.block)
+
+	def visit(rs as RaiseStmt)
+		.inc
+		.dispatch(rs.exprs)
+
+	def visit(rs as ReturnStmt)
+		.inc
+		.dispatch(rs.expr)
+		
+	def visit(ts as TraceExprsStmt)
+		.inc
+		.dispatch(ts.exprs)
+		
+	def visit(ts as TryStmt)
+		.inc
+		.dispatch(ts.tryBlock)
+		.dispatch(ts.catchBlocks)
+		.dispatch(ts.successBlock)
+		.dispatch(ts.finallyBlock)
+		
+	def visit(cb as CatchBlock)
+		.inc
+		.dispatch(cb.block)
+
+	def visit(ts as ThrowStmt)
+		.inc
+		.dispatch(ts.expr)
+	
+	def visit(us as UsingStmt)
+		.inc
+		.dispatch(us.initExpr)
+		.dispatch(us.block)
+	
+	def visit(ws as WhileStmt)
+		.inc
+		.dispatch(ws.expr)
+		.dispatch(ws.block)
+		
+	def visit(yrs as YieldReturnStmt)
+		.inc
+		.dispatch(yrs.expr)
+
+	def visit(mtas as MultiTargetAssignStatement)
+		.inc
+		.dispatch(mtas.targets)
+		.dispatch(mtas.source)
+
+	def visit(bs as BlockStmt)
+		.inc
+		.dispatch(bs.stmts)
+
+	# Exprs ...
+	def visit(boe as BinaryOpExpr)
+		.inc
+		.dispatch(boe.left)
+		.dispatch(boe.right)
+	
+	def visit(uoe as UnaryOpExpr)
+		.inc
+		.dispatch(uoe.expr)
+		
+	def visit(ame as AnonymousMethodExpr)
+		.inc
+		.dispatch(ame.params)
+		.dispatch(ame.stmts)
+
+	def visit(le as LambdaExpr)
+		.inc
+		.dispatch(le.params)
+		.dispatch(le.expr)
+			
+	def visit(ce as CallExpr)
+		.inc
+		.dispatch(ce.args)
+		
+	def visit(ece as EnumCallExpr)
+		.inc
+		.dispatch(ece.args)
+		.dispatch(ece.members)
+
+	def visit(fe as ForExpr)
+		.inc
+		.dispatch(fe.nameExpr)
+		.dispatch(fe.what)
+		.dispatch(fe.whereExpr)
+		.dispatch(fe.getExpr)
+		.dispatch(fe.start)
+		.dispatch(fe.stop)
+		.dispatch(fe.step)
+		
+	def visit(ie as IfExpr)
+		.inc
+		.dispatch(ie.cond)
+		.dispatch(ie.tpart)
+		.dispatch(ie.fpart)
+		
+	def visit(ie as IndexExpr)
+		.inc
+		.dispatch(ie.target)
+		.dispatch(ie.args)
+		
+	def visit(ine as IsNilExpr)
+		.inc
+		.dispatch(ine.expr)
+
+	def visit(inne as IsNotNilExpr)
+		.inc
+		.dispatch(inne.expr)
+
+	def visit(me as MemberExpr)
+		.inc
+		.dispatch(me.args)
+
+	def visit(oe as OldExpr)
+		.inc
+		.dispatch(oe.expr)
+		
+	def visit(pce as PostCallExpr)
+		.inc
+		.dispatch(pce.args)
+		.dispatch(pce.expr)
+		
+	def visit(re as RefExpr)
+		.inc
+		.dispatch(re.expr)
+
+	def visit(se as SliceExpr)
+		.inc
+		.dispatch(se.target)
+		.dispatch(se.start)
+		.dispatch(se.stop)
+		.dispatch(se.step)
+		
+	def visit(aoae as AllOrAnyExpr)
+		.inc
+		.dispatch(aoae.expr)
+		
+	def visit(sse as StringSubstLit)
+		.inc
+		.dispatch(sse.items)
+		
+	def visit(fe as FormattedExpr)
+		.inc
+		.dispatch(fe.expr)
+		
+	def visit(sl as SequenceLit)
+		.inc
+		.dispatch(sl.exprs)
+		
+	def visit(dl as DictLit)
+		.inc
+		.dispatch(dl.entries)
+		
+	# for DictLit
+	def visit(loe as List<of Expr>)
+		.dispatch(loe)
+		
+	def visit(tnon as ToNilableOrNotExpr)
+		.inc
+		.dispatch(tnon.expr)
+
+	# catch-all
+	def visit(node as INode)
+		.inc
