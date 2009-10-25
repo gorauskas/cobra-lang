@@ -1,4 +1,7 @@
-// csc /out:Foo.iSeries.dll /target:library Foo.iSeries.cs
+/*
+csc /out:Foo.iSeries.dll /target:library Foo.iSeries.cs
+gmcs -out:Foo.iSeries.dll -t:library Foo.iSeries.cs
+*/
 namespace Foo {
 	namespace iSeries {
 		public class iConnection {
@@ -16,4 +19,15 @@ namespace Foo {
 			}
 		}
 	}
+}
+namespace little {
+	
+	public class A {
+		
+		public int One {
+			get { return 1; }
+		}
+		
+	}
+	
 }
