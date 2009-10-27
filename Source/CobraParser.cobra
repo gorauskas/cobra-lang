@@ -731,7 +731,7 @@ class CobraParser inherits Parser
 					expr = if(exprs.count, MemberExpr(.grab), IdentifierExpr(.grab))
 				on 'OPEN_CALL'
 					token = .grab
-					args = .commaSepExprs(['RPAREN'], true, true)
+					args = .commaSepExprs('RPAREN.', true, true)
 					if exprs.count
 						expr = CallExpr(token, token.value to String, args, true)
 					else
@@ -2130,7 +2130,7 @@ class CobraParser inherits Parser
 		token = .expect('FOR')
 		varr = .nameExpr
 		if .optional('COMMA')  # forStmt multiarg for v1,... in 
-			args = .commaSepExprsPartial(['IN' ,'EOL'], 'IN')
+			args = .commaSepExprsPartial('IN.EOL.', 'IN')
 			if .last.which <> 'IN'
 				.throwError('Comma separated nameId list in forStatement needs to terminate with an IN token ("in")')
 			if args.count == 0  # "for v1, in ..."  single multiarg variable 
@@ -2288,9 +2288,9 @@ class CobraParser inherits Parser
 				return if(_isTraceOn, TraceLocationStmt(token, _curCodePart), nil)
 			else
 				if _isTraceOn
-					return TraceExprsStmt(token, _curCodePart, .commaSepExprs('EOL'))
+					return TraceExprsStmt(token, _curCodePart, .commaSepExprs('EOL.'))
 				else
-					.commaSepExprs('EOL')
+					.commaSepExprs('EOL.')
 					return nil
 		throw FallThroughException()  # 'branch..else should have returned'
 
@@ -2320,7 +2320,7 @@ class CobraParser inherits Parser
 			else
 				.throwError('Expecting a comma and print arguments, or a code block.')
 		if not block
-			args = .commaSepExprs(['EOL', 'STOP'])
+			args = .commaSepExprs('EOL.STOP.')
 			terminator = .last
 			if terminator.which=='STOP'
 				stopp = true
@@ -2332,7 +2332,7 @@ class CobraParser inherits Parser
 
 	def raiseStmt as Stmt
 		token = .expect('RAISE')
-		exprs = .commaSepExprs('EOL')
+		exprs = .commaSepExprs('EOL.')
 		assert .last.which=='EOL'
 		.ungrab  # need EOL
 		if exprs.count == 0
@@ -2710,7 +2710,7 @@ class CobraParser inherits Parser
 				if not PostCallExpr.isTargetAcceptable(left to !)
 					.throwError('Unexpected call.')  # example: t = x to List<of String>()
 				token = .grab
-				exprs = .commaSepExprs('RPAREN')
+				exprs = .commaSepExprs('RPAREN.')
 				return .expression(precedence, PostCallExpr(token, left, exprs))
 			else
 				# most operators are one-word affairs
@@ -2879,14 +2879,14 @@ class CobraParser inherits Parser
 
 	def multiTargetAssign(arg0 as Expr) as Stmt
 		# id, |[id,]... = <expr>
-		args = .commaSepExprsPartial(['ASSIGN', 'EOL'], 'ASSIGN')
+		args = .commaSepExprsPartial('ASSIGN.EOL.', 'ASSIGN')
 		args.insert(0, arg0)
 		if .last.which <> 'ASSIGN'
 			.throwError('Comma-separated assignment targets must end with "=", or this is a general syntax error.')
 		assignTok = .last to !
 		rhs as Expr? = .expression
 		if .optional('COMMA')
-			rhsList = .commaSepExprs('EOL')
+			rhsList = .commaSepExprs('EOL.')
 			assert .last.which=='EOL'
 			.ungrab  # need EOL
 			rhsList.insert(0, rhs)
@@ -2903,7 +2903,7 @@ class CobraParser inherits Parser
 		branch token.which
 			on 'OPEN_CALL'
 				assert not callName.endsWith('(')
-				args = .commaSepExprs(['RPAREN'], true, true)
+				args = .commaSepExprs('RPAREN.', true, true)
 				if .opStack.count and .opStack.peek == 'DOT'
 					return CallExpr(token, callName, args, true)
 				else
@@ -2919,7 +2919,7 @@ class CobraParser inherits Parser
 						on 'GT', isDone = true
 						else, .throwError('Unexpected token [.last] in type arguments.')
 				if .optional('LPAREN')
-					args = .commaSepExprs(['RPAREN'], true, true)
+					args = .commaSepExprs('RPAREN.', true, true)
 					parens = true
 				else
 					args = List<of Expr>()
@@ -2950,7 +2950,7 @@ class CobraParser inherits Parser
 		expr.argumentLabel = label
 		return expr
 
-	def commaSepExprsPartial(terminators as IList<of String>, binOpBreakWhich as String) as List<of Expr>
+	def commaSepExprsPartial(terminators as String, binOpBreakWhich as String) as List<of Expr>
 		require
 			binOpBreakWhich.isOneOf('ASSIGN.IN.')
 			.binaryOpPrec.containsKey(binOpBreakWhich)
@@ -2964,16 +2964,15 @@ class CobraParser inherits Parser
 				_binaryOpPrec[binOpBreakWhich] = realPrec
 			return exprs
 			
-	def commaSepExprs(terminator as String) as List<of Expr>
-		return .commaSepExprs([terminator], false, false)
-
-	def commaSepExprs(terminators as IList<of String>) as List<of Expr>
+	def commaSepExprs(terminators as String) as List<of Expr>
+		require terminators.endsWith('.')
 		return .commaSepExprs(terminators, false, false)
 
-	def commaSepExprs(terminators as IList<of String>, isSpaceAgnostic as bool) as List<of Expr>
+	def commaSepExprs(terminators as String, isSpaceAgnostic as bool) as List<of Expr>
+		require terminators.endsWith('.')
 		return .commaSepExprs(terminators, isSpaceAgnostic, false)
 
-	def commaSepExprs(terminators as IList<of String>, isSpaceAgnostic as bool, expectingArguments as bool) as List<of Expr>
+	def commaSepExprs(terminators as String, isSpaceAgnostic as bool, expectingArguments as bool) as List<of Expr>
 		"""
 		Example source
 			... expr TERMINATOR
@@ -2985,6 +2984,7 @@ class CobraParser inherits Parser
 			Popular terminators are 'EOL' and 'RPAREN'.
 			The terminator token is consumed, but can be examined with .last.
 		"""
+		require terminators.endsWith('.')
 		expectSep = false
 		sep = 'COMMA'
 		exprs = List<of Expr>()
@@ -2993,19 +2993,19 @@ class CobraParser inherits Parser
 				_spaceAgnostic
 			if .peek is nil
 				literal = {'RPAREN': ')', 'RBRACKET': ']'}
-				what = (for t in terminators get '"[if(literal.containsKey(t), literal[t], t)]"').join(' or ')
+				what = (for t in terminators.split(c'.') where t.trim<>'' get '"[if(literal.containsKey(t), literal[t], t)]"').join(' or ')
 				.throwError('Expecting "," or [what].')
-			if .peek.which in terminators
+			if .peek.which.isOneOf(terminators)
 				.grab
 				break
 			if expectSep
 				.expect(sep)
-			if .peek.which in terminators
+			if .peek.which.isOneOf(terminators)
 				.grab
 				break
 			if isSpaceAgnostic
 				_spaceAgnostic
-			if .peek.which in terminators
+			if .peek.which.isOneOf(terminators)
 				.grab
 				break
 			.newOpStack
@@ -3175,12 +3175,12 @@ class CobraParser inherits Parser
 
 	def literalList as ListLit
 		token = .expect('LBRACKET')
-		exprs = .commaSepExprs(['RBRACKET'], true)
+		exprs = .commaSepExprs('RBRACKET.', true)
 		return ListLit(token, exprs)
 
 	def literalArray as ArrayLit
 		token = .expect('ARRAY_OPEN')
-		exprs = .commaSepExprs(['RBRACKET'], true)
+		exprs = .commaSepExprs('RBRACKET.', true)
 		return ArrayLit(token, exprs)
 
 	def literalDictOrSet as CompositeLiteral
