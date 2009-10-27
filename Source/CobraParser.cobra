@@ -14,6 +14,22 @@ class ErrorMessages
 			return 'Expecting a statement instead of extra indentation. One indent level is 4 spaces or 1 tab with display width of 4.'
 
 
+extend String
+	"""
+	Among these choices:
+		name in ['foo', 'bar', 'baz']
+		name in {'foo', 'bar', 'baz'}
+		name.isOneOf('foo.bar.baz.')
+	
+	The last is fastest when using -turbo which is how Cobra
+	is installed and also built for snapshots.
+	"""
+
+	def isOneOf(tokens as String) as bool
+		require tokens.endsWith('.')
+		return tokens.contains(this+'.')
+
+
 class CobraParser inherits Parser
 	"""
 	Notes:
@@ -425,17 +441,17 @@ class CobraParser inherits Parser
 			on 'number'   # TODO: fix this to work on a per-file basis
 				# number 'decimal' | 'float' | 'float32' | 'float64'
 				typeName = .grab
-				if typeName.text not in ['decimal', 'float', 'float32', 'float64']
+				if not typeName.text.isOneOf('decimal.float.float32.float64.')
 					.throwError('Compiler directive "number": unrecognized type "[typeName.text]". Must be one of "decimal", "float", "float32" or "float64".')
 				.expect('EOL')
 				comp = .typeProvider to? Compiler
 				if comp, comp.numberTypeName = typeName.text
 			on 'ref'
 				pathToken = .grab
-				if not pathToken.which in ['ID', 'STRING_SINGLE', 'STRING_DOUBLE']
+				if not pathToken.which.isOneOf('ID.STRING_SINGLE.STRING_DOUBLE.')
 					.throwError('Expecting a string literal or identifier after "@ref".')
 				path = pathToken.text
-				if pathToken.which in ['STRING_SINGLE', 'STRING_DOUBLE']
+				if pathToken.which.isOneOf('STRING_SINGLE.STRING_DOUBLE.')
 					path = path[1:-1]
 				if path.trim == ''
 					.throwError('Expecting a non-empty string literal or identifier after "@ref".')
@@ -613,7 +629,7 @@ class CobraParser inherits Parser
 								break
 				else
 					isDone = true
-			if last in ['EOL', 'INDENT'], continue
+			if last.isOneOf('EOL.INDENT.'), continue
 			if isDone, break
 			if last in encountered and last <> 'WHERE'
 				.throwError('Encountered "[last]" twice.')
@@ -1303,7 +1319,7 @@ class CobraParser inherits Parser
 		if m
 			name = m.name
 			if name.startsWith('cue.'), name = name[4:]
-			if name not in ['init', 'finalize', 'hash', 'compare', 'equals', 'enumerate']
+			if not name.isOneOf('init.finalize.hash.compare.equals.enumerate.')
 				.throwError('Unknown cue "[m.name]". Expecting "init", "finalize", "hash", "compare", "equals" or "enumerate".')
 		return m
 
@@ -1311,7 +1327,7 @@ class CobraParser inherits Parser
 		require _typeProvider
 		token = .expect('DEF', 'CUE')
 		opener = .grab to !
-		if opener.which not in ['ID', 'OPEN_CALL', 'OPEN_GENERIC'] and not opener.isKeyword
+		if not opener.which.isOneOf('ID.OPEN_CALL.OPEN_GENERIC.') and not opener.isKeyword
 			.throwError('Encountered [opener.which] when expecting an identifier.')
 		if opener.which == 'OPEN_GENERIC'
 			genericParams = .declGenericParams(opener)
@@ -1386,12 +1402,12 @@ class CobraParser inherits Parser
 					implementsType = .typeId
 				else
 					isDone = true
-			if last in ['EOL', 'INDENT'], continue
+			if last.isOneOf('EOL.INDENT.'), continue
 			if isDone, break
 			if last in encountered and last <> 'WHERE'
 				.throwError('Encountered "[last]" twice.')
 			encountered.add(last)
-		assert .last.which in ['EOL', 'INDENT']
+		assert .last.which.isOneOf('EOL.INDENT.')
 
 		if _spaceAgnosticIndentLevel
 			sail = _spaceAgnosticIndentLevel
@@ -1443,7 +1459,7 @@ class CobraParser inherits Parser
 		require _typeProvider
 		wordToken = .expect('SIG')
 		opener = .grab
-		if opener.which not in ['ID', 'OPEN_CALL'] and not opener.isKeyword
+		if not opener.which.isOneOf('ID.OPEN_CALL.') and not opener.isKeyword
 			.throwError('Encountered [opener.which] when expecting an identifier.')
 		name = opener.value to String
 		curContainer = .curContainer
@@ -1600,7 +1616,7 @@ class CobraParser inherits Parser
 			return prop
 
 	def declarePropertyFrom(token as IToken, idToken as IToken, name as String, coverWhat as String) as Property
-		require coverWhat in ['get', 'set', 'getset']
+		require coverWhat.isOneOf('get.set.getset.')
 		if .optional('VAR')
 			varName = '_' + name
 		else
@@ -1781,7 +1797,7 @@ class CobraParser inherits Parser
 			.throwError('The correct parameter syntax is "paramName as ParamType". Try "[.peek(1).text] as [.peek(0).text]".')
 		if .peek.which == 'OUT'
 			.throwError('The correct parameter syntax is "paramName as out ParamType".')
-		if .peek.which in ['INOUT', 'REF']
+		if .peek.which.isOneOf('INOUT.REF.')
 			.throwError('The correct parameter syntax is "paramName as inout ParamType".')
 		
 		token = .expect('ID')
@@ -1863,14 +1879,14 @@ class CobraParser inherits Parser
 		if codePartContainingTest is nil
 			codePartContainingTest = codePart to BoxMember  # TODO: figure out better typing for this assignment and the method sig of this method
 		try
-			while .peek.which in 'EOL', .grab
-			if .peek.which in ['BODY', 'TEST', 'REQUIRE', 'ENSURE', 'OR', 'AND']
+			while .peek.which == 'EOL', .grab
+			if .peek.which.isOneOf('BODY.TEST.REQUIRE.ENSURE.OR.AND.')
 				# sectional
 				# not flexible. sequence is signature, contract, test, implementation
 				_isContractOnSameLine = false
-				if .peek.which in ['REQUIRE', 'OR']
+				if .peek.which.isOneOf('REQUIRE.OR.')
 					.requireSection(codePart)
-				if .peek.which in ['ENSURE', 'AND']
+				if .peek.which.isOneOf('ENSURE.AND.')
 					.ensureSection(codePart)
 				if .peek.which=='TEST'
 					.testSection(codePartContainingTest to !)
@@ -2202,7 +2218,7 @@ class CobraParser inherits Parser
 		if .peek.which=='ELSE'
 			.grab
 			peek = .peek.which
-			if peek in ['EOL', 'COMMA', 'COLON']
+			if peek.isOneOf('EOL.COMMA.COLON.')
 				falseStmts = .block
 			else if peek=='IF'
 				falseStmts = BlockStmt(.peek, [.ifStmt])
@@ -2337,7 +2353,7 @@ class CobraParser inherits Parser
 	def _requireOrEnsure(codeMember as AbstractMethod, connectWhich as String, mainWhich as String, theClass as Type) as ContractPart
 		connectToken = .optional(connectWhich)
 		mainToken = .expect(mainWhich)
-		if .peek.which in ['EOL', 'COLON']
+		if .peek.which.isOneOf('EOL.COLON.')
 			.indent
 			exprs = List<of Expr>()
 			while true
@@ -2372,7 +2388,7 @@ class CobraParser inherits Parser
 			.throwError(useCatchMsg)
 		while .peek.which=='CATCH'
 			catchToken = .grab
-			if .peek.which in ['COLON', 'EOL']
+			if .peek.which.isOneOf('COLON.EOL.')
 				if didParseCatchAnyBlock
 					.throwError('Already encountered the "catch every exception" block.')
 				anyCatchBlock = .block
@@ -2713,7 +2729,7 @@ class CobraParser inherits Parser
 			try
 				# get the right hand side of a binary operator expression
 				prec = if(OperatorSpecs.rightAssoc.containsKey(op to !), binaryOpPrec, binaryOpPrec+1)
-				if op == 'TO' and .peek.which in ['QUESTION', 'BANG']
+				if op == 'TO' and .peek.which.isOneOf('QUESTION.BANG.')
 					# ex: x to !
 					# ex: x to ?
 					getTypeExprForRightHandSide = false
@@ -2825,7 +2841,7 @@ class CobraParser inherits Parser
 			return .literalArray
 		else if peek=='LCURLY'
 			return .literalDictOrSet
-		else if peek in ['OPEN_DO', 'DO']
+		else if peek.isOneOf('OPEN_DO.DO.')
 			return .doExpr
 		else if peek=='OPEN_IF'
 			return .ifExpr
@@ -2840,7 +2856,7 @@ class CobraParser inherits Parser
 				return TypeExpr(.typeId)
 		else if peek=='ID'
 			return .identifierExpr
-		else if peek in ['SHARP_OPEN', 'SHARP_SINGLE', 'SHARP_DOUBLE']
+		else if peek.isOneOf('SHARP_OPEN.SHARP_SINGLE.SHARP_DOUBLE.')
 			return .sharpExpr
 		else if .opStack.count and .opStack.peek=='DOT' and .peek.isKeyword
 			return .identifierExpr
@@ -2936,7 +2952,7 @@ class CobraParser inherits Parser
 
 	def commaSepExprsPartial(terminators as IList<of String>, binOpBreakWhich as String) as List<of Expr>
 		require
-			binOpBreakWhich in ['ASSIGN', 'IN']
+			binOpBreakWhich.isOneOf('ASSIGN.IN.')
 			.binaryOpPrec.containsKey(binOpBreakWhich)
 		body
 			# As commaSepExprs but setup to break out of middle of binOpExpression on terminating token
@@ -3016,7 +3032,7 @@ class CobraParser inherits Parser
 			on _expectAnonymousMethodExprStack which then triggers the consumption of the indented
 			statements in another part of the parser.
 		"""
-		require .peek.which in ['OPEN_DO', 'DO']
+		require .peek.which.isOneOf('OPEN_DO.DO.')
 		token = .grab
 		params = if(token.which == 'OPEN_DO', .paramDecls(true), List<of Param>())
 		if token.which == 'OPEN_DO' and params.count == 0
