@@ -3,6 +3,7 @@ class CobraMain
 	shared
 
 		pro willTimeIt from var as bool
+		pro runTime from var as TimeSpan?
 		pro linesCompiled from var as int
 		pro nodesCompiled from var as int
 		pro tokensCompiled from var as int
@@ -17,17 +18,38 @@ class CobraMain
 			finally
 				sw.stop
 				if _willTimeIt
-					print 'timeit = [sw.elapsed]'
-					if sw.elapsed.totalSeconds < 2
-						print 'timeit = [sw.elapsedMilliseconds] ms'
+					elapsed = sw.elapsed
+					didCompile = .linesCompiled + .nodesCompiled + .tokensCompiled > 0
+					didRun = .runTime is not nil
+					if didCompile and didRun
+						.printTimeIt('total', elapsed)
+						.printTimeIt('execute', .runTime to !)
+						.printCompileTimes(elapsed.subtract(.runTime to !))
+					else if didCompile
+						.printCompileTimes(elapsed)
+					else if didRun
+						.printTimeIt('execute', .runTime to !)
+					else
+						.printTimeIt('total', elapsed)
 
-					secs = sw.elapsedMilliseconds / 1_000.0
-					lps = .linesCompiled / secs
-					print '[.linesCompiled] lines compiled = [lps:F2] lines/sec'
-					nps = .nodesCompiled / secs
-					print '[.nodesCompiled] nodes compiled = [nps:F2] nodes/sec'
-					tps = .tokensCompiled / secs
-					print '[.tokensCompiled] tokens compiled = [tps:F2] tokens/sec'
+		def printTimeIt(description as String, duration as TimeSpan)
+			print 'timeit [description.padRight(7)] = [duration]' stop
+			if duration.totalSeconds < 2
+				print ' | [duration.milliseconds] ms' stop
+			print
+				
+		def printCompileTimes(elapsed as TimeSpan)
+			.printTimeIt('compile', elapsed)
+			secs = elapsed.totalMilliseconds / 1_000
+			if .linesCompiled
+				lps = .linesCompiled / secs
+				print '[.linesCompiled] lines compiled at [lps:F1] lines/sec'
+			if .nodesCompiled
+				nps = .nodesCompiled / secs
+				print '[.nodesCompiled] nodes compiled at [nps:F1] nodes/sec'
+			if .tokensCompiled
+				tps = .tokensCompiled / secs
+				print '[.tokensCompiled] tokens compiled at [tps:F1] tokens/sec'
 
 		def printEx(ex as Exception)
 			print
