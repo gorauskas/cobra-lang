@@ -3068,3 +3068,83 @@ class ToNonNilableExpr
 		else
 			.compiler.warning(this, 'The given expression is already non-nilable so "to !" is redundant. You can remove it.') # TODO: needs test case
 			_type = _expr.type
+
+
+class ChainedCompareExpr inherits Expr is partial
+		
+	var _items as List<of Expr>
+	var _operations as List<of String>
+	
+	cue init(opToken as IToken, items as List<of Expr>, operations as List<of String>)
+		require
+			# should not happen, there is an error in the compiler if this occurs
+			items.count == operations.count + 1
+			items.count > 2
+		body
+			base.init(opToken)
+			_items, _operations = items, operations
+	
+	def _bindImp is override
+		base._bindImp
+		itemIndex = 1
+		for operation in _operations
+			_items[itemIndex - 1].bindImp
+			_items[itemIndex].bindImp
+			_willCompare(_items[itemIndex - 1], operation, _items[itemIndex])
+			itemIndex += 1
+		_type = .compiler.boolType
+		
+	def _willCompare(left as Expr, op as String, right as Expr) as bool
+		if left.type is nil or right.type is nil
+			assert .hasError
+			return false
+		leftType = left.type to !
+		rightType = right.type to !
+		innerMsg as String?
+		# cannot invoke .isAssignableTo directly on the types because if one is nilable and the other is not, you can get false, even though that doesn't apply for "is". So use isEquatableTo and isComparableTo
+		if op in ['EQ', 'NE', 'IS', 'ISNOT']
+			if not leftType.isEquatableTo(rightType)
+				innerMsg = if(op.startsWith('IS'), 'can never be identical', 'cannot be equated')
+			else if op in ['IS', 'ISNOT']
+				# Essentially "is" and "is not" are for reference types. Give a warning when used for value types.
+				if not leftType.isDynamicOrPassThrough and not rightType.isDynamicOrPassThrough
+					opName = if(op=='IS', 'is', 'is not')
+					altName = if(op=='IS', '==', '<>')
+					if leftType inherits NilableType and rightType inherits NilType
+						pass
+					else if not leftType.isReference and not rightType.isReference
+						.compiler.warning(this, 'Both the left and right sides of "[opName]" are value types ("[leftType.name]" and "[rightType.name]"), but "[opName]" applies to reference types. Use "[altName]" instead.')
+					# interestingly, I don't think the following ever happen in practice...
+					else if not leftType.isReference and not rightType.isNilableAndDescendantOf(leftType)
+						.compiler.warning(this, 'The left side of "[opName]" is a value type ("[leftType.name]") while the right side is an incompatible reference type ("[rightType.name]").')
+					else if not rightType.isReference and not leftType.isNilableAndDescendantOf(rightType)
+						.compiler.warning(this, 'The right side of "[opName]" is a value type ("[rightType.name]") while the left side is an incompatible reference type ("[leftType.name]").')						
+		else
+			if not leftType.isComparableTo(rightType)
+				innerMsg = 'cannot be compared'
+		if innerMsg
+			typeNames = if(left.type.name==right.type.name, 'type ("[left.type.name]")', 'types ("[left.type.name]" and "[right.type.name]")')
+			msg = 'The left and right sides of the "[.token.text]" expression [innerMsg] because of their [typeNames].'
+			if op == 'IS' and right.type.isDescendantOf(.compiler.typeType) # C#
+				msg += ' Maybe you should try "inherits" instead of "is".'
+			.throwError(msg)
+			return false
+		return true
+	
+	def toCobraSource as String is override
+		sb = StringBuilder(_items[0].toCobraSource)
+		sep = ' '		
+		for index in _operations.count
+			sb.append(sep)
+			branch _operations[index]
+				on 'EQ', sb.append('==')
+				on 'NE', sb.append('<>')
+				on 'GT', sb.append('>')
+				on 'LT', sb.append('<')
+				on 'GE', sb.append('>=')
+				on 'LE', sb.append('<=')
+				on 'IS', sb.append('is')
+				on 'ISNOT', sb.append('is not')
+			sb.append(sep)
+			sb.append(_items[index + 1].toCobraSource)
+		return sb.toString

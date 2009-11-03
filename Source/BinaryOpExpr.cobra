@@ -55,6 +55,9 @@ class BinaryOpExpr
 				on 'IN' or 'NOTIN'
 					return InExpr(opToken, op, left, right)
 				on 'IS' or 'ISNOT' or 'EQ' or 'NE' or 'LT' or 'GT' or 'LE' or 'GE'
+					if left inherits CompareExpr
+						left.addComparison(op, right)
+						return left
 					return CompareExpr(opToken, op, left, right)
 				on 'AND' or 'OR' or 'IMPLIES'
 					return BinaryBoolExpr(opToken, op, left, right)
@@ -528,15 +531,30 @@ class CompareExpr
 		'IS': '==',
 		'ISNOT': '!=',
 	}
+	
+	var _items as List<of Expr>
+	var _operations as List<of String>
 
 	cue init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
+		_items = [left, right]
+		_operations = [op]
 		if op == 'ISNOT' and .token.text == 'is'
 			.token.text = 'is not'
 
+	def addComparison(op as String, right as Expr)
+		_operations.add(op)
+		_items.add(right)
+	
 	def _bindImp
 		base._bindImp
 		_type = .compiler.boolType
+		if _items.count > 2
+			# this transformation is done so that the back ends handle chained comparisons differently than normal comparisons
+			cce = ChainedCompareExpr(.token, _items, _operations)
+			cce.bindImp
+			_transformTo(cce)
+			return
 		if _left.type is nil or _right.type is nil
 			assert .hasError
 			return
