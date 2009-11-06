@@ -1,5 +1,6 @@
 use System.Diagnostics
 use System.Reflection
+use System.Text.RegularExpressions
 use System.Threading
 
 
@@ -29,6 +30,7 @@ class TestifyRunner
 	var _statusCount as int
 	var _resultsWriter as IndentedWriter?
 
+	const bar = '----------------------------------------------------------------------------------------------------'
 
 	## Init
 
@@ -91,6 +93,7 @@ class TestifyRunner
 		for t in threads, t.join
 
 		_concatSubResults
+		_printTotals
 
 	def _concatSubResults
 		sep, sepNl = '', CobraCore.newLine + CobraCore.newLine + CobraCore.newLine
@@ -106,6 +109,21 @@ class TestifyRunner
 			catch exc as Exception
 				_statusWriter.writeLine('warning: Cannot delete "[fileName]" due to: [exc]')
 
+	def _printTotals
+		resultsFileName = .options['testify-results'] to String
+		using resultsWriter = File.appendText(resultsFileName)
+			__printTotals(resultsWriter to !)
+		__printTotals(_statusWriter to !)
+	
+	def __printTotals(writer as TextWriter)
+		writer.writeLine
+		writer.writeLine('Final multithreaded results:')
+		writer.writeLine('[_testifyCount] Tests')
+		if _failureCount > 0 
+			writer.writeLine('_failureCount] Failures')
+		else
+			writer.writeLine('Success.')
+
 	def runTestifyProcessInThread
 		tid = Thread.currentThread.getHashCode
 		while true  # keep getting a work queue item
@@ -116,7 +134,7 @@ class TestifyRunner
 				resultsFileName = 'r-testify-[pathIndex]'
 				lock _subResultsFileNames, _subResultsFileNames[pathIndex] = resultsFileName
 				args = _subCommandLineArgs + ['-testify-results:[resultsFileName]', '-testify-threads:1', '"[path]"']
-				lock _statusWriter, _statusWriter.writeLine('Thread [tid]: [args.join(" ")]')
+				lock _statusWriter, _statusWriter.writeLine('Thread [tid] start: [args.join(" ")]')
 			p = Process()
 			p.startInfo.useShellExecute = false
 			p.startInfo.redirectStandardOutput = true
@@ -130,10 +148,31 @@ class TestifyRunner
 			p.waitForExit
 			lock _statusWriter
 				_statusWriter.writeLine
-				_statusWriter.writeLine('t[tid]|start:')
+				_statusWriter.writeLine('Thread [tid] output:')
 				for line in output.splitLines
-					_statusWriter.writeLine('t[tid]|[line]')
-		
+					if .verbosity >= 2
+						_statusWriter.writeLine('    t[tid]|[line]')
+					else
+						if line.startsWith('Finished at') or line.startsWith('timeit =')
+							continue
+						_statusWriter.writeLine('    ' + line)
+					m = Regex.match(line, r'(\d+) Tests in ')
+					if m.success
+						nTests = _parseIntGroup(m)
+						_testifyCount += nTests
+					m = Regex.match(line, r'(\d+) Failure')
+					if m.success
+						nTests = _parseIntGroup(m)
+						_failureCount += nTests
+				_statusWriter.writeLine
+
+	def _parseIntGroup(m as Match) as int
+		""" Return first capture of first group of a Regexp.Match parsed to an integer. """
+		cap = m.groups[1].captures[0].value
+		n as int
+		int.tryParse(cap, out n)
+		return n
+
 	def runNonThreaded(paths as List<of String>)
 		_statusWriter = IndentedWriter(AutoFlushWriter(Console.out))
 		_statusWriter.indentString = '    '
@@ -147,7 +186,8 @@ class TestifyRunner
 					print
 					_innerRun(paths)
 		finally
-			_statusWriter.writeLine('Results in [resultsFileName]')
+			if .verbosity >= 2
+				_statusWriter.writeLine('Results in [resultsFileName]')
 			_statusWriter = nil
 
 	def _innerRun(paths as List<of String>)
@@ -262,6 +302,9 @@ class TestifyRunner
 			if willCopyLibs
 				# _cleanDir will remove these later
 				for libName in libNames
+					# The file operations below are not wrapped with try...catch and a 'warning' because
+					# if the current library files cannot be copied into the test directory,
+					# then the test is not valid.
 					targetPath = Path.combine(dirName, libName)
 					if File.exists(targetPath), File.delete(targetPath)
 					if libName == 'Cobra.Lang.dll' or File.exists(libName)
@@ -328,7 +371,6 @@ class TestifyRunner
 		assert File.exists(baseName)
 
 		source = File.readAllText(baseName)
-		bar = '----------------------------------------------------------------------------------------------------'
 
 		print
 		print
@@ -336,19 +378,59 @@ class TestifyRunner
 		print 'RUN [baseName]'
 		print '    [Utils.combinePaths(Environment.currentDirectory, baseName)]'
 		print '    Test #[_testifyCount+1]'
-		print bar
-		print bar
+		print .bar
+		print .bar
 		if verbose
 			Utils.printSource(source)
-			print bar
+			print .bar
 		lines = List<of String>(source.split(c'\n'))  # CC: axe list wrapper
-		firstLine = lines[0]
-		firstLineInsensitive = firstLine.trim.replace(' ', '')
 
 		fileNames = [baseName]
 		options = .testifyOptions
-		willRunExe = _willRunExes
+		options['willRunExe'] = _willRunExes # internal, specific to testify
 
+		firstLine = ''
+		rc = _processFirstlineDirectives(baseName, fileNames, inout lines, inout options, out firstLine)
+		if rc == 0, return 0
+		firstLineInsensitive = firstLine.trim.replace(' ', '')
+		
+		# Check for inline warning and error messages that are expected.
+		# (Starting in 2007-12 this is now the preferred way to specify these messages--
+		#  with the actual line of code that generates them.
+		#  The old method of specifying at the top will still be needed for errors
+		#  and warnings that have no associated line number.)
+		expectingError = false
+		inLineMessages = _getInlineMessages(lines, out expectingError)
+		if inLineMessages.count > 0 #  hasInlineMessages
+			return _testifyInlineMessages(inLineMessages, expectingError, 
+											compilerVerbosity, [baseName], options, verbose )
+
+		if firstLineInsensitive.startsWith('#.error.')
+			# deprecated: put errors on the lines where they occur. the "hasInlineMessages" code above will detect them.
+			# note that errors that are only detected by the backend C# compiler are not detectable by testify
+			# CC: support split with a String extension method
+			# error = firstLine.split('.error.',1)[1].trim.toLower
+			index = firstLine.indexOf('.error.')
+			error = firstLine.substring(index+7).trim.toLower
+			return _testifyHeadError(error, compilerVerbosity, fileNames, options, verbose) 
+
+		if firstLineInsensitive.startsWith('#.warning.')
+			# deprecated: put warnings on the lines where they occur. the "hasInlineMessages" code above will detect them.
+			index = firstLine.indexOf('.warning.')
+			warning = firstLine.substring(index+9).trim.toLower
+			return _testifyHeadWarning(warning, compilerVerbosity, fileNames, options, verbose) 
+
+		return _testifyStd(compilerVerbosity, fileNames, options, verbose)
+
+
+	def _processFirstlineDirectives(baseName as String, fileNames as List<of String>, lines as inout List<of String>, 
+									options as inout OptionValues, firstLine as out String) as int
+		"""
+		Check first few lines for Testify directives (start with '#.')	and process or setup
+		for later handling.
+		"""	
+		firstLine = lines[0]
+		firstLineInsensitive = firstLine.trim.replace(' ', '')
 		while firstLineInsensitive.startsWith('#.')
 
 			if firstLineInsensitive.startsWith('#.multi.')
@@ -392,7 +474,7 @@ class TestifyRunner
 				continue
 
 			if firstLineInsensitive.startsWith('#.compile-only.')  # also meaning don't run the .exe
-				willRunExe = false
+				options['willRunExe'] = false
 				lines = lines[1:]
 				firstLine = lines[0]
 				firstLineInsensitive = firstLine.trim.replace(' ', '')
@@ -425,19 +507,16 @@ class TestifyRunner
 				break
 			
 			throw Exception('Bad first line: [lines[0]]')
+
+		return 1 # continue processing in caller
 		
-		# Check for inline warning and error messages that are expected.
-		# (Starting in 2007-12 this is now the preferred way to specify these messages--
-		#  with the actual line of code that generates them.
-		#  The old method of specifying at the top will still be needed for errors
-		#  and warnings that have no associated line number.)
-		hasInlineMessages = false
+	def _getInlineMessages(lines as List<of String>, expectingError as out bool) as Dictionary<of int, String>
+		""" Walk lines and accumulate inline warnings and error messages. """
 		inLineMessages = Dictionary<of int, String>()
 		lineNum = 1
 		expectingError = false
 		for line in lines
 			if lineNum > 1 and ('.warning.' in line or '.error.' in line)
-				hasInlineMessages = true
 				if '.warning.' in line
 					message = line[line.indexOf('.warning.') + '.warning.'.length:]
 					messageType = 'w'
@@ -449,153 +528,151 @@ class TestifyRunner
 					throw FallThroughException(line)
 				inLineMessages[lineNum] = messageType + message
 			lineNum += 1
-		if hasInlineMessages
-			try
-				c = Compiler(compilerVerbosity, _cachedTestifyModules, commandLineArgParser=_cl.argParser)
-				c.testifyFilesNamed([baseName], options, _resultsWriter to !, verbose)
-			catch StopCompilation
-				pass
-			catch exc as Exception
-				print 'Internal exception: [exc]'
-				.failed
-				return 0
-			for msg in c.messages
-				if not msg.hasSourceSite or msg.lineNum == 0
-					print 'Not expecting messages without any line number information:'
-					print msg
-					bad = true
-					continue
-				if not inLineMessages.containsKey(msg.lineNum)
-					print 'Encountered unexpected message:'
-					print msg
-					bad = true
-					continue
-				expected = inLineMessages[msg.lineNum]
-				branch expected[0]
-					on c'w'
-						if msg.isError
-							print 'Expecting warning on line [msg.lineNum], but got error instead.'
-							bad = true
-					on c'e'
-						if not msg.isError
-							print 'Expecting error on line [msg.lineNum], but got warning instead.'
-							bad = true
-					else
-						throw FallThroughException(expected)
-				if bad
-					continue
-				expected = expected[1:].trim
-				if msg.message.trim.toLower.indexOf(expected.toLower) == -1
-					print 'Expecting message :', expected
-					print 'But got           :', msg.message.trim
-					print 'At line           :', msg.lineNum
-					bad = true
-					continue
-				# we made it! same type of message and text
-				print 'Message for line [msg.lineNum] was expected.'
-				inLineMessages.remove(msg.lineNum)
-			# check for expected messages that never occurred
-			for key in inLineMessages.keys
+		return inLineMessages
+		
+	def _testifyInlineMessages(inLineMessages as Dictionary<of int, String>, 
+								expectingError as bool, 
+								compilerVerbosity as int, 
+								fileNames as IList<of String>,
+								options as OptionValues, verbose as bool) as int 
+		"""Testify on files that have inline checks for compiler errors and warnings"""						
+		try
+			c = Compiler(compilerVerbosity, _cachedTestifyModules, commandLineArgParser=_cl.argParser)
+			c.testifyFilesNamed(fileNames, options, _resultsWriter to !, verbose)
+		catch StopCompilation
+			pass
+		catch exc as Exception
+			print 'Internal exception: [exc]'
+			.failed
+			return 0
+		for msg in c.messages
+			if not msg.hasSourceSite or msg.lineNum == 0
+				print 'Not expecting messages without any line number information:'
+				print msg
 				bad = true
-				print 'Expecting message on line [key]:', inLineMessages[key][1:].trim
-			if bad
-				.failed
-				return 0
-			else if expectingError
-				return 1
-			else if willRunExe
-				# a test case with nothing but warnings is still executed
-				return _testifyRun(c, bar)
-			else
-				return 1
-
-		if firstLineInsensitive.startsWith('#.error.')
-			# deprecated: put errors on the lines where they occur. the "hasInlineMessages" code above will detect them.
-			# note that errors that are only detected by the backend C# compiler are not detectable by testify
-			# CC: support split with a String extension method
-			# error = firstLine.split('.error.',1)[1].trim.toLower
-			index = firstLine.indexOf('.error.')
-			error = firstLine.substring(index+7).trim.toLower
-			try
-				c = Compiler(compilerVerbosity, _cachedTestifyModules, commandLineArgParser=_cl.argParser)
-				c.testifyFilesNamed(fileNames, options, _resultsWriter to !, verbose)
-				print 'Expecting error(s): [error]'
-				print 'No error at all.'
-				if c.errors.count > 0
-					print 'warning: error count > 0 but StopCompilation was not thrown'
-				.failed
-				return 0
-			catch StopCompilation
-				assert c.errors.count
-				expectedErrors = error.split(c'&')
-				for i = 0 .. expectedErrors.length
-					expectedError = expectedErrors[i].trim
-					print 'Expecting error substring [i+1] of [expectedErrors.length]: **[expectedError]**'
-					if i >= c.errors.count
-						print 'Ran out of real errors.'
-						.failed
-						return 0
-					actualError = c.errors[i]
-					if actualError.message.toLower.indexOf(expectedError)==-1
-						print 'Actual error is: **[actualError.message]**'
-						.failed
-						return 0
-					else
-						print 'Matches: "[actualError.message]"'
-				if c.errors.count > expectedErrors.length
-					print 'There are more actual errors than expected errors:'
-					for i = expectedErrors.length .. c.errors.count
-						print 'Another actual error: [c.errors[i].message]'
-					.failed
-					return 0
-			catch exc as Exception
-				print 'Internal exception: [exc]'
-				.failed
-				return 0
-			return 1
-
-		if firstLineInsensitive.startsWith('#.warning.')
-			# deprecated: put warnings on the lines where they occur. the "hasInlineMessages" code above will detect them.
-			index = firstLine.indexOf('.warning.')
-			warning = firstLine.substring(index+9).trim.toLower
-			# TODO: the following code both checks for warnings to be thrown as well as going through a list of warnings. Seems like it should just need to do one or the other.
-			try
-				c = Compiler(compilerVerbosity, _cachedTestifyModules, commandLineArgParser=_cl.argParser)
-				c.testifyFilesNamed(fileNames, options, _resultsWriter to !, verbose)
-			catch StopCompilation
-				print 'Expecting warning substring: "[warning]"'
-				print 'But got errors.'
-				.failed
-				return 0
-			catch exc as Exception
-				print 'Internal exception: [exc]'
-				.failed
-				return 0
-			expectedWarnings = warning.split(c'&')
-			for i = 0 .. expectedWarnings.length
-				expectedWarning = expectedWarnings[i].trim
-				print 'Expecting warning substring [i+1] of [expectedWarnings.length]: **[expectedWarning]**'
-				if i >= c.warnings.count
-					print 'Ran out of real warnings.'
-					.failed
-					return 0
-				actualWarning = c.warnings[i]
-				if actualWarning.message.toLower.indexOf(expectedWarning)==-1
-					print 'Actual warning is: **[actualWarning.message]**'
-					.failed
-					return 0
+				continue
+			if not inLineMessages.containsKey(msg.lineNum)
+				print 'Encountered unexpected message:'
+				print msg
+				bad = true
+				continue
+			expected = inLineMessages[msg.lineNum]
+			branch expected[0]
+				on c'w'
+					if msg.isError
+						print 'Expecting warning on line [msg.lineNum], but got error instead.'
+						bad = true
+				on c'e'
+					if not msg.isError
+						print 'Expecting error on line [msg.lineNum], but got warning instead.'
+						bad = true
 				else
-					print 'Matches: "[actualWarning.message]"'
-			if c.warnings.count > expectedWarnings.length
-				print 'There are more actual warnings than expected warnings:'
-				for i = expectedWarnings.length .. c.warnings.count
-					print 'Another actual warning: [c.warnings[i].message]'
+					throw FallThroughException(expected)
+			if bad, continue
+			expected = expected[1:].trim
+			if msg.message.trim.toLower.indexOf(expected.toLower) == -1
+				print 'Expecting message :', expected
+				print 'But got           :', msg.message.trim
+				print 'At line           :', msg.lineNum
+				bad = true
+				continue
+			# we made it! same type of message and text
+			print 'Message for line [msg.lineNum] was expected.'
+			inLineMessages.remove(msg.lineNum)
+
+		# check for expected messages that never occurred
+		for key in inLineMessages.keys
+			bad = true
+			print 'Expecting message on line [key]:', inLineMessages[key][1:].trim
+		if bad
+			.failed
+			return 0
+		else if expectingError
+			return 1
+		else if options.boolValue('willRunExe')	# a test case with nothing but warnings is still executed
+			return _testifyRun(c)
+		return 1
+
+	def _testifyHeadError(error as String, compilerVerbosity as int, fileNames as IList<of String>,
+							options as OptionValues, verbose as bool) as int 
+		try
+			c = Compiler(compilerVerbosity, _cachedTestifyModules, commandLineArgParser=_cl.argParser)
+			c.testifyFilesNamed(fileNames, options, _resultsWriter to !, verbose)
+			print 'Expecting error(s): [error]'
+			print 'No error at all.'
+			if c.errors.count > 0
+				print 'warning: error count > 0 but StopCompilation was not thrown'
+			.failed
+			return 0
+		catch StopCompilation
+			assert c.errors.count
+			expectedErrors = error.split(c'&')
+			for i in 0 : expectedErrors.length
+				expectedError = expectedErrors[i].trim
+				print 'Expecting error substring [i+1] of [expectedErrors.length]: **[expectedError]**'
+				if i >= c.errors.count
+					print 'Ran out of real errors.'
+					.failed
+					return 0
+				actualError = c.errors[i]
+				if actualError.message.toLower.indexOf(expectedError) == -1
+					print 'Actual error is: **[actualError.message]**'
+					.failed
+					return 0
+				print 'Matches: "[actualError.message]"'
+			if c.errors.count > expectedErrors.length
+				print 'There are more actual errors than expected errors:'
+				for i in expectedErrors.length : c.errors.count
+					print 'Another actual error: [c.errors[i].message]'
 				.failed
 				return 0
-			return 1
+		catch exc as Exception
+			print 'Internal exception: [exc]'
+			.failed
+			return 0
+		return 1
 
+	def _testifyHeadWarning(warning as String, compilerVerbosity as int, fileNames as IList<of String>,
+							options as OptionValues, verbose as bool) as int 
+		# TODO: the following code both checks for warnings to be thrown as well as going through a list of warnings. Seems like it should just need to do one or the other.
+		try
+			c = Compiler(compilerVerbosity, _cachedTestifyModules, commandLineArgParser=_cl.argParser)
+			c.testifyFilesNamed(fileNames, options, _resultsWriter to !, verbose)
+		catch StopCompilation
+			print 'Expecting warning substring: "[warning]"'
+			print 'But got errors.'
+			.failed
+			return 0
+		catch exc as Exception
+			print 'Internal exception: [exc]'
+			.failed
+			return 0
+		expectedWarnings = warning.split(c'&')
+		for i in 0 : expectedWarnings.length
+			expectedWarning = expectedWarnings[i].trim
+			print 'Expecting warning substring [i+1] of [expectedWarnings.length]: **[expectedWarning]**'
+			if i >= c.warnings.count
+				print 'Ran out of real warnings.'
+				.failed
+				return 0
+			actualWarning = c.warnings[i]
+			if actualWarning.message.toLower.indexOf(expectedWarning)==-1
+				print 'Actual warning is: **[actualWarning.message]**'
+				.failed
+				return 0
+			else
+				print 'Matches: "[actualWarning.message]"'
+		if c.warnings.count > expectedWarnings.length
+			print 'There are more actual warnings than expected warnings:'
+			for i in expectedWarnings.length : c.warnings.count
+				print 'Another actual warning: [c.warnings[i].message]'
+			.failed
+			return 0
+		return 1
+			
+	def _testifyStd(compilerVerbosity as int, fileNames as IList<of String>,
+							options as OptionValues, verbose as bool) as int		
 		c = Compiler(compilerVerbosity, _cachedTestifyModules, commandLineArgParser=_cl.argParser)
-
 		try
 			c.testifyFilesNamed(fileNames, options, _resultsWriter to !, verbose)
 		catch StopCompilation
@@ -606,20 +683,20 @@ class TestifyRunner
 			.failed
 			return 0
 
-		if willRunExe and options.boolValue('compile')  # maybe changed by compiler directive
-			willRunExe = false
+		if options.boolValue('willRunExe') and options.boolValue('compile')  # maybe changed by compiler directive
+			options['willRunExe'] = false
+			
 		if c.messages.count
 			# can't be errors or StopCompilation would have been caught above
 			print 'Unexpected warnings in test.'
 			.failed
 			return 0
 
-		if willRunExe
-			return _testifyRun(c, bar)
-		else
-			return 1
+		if options.boolValue('willRunExe')
+			return _testifyRun(c)
+		return 1
 
-	def _testifyRun(c as Compiler, bar as String) as int
+	def _testifyRun(c as Compiler) as int
 		if not c.fullExeFileName.endsWith('.exe')
 			if File.exists(c.fullExeFileName)
 				print 'Produced file "[c.fullExeFileName]" as expected.'
@@ -648,7 +725,7 @@ class TestifyRunner
 				.failed
 				return 0
 
-		print bar
+		print .bar
 
 		_cachedTestifyModules = for mod in c.modules where mod inherits AssemblyModule get mod
 
