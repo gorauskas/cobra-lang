@@ -1769,6 +1769,23 @@ extend IType
 	def isNilableAndDescendantOf(otherType as IType) as bool
 		return this inherits NilableType and .nonNil.isDescendantOf(otherType)
 
+	def isEnumerable as bool
+		if this inherits NilableType, return .nonNil.isEnumerable
+		tp = Node.getCompiler  # 'tp' for 'type provider'
+		if .isDescendantOf(tp.enumerableType), return true
+		enumerableOfType = tp.enumerableOfType
+		if .isDescendantOf(enumerableOfType), return true
+		type = this
+		if type inherits Box
+			# can any base type be connected to the generic enumerable type?
+			# example: CA<of X, Y> inherits CB<of X, Y> implements IA<of Y> inherits IEnumerable<of Y> is-construction-of IEnumerable<of T> generic def
+			for bt in type.allBaseTypes
+				if bt inherits Box
+					if bt.genericDef is enumerableOfType
+						return true
+		if .isSequenceLike, return true
+		return false
+		
 	def isSequenceLike as bool
 		"""
 		Returns true if the receiver is like a sequence, such as being an actual array, list, string, or a nilable version thereof.
