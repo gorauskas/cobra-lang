@@ -274,15 +274,19 @@ class Box
 	get isExtern as bool
 		return 'extern' in _isNames
 
-	def isDescendantConstructionOf(box as Box) as bool
-		# can any base type be connected to the generic enumerable type?
-		# example: CA<of X, Y> inherits CB<of X, Y> implements IA<of Y> inherits IEnumerable<of Y> is-construction-of IEnumerable<of T> generic def
-		if .genericDef is box, return true
-		for bt in .allBaseTypes
-			if bt.genericDef is box
-				return true
-		return false
-	
+	def constructedTypeOf(box as Box) as Box?
+		require
+			.didBindInh
+			box.isGenericDef
+		ensure
+			result implies result is this or result in .allBaseTypes
+		body
+			if .genericDef is box, return this
+			for bt in .allBaseTypes
+				if bt.genericDef is box
+					return bt
+			return nil
+
 	def isDescendantOfInterface(inter as Interface) as bool
 		require .didBindInh or .nativeType
 		_prepLibraryBox
@@ -1717,12 +1721,16 @@ class Extension
 		if _extendedBox
 			if box.isDescendantOf(_extendedBox)
 				return .declForName(name)
-			else if box.isGeneric and .isGeneric and _
-				box.isDescendantConstructionOf(_extendedBox.genericDef to !) and _
-				box.isDescendantOf(_extendedBox.genericDef.constructedTypeFor(box.genericParams)) and _
-				.declForName(name)
-				# then
-				return .constructedTypeFor(box.genericParams).declForName(name)
+			else if box.isGeneric and .isGeneric
+				# example:
+				# this == Extension(6376, "IEnumerable<of T>.extension.6376")
+				# box  == Class(13618, "KeyCollection<of String,int>")
+				# name == 'toList'
+				# cto  == Interface(13543, "IEnumerable<of String>")
+				cto = box.constructedTypeOf(_extendedBox.genericDef to !)
+				if cto
+					if box.isDescendantOf(cto) and .declForName(name)
+						return .constructedTypeFor(cto.genericParams).declForName(name)
 		return nil
 			
 	def memberForName(name as String) as IMember?
