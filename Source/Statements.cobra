@@ -857,29 +857,23 @@ class PassStmt
 	
 	cue init(token as IToken)
 		base.init(token)
-		
 
-class PrintStmt
-	is partial
-	inherits Stmt
+	def _bindImp
+		base._bindImp
 
-	var _destination as Expr?
-	var _args as List<of Expr>
-	var _stop as bool
 
-	cue init(token as IToken, destination as Expr?, args as List<of Expr>, stopp as bool)
+class AbstractPrintStmt inherits Stmt is abstract, partial
+
+	cue init(token as IToken, destination as Expr?)
 		base.init(token)
 		_destination = destination
-		_args = args
-		_stop = stopp
-
-	get destination from var
 	
-	get args from var
-		has Subnodes
+	def addSubFields
+		base.addSubFields
+		.addField('destination', .destination)
 
-	get stop from var
-
+	get destination from var as Expr?
+	
 	def _bindImp
 		base._bindImp
 		if .destination
@@ -887,37 +881,47 @@ class PrintStmt
 			t = .destination.type
 			if not t.isDynamicOrPassThrough and not t.isDescendantOf(.compiler.libraryType('System.IO.TextWriter'))  # TODO-BACKEND
 				.recordError('Invalid destination of type "[t.name]" for "print". Use a TextWriter or subclass thereof instead.')
-		num = 1
-		for arg in _args
+
+
+class PrintStmt inherits AbstractPrintStmt is partial
+
+	var _args as List<of Expr>
+	var _stop as bool
+
+	cue init(token as IToken, destination as Expr?, args as List<of Expr>, stopp as bool)
+		base.init(token, destination)
+		_args = args
+		_stop = stopp
+
+	get args from var
+		has Subnodes
+
+	get stop from var
+
+	def _bindImp
+		base._bindImp
+		for i, arg in _args.numbered
 			try
 				arg.bindImp
 			catch ne as NodeException
-				ne.prefixMessage('For arg [num]: ')
+				ne.prefixMessage('For arg [i]: ')
 				.compiler.recordError(ne)
-			num += 1
 
 	def addSubFields
 		base.addSubFields
-		.addField('stop', _stop)
-		.addField('destination', _destination)
-		.addField('args', _args)
+		.addField('stop', .stop)
+		.addField('args', .args)
 
 
-class PrintRedirectStmt
-	is partial
-	inherits Stmt
+class PrintRedirectStmt inherits AbstractPrintStmt is partial
 
-	var _destination as Expr
 	var _block as BlockStmt
 
-	get destination from var
-	
-	get block from var
-
 	cue init(token as IToken, destination as Expr, block as BlockStmt)
-		base.init(token)
-		_destination = destination
+		base.init(token, destination)
 		_block = block
+
+	get block from var
 
 	get lastToken as IToken is override
 		return _block.lastToken
@@ -929,7 +933,6 @@ class PrintRedirectStmt
 
 	def addSubFields
 		base.addSubFields
-		.addField('destination', _destination)
 		.addField('block', _block)
 
 
