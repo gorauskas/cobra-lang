@@ -2810,6 +2810,9 @@ class SequenceLit
 				for i in 1 : exprs.count
 					exprs[i].bindImp
 					type = exprs[i].type.greatestCommonDenominatorWith(type)
+				if type.isSystemObjectClass  # make dynamic if heterogenous and all non Object
+					allObj = all for expr in exprs get expr.type.isSystemObjectClass
+					if not allObj, type = .compiler.dynamicType 
 			if type inherits NilType, type = .compiler.defaultType
 			_type = _makeTypeWith(type)
 
@@ -2968,10 +2971,18 @@ class DictLit
 				keyType   = entries[0][0].type to !
 				valueType = entries[0][1].type to !
 				i = 1
+				keysAllSysObject = valuesAllSysObject = true
 				while i < entries.count
 					keyType   = entries[i][0].type.greatestCommonDenominatorWith(keyType)
+					if not entries[i][0].type.isSystemObjectClass, keysAllSysObject = false
 					valueType = entries[i][1].type.greatestCommonDenominatorWith(valueType)
+					if not entries[i][1].type.isSystemObjectClass, valuesAllSysObject = false 
 					i += 1
+				# make types dynamic if heterogenous and all non Object
+				if keyType.isSystemObjectClass and not keysAllSysObject
+					keyType = .compiler.dynamicType 
+				if valueType.isSystemObjectClass and not valuesAllSysObject
+					valueType = .compiler.dynamicType 
 			if keyType inherits NilType, keyType = .compiler.defaultType
 			if valueType inherits NilType, valueType = .compiler.defaultType
 			_type = .compiler.dictionaryOfType.constructedTypeFor([keyType, valueType])
