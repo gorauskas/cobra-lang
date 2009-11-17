@@ -229,6 +229,10 @@ static public class CobraImp {
 	}
 
 	static public bool Equals(IList a, IList b) {
+		if (a == null) {
+			if (b == null) return true;
+			else return false;
+		} else if (b==null) return false;
 		if (a.Count!=b.Count)
 			return false;
 		int count = a.Count;
@@ -240,6 +244,10 @@ static public class CobraImp {
 	}
 
 	static public bool Equals(IDictionary a, IDictionary b) {
+		if (a == null) {
+			if (b == null) return true;
+			else return false;
+		} else if (b==null) return false;
 		if (a.Count!=b.Count)
 			return false;
 		foreach (object key in a.Keys) {
