@@ -615,19 +615,19 @@ class CommandLine
 		"""
 		Syntax highlighting via HTML generation.
 		"""
-		c = .doCompile(paths, false, false, true)
-		Node.setCompiler(c)
+		comp = .doCompile(paths, false, false, do(c as Compiler)=c.lastPhase inherits BindInterfacePhase)
+		Node.setCompiler(comp)
 		try
-			c.highlightFiles
+			comp.highlightFiles
 		finally
 			Node.setCompiler(nil)
-		return c
+		return comp
 
 	def doCompile(paths as List<of String>) as Compiler
-		return .doCompile(paths, true, false, false)
+		return .doCompile(paths, true, false, nil)
 
 	def doCompile(paths as List<of String>, willPrintSuccessMsg as bool, 
-					writeTestInvocation as bool, stopAfterBindInt as bool) as Compiler
+					writeTestInvocation as bool, stopCompilation as Predicate<of Compiler>?) as Compiler
 		sep = Path.directorySeparatorChar.toString
 		oldPaths = for path in paths get path.replace('\\', sep).replace('/', sep)
 		paths.clear
@@ -646,7 +646,7 @@ class CommandLine
 		c.willPrintSuccessMsg = willPrintSuccessMsg
 		c.htmlWriter = _htmlWriter
 		try
-			c.compileFilesNamed(paths, writeTestInvocation)
+			c.compileFilesNamed(paths, writeTestInvocation, stopCompilation)
 			if _verbosity <> c.verbosity, _verbosity = c.verbosity
 		catch StopCompilation
 			# Each phase of the compiler may throw an exception to stop compilation.
@@ -694,14 +694,14 @@ class CommandLine
 		return c
 
 	def doDocument(paths as List<of String>) as Compiler
-		c = .doCompile(paths, false, false, true)
-		GenerateHtmlDocVisitor().gen(c)
-		return c
+		comp = .doCompile(paths, false, false, do(c as Compiler)=c.lastPhase inherits BindInterfacePhase)
+		GenerateHtmlDocVisitor().gen(comp)
+		return comp
 
 	def doTest(paths as List<of String>)
 		if paths.count == 0
 			.error('You must specify one or more Cobra files to run unit tests for.')
-		c = .doCompile(paths, false, true, false)
+		c = .doCompile(paths, false, true, nil)
 		if c.errors.count
 			print 'Not running tests due to errors above.'
 			return
@@ -731,7 +731,7 @@ class CommandLine
 				print 'warning: Cannot remove "[c.fullExeFileName]"'
 
 	def doRun(paths as List<of String>)
-		c = .doCompile(paths, false, false, false)
+		c = .doCompile(paths, false, false, nil)
 		if c.errors.count
 			print 'Not running due to errors above.'
 			return
@@ -926,7 +926,7 @@ class CommandLine
 			assert version.count(c'.') == 3
 		_options.addExtraUse('use System.Reflection')
 		_options.addExtraSource("assembly\n\thas AssemblyVersion('[version]')\n")
-		.doCompile(List<of String>(), true, false, false)
+		.doCompile(List<of String>(), true, false, nil)
 
 
 	## Testify

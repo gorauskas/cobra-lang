@@ -186,6 +186,8 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 	
 	pro curModule from var
 
+	get lastPhase from var as Phase?
+	
 	get nodeStack from var
 
 	get nameSpaceStack from var
@@ -307,6 +309,7 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		ensure
 			phase.didRun
 			not phase.isRunning
+			.lastPhase is phase
 		body
 			oldErrorCount = .errors.count
 			_curPhase = phase
@@ -315,15 +318,16 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 				.writeSourceCodeCorrections
 			finally
 				_curPhase = nil
+				_lastPhase = phase
 			if .errors.count > oldErrorCount, _exitFromErrors
 
 
 	## Compiler
 	
 	def compileFilesNamed(paths as IList<of String>)
-		.compileFilesNamed(paths, false)
+		.compileFilesNamed(paths, false, nil)
 
-	def compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool)
+	def compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool, stopCompilation as Predicate<of Compiler>?)
 		_initBackEnd
 		.defaultOutName = if(.options.buildStandardLibrary, 'Cobra.Lang.dll', paths[0])
 		if .options.boolValue('compile-if-needed')
@@ -332,12 +336,12 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 				return
 				
 		if .options.boolValue('reveal-internal-exceptions')
-			_compileFilesNamed(paths, writeTestInvocation)
+			_compileFilesNamed(paths, writeTestInvocation, stopCompilation)
 			.printMessages
 			return
 
 		try
-			_compileFilesNamed(paths, writeTestInvocation)
+			_compileFilesNamed(paths, writeTestInvocation, stopCompilation)
 		catch StopCompilation
 			throw
 		catch exc as Exception
@@ -364,10 +368,11 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		success
 			.printMessages
 
-	def _compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool)
+	def _compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool, stopCompilation as Predicate<of Compiler>?)
 		.willWriteTestInvocation = writeTestInvocation
 		_pathsToCompile = paths
 		for phase in .makePhases
+			if stopCompilation and stopCompilation(this), break
 			.runPhase(phase)
 	
 	def testifyFilesNamed(fileNames as IList<of String>, options as OptionValues, resultsWriter as IndentedWriter, verbose as bool)
