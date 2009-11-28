@@ -646,6 +646,7 @@ class Box
 				.compiler.recordError(ne)
 		for invari in _invariants
 			invari.bindInt
+		hasError = false
 		for decl in List<of IBoxMember>(_declsInOrder)
 			assert not decl is this
 			.compiler.boxMemberStack.push(decl)
@@ -656,21 +657,23 @@ class Box
 				decl.bindInt
 			catch ne as NodeException
 				.compiler.recordError(ne)
+				hasError = true
 			finally
 				.compiler.boxMemberStack.pop
-		_finishOverloads
-		if _testMethod
-			.compiler.boxMemberStack.push(_testMethod)
-			try
-				_testMethod.bindInt
-			finally
-				.compiler.boxMemberStack.pop
-		if _constructedTypes
-			if .compiler.errors.count <= errorCount  # completing construction on constructed types leads to chaos if this generic def had errors during bind interface
-				for ct in _constructedTypes.values
-					assert ct is not this
-					ct.completeMemberConstructionIfNeeded
-					ct.bindInt
+		if not hasError
+			_finishOverloads
+			if _testMethod
+				.compiler.boxMemberStack.push(_testMethod)
+				try
+					_testMethod.bindInt
+				finally
+					.compiler.boxMemberStack.pop
+			if _constructedTypes
+				if .compiler.errors.count <= errorCount  # completing construction on constructed types leads to chaos if this generic def had errors during bind interface
+					for ct in _constructedTypes.values
+						assert ct is not this
+						ct.completeMemberConstructionIfNeeded
+						ct.bindInt
 
 	def prepSystemObjectClass
 		# TODO: fix native
