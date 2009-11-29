@@ -2,12 +2,12 @@ namespace Cobra.Lang
 
 	use System.Collections
 	
-	interface ISet<of T>
-		inherits ICollection<of T>, IEnumerable<of T>, ISet
+	interface ISet<of T> inherits ICollection<of T>, IEnumerable<of T>, ISet
 
 		## Collection type operations
 
 		def addRange(items as IEnumerable<of T>)
+		def clone as ISet<of T>
 		
 		## Set operations
 	
@@ -20,8 +20,7 @@ namespace Cobra.Lang
 		def toList as List<of T>
 
 		
-	class Set<of T>
-		implements ISet<of T>, ICollection<of T>, IEnumerable<of T>
+	class Set<of T> implements ISet<of T>, ICollection<of T>, IEnumerable<of T>
 		"""
 		A Set holds a hashed, unordered collections of items.
 		Membership testing and set operations (intersection, union, etc.) are faster than with lists, but order is not preserved.
@@ -241,11 +240,25 @@ namespace Cobra.Lang
 
 		## Other
 		
+		def clone as ISet<of T>  # CC: as same
+			"""
+			Returns a new set with the contents of this set.
+			Does not clone the contents themselves.
+			This is sometimes known as a "shallow copy".
+			"""
+			ensure
+				result is not this
+				result.count == .count
+				result.typeOf is .typeOf
+			body
+				type = .typeOf
+				newList = type(this)
+				return newList
+
 		def toList as List<of T>
 			return List<of T>(this)
 
-	interface ISet
-		inherits IEnumerable
+	interface ISet inherits IEnumerable
 		"""
 		This interface is to facilitate Set<of>.equals when the generic types are different (which
 		does not necessarily restrict the two sets from having the same contents).
@@ -258,12 +271,9 @@ namespace Cobra.Lang
 	class TestSet
 
 		test
-			TestSet().run
-
-		def run
 			s = Set<of int>()
 			assert s.count == 0
-			t = Set<of int>()
+			t = Set<of int>() to ISet<of int>
 			assert t.count == 0
 			assert s is not t
 			assert s == t
@@ -276,10 +286,19 @@ namespace Cobra.Lang
 			assert s.isSupersetOf(t)
 			t.add(1)
 			assert s == t
+			
 			s.clear
 			t.clear
 			assert s.count == 0
 
+			s.add(1)
+			t = s.clone
+			assert t is not s
+			assert t.count == s.count
+			assert 1 in t and 2 not in t
+			s.clear
+			t.clear
+			
 			u = s.union(t)
 			assert t is not u
 			assert s.count == 0
