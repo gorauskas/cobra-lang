@@ -838,7 +838,7 @@ class EnumCallExpr
 	def _bindImp
 		base._bindImp
 		if not _definition
-			possible = .compiler.symbolForName(.name, true, false)
+			possible = .compiler.symbolForName(.name, false)
 			if not possible
 				.throwError('Cannot locate enumeration type "[.name]".')
 			else if possible inherits EnumDecl
@@ -1006,13 +1006,13 @@ class IdentifierExpr
 			canBeUndottedMember = _name.canBeUndottedMemberName
 			if canBeUndottedMember
 				# assert .compiler.boxStack.count TODO: identifier expr is being used by PostCallExpr which is used for attribute calls
-				_definition = .compiler.symbolForName(_name, canBeUndottedMember, false)
+				_definition = .compiler.symbolForName(_name, false)
 			else
 				# local var ref: foo
 				if .compiler.codeMemberStack.count  # could be: var _x = y   or: has foo
 					_definition = .compiler.findLocal(_name)
 				if _definition is nil
-					_definition  = .compiler.symbolForName(_name, false, false, true)  # 3rd party DLLs have lowercase class names like iConnection
+					_definition  = .compiler.symbolForName(_name, false, true)  # 3rd party DLLs have lowercase class names like iConnection
 			if _definition is nil and not canBeUndottedMember
 				if _superNode inherits BinaryOpExpr
 					if _superNode.right is this
@@ -1619,7 +1619,7 @@ class PostCallExpr
 		expr = .expr
 
 		if expr inherits IdentifierExpr
-			if expr.name.startsWith('_') and not .compiler.symbolForName(expr.name, true, false) inherits BoxVar
+			if expr.name.startsWith('_') and not .compiler.symbolForName(expr.name, false) inherits BoxVar
 				# method invocation
 				# _foo(x) --> ._foo(x)
 				newCall = CallExpr(.token, .name, .args, true)
@@ -1778,7 +1778,7 @@ class PostCallExpr
 	def _handleClassInitializer
 		initCall as Initializer?
 		if .args.count > 0
-			theClass = .compiler.symbolForName(.name, true, false, true) to ClassOrStruct?
+			theClass = .compiler.symbolForName(.name, false, true) to ClassOrStruct?
 			if theClass is not nil
 				possibleCalls = theClass.memberForName("cue.init")
 				if possibleCalls is nil
