@@ -191,18 +191,8 @@ class CompileTimeTraceStmt
 			print '[prefix] no type'
 
 
-class BranchStmt
-	is partial
-	inherits Stmt
+class BranchStmt inherits Stmt is partial
 
-	var _expr as Expr
-	var _onParts as List<of BranchOnPart>
-	var _elsePart as BlockStmt?
-
-	get expr from var
-	get onParts from var
-	get elsePart from var
-	
 	cue init(token as IToken, expr as Expr, onParts as List<of BranchOnPart>, elsePart as BlockStmt?)
 		base.init(token)
 		_expr = expr
@@ -211,19 +201,28 @@ class BranchStmt
 
 	def addSubFields
 		base.addSubFields
-		.addField('expr', _expr)
-		.addField('onParts', _onParts)
-		.addField('elsePart', _elsePart)
+		.addField('expr', .expr)
+		.addField('onParts', .onParts)
+		.addField('elsePart', .elsePart)
 
+	get expr from var as Expr
+	get onParts from var as List<of BranchOnPart>
+	get elsePart from var as BlockStmt?
+	
 	def _bindImp
 		base._bindImp
 		_expr.bindImp
-		for bop in _onParts, bop.bindImp
+		uniqueOnParts = Set<of String>()
+		for onPart in _onParts
+			onPart.bindImp
+			for expr in onPart.exprs
+				source = expr.toCobraSource
+				if source in uniqueOnParts, expr.recordError('Branch case "[source]" was already used.')
+				uniqueOnParts.add(source)
 		if _elsePart, _elsePart.bindImp
 
 
-class BranchOnPart
-	inherits Node
+class BranchOnPart inherits Node
 
 	var _exprs as List<of Expr>
 	var _block as BlockStmt
