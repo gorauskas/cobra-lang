@@ -1357,32 +1357,25 @@ class UsingStmt
 		return _initExpr.type
 
 
-class WhileStmt
-	is partial
-	inherits Stmt
-
-	var _expr as Expr
-	var _block as BlockStmt
+class AbstractWhileStmt inherits Stmt is partial
 
 	cue init(token as IToken, expr as Expr, block as BlockStmt)
 		base.init(token)
-		_expr = expr
-		_block = block
+		_expr, _block = expr, block
 
 	get lastToken as IToken is override
 		return _block.lastToken
 
-	get expr from var
+	get expr from var as Expr
 		
-	get block from var
+	get block from var as BlockStmt
 
 	def addSubFields
 		base.addSubFields
 		.addField('expr', _expr)
 		.addField('block', _block)
 
-	def _bindImp
-		base._bindImp
+	def _bindExpr
 		try
 			_expr.bindImp
 		catch ne as NodeException
@@ -1391,15 +1384,28 @@ class WhileStmt
 			.noAssignmentAllowed(_expr)
 			if _expr.type is not .compiler.boolType
 				_expr = TruthExpr(_expr).bindImp to TruthExpr  # CC: axe when I have "as this"
-		_block.bindImp
 
 
-class PostWhileStmt
-	is partial
-	inherits WhileStmt
+class WhileStmt inherits AbstractWhileStmt is partial
 
 	cue init(token as IToken, expr as Expr, block as BlockStmt)
 		base.init(token, expr, block)
+
+	def _bindImp
+		base._bindImp
+		_bindExpr
+		_block.bindImp
+
+
+class PostWhileStmt inherits AbstractWhileStmt is partial
+
+	cue init(token as IToken, expr as Expr, block as BlockStmt)
+		base.init(token, expr, block)
+
+	def _bindImp
+		_block.bindImp
+		_bindExpr
+		base._bindImp
 
 
 class YieldStmt
