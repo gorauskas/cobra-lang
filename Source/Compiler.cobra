@@ -732,6 +732,8 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 			_referenceVerbosity = .options.getDefault('verbosity-ref', 0)
 		return _referenceVerbosity
 
+	var _willReadDependencies = true
+
 	def indentPrint
 		# see .loadReference which sets up the indented writer
 		(CobraCore.printDestination to IndentedWriter).indent
@@ -838,17 +840,18 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 						reference += if(referredAss.location.endsWith('.exe'), '.exe', '.dll')
 				# TODO: handle all the exceptions from Assembly.loadFrom
 			if referredAss
-				for dependency in referredAss.getReferencedAssemblies
-					if rv
-						print '>> Loading dependency: [dependency]'
-						.indentPrint
-						try
+				if _willReadDependencies
+					for dependency in referredAss.getReferencedAssemblies
+						if rv
+							print '>> Loading dependency: [dependency]'
+							.indentPrint
+							try
+								.loadAssembly(dependency)
+							finally
+								.outdentPrint
+								print '<< Loading dependency: [dependency]'
+						else
 							.loadAssembly(dependency)
-						finally
-							.outdentPrint
-							print '<< Loading dependency: [dependency]'
-					else
-						.loadAssembly(dependency)
 				if rv, 'Will read assembly: [referredAss]'
 				try
 					.readAssembly(referredAss, reference <> 'Cobra.Lang.dll')
@@ -900,15 +903,16 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 			msg = 'Could not open assembly "[assName]" due to: [exc.getType.name]: [exc.message]'
 			if rv, print msg
 			throw SourceException(msg)
-		for dependency in ass.getReferencedAssemblies
-			if rv
-				print '>> Loading dependency: [dependency]'
-				.indentPrint
-				try
-					.loadAssembly(dependency)
-				finally
-					.outdentPrint
-					print '<< Loading dependency: [dependency]'
+		if _willReadDependencies
+			for dependency in ass.getReferencedAssemblies
+				if rv
+					print '>> Loading dependency: [dependency]'
+					.indentPrint
+					try
+						.loadAssembly(dependency)
+					finally
+						.outdentPrint
+						print '<< Loading dependency: [dependency]'
 		try
 			.readAssembly(ass)
 		catch readExc as Exception
