@@ -159,11 +159,11 @@ class ClrTypeProxy inherits AbstractTypeProxy
 	def _realTypeWithCache(clrType as Type) as IType
 		t = (.compiler to Compiler).typeForClrType(clrType)
 		if t is nil
-			t = _realTypeWithoutCache(clrType)
+			t = _realTypeWithoutCache(clrType, 0)
 			(.compiler to Compiler).addTypeForClrType(t to !, clrType)
 		return t to !
 	
-	def _realTypeWithoutCache(clrType as Type) as IType
+	def _realTypeWithoutCache(clrType as Type, level as int) as IType
 		assert .compiler.basicTypes.count > 9   # should have bool, char, all the ints, etc.
 		
 		# Must return the Cobra primitive types in place of System.Boolean, System.Char, System.Int16, etc.
@@ -223,22 +223,35 @@ class ClrTypeProxy inherits AbstractTypeProxy
 			.throwError('Cannot locate CLR type "[clrType]".')
 
 		# compute namespace
+		missing = false
 		nameParts = clrType.namespace.split(c'.')
 		member = .compiler.globalNS.symbolForName(nameParts[0])
-		if member inherits NameSpace
-			curNS = member
-		else
-			.throwError('Cannot find top level namespace "[nameParts[0]]" of CLR type "[clrType.fullName]".')
-		i = 1
-		while i < nameParts.length
-			possible = curNS.declForName(nameParts[i])
-			if possible is nil
-				.throwError('Cannot find "[nameParts[i]]" at component [i+1] of CLR type "[clrType.fullName]".')
-			else if possible inherits NameSpace
-				curNS = possible
-			else
-				.throwError('Found "[nameParts[i]]" at component [i+1] of CLR type "[clrType.fullName]", but it is a [possible.englishName].')
-			i += 1
+		if member inherits NameSpace, curNS = member
+		else, missing = true
+		if not missing
+			i = 1
+			while i < nameParts.length
+				namePart = nameParts[i]
+				possible = curNS.declForName(namePart)
+				if possible is nil
+					missing = true
+					break
+				else if possible inherits NameSpace
+					curNS = possible
+				else
+					.throwError('Found "[namePart]" at component [i+1] of CLR type "[clrType.fullName]", but it is a [possible.englishName].')
+				i += 1
+
+		if missing
+			# since the CLR type exists, but cannot be located in our namespaces,
+			# it must be pulled from a dependent DLL that was not directly referenced
+			
+			# but maybe it was already attempted
+			if level > 0
+				.throwError('Cannot read CLR type "[clrType.fullName]" or its assembly "[clrType.assembly]". Please report to the Cobra discussion forums (http://cobra-language.com/).')
+
+			(.compiler to dynamic).readAssembly(clrType.assembly)
+			return _realTypeWithoutCache(clrType, level+1)  # recurse. guard is just above.
 
 		# return namespace member
 		member = curNS.declForName(typeName)
