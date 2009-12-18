@@ -1,0 +1,96 @@
+"""
+This program demonstrates synchronization of access to resources
+among various threads through the use of Mutexes and the 
+AutoResetEvent.
+
+Two mutexes are initialized with the value `true`, which means
+that the main thread owns both mutexes. Four AutoResetEvent objects
+are initialized to `false` for use in determining when all four
+threads have completed their execution. 
+
+Four threads are created and started with respective handlers. The 
+first handler waits for BOTH mutexes to be released; the second waits
+ONLY for mutex 1; the third waits for EITHER mutex 1 OR mutex 2;
+and the fourth waits ONLY for mutex 2. All the handlers will have to
+wait for the main thread (the owner) to release respective mutexes.
+The main thread releases mutex 1 first resulting in the second and 
+third threads being able to perform their jobs. Then mutex 2 is 
+released satisfying the condition for threads 1 and 4 to perform
+their jobs.
+
+Each thread signals to the main thread that they have completed 
+their job by setting the respective AutoResetEvent. The main
+thread waits for all events to be set before ending its 
+execution.
+
+Reference: http://msdn.microsoft.com/en-us/library/aa645740(VS.71).aspx
+
+Credit: Todd A., Chuck Esterbrook
+"""
+
+use System.Threading
+
+
+class MutexSample
+
+	var _m1 as Mutex?  # Mutex #1
+	var _m2 as Mutex?  # Mutex #2
+	var _events as AutoResetEvent[]  # Events #1-4
+	
+	cue init
+		base.init
+		_m1 = Mutex(true)
+		_m2 = Mutex(true)
+		_events = @[AutoResetEvent(false), AutoResetEvent(false),
+					AutoResetEvent(false), AutoResetEvent(false)]
+
+	def main
+		print 'Main owns Mutex #1 and Mutex #2'
+
+		threads = @[
+			Thread(ref .first),
+			Thread(ref .second),
+			Thread(ref .third),
+			Thread(ref .fourth)
+		]
+
+		for t in threads, t.start
+
+		Thread.sleep(5000)
+		print 'Releasing Mutex #1'
+		_m1.releaseMutex
+
+		Thread.sleep(5000)
+		print 'Releasing Mutex #2'
+		_m2.releaseMutex
+
+		WaitHandle.waitAll(_events)  # wait for all events to be set
+		print 'All threads are finished running'
+
+	def first
+		print 'Thread #1 waits for both Mutex #1 and Mutex #2'
+		WaitHandle.waitAll(@[_m1, _m2])
+		Thread.sleep(2000)
+		print 'Thread #1 finished, setting Event #1'
+		_events[0].set
+
+	def second
+		print 'Thread #2 waits for only Mutex #1'
+		_m1.waitOne
+		Thread.sleep(2000)
+		print 'Thread #2 completed, setting Event #2'
+		_events[1].set
+	
+	def third
+		print 'Thread #3 waits for either Mutex #1 or Mutex #2'
+		WaitHandle.waitAny(@[_m1, _m2])
+		Thread.sleep(2000)
+		print 'Thread #3 completed, setting Event #3'
+		_events[2].set
+
+	def fourth
+		print 'Thread #4 waits for only Mutex #2'
+		_m2.waitOne
+		Thread.sleep(2000)
+		print 'Thread #4 completed, setting Event #4'
+		_events[3].set

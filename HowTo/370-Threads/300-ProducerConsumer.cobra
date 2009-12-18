@@ -1,0 +1,121 @@
+"""
+This program uses the a common design pattern called
+the Producer-Consumer pattern. As the name suggests 
+we have two entities--one producing values, while the
+other consumes the values produced.
+
+The Cell class provides a thread-safe means of writing
+values (producing) and reading values (consuming). The
+operations necessary to effect thread-safeness are
+encapsulated in Cell, resulting in a clean interface:
+ * cell.write(value)
+ * value = cell.read
+
+Read the code, then return to this explanation:
+
+Internally, the Cell uses a combination of `lock`,
+Monitor.wait, Monitor.pulse and a boolean flag to
+safely enable reading and writing by two separate
+threads.
+
+The use of `lock` prevents uncontrolled parallel changes
+to the cell. Then Monitor.wait releases the lock and
+blocks the current thread until it reacquires the lock.
+After maintaining the flag that indicates if the cell
+has contents that are ready to be read, Monitor.pulse is
+used to notify the other thread that is waiting.
+
+Note that the entire Cell object could have been used
+in the lock statement and Wait call using `this`.
+However when working with larger types taking a lock
+on the entire object is often not desirable so a
+lightweight object reference is used instead as shown.
+
+Reference: http://msdn.microsoft.com/en-us/library/aa645740%28VS.71%29.aspx
+
+Credit: Todd A., Chuck Esterbrook
+"""
+
+use System.Threading
+
+
+class Cell
+	"""
+	Provides thread-safe .read and .write methods for a data element.
+
+	Possibilities for improvement include:
+	 * Make _contents `dynamic` instead of `int` so that any kind of value
+	   can be stored.
+	 * Make the class generic, Cell<of T>, so that any type can be used.
+	 * Make _contents nilable, then use `nil` to indicate when there will
+	   be no more production.
+	"""
+
+	var _contents as int
+	var _hasContents = false
+	var __key = Object()
+
+	def read as int
+		lock __key
+			if not _hasContents, Monitor.wait(__key)
+			print 'Consume: [_contents]'
+			_hasContents = false
+			Monitor.pulse(__key)
+		return _contents
+
+	def write(n as int)
+		lock __key
+			if _hasContents, Monitor.wait(__key)
+			_contents = n
+			print 'Produce: [_contents]'
+			_hasContents = true
+			Monitor.pulse(__key)
+
+
+class CellProducer
+
+	var _cell as Cell
+	var _quantity as int
+
+	cue init(cell as Cell, quantity as int)
+		base.init
+		_cell, _quantity = cell, quantity
+	
+	def threadRun
+		for looper in _quantity
+			_cell.write(looper)  # produce a value
+
+
+class CellConsumer
+
+	var _cell as Cell
+	var _quantity as int
+
+	cue init(cell as Cell, quantity as int)
+		base.init
+		_cell, _quantity = cell, quantity
+
+	def threadRun
+		for looper in _quantity
+			_cell.read  # consume a value
+
+
+class MonitorSample
+
+	def main
+		cell = Cell()
+		n = 20
+		producer = CellProducer(cell, n)
+		consumer = CellConsumer(cell, n)
+
+		producerThread = Thread(ref producer.threadRun)
+		consumerThread = Thread(ref consumer.threadRun)
+
+		print 'Starting...'
+		producerThread.start
+		consumerThread.start
+
+		# wait for both threads to complete their execution
+		producerThread.join
+		consumerThread.join
+		print 'Done.'

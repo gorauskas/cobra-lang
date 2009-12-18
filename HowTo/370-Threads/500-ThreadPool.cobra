@@ -1,0 +1,108 @@
+"""
+This program completes a large number of work items by queuing all of 
+the work to a ThreadPool. Internally the ThreadPool manages a set of
+threads however it sees fit, all opaque to the user.
+
+The application consists of a SimplePool class that sends N work items
+to the thread pool via ThreadPool.queueUserWorkItem. Any state data 
+needed by the callback to operate is also passed as the second argument.
+
+SimplePool creates a worker and notifies it of the maximum number of 
+work items it is going to send it, as well as a ManualResetEvent object
+which Worker is responsible for setting after it has completed all the
+work. Once the event is set, SimplePool can then print out a report 
+illustrating the load given to each thread.
+
+Inside the worker's handle method the Interlocked class' increment 
+method is used to perform an atomic increment of the _count variable.
+This is necessary since _count is shared by every work item.
+
+Note that the maximum number of threads utilized is explicitly set
+only for demonstration purposes, i.e. so that a reasonably small
+number of threads are utilized to get all the work done, making 
+it easier to observe the number of work items that get scheduled per
+given thread. In practice, this is never really required. Also note
+that ThreadPool may not comply when attempting to set its min/max
+number of threads. In such cases ThreadPool.setMaxThreads will 
+return `false`.
+
+References:
+
+ThreadPool class
+http://msdn.microsoft.com/en-us/library/system.threading.threadpool.aspx
+
+ManualReset class
+http://msdn.microsoft.com/en-us/library/system.threading.manualresetevent.aspx
+
+Interlocked class
+http://msdn.microsoft.com/en-us/library/system.threading.interlocked.aspx
+
+WaitCallback
+http://msdn.microsoft.com/en-us/library/system.threading.waitcallback.aspx
+
+Credit: Todd A.
+"""
+
+use System.Threading
+
+
+class Worker
+
+	var _limit as int
+	var _count as int
+	var _serviced as Dictionary<of int, int>
+	var _completedEvent as ManualResetEvent
+
+	cue init(limit as int, evt as ManualResetEvent)
+		base.init
+		_serviced = Dictionary<of int, int>()
+		_count = 0
+		_limit = limit
+		_completedEvent = evt
+
+	def handle(state as Object)
+		CobraCore.noOp(state)  # do nothing with the data passed in
+		lock _serviced
+			hc = Thread.currentThread.getHashCode
+			if not _serviced.containsKey(hc)
+				_serviced.add(hc, 0)
+			_serviced[hc] += 1
+
+		Thread.sleep(2000)  # block for 2 seconds
+		Interlocked.increment(inout _count)
+		# if all jobs were completed then set the completed event
+		if _count == _limit
+			print 'Setting completed event..\n'
+			_completedEvent.set
+	
+	def toString as String is override
+		sb = StringBuilder()
+		for key, value in _serviced
+			sb.appendLine('Thread [key]: [value]')
+		return sb.toString
+
+
+class SimplePool
+
+	def main
+		print 'Thread pool sample'
+		if ThreadPool.setMaxThreads(50, 60)
+			print 'The number of threads used has been successfully limited'
+
+		limit = 300  # max work items to queue so that we can see distribution amongst the threads
+		completedEvent = ManualResetEvent(false)
+		worker = Worker(limit, completedEvent)
+		print 'Queuing [limit] items to the pool'
+
+		for i in limit
+			#print 'Queue to Thread Pool [i + 1]'
+			ThreadPool.queueUserWorkItem(WaitCallback(ref worker.handle), i + 1)
+
+		# wait for worker to set completed
+		print 'Waiting for thread pool to drain'
+		completedEvent.waitOne(Timeout.infinite, true)
+		print 'The pool has been drained'
+		print
+		# display how the load was distributed amoung threads
+		print 'Load across threads'
+		print worker
