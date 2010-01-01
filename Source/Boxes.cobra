@@ -47,7 +47,9 @@ class Box
 		_genericParams = paramList
 		for i in _genericParams.count
 			p = _genericParams[i]
-			if p inherits GenericParam, p.index = i
+			if p inherits GenericParam
+				p.index = i
+				p.parentDefinition = this
 		_baseInterfaceProxies = baseInterfaceNodes
 		_baseInterfaces = List<of Interface>()
 		_overloads = List<of MemberOverload>()
@@ -1496,9 +1498,7 @@ class MethodSig inherits Class is partial
 		pass
 
 
-class GenericParam
-	is partial
-	inherits CobraType
+class GenericParam inherits CobraType is partial
 	"""
 	A generic parameter *is* a type.
 	"""
@@ -1519,19 +1519,14 @@ class GenericParam
 		.init(genArgType.name)
 		_nativeType = genArgType
 		# TODO: scan Constraints
-
-	get idString as String is override
-		return '[.getType.name]([.serialNum], "[.name]")'
-
-	get name as String is override
-		return _name
-
-	get nativeType from var
-
+	
 	get constraints from var
 
 	get englishName as String is override
 		return 'generic parameter'
+
+	get idString as String is override
+		return '[.getType.name]([.serialNum], "[.name]")'
 
 	pro index from var
 
@@ -1539,6 +1534,19 @@ class GenericParam
 		# Well, it's hard to say if a GenericParam is a reference or value type, but CompareExpr() influences us to say "true".
 		# TODO: if there are constraints on the generic param, examine them to determine answer
 		return true
+
+	get name as String is override
+		return _name
+
+	get nativeType from var
+
+	pro parentDefinition from var as NamedNode?
+		"""
+		The definition that directly contains this generic parameter.
+		For example, if non-nil, then `gp in .parentDefinition.genericParams` will be true.
+		GenericParams are created in other circumstances such as being passed into a constructed type, in which case .parentDefinition will be nil.
+		Note that .parentDefinition is always a Box or a Method.  # TODO: require/ensure that?
+		"""
 
 	def addMinFields
 		base.addMinFields
@@ -1575,10 +1583,12 @@ class GenericParam
 	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType is override
 		if gpToType.containsKey(this)
 			return gpToType[this]
-		else
-			for key in gpToType.keys
-				if key.name == .name
-					return gpToType[key]
+		for key in gpToType.keys
+			if key.name == .name
+				return gpToType[key]
+		# a generic method in a generic class requires the next statement
+		# see Tests/240-generics/400-generic-methods/102-generic-method-in-generic-class.cobra
+		if .parentDefinition, return this
 		throw FallThroughException(this)
 
 	def _bindInt
