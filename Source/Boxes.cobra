@@ -1057,11 +1057,11 @@ class Box
 				for key as dynamic in gpToType.keys
 					if key.name == param.name
 						found = key
-				if param.parentDefinition is nil
-					# guard against case of `class A<of T>; def foo<of U> as List<of U>` for the `List<of U>`
-					# see Tests/240-generics/400-generic-methods
-					assert found, {'param': param, 'gpToType.keys': gpToType.keys}
-				if found, typeArgs.add(gpToType[found to !])
+				# The generic param may not be found because, for example, it's declared for a
+				# generic method and what's being constructed is the containing type; hence the
+				# method's additional generic parameters are still generic.
+				# see Tests/240-generics/400-generic-methods
+				if found, typeArgs.add(gpToType[found])
 				else, typeArgs.add(param)
 			else
 				typeArgs.add(param.secondaryConstructedTypeFor(box, gpToType))
@@ -1592,8 +1592,7 @@ class GenericParam inherits CobraType is partial
 				return gpToType[key]
 		# a generic method in a generic class requires the next statement
 		# see Tests/240-generics/400-generic-methods/102-generic-method-in-generic-class.cobra
-		if .parentDefinition, return this
-		throw FallThroughException(this)
+		return this
 
 	def _bindInt
 		base._bindInt
