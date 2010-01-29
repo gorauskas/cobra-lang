@@ -254,10 +254,18 @@ class Box is partial
 	def _scanProperties
 		for propInfo in .clrType.getProperties(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
 			getMethod = propInfo.getGetMethod(true) # true means include nonpublic
-			if getMethod is nil, continue
-			if getMethod.isAssembly, continue
-			if getMethod.isPrivate, continue
-			if propInfo.declaringType is not .clrType, continue
+			setMethod = propInfo.getSetMethod(true)
+			visible = false
+			if getMethod
+				if getMethod.isPublic or getMethod.isFamily
+					theMethod = getMethod
+					visible = true
+			if not visible and setMethod
+				if setMethod.isPublic or setMethod.isFamily
+					theMethod = setMethod to !
+					visible = true
+			if not visible, continue
+			if theMethod.declaringType is not .clrType, continue
 			if propInfo.name == _defaultMemberName and propInfo.getIndexParameters and propInfo.getIndexParameters.length
 				_scanIndexer(propInfo)
 				continue
@@ -266,12 +274,7 @@ class Box is partial
 			attribs = AttributeList()  # TODO:
 			docString = ''  # TODO: get doc string
 			# TODO: eventually the isNames need to be an the property part level (get or set) rather than the property level, like in C# and the CLR runtime
-			if propInfo.canRead
-				isNames = _isNamesForMethodInfo(propInfo.getGetMethod(true) to !)
-			else if propInfo.canWrite
-				isNames = _isNamesForMethodInfo(propInfo.getSetMethod(true) to !)
-			else
-				throw FallThroughException(propInfo)
+			isNames = _isNamesForMethodInfo(theMethod)
 			prop = Property(TokenFix.empty, TokenFix.empty, this, Utils.cobraNameForSharpMemberName(propInfo.name), _memberTypeResultProxy(propInfo, propInfo.propertyType), isNames, attribs, docString)
 			prop.binaryName = propInfo.name
 			if propInfo.canRead
