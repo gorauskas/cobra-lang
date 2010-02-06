@@ -29,15 +29,15 @@ TODO
 use System.Net
 
 
-class WebSearcher<of TSearchResult>
+class WebSearcher<of TSearchResult> is abstract
 	where TSearchResult must be SearchResult
 
 	var _maxResults = 10
 	var _searchText = ''
 	var _willHideIdentity = false
 
-	def init
-		pass
+	cue init
+		base.init
 
 	pro maxResults from var
 		"""
@@ -71,15 +71,14 @@ class WebSearcher<of TSearchResult>
 		require .searchText.length
 		# TODO: retry on network errors
 		try
-			WebClient().downloadFile(_buildUrl, localFileName)
+			WebClient().downloadFile(_buildUrl, localFileName)  # TODO: can that be downloaded to memory?
 		catch e as Exception
 			print e.toString
 
-	def _buildUrl as String  # CC: is abstract
+	def _buildUrl as String is abstract
 		"""
-		Subclasses must override to build the specific URL to be retrieved.
+		Build the specific URL to be retrieved.
 		"""
-		return ''
 
 	def _setHeaders(wc as WebClient)
 		"""
@@ -88,31 +87,25 @@ class WebSearcher<of TSearchResult>
 		"""
 		# TODO: compare these headers to my Python code
 		wc.headers.add('User-Agent', 'Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; .NET CLR 1.1.4322)')
-		wc.headers.add('Accept','image/gif, image/x-xbitmap, image/jpeg, image/pjpeg, application/x-shockwave-flash, application/vnd.ms-excel, application/vnd.ms-powerpoint, application/msword, */*')
+		wc.headers.add('Accept', 'image/gif, image/x-xbitmap, image/jpeg, image/pjpeg, application/x-shockwave-flash, application/vnd.ms-excel, application/vnd.ms-powerpoint, application/msword, */*')
 		wc.headers.add('Accept-Language', 'en-us')
-		wc.headers.add('Accept-Encoding','gzip, deflate')
+		wc.headers.add('Accept-Encoding', 'gzip, deflate')
 
 
 class SearchResult
 
-	var _url as String
-	var _title as String
-	var _snippet as String
-	
-	def init(url as String, title as String, snippet as String)
-		_url = url
-		_title = title
-		_snippet = snippet
+	cue init(url as String, title as String, snippet as String)
+		base.init
+		_url, _title, _snippet = url, title, snippet
 
-	get url from var
+	get url from var as String
+
+	get title from var as String
 	
-	get title from var
-	
-	get snippet from var
+	get snippet from var as String
 
 
-class GoogleWebSearcher
-	inherits WebSearcher<of SearchResult>
+class GoogleWebSearcher inherits WebSearcher<of SearchResult>
 	"""
 	See the module-level docs for explanation and example use.
 	"""
@@ -120,8 +113,8 @@ class GoogleWebSearcher
 	var _hl = 'en'
 	var _btnG = 'Google+Search'
 
-	def init
-		pass
+	cue init
+		base.init
 
 	pro hl from var
 		"""
@@ -136,33 +129,31 @@ class GoogleWebSearcher
 	def _buildUrl as String is override
 		# http://www.google.com/search?hl=en&q=google+search+api&btnG=Google+Search
 		url = 'http://www.google.com/search?'
-		if .hl.length
-			url += 'hl=[.hl]'
-		url += 'q=[.query]'
-		if .btnG
-			url += 'btnG=[.btnG]'
+		if .hl.length, url += 'hl=[.hl]'
+		url += 'q=[.searchText]'
+		if .btnG.length, url += 'btnG=[.btnG]'
 		return url
 
 
 class Program
 
-	def main is shared
+	def main
 		print 'WebSearcher'
 		args = CobraCore.commandLineArgs
-		if args.count<2
+		if args.count < 2
 			print ns'usage: download URL [LOCALFILENAME]'
 			return
 		url = args[1]
 
 		# localFileName is derived from the url if missing:
-		if args.count>2
+		if args.count > 2
 			localFileName = args[2]
 		else
 			s = url
 			if s.endsWith('/')
 				s = s[:-1]
 			i = s.lastIndexOf('/')
-			if i<>-1
+			if i <> -1
 				localFileName = s[i+1:]
 			else
 				print 'Invalid URL.'
