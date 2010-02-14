@@ -565,7 +565,7 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 				_transformToEnumDecl(dotNode, enumDefi)
 				return
 
-		_bindImpArgs
+		hasErrors = _bindImpArgs
 		definition as IMember?
 		type as IType?
 
@@ -587,14 +587,13 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 				# definition should never be a Box, IVar or GenericParam as those cases would be handled by the transformation to PostCallExpr above
 				# there is a FallThroughException down below that would report this if it happened
 				if definition inherits BoxMember
-					if not .hasError
+					if not .hasError and not hasErrors
 						args = _args
 						if definition inherits MemberOverload
 							# Note that overloads can have different return types (even if more than just the return type is needed to distinguish them). Example: Math.
 							# Plenty of info here:
 							# http://www.google.com/search?hl=en&q=C%23+overloaded+method+resolution
 							# TODO: handle type inference for generic members. See the C# spec for details.
-						
 							winner = definition.computeBestOverload(.args, .genericArgTypes, true)
 							sharp'definition = winner'
 							type = winner.resultType
@@ -691,7 +690,8 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 		_type = postCall.type to IType
 		transformTarget._transformTo(postCall)
 
-	def _bindImpArgs
+	def _bindImpArgs as bool
+		hasErrors = false
 		num = 1
 		for arg in List<of Expr>(_args)
 			try
@@ -705,7 +705,9 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 			catch ne as NodeException
 				ne.prefixMessage('For "[_name]" arg [num]: ')
 				.compiler.recordError(ne)
+				hasErrors = true
 			num += 1
+		return hasErrors
 
 	def _didVariArgs(definition as BoxMember) as bool
 		hasVari = false
