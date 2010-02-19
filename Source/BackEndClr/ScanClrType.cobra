@@ -182,24 +182,31 @@ class Box is partial
 				_baseInterfaceProxies.add(ClrTypeProxy(interf))
 
 	def _scanNestedTypes
+		# TODO: enable and fix resulting bugs
+		# for type in .clrType.getNestedTypes(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
 		for type in .clrType.getNestedTypes
-			clrType = ClrNativeType(type)
-			if type.isClass
-				.addDecl(Class(clrType))
-			else if type.isInterface
-				.addDecl(Interface(clrType))
-			else if type.isEnum
-				.addDecl(EnumDecl(this, clrType, List<of String>(), ''))  # TODO: isNames; docString?
-			else if type.isValueType
-				.addDecl(Struct(clrType))
-			else if type.isAnsiClass
-				# The Enum class is an example that returns false for .isClass but true for .isAnsiClass
-				.addDecl(Class(clrType))
-			else
-				throw FallThroughException(type)
-			lastDecl = .declsInOrder[.declsInOrder.count-1] to dynamic
-			if (lastDecl to Object).getType.getProperty('ParentBox')  # CC: if lastDecl responds to (get parentBox as Box?)
-				lastDecl.parentBox = this
+			_scanNestedType(type)
+		for type in .clrType.getNestedTypes(BindingFlags(Static, DeclaredOnly, NonPublic))
+			if type.isEnum and not type.isPublic, _scanNestedType(type)
+
+	def _scanNestedType(type as System.Type)
+		clrType = ClrNativeType(type)
+		if type.isClass
+			.addDecl(Class(clrType))
+		else if type.isInterface
+			.addDecl(Interface(clrType))
+		else if type.isEnum
+			.addDecl(EnumDecl(this, clrType, List<of String>(), ''))  # TODO: isNames; docString?
+		else if type.isValueType
+			.addDecl(Struct(clrType))
+		else if type.isAnsiClass
+			# The Enum class is an example that returns false for .isClass but true for .isAnsiClass
+			.addDecl(Class(clrType))
+		else
+			throw FallThroughException(type)
+		lastDecl = .declsInOrder[.declsInOrder.count-1] to dynamic
+		if (lastDecl to Object).getType.getProperty('ParentBox')  # CC: if lastDecl responds to (get parentBox as Box?)
+			lastDecl.parentBox = this
 			
 	def _scanFields
 		for fieldInfo in .clrType.getFields(BindingFlags(Instance, Static, DeclaredOnly, Public))
