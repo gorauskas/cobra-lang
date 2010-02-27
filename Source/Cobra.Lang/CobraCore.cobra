@@ -137,36 +137,10 @@ namespace Cobra.Lang
 				"""
 				Run all Cobra `test` sections in all assemblies using reflection to locate them.
 				"""
-				# start = DateTime.now
-				_runAllTests(Assembly.getEntryAssembly, Dictionary<of String, String>())
-				# duration = DateTime.now.subtract(start)
-				# trace duration
-
-			def _runAllTests(ass as Assembly, found as Dictionary<of String, String>)  # CC: found should be Set<of String>
-				name = ass.getName.toString
-				if found.containsKey(name)
-					return
-				found.add(name, name)
-				if _skipAssemblyNameForTesting(name)  # saves some time
-					return
-
-				# print 'Testing assembly:', ass
-				for type in ass.getExportedTypes
-					members = type.getMember('RunTestsIfNeeded')
-					if members and members.length and members[0] inherits MethodInfo
-						method = members[0] to MethodInfo
-						# trace type, method
-						if type.containsGenericParameters
-							# TODO: this is quite awful. tests in generic types are being skipped!
-							# potential solution 1: move type test out of the type into a "sister" type: private __FooTest
-							# potential solution 2: require a constructed type in Cobra: `test Foo<of int> ...` and then put that in a method attribute in the gen C# and use that type
-							continue
-						method.invoke(type, nil)
-
-				# traverse further assemblies
-				for assName in ass.getReferencedAssemblies
-					subAss = Assembly.load(assName)
-					_runAllTests(subAss to !, found)
+				# listener = Cobra.Lang.Test.TextWriterListener(Console.out)
+				listener = Cobra.Lang.Test.TextWriterOnlyOnFailureListener(Console.out)
+				tr = Cobra.Lang.Test.TestRunner(listener)
+				tr.runAllTests
 
 			var _skipPrefixes = @['System.', 'Mono.', 'mscorlib,', 'System,']
 

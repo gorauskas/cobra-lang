@@ -62,8 +62,8 @@ class Compiler is partial
 				if .hasExceptionReportOption
 					print '		bool success = false;'
 					print '		try {'
-				for module in _modules
-					module.writeSharpTestInvocation(f)
+				print '		CobraLangInternal.Test.ITestRunListener listener = new CobraLangInternal.Test.TextWriterListener(System.Console.Out);'
+				print '		new CobraLangInternal.Test.TestRunner(listener).RunAllTests();'
 				if .hasExceptionReportOption
 					print '		success = true;'
 					print '		} catch (System.Exception e) {'
@@ -582,12 +582,18 @@ interface IMember
 class NameSpace
 	is partial
 
-	get sharpSuffix as String
+	get sharpFullName as String
 		value as Object?
-		if not .addOnValues.tryGetValue('sharpSuffix', out value)
-			suffix = if(.fullName == 'Cobra.Lang', .compiler.embedRunTimeSuffix, '')
-			.addOnValues['sharpSuffix'] = suffix
-			return suffix
+		if not .addOnValues.tryGetValue('sharpFullName', out value)
+			fullName = .fullName
+			if fullName == 'Cobra.Lang'
+				name = 'Cobra.Lang' + .compiler.embedRunTimeSuffix
+			else if fullName.startsWith('Cobra.Lang.')
+				name = 'Cobra.Lang[.compiler.embedRunTimeSuffix].' + fullName['Cobra.Lang.'.length:]
+			else
+				name = fullName
+			.addOnValues['sharpFullName'] = name
+			return name
 		else
 			return value to String
 
@@ -599,20 +605,21 @@ class NameSpace
 		if _superNameSpace is nil
 			return 'global::'
 		else
-			return .fullName + .sharpSuffix
+			return .sharpFullName
 
 	get sharpQualifier as String
 		ensure result.endsWith('.') or result == 'global::'
 		if _superNameSpace is nil
 			return 'global::'
 		else
-			return .fullName + .sharpSuffix + '.'
+			return .sharpFullName + '.'
 	
 	def writeSharpDef(sw as CurlyWriter) is override
 		assert not .isUnified
 		base.writeSharpDef(sw)
 		if not .isRoot
-			sw.writeAndIndent('namespace [.name][.sharpSuffix] {\n\n')
+			suffix = if(.fullName == 'Cobra.Lang', .compiler.embedRunTimeSuffix, '')
+			sw.writeAndIndent('namespace [.name][suffix] {\n\n')
 		for ud in _useDirectives
 			ud.writeSharpDef(sw)
 		for decl in _declsInOrder
@@ -994,12 +1001,6 @@ class Box is partial
 				if not .willWriteDeclSharpDef(decl), continue
 				.compiler.boxMemberStack.push(decl)
 				try
-/#
-delme
-					if decl inherits BoxMember
-						if decl.parentBox is not this  # skip extension methods that were not declared in this box
-							continue
-#/
 					decl.writeSharpDef(sw)
 				finally
 					.compiler.boxMemberStack.pop
@@ -1077,36 +1078,10 @@ delme
 			sw.dedent
 
 	def writeSharpTest(sw as CurlyWriter)
-		# Running tests from the static initializer seems like a good idea, but has been problematic at various times on both .NET and Mono, so no more:
-		# sw.write('\nstatic [.rootName]() { RunTestsIfNeeded(); }\n')
-		# -- er, it turned out that the problem was likely -dst on SourceSite. Consequently we could try returning to static initializers to trigger tests.
-		sw.write('\nprivate static bool __didStartTests = false;\n')
-		newWord = .newForSharpTest
-		sw.write('\npublic static[newWord] void RunTestsIfNeeded() { if (!__didStartTests) RunTests(); }\n')
-		sw.write('\npublic static[newWord] void RunTests()')
-		sw.writeAndIndent(' {\n')
-		sw.write('__didStartTests = true;\n')
-		sw.write('CobraLangInternal.CobraImp.TestBegan("[.name]");\n')
-		if _testMethod
-			sw.write('[_testMethod.sharpName]();\n')
-		for decl in _declsInOrder
-			decl.writeSharpTestInvocation(sw)
-		sw.write('CobraLangInternal.CobraImp.TestEnded("[.name]");\n')
-		sw.dedentAndWrite('}\n')
-
-	var _didWriteSharpTestInvocation = false
+		pass
 
 	def writeSharpTestInvocation(sw as CurlyWriter) is override
-		# used by the test option
-		if _didWriteSharpTestInvocation
-			return
-		if .isExtern
-			return
-		if .isGenericDef  # sorry, but static methods always require a type arg even if you don't need it. workaround. make another class with a 'test' section that tests the generic class TODO: make Cobra do this, but then watch for use of the generic param!
-			return
-		#assert .parentNameSpace  # suppress for nested classes 
-		sw.write('\t\t[.sharpRef].RunTestsIfNeeded();\n')
-		_didWriteSharpTestInvocation = true
+		pass
 
 	get newForSharpTest as String
 		return ''
@@ -2823,7 +2798,6 @@ class TryStmt
 				sw.indent
 			sw.write('try')
 			_tryBlock.writeSharpDef(sw, false)
-			# delme sw.write('[helperName] = true;\n')
 			sw.dedent
 			sw.write('}\n')
 			if _catchBlocks.count
