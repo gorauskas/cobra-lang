@@ -749,31 +749,6 @@ static public class CobraImp {
 		}
 	}
 
-	static private TextWriter _testProgressWriter = null;
-
-	static public TextWriter TestProgressWriter {
-		get {
-			return _testProgressWriter==null ? Console.Out : _testProgressWriter;
-		}
-		set {
-			_testProgressWriter = value;
-		}
-	}
-
-	static public void TestBegan(string className) {
-		if (ShowTestProgress) {
-			TestProgressWriter.WriteLine("Testing {0}...", className);
-			TestProgressWriter.Flush();
-		}
-	}
-
-	static public void TestEnded(string className) {
-		if (ShowTestProgress) {
-			TestProgressWriter.WriteLine("Completed testing of {0}.{1}", className, Environment.NewLine);
-			TestProgressWriter.Flush();
-		}
-	}
-
 
 	/// Super Stack Trace!
 
