@@ -61,8 +61,7 @@ class Compiler is partial
 				print '		CobraLangInternal.CobraImp.ShowTestProgress = true;'
 				if .hasExceptionReportOption
 					print '		try {'
-				print '		CobraLangInternal.Test.ITestRunListener listener = new CobraLangInternal.Test.TextWriterListener(System.Console.Out);'
-				print '		new CobraLangInternal.Test.TestRunner(listener).RunAllTests();'
+				.writeSharpRunAllTests(f)
 				if .hasExceptionReportOption
 					print '		} catch (System.Exception e) {'
 					print '			CobraLangInternal.CobraCore.HandleUnhandledException(e);'
@@ -71,6 +70,17 @@ class Compiler is partial
 				print '}'
 		.mainMethodTypeName = '_GeneratedTestRunner'
 		_modules.add(SharpModule(fileName, _verbosity))
+
+	def writeSharpRunAllTests(cw as CurlyWriter)
+		runner = .options['test-runner'] to String  # ex: Cobra.Lang.CobraCore.runAllTests, ex: MyProgram.runTests
+		if runner <> 'nil'
+			if runner.endsWith('()'), runner = runner[:-2]
+			if runner.startsWith('Cobra.Lang.'), runner = 'CobraLangInternal.' + runner['Cobra.Lang.'.length:]
+			parts = List<of String>(runner.split(c'.'))
+			if parts.count > 1
+				parts[parts.count-1] = parts.last[0].toUpper.toString + parts.last[1:]
+			stmt = parts.join('.') + '();'
+			cw.writeLine(stmt)
 
 	var _didWriteSharpInfoClass as bool
 
@@ -1839,7 +1849,7 @@ class Method
 				sw.writeLine('try { // -debugging-tips')
 				sw.indent
 		if .isMain and .compiler.options.boolValue('include-tests')
-			sw.writeLine('CobraLangInternal.CobraCore.RunAllTests();  // turn off with -include-tests:no (see cobra -h)')
+			(.compiler to Compiler).writeSharpRunAllTests(sw)
 
 	def writeSharpImpFooter(sw as CurlyWriter)
 		base.writeSharpImpFooter(sw)

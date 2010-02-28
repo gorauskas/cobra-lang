@@ -1,6 +1,12 @@
 """
+Cobra.Lang.Test contains a family of classes for running tests and reporting their results.
+
+Also, it is the library used by Cobra to run unit tests declared in the language,
+using the "test" keyword.
+
 EXAMPLE A
 
+	# Scans all assemblies for all Cobra-declared tests and runs them.
 	TestRunner(TextWriterListener(Console.out)).runAllTests
 
 EXAMPLE B
@@ -33,6 +39,28 @@ EXAMPLE F
 	tr.runTestsFor(System.Reflection.Assembly.getEntryAssembly, false)
 	# false == do not follow dependencies
 
+EXAMPLE G
+
+	@args -test-runner:P.runTests
+	
+	class P
+	
+		def main
+			print 'Hello from main.'
+
+		def runTests is shared
+			# Due to the @args above, Cobra will invoke this method for running tests instead of
+			# Cobra.Lang.CobraCore.runAllTests. This allows you to customize the test runner,
+			# including setting parameters, adding listeners, using a custom subclass, etc. 
+			#
+			# When customizing the test run, you will find it useful to read the interface to
+			# Cobra.Lang.Test, and possibly even the implementation.
+			#
+			# Alternatively, you can bypass Cobra.Lang.Test entirely and write whatever code
+			# you like here.
+			tr = Cobra.Lang.Test.TestRunner()
+			tr.runAllTests
+
 NOTES
 
 	* There are other methods of TestRunner that you can tap into.
@@ -45,8 +73,7 @@ TODO
 
 	[ ] stack trace filtering could be interesting. more experience will be required to see if it's necessary. see
 		http://www.google.com/codesearch/p?hl=en#uX1GffpyOZk/test-runner/junit/runner/BaseTestRunner.java&q=testrunner&d=2
-	[ ] more docs
-	
+
 	There are more TODOs in the code below.
 """
 
@@ -85,15 +112,15 @@ namespace Cobra.Lang.Test
 			.runTestsFor(Assembly.getEntryAssembly, true)
 
 		def runTestsFor(ass as Assembly, willFollowReferences as bool)
-			.makeTestRunListenerIfNeeded
-			suite = .collectTestsFor(ass, willFollowReferences)
-			suite.run(.params, .listener to !)
+			.runTestsFor(.collectTestsFor(ass, willFollowReferences))
 	
 		def runTestsFor(type as Type)
+			.runTestsFor(.collectTestsFor(type))
+		
+		def runTestsFor(suite as TestSuite)
 			.makeTestRunListenerIfNeeded
-			suite = .collectTestsFor(type)
 			suite.run(.params, .listener to !)
-	
+			
 		def makeTestRunListenerIfNeeded
 			ensure .listener
 			if .listener is nil
