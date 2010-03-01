@@ -580,7 +580,7 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 			definition = _inferDefinitionAndType(dotNode, out type)
 			assert type
 			if definition inherits IType 	# Box, IVar or GenericParam
-				_transformToPostCallExprOnType(dotNode, definition)
+				_transformToPostCallExprOnType(definition)
 				return
 
 			if definition
@@ -677,17 +677,10 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 			type = possibleDefinition.resultType
 		return possibleDefinition
 
-	def _transformToPostCallExprOnType(dotNode, definition as IType?)
-		# for Foo.Bar() where Bar is a box/type
-		# Change to a PostCallExpr on the type 'Foo.Bar'
-			
-		# Roll up Foo.Bar.Baz() into one PostCallExpr
-		transformTarget = dotNode
-		while transformTarget.superNode inherits DotExpr
-			transformTarget = transformTarget.superNode to DotExpr
-
-		postCall = PostCallExpr(.token, TypeExpr(.token, definition), .args).bindImp
-		_type = postCall.type to IType
+	def _transformToPostCallExprOnType(definition as IType?)
+		transformTarget = .superNode to DotExpr
+		postCall = PostCallExpr(.token, TypeExpr(.token, definition), .args).bindAll to PostCallExpr
+		_type = postCall.type
 		transformTarget._transformTo(postCall)
 
 	def _bindImpArgs as bool
