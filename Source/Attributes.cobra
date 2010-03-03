@@ -45,23 +45,23 @@ class AttributeDecl inherits NamedNode is partial
 		if _expr inherits DotExpr
 			_expr.left.bindImp  # Could cause a transformation. Handled in .replaceChild
 			name = _expr.dotRight.name
-			defi = _expr.left.definition.memberForName(name)
-			if defi is nil
+			if not name.endsWith('Attribute')
 				defi = _expr.left.definition.memberForName(name+'Attribute')
 			if defi is nil
-				_expr.throwCannotFindMemberError(_expr.left, '[name] or [name]Attribute')
+				defi = _expr.left.definition.memberForName(name)
+			if defi is nil
+				_expr.throwCannotFindMemberError(_expr.left, '[name]Attribute or [name]')
 			if defi inherits IType
-				_expr = PostCallExpr(_expr.right.token, TypeExpr(_expr.right.token, defi), _expr.dotRight.args, isForAttribute=true)
+				_expr = PostCallExpr(_expr.right.token, TypeExpr(_expr.right.token, defi), _expr.dotRight.args)
 			else
 				.throwError('Expecting an attribute class instead of a [defi.englishName].')
 		else if _expr inherits PostCallExpr
 			name = _expr.name
-			if not name.endsWith('Attribute') and name.canBeUndottedMemberName and not .compiler.symbolForName(name, false)
+			if not name.endsWith('Attribute') and name.canBeUndottedMemberName
 				if .compiler.symbolForName(name+'Attribute', false)
-					_expr = PostCallExpr(_expr.token, IdentifierExpr(_expr.token, name+'Attribute'), _expr.args, isForAttribute=true)
-			else
-				_expr.isForAttribute = true
+					_expr = PostCallExpr(_expr.token, IdentifierExpr(_expr.token, name+'Attribute'), _expr.args)
 		assert _expr inherits PostCallExpr
+		(_expr to PostCallExpr).isForAttribute = true
 		_expr.bindImp
 
 	get typeForIdentifier as IType is override
