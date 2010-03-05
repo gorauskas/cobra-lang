@@ -1,0 +1,45 @@
+"""
+Cobra translation of sample from http://msdn.microsoft.com/en-us/library/2e08f6yc.aspx
+ticket:196 - ability to compile when using {begin,end}Invoke
+"""
+
+use System.Threading 
+
+class AsyncDemo 
+
+	# The method to be executed asynchronously.
+	def testMethod(callDuration as int, threadId as out int ) as String
+		# print 'Test method begins.'
+		Thread.sleep(callDuration)
+		threadId = Thread.currentThread.managedThreadId
+		return 'My call time was [callDuration].'
+
+
+sig AsyncMethodCaller(callDuration as int, threadId as out int) as String
+
+
+class AsyncMain 
+
+	def main		
+		# The asynchronous method puts the thread id here.
+		threadId as int
+
+		# Create an instance of the test class.
+		ad = AsyncDemo()
+
+		# Create the delegate.
+		caller = AsyncMethodCaller(ref ad.testMethod)
+
+		# Initiate the asychronous call.
+		duration = 1500
+		result = caller.beginInvoke(duration, out threadId, nil, nil)
+
+		Thread.sleep(0)
+		# print 'Main thread [Thread.currentThread.managedThreadId] does some work.'
+
+		# Call .endInvoke to wait for the asynchronous call to complete, and to retrieve the results.
+		returnValue = caller.endInvoke(out threadId, result)
+
+		assert threadId <> Thread.currentThread.managedThreadId
+		assert returnValue == 'My call time was [duration].'
+		# print 'The call executed on thread [threadId], with return value "[returnValue]".'
