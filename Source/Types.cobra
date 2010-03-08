@@ -102,7 +102,7 @@ interface ITypeProvider
 
 	get voidType as VoidType
 
-	# TODO: def nilableType ... just like .variType. cache and get "is" testing
+	def nilableType(t as IType) as NilableType
 
 	def variType(type as IType) as VariType
 
@@ -132,6 +132,7 @@ class BasicTypeProvider
 	var _passThroughType	as PassThroughType?
 	var _unspecifiedType	as UnspecifiedType?
 	var _voidType			as VoidType?
+	var _nilableTypes		as Dictionary<of IType, NilableType>?
 	var _variTypes			as Dictionary<of IType, VariType>?
 	var _defaultType		as IType?
 
@@ -230,6 +231,18 @@ class BasicTypeProvider
 			_voidType = VoidType()
 		return _voidType to !
 
+	def nilableType(type as IType) as NilableType
+		if type inherits NilableType, return type
+		if _nilableTypes is nil
+			_nilableTypes = Dictionary<of IType, NilableType>()
+		if _nilableTypes.containsKey(type)
+			return _nilableTypes[type]
+		else
+			_nilableTypes[type] = nt = NilableType(type)
+			nt.bindInh
+			nt.bindInt
+			return nt
+
 	def variType(type as IType) as VariType
 		if _variTypes is nil
 			_variTypes = Dictionary<of IType, VariType>()
@@ -246,7 +259,7 @@ class BasicTypeProvider
 
 	def defaultType as IType
 		if _defaultType is nil
-			_defaultType = NilableType(.dynamicType)
+			_defaultType = .nilableType(.dynamicType)
 		return _defaultType to !
 
 
@@ -697,7 +710,7 @@ class CobraType
 		if type inherits NilableType
 			return type.greatestCommonDenominatorWith(this)
 		if type inherits NilType
-			return NilableType(this)
+			return .typeProvider.nilableType(this)
 		if .isDescendantOf(type)
 			return type
 		if type.isDescendantOf(this)
@@ -756,6 +769,7 @@ class CobraType
 		"""
 		Returns a named member of System.Object by default.
 		"""
+		assert .didBindInh and .didBindInt
 		objectClass = .compiler.objectType
 		return objectClass.memberForName(name)
 
@@ -1063,10 +1077,8 @@ class DynamicType
 	def greatestCommonDenominatorWith(type as IType) as IType is override
 		if this == type
 			return this
-		if type inherits NilableType
-			return NilableType(this)
-		if type inherits NilType
-			return NilableType(this)
+		if type inherits NilableType or type inherits NilType
+			return .typeProvider.nilableType(this)
 		return this
 
 
@@ -1322,6 +1334,15 @@ class IntType
 
 
 class NilableType inherits WrappedType is partial
+	"""
+	Rather than instantiating this type directly, use:
+	
+		.typeProvider.nilableType(t)
+
+	Or if the code block already belongs to a type provider:
+	
+		.nilableType(t)
+	"""
 
 	cue init(t as IType?)
 		base.init(t)
@@ -1372,6 +1393,7 @@ class NilableType inherits WrappedType is partial
 		return _wrappedType
 
 	def memberForName(name as String) as IMember? is override
+		_bindBasics
 		return _wrappedType.memberForName(name)
 
 	def greatestCommonDenominatorWith(type as IType) as IType is override
@@ -1383,8 +1405,8 @@ class NilableType inherits WrappedType is partial
 			if _wrappedType == type.nonNil
 				return this
 			else
-				return NilableType(_wrappedType.greatestCommonDenominatorWith(type.nonNil))
-		return NilableType(_wrappedType.greatestCommonDenominatorWith(type))
+				return .typeProvider.nilableType(_wrappedType.greatestCommonDenominatorWith(type.nonNil))
+		return .typeProvider.nilableType(_wrappedType.greatestCommonDenominatorWith(type))
 
 	def suggestionsForBadMemberName(name as String) as List<of String> is override
 		return _wrappedType.suggestionsForBadMemberName(name)
@@ -1418,7 +1440,7 @@ class NilType
 		if type inherits NilableType
 			return type
 		else
-			return NilableType(type)
+			return .typeProvider.nilableType(type)
 
 # TODO:
 #	def checkBinaryOp(self, op, right, compiler):
@@ -1622,13 +1644,21 @@ class WrappedType inherits CobraType is abstract, partial
 		return _wrappedType
 
 	get innerType as IType? is override
-		return _wrappedType.innerType  # TODO: 2008-11-22, I think this should just be _wrappedType
+		return _wrappedType.innerType  # TODO: 2008-11-22, I think this should just be _wrappedType; 2010-03-07: or abstract and make subclasses specify
 
 	get suffix as String is abstract
-	
+
+	def memberForName(name as String) as IMember? is override
+		_bindBasics
+		return base.memberForName(name)
+
 	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType is override
 		thisType = .getType
 		return thisType(_wrappedType.secondaryConstructedTypeFor(box, gpToType))
+
+	def _bindBasics
+		.bindInh
+		.bindInt
 
 
 class ArrayType inherits WrappedType is partial

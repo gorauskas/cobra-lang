@@ -482,6 +482,7 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 	var _passThroughType as PassThroughType?
 	var _unspecifiedType as UnspecifiedType?
 	var _voidType as VoidType?
+	var _nilableTypes as Dictionary<of INode, NilableType>?
 	var _variTypes as Dictionary<of INode, VariType>?
 	var _nilableDynamicType as NilableType?
 
@@ -596,6 +597,18 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 			_voidType = VoidType()
 		return _voidType to !
 
+	def nilableType(type as IType) as NilableType
+		if type inherits NilableType, return type
+		if _nilableTypes is nil
+			_nilableTypes = Dictionary<of INode, NilableType>()
+		if _nilableTypes.containsKey(type)
+			return _nilableTypes[type]
+		else
+			_nilableTypes[type] = nt = NilableType(type)
+			nt.bindInh
+			nt.bindInt
+			return nt
+
 	def variType(type as IType) as VariType
 		if _variTypes is nil
 			_variTypes = Dictionary<of INode, VariType>()
@@ -614,16 +627,6 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 
 
 	## More type stuff
-
-	def nilableType(t as IType) as NilableType
-		"""
-		Returns a NilableType wrapper for t, unless t is already a NilableType in which case
-		it is returned directly.
-		"""
-		if t inherits NilableType
-			return t
-		else
-			return NilableType(t).bindAll to NilableType  # CC: axe cast after "as this"
 
 	def readSystemTypes
 		# TODO: support targeting a specific CLR version, but not below 2.0

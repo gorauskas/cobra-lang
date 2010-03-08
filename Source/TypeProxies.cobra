@@ -83,7 +83,7 @@ class NilableTypeProxy
 		.addField('innerTypeProxy', .innerTypeProxy)
 
 	get realType as IType is override
-		return NilableType(_innerType.realType)
+		return .typeProvider.nilableType(_innerType.realType)
 
 
 class VariTypeProxy
@@ -266,7 +266,7 @@ class ClrTypeProxy inherits AbstractTypeProxy
 						args.add(_realTypeWithCache(genArg))
 					if member.qualifiedName == 'System.Nullable<of>'
 						assert args.count == 1
-						member = NilableType(args[0])
+						member = .typeProvider.nilableType(args[0])
 					else
 						member = (member to Box).constructedTypeFor(args)
 			return member
@@ -471,7 +471,10 @@ class ArrayTypeIdentifier
 		return container.memberForName(.theWrappedTypeIdentifier.name)
 
 	def _resolveType as IType is override
-		return ArrayType(_typeId.realType)
+		t = ArrayType(_typeId.realType)
+		t.bindInh
+		t.bindInt
+		return t
 
 
 class NilableTypeIdentifier
@@ -484,7 +487,7 @@ class NilableTypeIdentifier
 		base.init(token, typeId)
 
 	def _resolveType as IType is override
-		return NilableType(_typeId.realType)
+		return .typeProvider.nilableType(_typeId.realType)
 
 	get name as String is override
 		return _typeId.name + '?'
@@ -492,7 +495,7 @@ class NilableTypeIdentifier
 	def memberFrom(container as IContainer) as IMember? is override
 		m = container.memberForName(.name[:-1])
 		if m inherits IType
-			return NilableType(m)
+			return .typeProvider.nilableType(m)
 		else
 			return m
 
