@@ -590,7 +590,7 @@ class ForEnumerableStmt inherits ForStmt is partial
 		count = 0
 		isStreamOfKeyValue = .what.type.isDictionaryLike
 		if not isStreamOfKeyValue and _var.type inherits Box
-			isStreamOfKeyValue = (_var.type to Box).isConstructionOf(.compiler.libraryType('System.Collections.Generic.KeyValuePair<of,>') to Box)
+			isStreamOfKeyValue = (_var.type to Box).isIndirectConstructionOf(.compiler.libraryType('System.Collections.Generic.KeyValuePair<of,>') to Box)
 		if isStreamOfKeyValue
 			# This covers:
 			#    * dictionaries such as: [I]Dictionary<of TKey, TValue>
@@ -1461,13 +1461,12 @@ class YieldReturnStmt
 			_expr.bindImp
 			resultType = curCodeMember.resultType
 			if not resultType inherits StreamType and resultType <> .compiler.enumerableType and resultType <> .compiler.enumeratorType
-				okay = false
+				bad = true
 				if resultType inherits Box
 					ienumerableOf = .compiler.enumerableOfType
 					ienumeratorOf = .compiler.enumeratorOfType
-					okay = not (resultType is not ienumerableOf and resultType is not ienumeratorOf and not resultType.isConstructionOf(ienumerableOf) and not resultType.isConstructionOf(ienumeratorOf))
-				if not okay
-					.throwError('Cannot yield unless the return type is an iterator type. Try "[expr.type.name]*".')
+					bad = resultType is not ienumerableOf and resultType is not ienumeratorOf and not resultType.isDirectConstructionOf(ienumerableOf) and not resultType.isDirectConstructionOf(ienumeratorOf)
+				if bad, .throwError('Cannot yield unless the return type is an iterator type. Try "[expr.type.name]*".')
 			if resultType inherits StreamType
 				elementType = resultType.innerType to !
 			else if resultType inherits Box and (resultType to Box).isGeneric

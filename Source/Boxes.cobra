@@ -284,9 +284,7 @@ class Box
 			result implies result is this or result in .allBaseTypes
 		body
 			if .genericDef is box, return this
-			for bt in .allBaseTypes
-				if bt.genericDef is box
-					return bt
+			for bt in .allBaseTypes, if bt.genericDef is box, return bt
 			return nil
 
 	def isDescendantOfInterface(inter as Interface) as bool
@@ -494,7 +492,7 @@ class Box
 			.completeMemberConstructionIfNeeded
 		if this is .compiler.stringType  # TODO: hacky. solution is to look at the specific type of .current property of enumerator. make a test case that shows that
 			return .compiler.charType
-# can a for loop go through an IEnumerator<of>?
+# TODO: can a for loop go through an IEnumerator<of>?
 #		if .isConstructed and .genericDef is .compiler.enumeratorOfType
 #			return .genericParams[0]
 		getEnum as IMember?
@@ -830,19 +828,26 @@ class Box
 	get isConstructed as bool
 		return _genericDef is not nil
 
-	def isConstructionOf(box as Box) as bool
+	def isDirectConstructionOf(box as Box) as bool
 		"""
-		Returns true if this type is a construction of the given generic type def, even going more than level deep through `genericDef`.
+		Returns true if this type was directly constructed from the given box.
 		"""
-		# TODO: can this implementation be replaced by:
-		# return .constructedTypeOf(box) is not nil
-		if .genericDef is nil
-			return false
-		if .genericDef is box
-			return true
-		if .genericDef.genericDef
-			return .genericDef.isConstructionOf(box) # TODO: would iteration be more efficient here?
-		return false
+		require
+			.didBindInh
+			box.isGenericDef
+		body
+			return .genericDef is box
+
+	def isIndirectConstructionOf(box as Box) as bool
+		"""
+		Returns true if this type or any of its ancestor types
+		is a construction of the given generic type def.
+		"""
+		require
+			.didBindInh
+			box.isGenericDef
+		body
+			return .constructedTypeOf(box) is not nil
 
 	get isGenericDef as bool
 		"""
