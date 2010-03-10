@@ -1,13 +1,16 @@
-# Invoke a method in an extension of a generic, ancestor interface.
-# In this case, the class is Dictionary<of TKey, TValue>.KeyCollection
-# and the extension method is declared on IEnumerable<of TKey> which KeyCollection implements.
-
-# Then do it again for Dictionary<of TKey, TValue>.ValueCollection
-# Note that it implement IEnumerable<of TValue> which is using the *2nd* generic parameter, not the first.
-
 class Test
 
 	def main
+		.test1
+		.test2
+		
+	def test1
+		# Invoke a method in an extension of a generic, ancestor interface.
+		# In this case, the class is Dictionary<of TKey, TValue>.KeyCollection
+		# and the extension method is declared on IEnumerable<of TKey> which KeyCollection implements.
+
+		# Then do it again for Dictionary<of TKey, TValue>.ValueCollection
+		# Note that it implement IEnumerable<of TValue> which is using the *2nd* generic parameter, not the first.
 		d = {'x': 1, 'y': 1}
 
 		for key in d.keys.toList.sorted
@@ -17,3 +20,24 @@ class Test
 		for value in d.values.toList
 			assert value == 1
 		assert (for value in d.values.toList get value) == [1, 1]
+
+	def test2
+		x = X()
+		.takeEnum(x)
+		y = x.toList  # previously broken. Cobra would not find the extension method.
+		assert y == List<of int>(x)
+		assert y == [1, 2, 3]
+
+	def takeEnum(e as IEnumerable<of int>)
+		assert e.toList is not e
+		assert e.toList == List<of int>(e)
+
+
+class X implements IEnumerable<of int>
+
+	def getEnumerator as IEnumerator<of int>
+		return [1, 2, 3].getEnumerator
+
+	def getEnumerator as System.Collections.IEnumerator
+		implements System.Collections.IEnumerable
+		return .getEnumerator

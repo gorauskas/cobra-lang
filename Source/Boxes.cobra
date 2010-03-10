@@ -834,6 +834,8 @@ class Box
 		"""
 		Returns true if this type is a construction of the given generic type def, even going more than level deep through `genericDef`.
 		"""
+		# TODO: can this implementation be replaced by:
+		# return .constructedTypeOf(box) is not nil
 		if .genericDef is nil
 			return false
 		if .genericDef is box
@@ -1763,12 +1765,23 @@ class Extension
 				if cto
 					if box.isDescendantOf(cto) and .declForName(name)
 						return .constructedTypeFor(cto.genericParams).declForName(name)
+			else if .isGeneric
+				# Example:
+				# this == Extension of IEnumerable<of T>
+				# box == X implements IEnumerable<of int>
+				# name == 'toList'
+				# The IEnumerable<of T> has .genericDef IEnumerable<>
+				# The X's IEnumerable<of int> has .genericDef IEnumerable<>
+				# Note that X and the Extension are not directly connected.
+				# Only by tracing up to the generic def IEnumerable<> do they "connect".
+				# see cobra/Tests/420-extensions/400-extend-generics/220-extend-ancestor-interface.cobra
+				constructed = box.constructedTypeOf(_extendedBox.genericDef to !)
+				if constructed, return .extensionMemberFor(constructed, name)
 		return nil
-			
+
 	def memberForName(name as String) as IMember?
 		result = base.memberForName(name)
-		if result is nil
-			result = .extendedBox.memberForName(name)
+		if result is nil, result = .extendedBox.memberForName(name)
 		return result
 
 	def symbolForName(name as String, haveThis as bool, firstCall as bool) as IMember?
