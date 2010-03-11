@@ -672,13 +672,12 @@ class CobraType
 
 	def isEquatableTo(t as IType) as bool
 		t = t.nonNil
-		if this == t
-			return true
-		if .isAssignableTo(t) or t.isAssignableTo(this)
-			return true
+		if this == t, return true
+		if .isAssignableTo(t) or t.isAssignableTo(this), return true
 		return false
 
 	get nonNil as IType
+		ensure not result inherits NilableType
 		return this
 
 	get requiresThis as bool
@@ -769,7 +768,7 @@ class CobraType
 		"""
 		Returns a named member of System.Object by default.
 		"""
-		assert .didBindInh and .didBindInt
+		assert .didBindInh and .didBindInt  # don't `require` because subclass overrides may check and fix before invoking base
 		objectClass = .compiler.objectType
 		return objectClass.memberForName(name)
 
@@ -968,13 +967,12 @@ class PrimitiveType
 	def memberForName(name as String) as IMember?
 		member = base.memberForName(name)
 		if member is nil
-			member = _box.symbolForName(name, true)
+			member = _box.symbolForName(name, true)  # TODO: should that be .memberForName instead of .symbolForName?
 		return member
 
 	def isAssignableTo(type as IType) as bool
 		r = base.isAssignableTo(type)
-		if not r
-			r = _systemAliasType == type
+		if not r, r = _systemAliasType == type
 		return r
 
 	# TODO?
@@ -984,10 +982,7 @@ class PrimitiveType
 #	def isEquatableTo(t as IType) as bool
 
 	def isComparableTo(t as IType) as bool
-		if this is t
-			return true
-		else
-			return base.isComparableTo(t)
+		return this is t or base.isComparableTo(t)
 
 
 class BoolType
@@ -1342,9 +1337,13 @@ class NilableType inherits WrappedType is partial
 	Or if the code block already belongs to a type provider:
 	
 		.nilableType(t)
+		
+	Note that NilableType will not wrap another NilableType. Also, .typeProvider.nilableType(t)
+	silently handles this so in practice you don't have to guard against it.
 	"""
 
 	cue init(t as IType?)
+		require not t inherits NilableType
 		base.init(t)
 
 	get englishName as String is override
@@ -1407,6 +1406,14 @@ class NilableType inherits WrappedType is partial
 			else
 				return .typeProvider.nilableType(_wrappedType.greatestCommonDenominatorWith(type.nonNil))
 		return .typeProvider.nilableType(_wrappedType.greatestCommonDenominatorWith(type))
+
+	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType is override
+		wt = _wrappedType.secondaryConstructedTypeFor(box, gpToType)
+		if not wt inherits NilableType
+			thisType = .getType
+			return thisType(wt)
+		else
+			return wt
 
 	def suggestionsForBadMemberName(name as String) as List<of String> is override
 		return _wrappedType.suggestionsForBadMemberName(name)
@@ -1682,8 +1689,6 @@ class ArrayType inherits WrappedType is partial
 		finally
 			Node.typeProvider = saveTP
 
-	var _box as Box?
-
 	cue init(wrappedType as IType?)
 		base.init(wrappedType)
 
@@ -1696,6 +1701,8 @@ class ArrayType inherits WrappedType is partial
 	get isReference as bool is override
 		return true
 
+	get box from var as Box?
+
 	get name as String is override
 		return _wrappedType.name + r'[]'
 
@@ -1703,39 +1710,59 @@ class ArrayType inherits WrappedType is partial
 		return r'[]'
 
 	def isAssignableTo(type as IType) as bool is override
-		if base.isAssignableTo(type)
-			return true
+		if base.isAssignableTo(type), return true
 		if type inherits ArrayType
-			if _wrappedType == type.theWrappedType
-				return true
+			if _wrappedType == type.theWrappedType, return true
 			# covariance with arrays
-			if _wrappedType.isAssignableTo(type.theWrappedType)
-				return true
+			if _wrappedType.isAssignableTo(type.theWrappedType), return true
 		if type inherits StreamType
-			if .isAssignableTo(type.box to !)
-				return true
+			if .isAssignableTo(type.box to !), return true
 			# covariance with streams
-			if _wrappedType.isAssignableTo(type.innerType to !)
-				return true	
+			if _wrappedType.isAssignableTo(type.innerType to !), return true
+		if _box.isAssignableTo(type), return true
 		return false
+
+	def isDescendantOf(type as IType) as bool
+		return base.isDescendantOf(type) or .box.isDescendantOf(type)
+
+	def memberForName(name as String) as IMember? is override
+		m = base.memberForName(name)
+		if m is nil, m = .box.memberForName(name)
+		# TODO: dup'ed from StreamType:
+		if m is nil and _box and .compiler and .compiler.nodeStack.count and (.compiler.nodeStack.peek to Node).isBindingImp
+			# look for an extension member, but it has to be accessible according to namespaces
+			if .compiler.nameSpaceStack.count
+				# don't need to go through the whole namespace stack because the namespace will check its parent
+				m = .compiler.curNameSpace.extensionMemberFor(_box to !, name)
+		return m
+
+	def suggestionsForBadMemberName(name as String) as List<of String> is override
+		return .box.suggestionsForBadMemberName(name)
 
 	def _bindInh
 		base._bindInh
-		_superType = .compiler.enumerableOfType.constructedTypeFor([.theWrappedType])
+		if .compiler  # will be nil during unit tests
+			iclone = .compiler.libraryType('System.ICloneable')
+			icoll = (.compiler.libraryType('System.Collections.Generic.ICollection<of>') to Box).constructedTypeFor([.theWrappedType])
+			ienum = .compiler.enumerableOfType.constructedTypeFor([.theWrappedType])
+			# TODO: ilist = .compiler.ilistOfType.constructedTypeFor([.theWrappedType])
+			interfaces = [iclone to ITypeProxy, icoll, ienum]  # TODO:, ilist]  -- problems with cobra -ert:yes hello and extension method String.split
+			_box = Class(Token.empty, Token.empty, '[.getType.name]_[.serialNum]', List<of IType>(), List<of String>(), AttributeList(), nil, interfaces, List<of ITypeProxy>(), nil)
+			# TODO: make members based on System.Array
+			indexer = Indexer(Token.empty, Token.empty, _box, r'[]', [Param(Token('', 1, 1, 1, 'ID', 'index', nil), .compiler.intType)], _wrappedType, List<of String>(), AttributeList(), '')
+			_box.addDecl(indexer)
+			lengthProp = Property(Token.empty, Token.empty, _box, 'length', .compiler.intType, List<of String>(), AttributeList(), '')
+			_box.addDecl(lengthProp)
+			_box.bindInh
+			_superType = _box
 
-	def memberForName(name as String) as IMember?
-		member = base.memberForName(name)
-		if member is nil
-			if _box is nil
-				# TODO: make members based on System.Array
-				_box = Class(Token.empty, Token.empty, '[.getType.name]_[.serialNum]', List<of IType>(), List<of String>(), AttributeList(), nil, List<of ITypeProxy>(), List<of ITypeProxy>(), nil)
-				indexer = Indexer(Token.empty, Token.empty, _box, r'[]', [Param(Token('', 1, 1, 1, 'ID', 'index', nil), .compiler.intType)], _wrappedType, List<of String>(), AttributeList(), '')
-				_box.addDecl(indexer)
-				lengthProp = Property(Token.empty, Token.empty, _box, 'length', .compiler.intType, List<of String>(), AttributeList(), '')
-				_box.addDecl(lengthProp)
-				_box.bindAll
-			member = _box.symbolForName(name, true)
-		return member
+	def _bindInt
+		base._bindInt
+		_box.bindInt
+	
+	def _bindImp
+		base._bindImp
+		_box.bindImp
 
 
 class VariType
