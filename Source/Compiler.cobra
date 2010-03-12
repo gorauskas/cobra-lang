@@ -285,6 +285,7 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 			ComputeMatchingBaseMembersPhase,
 			BindImplementationPhase,
 			IdentifyMainPhase,
+			SuggestDefaultNumberPhase,
 		]
 
 	def makePhases as List<of Phase>
@@ -296,13 +297,16 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		.backEnd.makePhases(phases)
 		if .options.boolValue('timeit')
 			phases.add(CountNodesPhase(this))
+		for i, phase in phases.numbered, phase.stableOrder = i
+		phases.sort  # see Phase.order and .compareTo
 		return phases
 
-	def runPhase(phaseType as Type)
+	def runPhase(phaseType as Type) as bool
 		require phaseType.isSubclassOf(Phase)
-		.runPhase(phaseType(this) to Phase)
+		ensure result implies .errors.count > old .errors.count
+		return .runPhase(phaseType(this) to Phase)
 
-	def runPhase(phase as Phase)
+	def runPhase(phase as Phase) as bool
 		require
 			phase.compiler is this
 			not phase.isRunning
@@ -310,16 +314,17 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 			phase.didRun
 			not phase.isRunning
 			.lastPhase is phase
+			result implies .errors.count > old .errors.count
 		body
 			oldErrorCount = .errors.count
 			_curPhase = phase
 			try
 				phase.run
 				.writeSourceCodeCorrections
+				return .errors.count > oldErrorCount
 			finally
 				_curPhase = nil
 				_lastPhase = phase
-			if .errors.count > oldErrorCount, _exitFromErrors
 
 
 	## Compiler
@@ -371,10 +376,16 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 	def _compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool, stopCompilation as Predicate<of Compiler>?)
 		.willWriteTestInvocation = writeTestInvocation
 		_pathsToCompile = paths
+		# now, essentially, do this:
+		#     for phase in .makePhases, runPhase(phase)
+		# but pay attention to things like errors and stopCompilation
+		hasErrors = false
 		for phase in .makePhases
 			if stopCompilation and stopCompilation(this), break
-			.runPhase(phase)
-	
+			if not hasErrors or phase.willRunWithErrors
+				if .runPhase(phase), hasErrors = true
+		if hasErrors, _exitFromErrors
+
 	def testifyFilesNamed(fileNames as IList<of String>, options as OptionValues, resultsWriter as IndentedWriter, verbose as bool)
 		"""
 		Compiles the given fileNames in support of "testify".
@@ -386,12 +397,15 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		_initBackEnd
 		.defaultOutName = if(.options.buildStandardLibrary, 'Cobra.Lang.dll', fileNames[0])
 		_pathsToCompile = fileNames
+		hasErrors = false
 		for phase in .makePhases
 			if verbose, print 'Testify phase:', phase.description
-			.runPhase(phase)
+			if not hasErrors or phase.willRunWithErrors
+				if .runPhase(phase), hasErrors = true
 			if verbose
 				.dumpModulesForTestify(resultsWriter, 'Modules after: [phase.description]')
 				print bar
+		if hasErrors, throw StopCompilation(this)  # testify runner wants this
 		# TODO: to display the intermediate source:
 		#	for module in .modules
 		#		if not module.isCobraLibrary
@@ -998,8 +1012,13 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 			output.dedent
 
 	def _exitFromErrors
-		# TODO 2009-12 Having problems with this in same cases. Not important to enforce right now.
+		# TODO 2009-12 Having problems with this requirement in same cases. Not important to enforce right now.
 		# require .errors.count
+		"""
+		This method should not be invoked from partial classes found in phases or back-ends. Some
+		phases want to run even when there are errors from previous phases. This is managed by
+		the compiler's execution of the phases.
+		"""
 		.printMessages
 		_deleteIntermediateFiles
 		throw StopCompilation(this)

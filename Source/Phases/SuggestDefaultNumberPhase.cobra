@@ -1,0 +1,94 @@
+use System.Text.RegularExpressions
+
+
+class SuggestDefaultNumberPhase inherits Phase
+	"""
+	Cobra's default numeric type is "decimal" which has advantages with regards to accuracy
+	(see the web site). A disadvantage is that when a developer is using one or more libraries that
+	are strongly based on float64 or float32, they will likely get one or more errors that decimals
+	cannot be converted to floats. The purpose of this phase is to look for such errors and, when
+	present, add a warning suggesting the use of "@number float32/64".
+	
+	Notes:
+
+		The approach is to parse the error messages due to the fact that some overload error checks
+		still fall through to the C# backend. When they don't, a different, more efficient approach
+		can be taken by augmenting the place in the Cobra compiler where the error is generated.
+		
+		Example messages:
+		
+			Cobra 2010:        Argument 1 of method "bar" expects type float, but the call is supplying type decimal
+			Mono C# 2.6/2010:  Argument "#1" cannot convert "decimal" expression to type "int"
+			Microsoft C# 2008: Argument "1": cannot convert from "decimal" to "int"
+	"
+	"""
+
+	cue init(c as Compiler)
+		base.init(c)
+
+	get description as String is override
+		return 'Checking if a default number type should be suggested'
+
+	get order as int is override
+		return 1000
+
+	get willRunWithErrors as bool is override
+		return true
+
+	def innerRun is override
+		found as ArgumentTypeError?
+		for msg in .compiler.messages
+			ate = ArgumentTypeError.parse(msg.message)
+			if ate and ate.actual == 'decimal' and ate.expected in ['float', 'float32', 'float64', 'double']
+				found = ate
+				break
+		if found
+			warning = 'An above error about numeric types indicates that you may want to set the default numeric type with "@number [ate.expected]" in a source file or "cobra -number:[ate.expected]" at the command line.'
+			.compiler.warning(CobraWarning(msg.fileName, msg.lineNum, warning))
+
+
+class ArgumentTypeError
+
+	shared
+	
+		var _cobraRE = Regex(r'Argument (\d+) of method "(\w+)" expects type (\w+), but the call is supplying type (\w+)', RegexOptions(Compiled, CultureInvariant))
+		var _sharpRE = Regex(r'Argument "#?(\d+)":? cannot convert( from)? "(\w+)"( expression)? to( type)? "(\w+)"', RegexOptions(Compiled, CultureInvariant))
+
+		def parse(msg as String) as ArgumentTypeError?
+			test
+				cases = [
+					['Argument 1 of method "bar" expects type float, but the call is supplying type decimal', 'float', 'decimal'],
+					['Argument "#1" cannot convert "decimal" expression to type "int"', 'int', 'decimal'],
+					['Argument "1": cannot convert from "decimal" to "int"', 'int', 'decimal'],
+				]
+				for msg, expected, actual in cases
+					ate = .parse(msg)
+					assert ate
+					assert ate.expected == expected
+					assert ate.actual == actual
+				for negative in ['aoeu', '', 'Argument 1 of method "bar" looks bad.']
+					assert .parse(negative) is nil
+			body
+				match = _cobraRE.match(msg)
+				if match.success
+					# for group as Group in match.groups, trace group, group.value
+					expected = match.groups[3].value to !
+					actual = match.groups[4].value to !
+					return ArgumentTypeError(expected, actual)
+
+				match = _sharpRE.match(msg)
+				if match.success
+					# for group as Group in match.groups, trace group, group.value
+					expected = match.groups[6].value to !
+					actual = match.groups[3].value to !
+					return ArgumentTypeError(expected, actual)
+
+				return nil
+
+	cue init(expected as String, actual as String)
+		base.init
+		_expected, _actual = expected, actual
+
+	pro expected from var as String
+	
+	pro actual from var as String

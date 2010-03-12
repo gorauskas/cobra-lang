@@ -1,4 +1,4 @@
-class Phase is abstract
+class Phase implements IComparable<of Phase> is abstract
 	"""
 	A phase of the compiler.
 
@@ -21,9 +21,36 @@ class Phase is abstract
 	get options as OptionValues
 		return .compiler.options
 
+	get order as int
+		"""
+		Subclasses can override to change their order with respect to other phases.
+		Consecutive phases in the initial list of phases are kept in sequence with a "stable sort".
+		Default is 100.
+		"""
+		return 100
+
+	pro stableOrder from var as int
+		"""
+		Used to implement a "stable sort".
+		"""
+
+	get willRunWithErrors as bool
+		"""
+		Returns true if the phase will run correctly even if previously run phases produced errors.
+		Typically, phases will not want to run with errors because the AST nodes will in an
+		incomplete state that the phase cannot rely on. Hence, the default is false.
+		However, subclasses may override to return true if appropriate.
+		"""
+		return false
+
 	get verbosity as int
 		return .compiler.verbosity
 
+	def compareTo(other as Phase) as int
+		diff = .order - other.order
+		if diff == 0, diff = .stableOrder - other.stableOrder
+		return diff
+		
 	var _didSucceed as bool
 
 	get didSucceed as bool

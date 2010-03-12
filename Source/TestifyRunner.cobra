@@ -418,7 +418,13 @@ class TestifyRunner
 			# deprecated: put warnings on the lines where they occur. the "hasInlineMessages" code above will detect them.
 			index = firstLine.indexOf('.warning.')
 			warning = firstLine.substring(index+9).trim.toLower
-			return _testifyHeadWarning(warning, compilerVerbosity, fileNames, options, verbose) 
+			return _testifyHeadWarning(warning, false, compilerVerbosity, fileNames, options, verbose) 
+
+		if firstLineInsensitive.startsWith('#.warning-lax.')
+			# deprecated: put warnings on the lines where they occur. the "hasInlineMessages" code above will detect them.
+			index = firstLine.indexOf('.warning-lax.')
+			warning = firstLine.substring(index+13).trim.toLower
+			return _testifyHeadWarning(warning, true, compilerVerbosity, fileNames, options, verbose) 
 
 		return _testifyStd(compilerVerbosity, fileNames, options, verbose)
 
@@ -508,7 +514,7 @@ class TestifyRunner
 				print 'Skipping test because multipart.'
 				return 0
 				
-			if firstLineInsensitive.startsWith('#.error.') or firstLineInsensitive.startsWith('#.warning.')
+			if firstLineInsensitive.startsWith('#.error.') or firstLineInsensitive.startsWith('#.warning.') or firstLineInsensitive.startsWith('#.warning-lax.')
 				# these are handled below
 				break
 			
@@ -638,17 +644,18 @@ class TestifyRunner
 			return 0
 		return 1
 
-	def _testifyHeadWarning(warning as String, compilerVerbosity as int, fileNames as IList<of String>,
+	def _testifyHeadWarning(warning as String, lax as bool, compilerVerbosity as int, fileNames as IList<of String>,
 							options as OptionValues, verbose as bool) as int 
 		# TODO: the following code both checks for warnings to be thrown as well as going through a list of warnings. Seems like it should just need to do one or the other.
 		try
 			c = Compiler(compilerVerbosity, _cachedTestifyModules, commandLineArgParser=_cl.argParser)
 			c.testifyFilesNamed(fileNames, options, _resultsWriter to !, verbose)
 		catch StopCompilation
-			print 'Expecting warning substring: "[warning]"'
-			print 'But got errors.'
-			.failed
-			return 0
+			if not lax
+				print 'Expecting warning substring: "[warning]"'
+				print 'But got errors.'
+				.failed
+				return 0
 		catch exc as Exception
 			print 'Internal exception: [exc]'
 			.failed
