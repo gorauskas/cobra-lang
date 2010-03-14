@@ -69,6 +69,8 @@ interface ITypeProvider
 
 	def typeOrNilForName(name as String) as IType?
 
+	def arrayType(type as IType) as ArrayType
+
 	get boolType as BoolType
 
 	get charType as CharType
@@ -121,6 +123,7 @@ class BasicTypeProvider
 
 	var _anyFloatType		as AnyFloatType?
 	var _anyIntType			as AnyIntType?
+	var _arrayTypes			as Dictionary<of IType, ArrayType>?
 	var _boolType			as BoolType?
 	var _charType			as CharType?
 	var _decimalType		as DecimalType?
@@ -153,6 +156,16 @@ class BasicTypeProvider
 		if _anyIntType is nil
 			_anyIntType = AnyIntType()
 		return _anyIntType to !
+
+	def arrayType(type as IType) as ArrayType
+		if _arrayTypes is nil, _arrayTypes = Dictionary<of IType, ArrayType>()
+		if _arrayTypes.containsKey(type)
+			return _arrayTypes[type]
+		else
+			_arrayTypes[type] = at = ArrayType(type)
+			at.bindInh
+			at.bindInt
+			return at
 
 	get boolType as BoolType
 		if _boolType is nil
@@ -974,14 +987,11 @@ class PrimitiveType
 		if not r, r = _systemAliasType == type
 		return r
 
-	# TODO?
-#	def isComparableTo(t as IType) as bool
-#		return this is t
-
-#	def isEquatableTo(t as IType) as bool
-
 	def isComparableTo(t as IType) as bool
 		return this is t or base.isComparableTo(t)
+
+# TODO?
+#	def isEquatableTo(t as IType) as bool
 
 
 class BoolType
@@ -1670,10 +1680,19 @@ class WrappedType inherits CobraType is abstract, partial
 class ArrayType inherits WrappedType is partial
 	"""
 	Represents an array.
+
 	Only single dimension arrays have been tested and are officially supported. These are common in
 	the BCL as return types and sometimes as parameters. Multi-dim and jagged arrays are not popular.
 	Also, most projects can get by just fine with nested List<of>s.
-	TODO: Nevertheless, this should be expanded.
+
+	Rather than instantiating this type directly, use:
+	
+		.typeProvider.arrayType(t)
+
+	Or if the code block already belongs to a type provider:
+	
+		.arrayType(t)
+		
 	TODO: Get this related to System.Array.
 	"""
 
@@ -1688,6 +1707,8 @@ class ArrayType inherits WrappedType is partial
 		finally
 			Node.typeProvider = saveTP
 
+	var _ilistOf as Interface?
+	
 	cue init(wrappedType as IType)
 		base.init(wrappedType)
 
@@ -1724,6 +1745,10 @@ class ArrayType inherits WrappedType is partial
 	def isDescendantOf(type as IType) as bool
 		return base.isDescendantOf(type) or .box.isDescendantOf(type)
 
+	def isEquatableTo(t as IType) as bool
+		assert .didBindInh
+		return base.isEquatableTo(t) or t.isDescendantOf(_ilistOf to !) or _ilistOf.isDescendantOf(t)
+
 	def memberForName(name as String) as IMember? is override
 		m = base.memberForName(name)
 		if m is nil, m = .box.memberForName(name)
@@ -1735,6 +1760,12 @@ class ArrayType inherits WrappedType is partial
 				m = .compiler.curNameSpace.extensionMemberFor(_box to !, name)
 		return m
 
+	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType is override
+		at = ArrayType(_wrappedType.secondaryConstructedTypeFor(box, gpToType))
+		at.bindInh
+		at.bindInt
+		return at
+
 	def suggestionsForBadMemberName(name as String) as List<of String> is override
 		return .box.suggestionsForBadMemberName(name)
 
@@ -1744,8 +1775,8 @@ class ArrayType inherits WrappedType is partial
 			iclone = .compiler.libraryType('System.ICloneable')
 			icoll = (.compiler.libraryType('System.Collections.Generic.ICollection<of>') to Box).constructedTypeFor([.theWrappedType])
 			ienum = .compiler.enumerableOfType.constructedTypeFor([.theWrappedType])
-			# TODO: ilist = .compiler.ilistOfType.constructedTypeFor([.theWrappedType])
-			interfaces = [iclone to ITypeProxy, icoll, ienum]  # TODO:, ilist]  -- problems with cobra -ert:yes hello and extension method String.split
+			_ilistOf = .compiler.ilistOfType.constructedTypeFor([.theWrappedType]) to Interface
+			interfaces = [iclone to ITypeProxy, icoll, ienum]  # TODO:, _ilistOf]  -- problems with cobra -ert:yes hello and extension method String.split
 			_box = Class(Token.empty, Token.empty, '[.getType.name]_[.serialNum]', List<of IType>(), List<of String>(), AttributeList(), nil, interfaces, List<of ITypeProxy>(), nil)
 			# TODO: make members based on System.Array
 			indexer = Indexer(Token.empty, Token.empty, _box, r'[]', [Param(Token('', 1, 1, 1, 'ID', 'index', nil), .compiler.intType)], _wrappedType, List<of String>(), AttributeList(), '')
@@ -1764,16 +1795,12 @@ class ArrayType inherits WrappedType is partial
 		_box.bindImp
 
 
-class VariType
-	is partial
-	inherits ArrayType
+class VariType inherits ArrayType is partial
 	"""
 	Represents the type for variable number of arguments:
 		def sumInts(nums as vari int)
 	Not valid for non-parameters such as locals and class fields.
 	"""
-
-	var _ilistOf as Interface?  # TODO: does ArrayType need _ilistOf too?
 
 	cue init(wrappedType as IType)
 		base.init(wrappedType)
@@ -1784,19 +1811,11 @@ class VariType
 	get innerType as IType? is override
 		return _wrappedType
 
-	def isEquatableTo(t as IType) as bool is override
-		# vari type inherits IList<of>
-		assert .didBindInh
-		return base.isEquatableTo(t) or t.isDescendantOf(_ilistOf to !) or _ilistOf.isDescendantOf(t)
-
 	get name as String is override
 		return 'vari ' + _wrappedType.name
 
 	def _bindInh
 		base._bindInh
-		if .compiler  # will be nil during unit tests
-			_ilistOf = .compiler.ilistOfType.constructedTypeFor([.theWrappedType]) to Interface
-			_ilistOf.bindInh
 
 	def _bindInt
 		base._bindInt
