@@ -42,9 +42,6 @@ enum ArgumentLabel
 
 
 class Expr inherits Stmt implements IExpr is abstract, partial
-	"""
-	TODO: Add a .subexpressions iterator which can then be used by .hasError, .willChangeVar and possibly others.
-	"""
 
 	var _type as IType?
 	var _receiverType as IType?
@@ -88,6 +85,13 @@ class Expr inherits Stmt implements IExpr is abstract, partial
 
 	get definition
 		return nil
+
+	get hasError as bool is override
+		for expr in .allExprs, if expr._innerHasError, return true
+		return false
+
+	get _innerHasError as bool
+		return .errors and .errors.count > 0
 
 	get willChangeVar as bool
 		"""
@@ -351,8 +355,8 @@ class AnonymousMethodExpr inherits AnonymousExpr is partial
 	def addStmt(stmt as Stmt)
 		_stmts.add(stmt)
 
-	get hasError as bool
-		return base.hasError or _method.hasError
+	get _innerHasError as bool
+		return base._innerHasError or _method.hasError
 
 	def _bindImp is override
 		base._bindImp
@@ -372,6 +376,10 @@ class LambdaExpr inherits AnonymousExpr is partial
 		base.init(token, params, returnTypeProxy)
 		_expr = expr
 
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .expr.allExprs, yield expr
+
 	get expr from var as Expr
 	
 	get method from var as AnonymousMethod?
@@ -381,13 +389,6 @@ class LambdaExpr inherits AnonymousExpr is partial
 	def addSubFields
 		base.addSubFields
 		.addField('expr', .expr)
-
-	get hasError as bool
-		return base.hasError or _expr.hasError
-
-	get allExprs as Expr*
-		for expr in base.allExprs, yield expr
-		for expr in .expr.allExprs, yield expr
 
 	def toCobraSource as String is override
 		sb = StringBuilder(base.toCobraSource)
@@ -527,14 +528,13 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 		base.addSubFields
 		.addField('args', _args)
 
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for arg in .args, for expr in arg.allExprs, yield expr
+
 	get genericArgProxies from var
 	
 	get genericArgTypes from var
-
-	get hasError as bool
-		if base.hasError, return true
-		for arg in _args, if arg.hasError, return true
-		return false
 
 	get hasParens from var
 
@@ -553,10 +553,6 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 		return _definition
 
 	get memberDefinition from _definition
-
-	get allExprs as Expr*
-		for expr in base.allExprs, yield expr
-		for arg in .args, for expr in arg.allExprs, yield expr
 
 	def _bindImp is override
 		base._bindImp
@@ -808,6 +804,10 @@ class EnumCallExpr
 		_definition = definition
 		_members = List<of EnumMember>()
 	
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for arg in .args, for expr in arg.allExprs, yield expr
+
 	get name from var
 	
 	get args from var
@@ -820,15 +820,6 @@ class EnumCallExpr
 	
 	get members from _members
 	
-	get hasError as bool is override
-		if base.hasError, return true
-		for arg in _args, if arg.hasError, return true
-		return false
-
-	get allExprs as Expr*
-		for expr in base.allExprs, yield expr
-		for arg in .args, for expr in arg.allExprs, yield expr
-
 	def toCobraSource as String is override
 		sb = StringBuilder()
 		sb.append(_name)
@@ -897,6 +888,16 @@ class ForExpr inherits Expr is partial
 		.addField('stop', _stop)
 		.addField('step', _step)
 
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .nameExpr.allExprs, yield expr
+		for expr in .what.allExprs, yield expr
+		if .whereExpr, for expr in .whereExpr.allExprs, yield expr
+		for expr in .getExpr.allExprs, yield expr
+		if .start, for expr in .start.allExprs, yield expr
+		if .stop, for expr in .stop.allExprs, yield expr
+		if .step, for expr in .step.allExprs, yield expr
+
 	get nameExpr from _nameExpr
 
 	get what from _what
@@ -910,16 +911,6 @@ class ForExpr inherits Expr is partial
 	get stop from _stop
 
 	get step from _step
-
-	get allExprs as Expr*
-		for expr in base.allExprs, yield expr
-		for expr in .nameExpr.allExprs, yield expr
-		for expr in .what.allExprs, yield expr
-		if .whereExpr, for expr in .whereExpr.allExprs, yield expr
-		for expr in .getExpr.allExprs, yield expr
-		if .start, for expr in .start.allExprs, yield expr
-		if .stop, for expr in .stop.allExprs, yield expr
-		if .step, for expr in .step.allExprs, yield expr
 
 	get willChangeVar as bool is override
 		# TODO: ack. kind of weird. if the variable is a new one and its not read afterwards (without first being set) then no side effects.
@@ -1114,6 +1105,12 @@ class IfExpr
 		base.init(token)
 		_cond, _tpart, _fpart = cond, tpart, fpart
 
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .cond.allExprs, yield expr
+		for expr in .tpart.allExprs, yield expr
+		for expr in .fpart.allExprs, yield expr
+
 	get cond from var
 	
 	get tpart from var
@@ -1125,19 +1122,6 @@ class IfExpr
 		.addField('cond', .cond)
 		.addField('tpart', .tpart)
 		.addField('fpart', .fpart)
-
-	get hasError as bool is override
-		if base.hasError, return true
-		if .cond.hasError, return true
-		if .tpart.hasError, return true
-		if .fpart.hasError, return true
-		return false
-
-	get allExprs as Expr*
-		for expr in base.allExprs, yield expr
-		for expr in .cond.allExprs, yield expr
-		for expr in .tpart.allExprs, yield expr
-		for expr in .fpart.allExprs, yield expr
 
 	get willChangeVar as bool is override
 		if base.willChangeVar, return true
@@ -1202,6 +1186,11 @@ class IndexExpr
 		.addField('target', _target)
 		.addField('args', _args)
 
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .target.allExprs, yield expr
+		for arg in .args, for expr in arg.allExprs, yield expr
+
 	get definition is override
 		return _definition
 
@@ -1211,17 +1200,6 @@ class IndexExpr
 
 	get args from var
 		has Subnodes
-
-	get hasError as bool is override
-		if base.hasError, return true
-		if _target.hasError, return true
-		for arg in _args, if arg.hasError, return true
-		return false
-
-	get allExprs as Expr*
-		for expr in base.allExprs, yield expr
-		for expr in .target.allExprs, yield expr
-		for arg in .args, for expr in arg.allExprs, yield expr
 
 	get willChangeVar as bool is override
 		if _target.willChangeVar, return true
@@ -1321,11 +1299,6 @@ class IsNilExpr
 		base.init(token)
 		_expr = expr
 
-	get hasError as bool is override
-		if base.hasError, return true
-		if _expr.hasError, return true
-		return false
-
 	get allExprs as Expr*
 		for expr in base.allExprs, yield expr
 		for expr in .expr.allExprs, yield expr
@@ -1350,12 +1323,11 @@ class IsNotNilExpr
 		base.init(token)
 		_expr = expr
 
-	get expr from var
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .expr.allExprs, yield expr
 
-	get hasError as bool is override
-		if base.hasError, return true
-		if _expr.hasError, return true
-		return false
+	get expr from var
 
 	get willChangeVar as bool is override
 		if _expr.willChangeVar, return true
@@ -1528,19 +1500,14 @@ class OldExpr
 		base.init(token)
 		_expr = expr
 
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .expr.allExprs, yield expr
+
 	get expr from var as Expr
 	
 	get name as String
 		return 'old'
-
-	get hasError as bool is override
-		if base.hasError, return true
-		if _expr.hasError, return true
-		return false
-
-	get allExprs as Expr*
-		for expr in base.allExprs, yield expr
-		for expr in .expr.allExprs, yield expr
 
 	get willChangeVar as bool is override
 		if _expr.willChangeVar, return true
@@ -1608,6 +1575,11 @@ class PostCallExpr
 		.addField('hasKeywordArg', .hasKeywordArg)
 		.addField('isForAttribute', .isForAttribute)
 
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .expr.allExprs, yield expr
+		for arg in .args, for expr in arg.allExprs, yield expr
+
 	get expr from var
 
 	get args from var
@@ -1617,12 +1589,6 @@ class PostCallExpr
 
 	pro isForAttribute from var
 
-	get hasError as bool is override
-		if base.hasError, return true
-		if _expr.hasError, return true
-		for arg in _args, if arg.hasError, return true
-		return false
-
 	get name as String
 		e = .expr
 		if e inherits IdentifierExpr, return e.name
@@ -1630,11 +1596,6 @@ class PostCallExpr
 		if e inherits TypeExpr, return e.realType.name
 		if e inherits IndexExpr, return e.toCobraSource
 		throw FallThroughException(e)
-
-	get allExprs as Expr*
-		for expr in base.allExprs, yield expr
-		for expr in .expr.allExprs, yield expr
-		for arg in .args, for expr in arg.allExprs, yield expr
 
 	get willChangeVar as bool is override
 		if _expr.willChangeVar, return true
@@ -1855,16 +1816,11 @@ class RefExpr inherits Expr is partial
 		base.addSubFields
 		.addField('expr', _expr)
 
-	get expr from var as Expr
-
-	get hasError as bool is override
-		if base.hasError, return true
-		if _expr.hasError, return true
-		return false
-
 	get allExprs as Expr*
 		for expr in base.allExprs, yield expr
 		for expr in .expr.allExprs, yield expr
+
+	get expr from var as Expr
 
 	get willChangeVar as bool is override
 		if _expr.willChangeVar, return true
@@ -1930,18 +1886,13 @@ class SharpExpr
 		else
 			assert false, r'$sharp expression must be a String Literal (No substitutions) expr=[expr]'
 
-	get sharpSource from var
-	
-	get expr from var
-
-	get hasError as bool is override
-		if base.hasError, return true
-		if _expr and _expr.hasError, return true
-		return false
-
 	get allExprs as Expr*
 		for expr in base.allExprs, yield expr
 		if .expr, for expr in .expr.allExprs, yield expr
+
+	get sharpSource from var
+	
+	get expr from var
 
 	def toCobraSource as String is override
 		if _sharpSource
@@ -1983,13 +1934,12 @@ class SliceExpr
 		.addField('stop', _stop)
 		.addField('step', _step)
 
-	get hasError as bool is override
-		if base.hasError, return true
-		if _target.hasError, return true
-		if _start and _start.hasError, return true
-		if _stop and _stop.hasError, return true
-		if _step and _step.hasError, return true
-		return false
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .target.allExprs, yield expr
+		if .start, for expr in .start.allExprs, yield expr
+		if .stop, for expr in .stop.allExprs, yield expr
+		if .step, for expr in .step.allExprs, yield expr
 
 	get willChangeVar as bool is override
 		if _target.willChangeVar, return true
@@ -2112,12 +2062,11 @@ class TruthExpr
 		.addField('expr', _expr)
 		.addField('Treatment', _treatment)
 
-	get expr from var
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .expr.allExprs, yield expr
 
-	get hasError as bool is override
-		if base.hasError, return true
-		if _expr.hasError, return true
-		return false
+	get expr from var
 
 	get willChangeVar as bool is override
 		if _expr.willChangeVar, return true
@@ -2127,10 +2076,6 @@ class TruthExpr
 		return false
 
 	get notExpr from var
-
-	get allExprs as Expr*
-		for expr in base.allExprs, yield expr
-		for expr in .expr.allExprs, yield expr
 
 	def _bindImp
 		base._bindImp
@@ -2218,8 +2163,8 @@ class TypeExpr
 	get definition is override
 		return _containedType
 
-	get hasError as bool is override
-		return base.hasError or (.typeNode and .typeNode.hasError)
+	get _innerHasError as bool
+		return base._innerHasError or (.typeNode and .typeNode.hasError)
 
 	get containedType from var
 
@@ -2267,18 +2212,13 @@ class AllOrAnyExpr
 		base.init(token)
 		_expr = expr
 
-	get opName as String is abstract
-
-	get expr from var
-
-	get hasError as bool
-		if base.hasError, return true
-		if .expr.hasError, return true
-		return false
-
 	get allExprs as Expr*
 		for expr in base.allExprs, yield expr
 		for expr in .expr.allExprs, yield expr
+
+	get opName as String is abstract
+
+	get expr from var
 
 	get willChangeVar as bool is override
 		if base.willChangeVar, return true
@@ -2354,10 +2294,9 @@ class UnaryOpExpr
 		base.addSubFields
 		.addField('expr', _expr)
 
-	get hasError as bool is override
-		if base.hasError, return true
-		if _expr.hasError, return true
-		return false
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .expr.allExprs, yield expr
 
 	get willChangeVar as bool is override
 		if _expr.willChangeVar, return true
@@ -2366,10 +2305,6 @@ class UnaryOpExpr
 	get op from var
 
 	get expr from var
-
-	get allExprs as Expr*
-		for expr in base.allExprs, yield expr
-		for expr in .expr.allExprs, yield expr
 
 	def _bindImp is override
 		base._bindImp
@@ -2665,20 +2600,12 @@ class StringSubstLit
 		base.addSubFields
 		.addField('items', _items)
 
-	get items from var
-		has Subnodes
-
-	get hasError as bool is override
-		if base.hasError
-			return true
-		for item in _items
-			if item.hasError
-				return true
-		return false
-
 	get allExprs as Expr*
 		for expr in base.allExprs, yield expr
 		for item in .items, for expr in item.allExprs, yield expr
+
+	get items from var
+		has Subnodes
 
 	def toCobraSource as String is override
 		sb = StringBuilder()
@@ -2715,18 +2642,13 @@ class FormattedExpr
 		_expr = expr
 		_format = format
 
-	get expr from var
-
-	get format from var
-
-	get hasError as bool is override
-		if base.hasError, return true
-		if _expr.hasError, return true
-		return false
-
 	get allExprs as Expr*
 		for expr in base.allExprs, yield expr
 		for expr in .expr.allExprs, yield expr
+
+	get expr from var
+
+	get format from var
 
 	def toCobraSource as String is override
 		return '[_expr.toCobraSource]:[_format]'
@@ -2842,17 +2764,12 @@ class SequenceLit
 		base.addSubFields
 		.addField('exprs', _exprs)
 
-	get exprs from var
-		has Subnodes
-
-	get hasError as bool is override
-		if base.hasError, return true
-		for expr in _exprs, if expr.hasError, return true
-		return false
-
 	get allExprs as Expr*
 		for expr in base.allExprs, yield expr
 		for expr in .exprs, for expr2 in expr.allExprs, yield expr2
+
+	get exprs from var
+		has Subnodes
 
 	get willChangeVar as bool is override
 		for expr in _exprs, if expr.willChangeVar, return true
@@ -2982,15 +2899,6 @@ class DictLit
 		base.addSubFields
 		.addField('entries', _entries)
 
-	get hasError as bool is override
-		if base.hasError
-			return true
-		for entry in _entries
-			for expr in entry
-				if expr.hasError
-					return true
-		return false
-
 	get allExprs as Expr*
 		for expr in base.allExprs, yield expr
 		for entry in .entries, for element in entry, for expr in element.allExprs, yield expr
@@ -3072,6 +2980,10 @@ class ToNilableOrNotExpr
 		_rightTok = rightTok
 		_expr = expr
 
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .expr.allExprs, yield expr
+
 	get rightTok from var
 	
 	get expr from var
@@ -3079,15 +2991,6 @@ class ToNilableOrNotExpr
 	def _bindImp
 		base._bindImp
 		_expr.bindImp
-
-	get hasError as bool is override
-		if base.hasError, return true
-		if _expr.hasError, return true
-		return false
-
-	get allExprs as Expr*
-		for expr in base.allExprs, yield expr
-		for expr in .expr.allExprs, yield expr
 
 	get willChangeVar as bool is override
 		if _expr.willChangeVar, return true
@@ -3174,11 +3077,11 @@ class ChainedCompareExpr inherits Expr is partial
 			base.init(opToken)
 			_items, _operations = items, operations
 
-	get items from var
-
 	get allExprs as Expr*
 		for expr in base.allExprs, yield expr
 		for item in .items, for expr in item.allExprs, yield expr
+
+	get items from var
 
 	def _bindImp is override
 		base._bindImp
