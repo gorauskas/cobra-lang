@@ -3,8 +3,7 @@ Rules:
 	* Do not invoke .bindFoo on any type that an expression discovers during its own .bindImp.
 """
 
-interface IExpr
-	inherits ISyntaxNode
+interface IExpr inherits ISyntaxNode
 	"""
 	This is mainly used for categorization.
 	To see what really makes an expression, see the Expr class.
@@ -42,10 +41,7 @@ enum ArgumentLabel
 	InOut
 
 
-class Expr
-	is abstract, partial
-	inherits Stmt
-	implements IExpr
+class Expr inherits Stmt implements IExpr is abstract, partial
 	"""
 	TODO: Add a .subexpressions iterator which can then be used by .hasError, .willChangeVar and possibly others.
 	"""
@@ -80,6 +76,10 @@ class Expr
 		base.addRefFields
 		.addField('type', _type)
 		if .definition, .addField('definition', .definition)
+
+	get allExprs as Expr*
+		""" Subclasses should override to yield the .allExprs of their direct sub-expressions. """
+		yield this
 
 	pro argumentLabel from var
 		"""
@@ -249,8 +249,7 @@ class Expr
 			else, throw FallThroughException(throwOrRecord)
 
 
-interface IPotentialTypeExpr
-	inherits IExpr
+interface IPotentialTypeExpr inherits IExpr
 	"""
 	An implementor of IPotentialType *could* be a representation of a type.
 	This is implemented by expressions such as DotExpr, IdentifierExpr and TypeExpr.
@@ -385,6 +384,10 @@ class LambdaExpr inherits AnonymousExpr is partial
 
 	get hasError as bool
 		return base.hasError or _expr.hasError
+
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .expr.allExprs, yield expr
 
 	def toCobraSource as String is override
 		sb = StringBuilder(base.toCobraSource)
@@ -550,6 +553,10 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 		return _definition
 
 	get memberDefinition from _definition
+
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for arg in .args, for expr in arg.allExprs, yield expr
 
 	def _bindImp is override
 		base._bindImp
@@ -818,6 +825,10 @@ class EnumCallExpr
 		for arg in _args, if arg.hasError, return true
 		return false
 
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for arg in .args, for expr in arg.allExprs, yield expr
+
 	def toCobraSource as String is override
 		sb = StringBuilder()
 		sb.append(_name)
@@ -899,6 +910,16 @@ class ForExpr inherits Expr is partial
 	get stop from _stop
 
 	get step from _step
+
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .nameExpr.allExprs, yield expr
+		for expr in .what.allExprs, yield expr
+		if .whereExpr, for expr in .whereExpr.allExprs, yield expr
+		for expr in .getExpr.allExprs, yield expr
+		if .start, for expr in .start.allExprs, yield expr
+		if .stop, for expr in .stop.allExprs, yield expr
+		if .step, for expr in .step.allExprs, yield expr
 
 	get willChangeVar as bool is override
 		# TODO: ack. kind of weird. if the variable is a new one and its not read afterwards (without first being set) then no side effects.
@@ -1112,6 +1133,12 @@ class IfExpr
 		if .fpart.hasError, return true
 		return false
 
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .cond.allExprs, yield expr
+		for expr in .tpart.allExprs, yield expr
+		for expr in .fpart.allExprs, yield expr
+
 	get willChangeVar as bool is override
 		if base.willChangeVar, return true
 		if .cond.willChangeVar, return true
@@ -1190,6 +1217,11 @@ class IndexExpr
 		if _target.hasError, return true
 		for arg in _args, if arg.hasError, return true
 		return false
+
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .target.allExprs, yield expr
+		for arg in .args, for expr in arg.allExprs, yield expr
 
 	get willChangeVar as bool is override
 		if _target.willChangeVar, return true
@@ -1293,6 +1325,10 @@ class IsNilExpr
 		if base.hasError, return true
 		if _expr.hasError, return true
 		return false
+
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .expr.allExprs, yield expr
 
 	get willChangeVar as bool is override
 		if _expr.willChangeVar, return true
@@ -1502,6 +1538,10 @@ class OldExpr
 		if _expr.hasError, return true
 		return false
 
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .expr.allExprs, yield expr
+
 	get willChangeVar as bool is override
 		if _expr.willChangeVar, return true
 		return false
@@ -1590,6 +1630,11 @@ class PostCallExpr
 		if e inherits TypeExpr, return e.realType.name
 		if e inherits IndexExpr, return e.toCobraSource
 		throw FallThroughException(e)
+
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .expr.allExprs, yield expr
+		for arg in .args, for expr in arg.allExprs, yield expr
 
 	get willChangeVar as bool is override
 		if _expr.willChangeVar, return true
@@ -1817,6 +1862,10 @@ class RefExpr inherits Expr is partial
 		if _expr.hasError, return true
 		return false
 
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .expr.allExprs, yield expr
+
 	get willChangeVar as bool is override
 		if _expr.willChangeVar, return true
 		return false
@@ -1889,6 +1938,10 @@ class SharpExpr
 		if base.hasError, return true
 		if _expr and _expr.hasError, return true
 		return false
+
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		if .expr, for expr in .expr.allExprs, yield expr
 
 	def toCobraSource as String is override
 		if _sharpSource
@@ -2075,6 +2128,10 @@ class TruthExpr
 
 	get notExpr from var
 
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .expr.allExprs, yield expr
+
 	def _bindImp
 		base._bindImp
 		_expr.bindImp
@@ -2219,6 +2276,10 @@ class AllOrAnyExpr
 		if .expr.hasError, return true
 		return false
 
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .expr.allExprs, yield expr
+
 	get willChangeVar as bool is override
 		if base.willChangeVar, return true
 		if .expr.willChangeVar, return true
@@ -2305,6 +2366,10 @@ class UnaryOpExpr
 	get op from var
 
 	get expr from var
+
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .expr.allExprs, yield expr
 
 	def _bindImp is override
 		base._bindImp
@@ -2611,6 +2676,10 @@ class StringSubstLit
 				return true
 		return false
 
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for item in .items, for expr in item.allExprs, yield expr
+
 	def toCobraSource as String is override
 		sb = StringBuilder()
 		for item in _items
@@ -2654,6 +2723,10 @@ class FormattedExpr
 		if base.hasError, return true
 		if _expr.hasError, return true
 		return false
+
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .expr.allExprs, yield expr
 
 	def toCobraSource as String is override
 		return '[_expr.toCobraSource]:[_format]'
@@ -2776,6 +2849,10 @@ class SequenceLit
 		if base.hasError, return true
 		for expr in _exprs, if expr.hasError, return true
 		return false
+
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .exprs, for expr2 in expr.allExprs, yield expr2
 
 	get willChangeVar as bool is override
 		for expr in _exprs, if expr.willChangeVar, return true
@@ -2914,6 +2991,10 @@ class DictLit
 					return true
 		return false
 
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for entry in .entries, for element in entry, for expr in element.allExprs, yield expr
+
 	get willChangeVar as bool is override
 		for entry in _entries
 			for expr in entry
@@ -3004,6 +3085,10 @@ class ToNilableOrNotExpr
 		if _expr.hasError, return true
 		return false
 
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for expr in .expr.allExprs, yield expr
+
 	get willChangeVar as bool is override
 		if _expr.willChangeVar, return true
 		return false
@@ -3088,7 +3173,13 @@ class ChainedCompareExpr inherits Expr is partial
 		body
 			base.init(opToken)
 			_items, _operations = items, operations
-	
+
+	get items from var
+
+	get allExprs as Expr*
+		for expr in base.allExprs, yield expr
+		for item in .items, for expr in item.allExprs, yield expr
+
 	def _bindImp is override
 		base._bindImp
 		itemIndex = 1

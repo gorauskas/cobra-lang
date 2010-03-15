@@ -1664,19 +1664,26 @@ class ContractPart
 
 	def _bindImp is override
 		base._bindImp
+		# note: expressions cannot refer to locals in contracts
 		newExprs = List<of Expr>()
-		i = 0
 		for expr in _exprs
 			expr.bindImp  # TODO: error recovery
 			assert expr.type
+			if not expr.hasError, _checkForLocalReferences(expr)
 			if expr.type is not .compiler.boolType
 				expr = TruthExpr(expr).bindAll to Expr # CC: axe cast when Cobra supports "as this"
 				assert expr.type
 			newExprs.add(expr)
-			i += 1
 		_exprs.clear
 		_exprs.addRange(newExprs)
 
+	def _checkForLocalReferences(expr as Expr)
+		for expr in expr.allExprs
+			if expr inherits IdentifierExpr
+				if expr.definition inherits LocalVar
+					if expr.name <> 'result' or not expr.definition.isImplicit
+						expr.recordError('Cannot refer to local variable "[expr.name]" in a contract. Use an "assert" statement in the implementation to verify conditions on locals.')
+	
 	def checkConnectToken
 		"""
 		This method checks that you said 'or require' vs. 'require', or 'and ensure' vs. 'ensure'.
@@ -1721,9 +1728,7 @@ class RequirePart
 			return _codeMember.requirePart.exprs.count > 0
 
 	
-class EnsurePart
-	is partial
-	inherits ContractPart
+class EnsurePart inherits ContractPart is partial
 
 	cue init(codeMember as AbstractMethod)
 		base.init(codeMember)
@@ -1746,20 +1751,17 @@ class EnsurePart
 			curCodeMember = curCodeMember.matchingBaseMember to AbstractMethod?  # TODO: should a cast really be needed here?
 		return have
 
-	def _bindImp is override
-		if _codeMember.resultType is .compiler.voidType
+	def _bindImp
+		codeMember = _codeMember
+		if codeMember.resultType is .compiler.voidType
 			base._bindImp
 		else
-			resultLocal = _codeMember.findLocal('result')
+			resultLocal = codeMember.findLocal('result')
 			resultBuiltIn = ResultVar(.token, _codeMember)
-			if resultLocal
-				_codeMember.replaceLocal(resultBuiltIn)
-			else
-				_codeMember.addLocal(resultBuiltIn)
+			if resultLocal, codeMember.replaceLocal(resultBuiltIn)
+			else, codeMember.addLocal(resultBuiltIn)
 			try
 				base._bindImp
 			finally
-				if resultLocal
-					_codeMember.replaceLocal(resultLocal to LocalVar)
-				else
-					_codeMember.removeLocal('result')
+				if resultLocal, codeMember.replaceLocal(resultLocal to LocalVar)
+				else, codeMember.removeLocal('result')
