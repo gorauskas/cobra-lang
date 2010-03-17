@@ -356,8 +356,7 @@ class Box
 			return __memberForName(name)
 
 	def __memberForName(name as String) as IMember?
-		if .nativeType, _prepLibraryBox
-		else, .completeMemberConstructionIfNeeded
+		.prepIfNeeded
 		return base.memberForName(name)
 	
 	def __memberForNameIncludingExtensions(name as String) as IMember?
@@ -403,6 +402,10 @@ class Box
 			return if(diff == 0, -1, diff)
 		return a.compareTo(b)
 	
+	def prepIfNeeded
+		if _nativeType, _prepLibraryBox
+		else, .completeMemberConstructionIfNeeded
+
 	def registerOverload(ol as MemberOverload)
 		require
 			ol.name.length
@@ -486,10 +489,7 @@ class Box
 	## IType
 
 	get innerType as IType? is override
-		if .nativeType
-			_prepLibraryBox
-		else
-			.completeMemberConstructionIfNeeded
+		.prepIfNeeded
 		if this is .compiler.stringType  # TODO: hacky. solution is to look at the specific type of .current property of enumerator. make a test case that shows that
 			return .compiler.charType
 # TODO: can a for loop go through an IEnumerator<of>?
@@ -648,6 +648,7 @@ class Box
 				.compiler.recordError(ne)
 		for invari in _invariants
 			invari.bindInt
+		_makeInitializers
 		hasError = false
 		for decl in List<of IBoxMember>(_declsInOrder)
 			assert not decl is this
@@ -694,6 +695,9 @@ class Box
 
 	def _badInterfaceError(type as IType)
 		.throwError('Cannot inherit "[type.name]" which is a [type.englishName].')
+
+	def _makeInitializers
+		pass
 
 	def _finishOverloads
 		# this method is broken out so Class can override and deal with inheritance and overloads
@@ -1265,13 +1269,6 @@ class Class
 			_baseClass._subclasses.add(this)
 
 	def _bindInt
-		for decl in .declsInOrder
-			if decl inherits Initializer
-				foundInitializer = true
-				break
-		if not foundInitializer
-			# TODO: this should be changed to provide cover initializers for each of the public, inherited initializers
-			_makeInitializer
 		# Note that the _baseClass is not told to bindInt. That would fail for classes in other namespaces and it's unnecessary
 		base._bindInt
 		if .isDescendantOf(.compiler.attributeType) and not .name.endsWith('Attribute')
@@ -1279,14 +1276,63 @@ class Class
 
 	def _badInterfaceError(type as IType) is override
 		msg = 'Cannot implement "[type.name]" which is a [type.englishName].'
-		if type inherits Class
-			msg += ' Use "inherits" instead.'
+		if type inherits Class, msg += ' Use "inherits" instead.'
 		.throwError(msg)
 
-	def _makeInitializer
-		init = Initializer(.token, Token.empty, this, List<of Param>(), ['public'], AttributeList(), '', isImplicit=true)
-		init.addStmt(DotExpr(.token.copy('DOT', '.'), 'DOT', BaseLit(.token.copy('BASE', 'base')), MemberExpr(.token.copy('ID', 'init'))))
-		.addDecl(init)
+	def _makeInitializers
+		base._makeInitializers
+
+		for decl in .declsInOrder, if decl inherits Initializer, return
+
+		if .compiler.options.boolValue('legacy-one-default-initializer')
+			init = Initializer(.token, Token.empty, this, List<of Param>(), ['public'], AttributeList(), '', isImplicit=true)
+			init.addStmt(DotExpr(.token.copy('DOT', '.'), 'DOT', BaseLit(.token.copy('BASE', 'base')), MemberExpr(.token.copy('ID', 'init'))))
+			.addDecl(init)
+		else
+			# provide every initializer from the base class
+			count = 0
+			firstInit as Initializer?
+			.baseClass.prepIfNeeded
+			isFromBinaryLibrary = .baseClass.isFromBinaryLibrary
+			inits = List<of Initializer>()
+			for decl in .baseClass.declsInOrder
+				if decl inherits Initializer
+					if decl.isPrivate, continue
+					if isFromBinaryLibrary and not decl.isPublic and not decl.isProtected, continue
+					if decl.isPublic or decl.isProtected
+						init = Initializer(.token, Token.empty, this, decl.params.clone, decl.isNames.clone, decl.attributes, '', isImplicit=true)
+						inits.add(init)
+						if decl.params.count == 0
+							dotRight = MemberExpr(.token.copy('ID', 'init')) to Expr
+						else
+							args = for param in decl.params get IdentifierExpr(.token.copy('ID', param.name), param.name) to Expr
+							dotRight = CallExpr(.token.copy('ID', 'init'), 'init', args, true)
+						init.addStmt(DotExpr(.token.copy('DOT', '.'), 'DOT', BaseLit(.token.copy('BASE', 'base')), dotRight))
+						if count == 0
+							.addDecl(init)
+							firstInit = init
+						else if count == 1
+							overload = MemberOverload(firstInit)
+							.registerOverload(overload)
+							overload.addMember(init)
+						else
+							overload.addMember(init)
+						count += 1
+			# System.Attribute's initializer is protected, making it awkward if a subclass does not define one. Therefore:
+			if inits.count == 1 and inits[0].params.count == 0 and not inits[0].isPublic
+				inits[0].changeToInternal
+			# System.Collections.ObjectModel.KeyedCollection<of TKey, TValue> is also awkward as all of its initializers are protected
+			else if inits.count > 1
+				hasPublic = false
+				for init in inits
+					if init.isPublic
+						hasPublic = true
+						break
+				if not hasPublic
+					for init in inits
+						if init.params.count == 0
+							init.changeToInternal
+							break
 
 	def _finishOverloads
 		# deal with inheritance and overloads
@@ -1510,7 +1556,7 @@ class MethodSig inherits Class is partial
 		if not _returnType
 			_returnType = _returnTypeProxy.realType
 
-	def _makeInitializer is override
+	def _makeInitializers is override
 		pass
 
 	def _makeMethod(name as String, params as IList<of Param>, returnTypeProxy as ITypeProxy) as Method
@@ -1759,8 +1805,7 @@ class Extension
 		# TODO: this method is called too frequently, probably due to _finishOverloads, but may also be other sources. there's no bug, but it may be a performance drag
 		if not .declForName(name), return nil
 		assert .didBindInh
-		if _nativeType, _prepLibraryBox
-		else, .completeMemberConstructionIfNeeded
+		.prepIfNeeded
 		assert _extendedBox
 		if _extendedBox
 			if box.isDescendantOf(_extendedBox)

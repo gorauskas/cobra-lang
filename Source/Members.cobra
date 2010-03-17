@@ -143,7 +143,7 @@ class BoxMember
 		"""
 		return .params.count > 0
 
-	get params as List<of Param>
+	get params as IList<of Param>
 		"""
 		Returns the list of params of this method, possibly empty.
 		Checking hasParams first is recommended since it's more efficient.
@@ -356,7 +356,7 @@ class BoxEvent
 	get isCallable as bool is override
 		return true
 
-	get params as List<of Param> is override
+	get params as IList<of Param> is override
 		assert .didBindInt
 		if _handlerType inherits MethodSig
 			return _handlerType.params
@@ -645,7 +645,7 @@ class AbstractMethod
 	var _requirePart as RequirePart?
 	var _ensurePart as EnsurePart?
 	var _oldExprs as List<of OldExpr>
-	var _params as List<of Param>
+	var _params as IList<of Param>
 	var _locals as List<of LocalVar>
 	var _stmts as List<of Stmt>
 	var _hasReturnStmt as bool
@@ -657,12 +657,12 @@ class AbstractMethod
 	cue init(token as IToken, idToken as IToken, box as Box, parentMethod as AbstractMethod?, name as String, paramsList as IList<of Param>, isNames as IList<of String>, attribs as AttributeList, docString as String)
 		base.init(token, idToken, box, name, isNames, attribs, docString)
 		_parentMethod = parentMethod
-		_params = List<of Param>(paramsList)
+		_params = paramsList.clone
 		_oldExprs = List<of OldExpr>()
 		_locals = List<of LocalVar>()
 		_stmts = List<of Stmt>()
 
-	get params as List<of Param> is override
+	get params as IList<of Param> is override
 		return _params
 
 	get locals from var
@@ -754,6 +754,15 @@ class AbstractMethod
 		Use .addOldExpr(e) instead of method.oldExprs.add().
 		"""
 
+	def changeToInternal
+		ensure
+			.isInternal
+			not .isPublic and not .isProtected and not .isPrivate
+			.isShared == old .isShared
+		body
+			for name in ['private', 'protected', 'public'], _isNames.remove(name)
+			if 'internal' not in _isNames, _isNames.add('internal')
+		
 	def unNilReturnType is override
 		if _returnType
 			if _returnType inherits NilableType
@@ -934,7 +943,7 @@ class AbstractMethod
 
 class Initializer inherits AbstractMethod is partial
 
-	cue init(token as IToken, idToken as IToken, box as Box, paramsList as List<of Param>, isNames as List<of String>, attribs as AttributeList, docString as String)
+	cue init(token as IToken, idToken as IToken, box as Box, paramsList as IList<of Param>, isNames as IList<of String>, attribs as AttributeList, docString as String)
 		base.init(token, idToken, box, nil, 'cue.init', paramsList, isNames, attribs, docString)
 		_isNames = isNames
 		_stmts = List<of Stmt>()
