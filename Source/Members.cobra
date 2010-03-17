@@ -42,13 +42,13 @@ class BoxMember
 	var _sharedMethodBackingIsAlias as bool
 	var _binaryName as String?
 
-	cue init(token as IToken, idToken as IToken, parentBox as Box, name as String, isNames as IList<of String>, attribs as AttributeList)
+	cue init(token as IToken, idToken as IToken, parentBox as Box, name as String, isNames as String*, attribs as AttributeList)
 		.init(token, idToken, parentBox, name, isNames, attribs, nil)
 
-	cue init(token as IToken, idToken as IToken, parentBox as Box, name as String, isNames as IList<of String>, attribs as AttributeList, docString as String?)
+	cue init(token as IToken, idToken as IToken, parentBox as Box, name as String, isNames as String*, attribs as AttributeList, docString as String?)
 		base.init(idToken, name)
 		_idToken = idToken
-		_isNames = isNames
+		_isNames = isNames.toList
 		_attribs = attribs
 		_parentBox = parentBox
 		_docString = docString
@@ -76,7 +76,8 @@ class BoxMember
 
 	pro docString from var
 
-	pro isNames from var
+	get isNames as String*
+		for name in _isNames, yield name
 
 	pro overloadGroup from var
 
@@ -339,7 +340,7 @@ class BoxEvent
 	var _handlerType as IType?
 	var _handlerTypeProxy as ITypeProxy?
 
-	cue init(token as IToken, idToken as IToken, box as Box, name as String, isNames as List<of String>, attribs as AttributeList, docString as String?, handlerType as ITypeProxy)
+	cue init(token as IToken, idToken as IToken, box as Box, name as String, isNames as String*, attribs as AttributeList, docString as String?, handlerType as ITypeProxy)
 		base.init(token, idToken, box, name, isNames, attribs, docString)
 		_handlerTypeProxy = handlerType
 
@@ -398,7 +399,7 @@ class BoxField inherits BoxMember is abstract, partial
 	var _initExpr as Expr?
 	var _isAssignedTo as bool
 
-	cue init(token as IToken, idToken as IToken, box as Box, name as String, typeNode as ITypeProxy?, isNames as List<of String>, initExpr as Expr?, attribs as AttributeList?, docString as String)
+	cue init(token as IToken, idToken as IToken, box as Box, name as String, typeNode as ITypeProxy?, isNames as String*, initExpr as Expr?, attribs as AttributeList?, docString as String)
 		base.init(token, idToken, box, name, isNames, attribs ? AttributeList(), docString)
 		_typeNode = typeNode
 		_initExpr = initExpr
@@ -476,7 +477,7 @@ class BoxConst
 	test harness, etc.
 	"""		
 
-	cue init(token as IToken, idToken as IToken, box as Box, name as String, typeNode as ITypeProxy?, isNames as List<of String>, initExpr as Expr?, attribs as AttributeList?, docString as String)
+	cue init(token as IToken, idToken as IToken, box as Box, name as String, typeNode as ITypeProxy?, isNames as String*, initExpr as Expr?, attribs as AttributeList?, docString as String)
 		base.init(token, idToken, box, name, typeNode, isNames, initExpr, attribs, docString)
 
 	get isShared as bool is override
@@ -507,7 +508,7 @@ class BoxVar
 
 	var _ifInheritsStack as Stack<of IType>
 
-	cue init(token as IToken, idToken as IToken, box as Box, name as String, typeNode as ITypeProxy?, isNames as List<of String>, initExpr as Expr?, attribs as AttributeList?, docString as String)
+	cue init(token as IToken, idToken as IToken, box as Box, name as String, typeNode as ITypeProxy?, isNames as String*, initExpr as Expr?, attribs as AttributeList?, docString as String)
 		base.init(token, idToken, box, name, typeNode, isNames, initExpr, attribs, docString)
 		_ifInheritsStack = Stack<of IType>()
 		_useBackEndNameStack = Stack<of String>()  # for if-inherits
@@ -569,7 +570,7 @@ class AnonymousMethod
 	is partial
 	inherits AbstractMethod
 	
-	cue init(token as IToken, parentMethod as AbstractMethod, paramsList as List<of Param>, returnTypeNode as ITypeProxy?, isNames as List<of String>)
+	cue init(token as IToken, parentMethod as AbstractMethod, paramsList as List<of Param>, returnTypeNode as ITypeProxy?, isNames as String*)
 		base.init(token, token, parentMethod.parentBox, parentMethod, '(anonymous method)', paramsList, isNames, AttributeList(), '')
 		_name = '(anonymous method [.serialNum])'
 		_returnTypeNode = returnTypeNode
@@ -654,7 +655,7 @@ class AbstractMethod
 	var _curStmtIndex as int  # to implement .replaceChild
 	var _isCompilerGenerated as bool
 
-	cue init(token as IToken, idToken as IToken, box as Box, parentMethod as AbstractMethod?, name as String, paramsList as IList<of Param>, isNames as IList<of String>, attribs as AttributeList, docString as String)
+	cue init(token as IToken, idToken as IToken, box as Box, parentMethod as AbstractMethod?, name as String, paramsList as IList<of Param>, isNames as String*, attribs as AttributeList, docString as String)
 		base.init(token, idToken, box, name, isNames, attribs, docString)
 		_parentMethod = parentMethod
 		_params = paramsList.clone
@@ -762,7 +763,16 @@ class AbstractMethod
 		body
 			for name in ['private', 'protected', 'public'], _isNames.remove(name)
 			if 'internal' not in _isNames, _isNames.add('internal')
-		
+
+	def changeToNonVirtual
+		ensure
+			'virtual' not in .isNames
+			'nonvirtual' in .isNames
+			.isShared == old .isShared
+		body
+			_isNames.remove('virtual')
+			if 'nonvirtual' not in _isNames, _isNames.add('nonvirtual')
+
 	def unNilReturnType is override
 		if _returnType
 			if _returnType inherits NilableType
@@ -943,9 +953,9 @@ class AbstractMethod
 
 class Initializer inherits AbstractMethod is partial
 
-	cue init(token as IToken, idToken as IToken, box as Box, paramsList as IList<of Param>, isNames as IList<of String>, attribs as AttributeList, docString as String)
+	cue init(token as IToken, idToken as IToken, box as Box, paramsList as IList<of Param>, isNames as String*, attribs as AttributeList, docString as String)
 		base.init(token, idToken, box, nil, 'cue.init', paramsList, isNames, attribs, docString)
-		_isNames = isNames
+		_isNames = isNames.toList
 		_stmts = List<of Stmt>()
 
 	get englishName as String is override
@@ -1033,10 +1043,10 @@ class Method inherits AbstractMethod is partial
 	var _implementsTypeNode as ITypeProxy?
 	var _implementsType as IType?
 
-	cue init(token as IToken, idToken as IToken, box as Box, name as String, paramsList as IList<of Param>, returnTypeNode as ITypeProxy, implementsTypeNode as ITypeProxy?, isNames as IList<of String>, attribs as AttributeList, docString as String)
+	cue init(token as IToken, idToken as IToken, box as Box, name as String, paramsList as IList<of Param>, returnTypeNode as ITypeProxy, implementsTypeNode as ITypeProxy?, isNames as String*, attribs as AttributeList, docString as String)
 		.init(token, idToken, box, name, List<of IType>(), paramsList, returnTypeNode, implementsTypeNode, isNames, attribs, docString)
 
-	cue init(token as IToken, idToken as IToken, box as Box, name as String, genericParams as List<of IType>, paramsList as IList<of Param>, returnTypeNode as ITypeProxy, implementsTypeNode as ITypeProxy?, isNames as IList<of String>, attribs as AttributeList, docString as String)
+	cue init(token as IToken, idToken as IToken, box as Box, name as String, genericParams as List<of IType>, paramsList as IList<of Param>, returnTypeNode as ITypeProxy, implementsTypeNode as ITypeProxy?, isNames as String*, attribs as AttributeList, docString as String)
 		base.init(token, idToken, box, nil, name, paramsList, isNames, attribs, docString)
 		_genericParams = genericParams
 		for gp in _genericParams, if gp inherits GenericParam, gp.parentDefinition = this
@@ -1229,10 +1239,10 @@ class ProperDexer
 	var _returnType as IType?
 	var _returnTypeNode as ITypeProxy?
 
-	cue init(token as IToken, idToken as IToken, box as Box, name as String, isNames as IList<of String>, attribs as AttributeList, docString as String?)
+	cue init(token as IToken, idToken as IToken, box as Box, name as String, isNames as String*, attribs as AttributeList, docString as String?)
 		base.init(token, idToken, box, name, isNames, attribs, docString)
 
-	cue init(token as IToken, idToken as IToken, box as Box, name as String, returnTypeOrNode as INode, isNames as IList<of String>, attribs as AttributeList, docString as String)
+	cue init(token as IToken, idToken as IToken, box as Box, name as String, returnTypeOrNode as INode, isNames as String*, attribs as AttributeList, docString as String)
 		.init(token, idToken, box, name, isNames, attribs, docString)
 		if returnTypeOrNode inherits IType
 			_returnType = returnTypeOrNode
@@ -1338,7 +1348,7 @@ class ProperDexerXetter
 
 	var _parent as ProperDexer
 
-	cue init(token as IToken, parent as ProperDexer, isNames as List<of String>)
+	cue init(token as IToken, parent as ProperDexer, isNames as String*)
 		base.init(token, token, parent.parentBox, nil, parent.name, List<of Param>(), isNames, AttributeList(), '')  # TODO: should be docString, right?
 		_name = parent.name + '.' + .xetPartName  # CC: somewhat awkward. belongs in the base.init() call
 		_parent = parent
@@ -1350,7 +1360,7 @@ class ProperDexerXetter
 
 	get xetPartName as String is abstract
 
-	get isNames as IList<of String>? is override
+	get isNames as String* is override
 		# may need to get more sophisticated here if, in the future, we support C#'s somewhat recent ability to put access modifiers on just the set or get part of a property
 		return _parent.isNames
 
@@ -1386,7 +1396,7 @@ class MemberOverload
 			base.init(member.token, member.idToken, member.parentBox, member.name, member.isNames, AttributeList())
 			member.overloadGroup = this
 			_members = [member]
-			_isNames = member.isNames  # pick up 'shared' for example
+			_isNames = member.isNames.toList  # pick up 'shared' for example
 
 	def addMinFields is override
 		base.addMinFields

@@ -40,7 +40,7 @@ class Box
 		An Indexer in CLR is known by being a property with arguments whose name matches the .memberName of a box-level DefaultMemberAttribute.
 		"""
 
-	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as IList<of String>, attribs as AttributeList, baseInterfaceNodes as List<of ITypeProxy>, docString as String?)
+	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as String*, attribs as AttributeList, baseInterfaceNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, isNames, docString)
 		_idToken = idToken
 		_attribs = attribs
@@ -1122,7 +1122,7 @@ class ClassOrStruct inherits Box is abstract, partial
 	
 	var _addsProxies as List<of ITypeProxy>
 
-	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as IList<of String>, attribs as AttributeList, implementsNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
+	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as String*, attribs as AttributeList, implementsNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
 		base.init(token, idToken, name, paramList, isNames, attribs, implementsNodes, docString)
 		_addsProxies = addsProxies
 
@@ -1174,7 +1174,7 @@ class Class
 	var _baseNode as ITypeProxy?
 	var _subclasses = List<of Class>()
 
-	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as IList<of String>, attribs as AttributeList, baseNode as ITypeProxy?, implementsNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
+	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as String*, attribs as AttributeList, baseNode as ITypeProxy?, implementsNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
 		base.init(token, idToken, name, paramList, isNames, attribs, implementsNodes, addsProxies, docString)
 		_baseNode = baseNode
 
@@ -1300,7 +1300,7 @@ class Class
 					if decl.isPrivate, continue
 					if isFromBinaryLibrary and not decl.isPublic and not decl.isProtected, continue
 					if decl.isPublic or decl.isProtected
-						init = Initializer(.token, Token.empty, this, decl.params.clone, decl.isNames.clone, decl.attributes, '', isImplicit=true)
+						init = Initializer(.token, Token.empty, this, decl.params.clone, decl.isNames, decl.attributes, '', isImplicit=true)
 						inits.add(init)
 						if decl.params.count == 0
 							dotRight = MemberExpr(.token.copy('ID', 'init')) to Expr
@@ -1371,7 +1371,7 @@ class Mixin
 	# Hilarious! The implementation of Mixin would benefit from having mixins in the language
 	# because we need them for class, struct and mixin, but not for interfaces. Awesome!  :-)
 	
-	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as IList<of String>, attribs as AttributeList, baseNode as ITypeProxy?, implementsNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
+	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as String*, attribs as AttributeList, baseNode as ITypeProxy?, implementsNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
 		base.init(token, idToken, name, paramList, isNames, attribs, implementsNodes, docString)
 		# there are restrictions on mixins which may be relaxed in the future
 		assert baseNode is nil
@@ -1423,7 +1423,7 @@ class Interface
 	is partial
 	inherits Box
 
-	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as IList<of String>, attribs as AttributeList, baseNodes as List<of ITypeProxy>, docString as String?)
+	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as String*, attribs as AttributeList, baseNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, idToken, name, paramList, isNames, attribs, baseNodes, docString)
 		
 	cue init(nativeType as NativeType)
@@ -1462,7 +1462,7 @@ class Struct
 	is partial
 	inherits ClassOrStruct
 
-	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as IList<of String>, attribs as AttributeList, baseName as String?, interfaceNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
+	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as String*, attribs as AttributeList, baseName as String?, interfaceNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
 		base.init(token, idToken, name, paramList, isNames, attribs, interfaceNodes, addsProxies, docString)
 
 	cue init(nativeType as NativeType)
@@ -1522,7 +1522,7 @@ class MethodSig inherits Class is partial
 	var _returnTypeProxy as ITypeProxy
 	var _returnType as IType?
 
-	cue init(token as IToken, idToken as IToken, parent as IParentSpace?, name as String, params as List<of Param>, returnTypeProxy as ITypeProxy, isNames as List<of String>, attribs as AttributeList, docString as String)
+	cue init(token as IToken, idToken as IToken, parent as IParentSpace?, name as String, params as List<of Param>, returnTypeProxy as ITypeProxy, isNames as String*, attribs as AttributeList, docString as String)
 		base.init(token, idToken, name, List<of IType>(), isNames, attribs, LibraryTypeProxy('System.MulticastDelegate'), List<of ITypeProxy>(), List<of ITypeProxy>(), docString)
 		_initParent(parent)
 		_params = params
@@ -1560,7 +1560,7 @@ class MethodSig inherits Class is partial
 		pass
 
 	def _makeMethod(name as String, params as IList<of Param>, returnTypeProxy as ITypeProxy) as Method
-		m = Method(.token, .token, this, name, params, returnTypeProxy, nil, .isNames.clone, AttributeList(), '')
+		m = Method(.token, .token, this, name, params, returnTypeProxy, nil, .isNames, AttributeList(), '')
 		# method body just to avoid a Cobra warning during .bindImp
 		m.statements.add(ThrowStmt(.token, PostCallExpr(.token, IdentifierExpr(.token, 'Exception'), List<of Expr>()))) 
 		return m
@@ -1774,7 +1774,7 @@ class Extension
 	var _extendedBoxProxy as ITypeProxy?
 	var _extendedBox as Box?
 
-	cue init(token as IToken, idToken as IToken, extendedBoxProxy as ITypeProxy, isNames as List<of String>, docString as String?)
+	cue init(token as IToken, idToken as IToken, extendedBoxProxy as ITypeProxy, isNames as String*, docString as String?)
 		base.init(token, idToken, '(unnamed extension)', List<of IType>(), isNames, AttributeList(), List<of ITypeProxy>(), docString)
 		_name = '(unnamed extension [.serialNum])'
 		_extendedBoxProxy = extendedBoxProxy
@@ -1892,8 +1892,7 @@ class Extension
 					decl.recordError('Extensions can only contain methods, not initializers.')
 				else
 					decl.sharedMethodBacking = '[sharpName].[decl.name.capitalized]'
-					decl.isNames.remove('virtual')
-					decl.isNames.add('nonvirtual')
+					decl.changeToNonVirtual
 					decl.bindInt
 					# handle overloads
 					other = extendedBox.declForName(decl.name)
