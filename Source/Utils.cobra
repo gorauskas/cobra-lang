@@ -6,6 +6,51 @@ Miscellaneous utility methods for use throughout the Cobra compiler.
 use System.Reflection
 
 
+class ObjectLister
+
+	shared
+
+		def list(obj)
+			print
+			print 'Object:', obj
+			print '    getType = [obj.getType.name]'
+			props = List<of PropertyInfo>(obj.getType.getProperties)
+			props.sort(do(a as PropertyInfo, b as PropertyInfo)=a.name.toLower.compareTo(b.name.toLower))
+			for pi in props
+				if pi.canRead
+					try
+						value = pi.getValue(obj, nil)
+					catch TargetParameterCountException
+						# happens for .Item[i] "indexer"
+						continue
+					catch exc as Exception
+						try
+							if exc inherits TargetInvocationException and exc.innerException
+								exc = exc.innerException to !
+							value = '(exception: [exc.getType.name]: [exc.message])'
+						catch
+							value = '(exception)'
+					success
+						value = _toTechString(value)
+					name = pi.name
+					name = Utils.cobraNameForSharpMemberName(name)
+					print '    [name] = [value]'
+			if obj inherits System.Collections.ICollection
+				i = 0
+				for item in obj
+					print '    \[[i]] = [_toTechString(item)]'
+					i += 1
+
+		def _toTechString(value) as String
+			try
+				return CobraCore.toTechString(value)
+			catch exc as Exception
+				try
+					return '(exception: [exc.getType.name]: [exc.message])'
+				catch
+					return '(exception from .toTechString)'
+
+
 extend String
 
 	## Language specific
