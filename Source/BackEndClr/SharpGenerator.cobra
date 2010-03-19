@@ -1372,10 +1372,14 @@ class Param is partial
 		sw.write('[.type.sharpRef] [.sharpName]')		
 
 
-class LocalVar
-	is partial
+class LocalVar is partial
 
-	pass
+	def writeSharpDef(sw as CurlyWriter)
+		base.writeSharpDef(sw)
+		sw.write('[.type.sharpRef] [.sharpName]')
+		init = .type.sharpInit
+		if init.length, sw.write(' = [init]')
+		sw.write(';\n')
 
 
 class ResultVar
@@ -1629,21 +1633,16 @@ class AbstractMethod
 			sw.write(parens[1])
 
 	def writeSharpLocals(sw as CurlyWriter, locals as List<of LocalVar>?, open as bool)
-		if open
-			sw.writeAndIndent('{\n')
+		if open, sw.writeAndIndent('{\n')
 		# record the `old` expressions for `ensure`
 		.writeSharpOldAssignments(sw)
-		if locals is nil
-			locals = _locals
+		if locals is nil, locals = _locals
+		contractsAreMethods = .compiler.options['contracts'] == 'methods'
 		if locals.count
 			sw.write('// locals\n')
 			for local in locals
-				if not local.isImplicit
-					sw.write('[local.type.sharpRef] [local.sharpName]')
-					init = local.type.sharpInit
-					if init.length
-						sw.write(' = [init]')
-					sw.write(';\n')
+				if not local.isImplicit and not (local.isForEnsure and contractsAreMethods)
+					local.writeSharpDef(sw)
 
 	def writeSharpRequireParamDecls(sw as CurlyWriter)
 		sep = ''
@@ -2161,6 +2160,7 @@ class EnsurePart is partial
 		_codeMember.writeSharpEnsureParamDecls(sw)
 		sw.write(') {\n')
 		sw.indent
+		for local in .codeMember.locals, if local.isForEnsure, local.writeSharpDef(sw)
 		.writeSharpChecks(sw)
 		sw.dedent
 		sw.write('}\n\n')
