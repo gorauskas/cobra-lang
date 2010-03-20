@@ -1704,11 +1704,13 @@ class ContractPart
 				if expr.definition inherits LocalVar
 					if (expr.name <> 'result' or not expr.definition.isImplicit) and (expr.definition not in validDefs)
 						if lastExpr inherits ForExpr
-							(expr.definition to LocalVar).isForEnsure = true
+							.flagVar(expr.definition to LocalVar)
 							validDefs.add(expr.definition)
 						else
 							expr.recordError('Cannot refer to local variable "[expr.name]" in a contract. Use an "assert" statement in the implementation to verify conditions on locals.')
 			lastExpr = expr
+
+	def flagVar(varr as LocalVar) is abstract
 
 	def checkConnectToken
 		"""
@@ -1740,6 +1742,9 @@ class RequirePart
 	get connectWord as String is override
 		return 'or'
 
+	def flagVar(varr as LocalVar) is override
+		varr.isForRequire = true
+
 	get haveConditions as bool is override
 		if _codeMember.isOverride
 			have = false
@@ -1765,6 +1770,9 @@ class EnsurePart inherits ContractPart is partial
 
 	get connectWord as String is override
 		return 'and'
+
+	def flagVar(varr as LocalVar) is override
+		varr.isForEnsure = true
 
 	get haveConditions as bool is override
 		if _codeMember.parentBox.hasInvariants

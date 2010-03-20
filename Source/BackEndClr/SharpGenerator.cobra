@@ -1560,13 +1560,10 @@ class AbstractMethod
 		try
 			sw.writeAndIndent('{\n')
 			.writeSharpImpHeader(sw)
-			if .compiler.hasDetailedStackTraceOption
-				.writeDSTHead(sw)
-			for param in _params
-				.writeSharpParamCheck(param, sw)
-			if _requirePart and _requirePart.willGenerateCode
-				_requirePart.writeSharpDef(sw)
+			if .compiler.hasDetailedStackTraceOption, .writeDSTHead(sw)
+			for param in _params, .writeSharpParamCheck(param, sw)
 			.writeSharpLocals(sw, nil, false)
+			if _requirePart and _requirePart.willGenerateCode, _requirePart.writeSharpDef(sw)
 			willEnsure = _ensurePart and _ensurePart.willGenerateCode
 			if willEnsure
 				sw.write('bool _lh_canEnsure = false;\n')
@@ -1641,7 +1638,7 @@ class AbstractMethod
 		if locals.count
 			sw.write('// locals\n')
 			for local in locals
-				if not local.isImplicit and not (local.isForEnsure and contractsAreMethods)
+				if not local.isImplicit and not (local.isForContract and contractsAreMethods)
 					local.writeSharpDef(sw)
 
 	def writeSharpRequireParamDecls(sw as CurlyWriter)
@@ -2096,6 +2093,7 @@ class RequirePart
 		_codeMember.writeSharpRequireParamDecls(sw)
 		sw.write(') {\n')
 		sw.indent
+		for local in .codeMember.locals, if local.isForRequire, local.writeSharpDef(sw)
 		.writeSharpChecks(sw)
 		sw.dedent
 		sw.write('}\n\n')
