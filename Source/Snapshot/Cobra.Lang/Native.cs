@@ -749,31 +749,6 @@ static public class CobraImp {
 		}
 	}
 
-	static private TextWriter _testProgressWriter = null;
-
-	static public TextWriter TestProgressWriter {
-		get {
-			return _testProgressWriter==null ? Console.Out : _testProgressWriter;
-		}
-		set {
-			_testProgressWriter = value;
-		}
-	}
-
-	static public void TestBegan(string className) {
-		if (ShowTestProgress) {
-			TestProgressWriter.WriteLine("Testing {0}...", className);
-			TestProgressWriter.Flush();
-		}
-	}
-
-	static public void TestEnded(string className) {
-		if (ShowTestProgress) {
-			TestProgressWriter.WriteLine("Completed testing of {0}.{1}", className, Environment.NewLine);
-			TestProgressWriter.Flush();
-		}
-	}
-
 
 	/// Super Stack Trace!
 
@@ -799,14 +774,16 @@ static public class CobraImp {
 	static private Stack<CobraFrame> _lastBadStackCopy = null;
 	static public int _maxStackFrames = 500;
 	static public int _numLastMaxStackFrames = 20;
+	static private bool _inStackOverflow = false;
 
 	static public void PushFrame(string declClassName, string methodName, string fileName, int lineNum, params object[] args) {
+		if (_inStackOverflow) return;
 		_detailedStack.Push(_curFrame = new CobraFrame(declClassName, methodName, fileName, lineNum, args));
 		int max = _maxStackFrames;
 		if (max > 0 && _detailedStack.Count > max) {
+			_inStackOverflow = true;
 			int num = _numLastMaxStackFrames;
-			if (num < 2)
-				num = 2;
+			if (num < 2) num = 2;
 			Console.WriteLine("Cobra detected stack overflow:");
 			Console.WriteLine("  Last {0} frames:", num);
 			List<CobraFrame> frames = new List<CobraFrame>(_detailedStack);
