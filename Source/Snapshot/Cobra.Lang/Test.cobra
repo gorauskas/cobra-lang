@@ -1,0 +1,392 @@
+"""
+Cobra.Lang.Test contains a family of classes for running tests and reporting their results.
+
+Also, it is the library used by Cobra to run unit tests declared in the language,
+using the "test" keyword.
+
+EXAMPLE A
+
+	# Scans all assemblies for all Cobra-declared tests and runs them.
+	TestRunner(TextWriterListener(Console.out)).runAllTests
+
+EXAMPLE B
+
+	# equivalent to EXAMPLE A since the runner will make a default listener if none is specified
+	TestRunner().runAllTests
+
+EXAMPLE C
+
+	# output only if there are any failures
+	TestRunner(TextWriterOnlyOnFailureListener(Console.out)).runAllTests
+
+EXAMPLE D
+
+	# set a parameter
+	tr = TestRunner()
+	tr.params.willFailOnce = true  # good when using an interactive debugger
+	tr.runAllTests
+
+EXAMPLE E
+
+	# shows what tests will run, without running them
+	tr = TestRunner()
+	tr.params.willRunDry = true
+	tr.runAllTests
+
+EXAMPLE F
+
+	tr = TestRunner()
+	tr.runTestsFor(System.Reflection.Assembly.getEntryAssembly, false)
+	# false == do not follow dependencies
+
+EXAMPLE G
+
+	@args -test-runner:P.runTests
+	
+	class P
+	
+		def main
+			print 'Hello from main.'
+
+		def runTests is shared
+			# Due to the @args above, Cobra will invoke this method for running tests instead of
+			# Cobra.Lang.CobraCore.runAllTests. This allows you to customize the test runner,
+			# including setting parameters, adding listeners, using a custom subclass, etc. 
+			#
+			# When customizing the test run, you will find it useful to read the interface to
+			# Cobra.Lang.Test, and possibly even the implementation.
+			#
+			# Alternatively, you can bypass Cobra.Lang.Test entirely and write whatever code
+			# you like here.
+			tr = Cobra.Lang.Test.TestRunner()
+			tr.runAllTests
+
+NOTES
+
+	* There are other methods of TestRunner that you can tap into.
+	* Additionally, you can write your own ITestListener
+	* There are other classes that you can instantiate and/or subclass.
+	* If, for whotever reason, you construct your own TestSuite instance, you can bypass the use of
+	  TestRunner and just invoke .run on the suite.
+
+TODO
+
+	[ ] stack trace filtering could be interesting. more experience will be required to see if it's necessary. see
+		http://www.google.com/codesearch/p?hl=en#uX1GffpyOZk/test-runner/junit/runner/BaseTestRunner.java&q=testrunner&d=2
+
+	There are more TODOs in the code below.
+"""
+
+
+namespace Cobra.Lang.Test
+
+	use System.Reflection
+
+	class TestRunParams
+
+		pro willFailOnce from var = false
+	
+		pro willRunDry from var = false
+	
+		# TODO: pro excludeTests ...
+
+		# TODO: pro includeTests ...
+
+		# TODO: pro threadCount from var = 1
+
+
+	class TestRunner
+
+		cue init
+			.init(nil)
+		
+		cue init(listener as ITestRunListener?)
+			base.init
+			_listener = listener
+	
+		pro params from var = TestRunParams()
+	
+		pro listener from var as ITestRunListener?
+
+		def runAllTests
+			.runTestsFor(Assembly.getEntryAssembly, true)
+
+		def runTestsFor(ass as Assembly, willFollowReferences as bool)
+			.runTestsFor(.collectTestsFor(ass, willFollowReferences))
+	
+		def runTestsFor(type as Type)
+			.runTestsFor(.collectTestsFor(type))
+		
+		def runTestsFor(suite as TestSuite)
+			.makeTestRunListenerIfNeeded
+			suite.run(.params, .listener to !)
+			
+		def makeTestRunListenerIfNeeded
+			ensure .listener
+			if .listener is nil
+				.listener = TextWriterListener(Console.out)
+
+		def collectTestsFor(ass as Assembly, willFollowReferences as bool) as TestSuite
+			return _collectTestsFor(ass, willFollowReferences, Set<of String>()) ? TestSuite(_testNameForAssembly(ass))
+
+		def collectTestsFor(type as Type) as TestSuite
+			suite = TestSuite(_testNameForType(type))
+			_collectTestsFor(type, suite)
+			return suite
+
+		def _collectTestsFor(type as Type, suite as TestSuite)
+			if type.containsGenericParameters
+				# TODO: this is quite awful. tests in generic types are being skipped!
+				# potential solution 1: move type test out of the type into a "sister" type: private __FooTest
+				# potential solution 2: require a constructed type in Cobra: `test Foo<of int> ...` and then put that in a method attribute in the gen C# and use that type
+				return
+			for method in type.getMethods(BindingFlags(Static, Public, NonPublic, DeclaredOnly))
+				if method.name.startsWith('test_')
+					suite.add(MethodInfoTest(_testNameForMethod(method), method))
+
+		def _collectTestsFor(ass as Assembly, willFollowReferences as bool, found as Set<of String>) as TestSuite?
+			name = ass.getName.toString
+			if name in found, return nil
+			found.add(name)
+			if _skipAssemblyNameForTesting(name), return nil  # saves some time
+
+			suite = TestSuite(_testNameForAssembly(ass))
+
+			for type in ass.getExportedTypes
+				typeSuite = TestSuite(_testNameForType(type))
+				_collectTestsFor(type, typeSuite)
+				if typeSuite.testCount > 0
+					suite.add(typeSuite)
+			
+			if willFollowReferences
+				for assName in ass.getReferencedAssemblies
+					subAss = Assembly.load(assName)
+					subTest = _collectTestsFor(subAss to !, willFollowReferences, found)
+					if subTest, suite.add(subTest)
+
+			return suite
+
+		def _testNameForAssembly(ass as Assembly) as String
+			name = ass.getName.toString
+			for suffix in [', PublicKeyToken=null', ', Culture=neutral']
+				if name.endsWith(suffix)
+					name = name[:-suffix.length]
+			return 'lib ' + name
+		
+		def _testNameForType(type as Type) as String
+			if type.isClass, prefix = 'class '
+			else if type.isValueType, prefix = 'struct '
+			else if type.isInterface, prefix = 'interface '
+			else, prefix = 'type '
+			return prefix + type.toString
+		
+		def _testNameForMethod(method as MethodInfo) as String
+			name = method.name
+			if name.startsWith('test_'), name = name[5:]
+			if name.startsWith('class_')
+				name = 'class level'
+			else if name.startsWith('_')
+				pass
+			else
+				name = '.' + name[0].toLower.toString + if(name.length > 1, name[1:], '')
+			return name
+		
+		var _skipPrefixes = @['System.', 'Mono.', 'mscorlib,', 'System,']
+
+		def _skipAssemblyNameForTesting(name as String) as bool
+			for prefix in _skipPrefixes, if name.startsWith(prefix), return true
+			return false
+
+
+	interface ITestRunListener
+
+		def suiteStarted(ts as TestSuite)
+
+		def suiteEnded(ts as TestSuite)
+
+		def testStarted(t as Test)
+	
+		def testEnded(t as Test)
+
+		def testFailed(t as Test, exc as Exception)
+	
+
+	class TextWriterListener implements ITestRunListener
+
+		cue init(tw as TextWriter)
+			base.init
+			.textWriter = tw
+
+		get startTime from var as DateTime
+	
+		get level from var as int
+	
+		get testCount from var as int
+	
+		get testSuccesses from var as int
+	
+		get testFailures from var as int
+
+		pro textWriter from var as TextWriter
+	
+		def suiteStarted(ts as TestSuite)
+			if _level == 0, .writeHeader(ts)
+			_writeLine('>> [ts.name]')
+			_level += 1
+
+		def suiteEnded(ts as TestSuite)
+			_level -= 1
+			_writeLine('<< [ts.name]')
+			if _level == 0, .writeFooter
+
+		def testStarted(t as Test)
+			_testCount += 1
+			_testSuccesses += 1
+			_writeLine('>> test [_testCount]: [t.name]')
+			_level += 1
+	
+		def testEnded(t as Test)
+			_level -= 1
+			_writeLine('<< test [_testCount]: [t.name]')
+
+		def testFailed(t as Test, exc as Exception)
+			_testSuccesses -= 1
+			_testFailures += 1
+			_writeLine('Fail with exception:')
+			_writeLines(exc.toString)
+
+		def _writeLine(line as String)
+			for i in _level, .textWriter.write('    ')
+			.textWriter.writeLine(line)
+
+		def _writeLines(lines as String)
+			for line in lines.replace('\r', '').split(c'\n')
+				_writeLine(line)
+		
+		def writeHeader(ts as TestSuite)
+			_startTime = DateTime.now
+			_writeLine('Running [ts.testCount] tests at [_startTime]')
+
+		def writeFooter
+			now = DateTime.now
+			duration = now.subtract(_startTime)
+			_writeLine('Finished at [now].')
+			_writeLine('[_plural("test", _testCount)] run in [duration].')
+			_writeLine(_plural("success", _testSuccesses) + '.')
+			_writeLine(_plural("failure", _testFailures) + '.')
+
+		def _plural(word as String, count as int) as String
+			if count == 1, return '[count] [word]'
+			if word.endsWith('s'), return '[count] [word]es'
+			return '[count] [word]s'
+
+
+	class TextWriterOnlyOnFailureListener inherits TextWriterListener
+		"""
+		TODO: would be nicer if the first failure triggered continuous output instead of waiting until the end
+		"""
+
+		var _stringWriter = StringWriter()
+		var _originalWriter as TextWriter
+	
+		cue init(tw as TextWriter)
+			base.init(tw)
+			_originalWriter = .textWriter
+			.textWriter = _stringWriter
+
+		def writeFooter
+			base.writeFooter
+			if .testFailures > 0
+				_originalWriter.write(_stringWriter.toString)
+
+
+	interface ITest
+
+		get name as String
+	
+		get testCount as int
+
+		def run(params as TestRunParams, listener as ITestRunListener)
+
+
+	class TestSuite implements ITest
+
+		var _tests = List<of ITest>()
+	
+		cue init(name as String)
+			base.init
+			_name = name
+		
+		pro name from var as String
+	
+		get testCount as int
+			count = 0
+			for t in .tests, count += t.testCount
+			return count
+
+		get tests as ITest*
+			for t in _tests, yield t
+
+		def add(t as ITest)
+			_tests.add(t)
+		
+		def run(params as TestRunParams, listener as ITestRunListener)
+			listener.suiteStarted(this)
+			try
+				for t in .tests, t.run(params, listener)
+			finally
+				listener.suiteEnded(this)
+
+
+	class Test implements ITest is abstract
+		"""
+		This class is abstract.
+		Subclasses typically override cue.init to take any additional information required, and
+		override _run to implement the specific means of running the test.
+
+		Overriding .run is rare. Override _run instead.
+		"""
+	
+		cue init(name as String)
+			base.init
+			_name = name
+
+		pro name from var as String
+	
+		get testCount as int
+			return 1
+
+		def run(params as TestRunParams, listener as ITestRunListener)
+			listener.testStarted(this)
+			if not params.willRunDry
+				if params.willFailOnce
+					_run(params)
+				else
+					try
+						_run(params)
+					catch exc as Exception
+						listener.testFailed(this, exc)
+			listener.testEnded(this)
+
+		def _run(params as TestRunParams) is abstract
+
+
+	class NoOpTest inherits Test
+
+		cue init
+			base.init('NoOp')
+
+		def _run(params as TestRunParams) is override
+			pass
+
+
+	class MethodInfoTest inherits Test
+
+		cue init(name as String, mi as MethodInfo)
+			base.init(name)
+			_methodInfo = mi
+	
+		get methodInfo from var as MethodInfo
+
+		def _run(params as TestRunParams) is override
+			_methodInfo.invoke(_methodInfo.declaringType, nil)
