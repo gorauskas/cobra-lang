@@ -577,8 +577,7 @@ class TypeIdentifier
 			throw FallThroughException(symbol)
 
 
-class GenericTypeIdentifier
-	inherits AbstractTypeIdentifier
+class GenericTypeIdentifier inherits AbstractTypeIdentifier
 	"""
 	The parser produces these when it encounters "List<of String>", for example.
 	"""
@@ -587,24 +586,44 @@ class GenericTypeIdentifier
 	var _fullName as String    # ex: 'List<of String>'
 	var _typeRefName as String # ex: 'List<of>' 'IDictionary<of,>' -- matches the actual box
 
-	var _typeNodes as List<of ITypeProxy>
+	var _numArgs as int
+	var _typeNodes as List<of ITypeProxy>?
 
-	cue init(token as IToken, rootName as String, typeNodes as List<of ITypeProxy>, fullName as String)
+	cue init(token as IToken, rootName as String, fullName as String, typeNodes as List<of ITypeProxy>)
 		require
 			token.which=='OPEN_GENERIC'
-			rootName.length
-			fullName.length
+			rootName.length and '<of' not in rootName
+			fullName.length and '<of' in fullName
+			typeNodes.count
 		body
-			base.init(token, fullName)
-			_rootName = rootName
+			.init(token, rootName, fullName, typeNodes, 0)
+
+	cue init(token as IToken, rootName as String, fullName as String, numArgs as int)
+		require
+			token.which=='OPEN_GENERIC'
+			rootName.length and '<of' not in rootName
+			fullName.length and '<of' in fullName
+			numArgs > 0
+		body
+			.init(token, rootName, fullName, nil, numArgs)
+
+	cue init(token as IToken, rootName as String, fullName as String, typeNodes as List<of ITypeProxy>?, numArgs as int) is protected
+		require typeNodes or numArgs > 0
+		base.init(token, fullName)
+		_rootName, _fullName = rootName, fullName
+		if typeNodes
 			_typeNodes = typeNodes
-			_fullName = fullName
 			_typeRefName = _rootName + '<of'
 			# TODO: String(c',', _typeNodes.count-1) ?
-			for i = 0 .. _typeNodes.count-1
-				_typeRefName += ','
+			for i in _typeNodes.count-1, _typeRefName += ','
 			_typeRefName += '>'
-			_name = _typeRefName
+			_numArgs = _typeNodes.count
+		else
+			_typeRefName = fullName
+			_numArgs = numArgs
+		_name = fullName
+
+	get numArgs from var
 
 	get typeNodes from var
 
@@ -615,23 +634,24 @@ class GenericTypeIdentifier
 		return _locateType(genericType to !)
 
 	def _resolveType as IType is override
-		symbol = _symbolForName(.name)
+		symbol = _symbolForName(_typeRefName)
 		return _locateType(symbol)
 
 	def _locateType(genericType as IMember) as IType
 		if genericType inherits Box
 			if not genericType.isGeneric
 				.throwError('"[_rootName]" is not a generic type.')
-			types = List<of IType>()
-			for tn in _typeNodes
-				types.add(tn.realType)
-			if genericType.genericParams.count <> types.count
-				.throwError('The generic type "[_rootName]" expects [genericType.genericParams.count] type arguments, not [types.count].')
-			t = genericType.constructedTypeFor(types)
-			assert t.genericParams == types
-			assert t.isGeneric
-			# assert not t.isGenericDef  Wrong! If some of the parameters are generic, then the constructed type could have generic params...
-			# ... hmmm, but am I using the wrong terms? Maybe the returned type is an open or closed constructed type and never a generic def. TODO: resolve this.
+			if _typeNodes
+				types = List<of IType>()
+				for tn in _typeNodes, types.add(tn.realType)
+				if genericType.genericParams.count <> types.count
+					.throwError('The generic type "[_rootName]" expects [genericType.genericParams.count] type arguments, not [types.count].')
+				t = genericType.constructedTypeFor(types)
+				assert t.genericParams == types
+				assert t.isGeneric and not t.isGenericDef
+			else
+				t = genericType
+				assert t.isGeneric and t.isGenericDef
 			return t
 		else if genericType inherits IType
 			.throwError('"[_rootName]" is not a generic type.')
