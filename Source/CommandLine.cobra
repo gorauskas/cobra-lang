@@ -30,9 +30,11 @@ class OptionSpec inherits Dictionary<of String, dynamic>
 		require .isUnpacked
 		return _name
 
+	get isMain from var as bool
+	
 	get type as String
 		require .isUnpacked
-		ensure result in ['accumulator', 'args-list', 'bool', 'int', 'main', 'menu', 'set', 'string']
+		ensure result in ['accumulator', 'args-list', 'bool', 'int', 'menu', 'set', 'string']
 		return _type
 
 	get synonyms from var
@@ -72,7 +74,10 @@ class OptionSpec inherits Dictionary<of String, dynamic>
 				this['type'] = _type = 'accumulator'
 			else
 				this['type'] = 'string'
-		assert _type in ['accumulator', 'args-list', 'bool', 'int', 'main', 'menu', 'set', 'string']
+		if _type == 'main'
+			_isMain, _type = true, 'bool'
+		if .containsKey('is-main'), _isMain = this['is-main'] to bool
+		assert _type in ['accumulator', 'args-list', 'bool', 'int', 'menu', 'set', 'string']
 		if .containsKey('synonyms')
 			for syn in this['synonyms']
 				_synonyms.add(syn)
@@ -207,6 +212,19 @@ class CommandLineOptionSpecs
 			'description': 'Enable a detailed stack trace which gives great postmortem information for uncaught exceptions, but slows execution. Works in combination with -exception-report, or see ObjectExplorer-WinForms.cobra and its doc string for ideas on how to present this information graphically.',
 		},
 		{
+			'name': 'document',
+			'synonyms': ['doc'],
+			'type': 'main',
+			'description': 'Generate HTML docs for the Cobra source.',
+		},
+		{
+			'name': 'document-library',
+			'synonyms': ['doc-lib'],
+			'is-main': true,
+			'type': 'string',
+			'description': 'Generate HTML docs for a library.',
+		},
+		{
 			'name': 'embed-run-time',
 			'synonyms': ['ert'],
 			'type': 'bool',
@@ -238,12 +256,6 @@ class CommandLineOptionSpecs
 			'args': 'SOURCE',
 			'description': 'Add extra source code to be compiled with the rest. Generally used only internally by the compiler.',
 			'developer-only': true,
-		},
-		{
-			'name': 'document',
-			'synonyms': ['doc'],
-			'type': 'main',
-			'description': 'Generate HTML docs for the Cobra source.',
 		},
 		{
 			'name': 'help',
@@ -616,6 +628,8 @@ class CommandLine
 				.doHighlight(paths)
 			else if options.boolValue('document')
 				.doDocument(paths)
+			else if options.isSpecified('document-library')
+				.doDocumentLibrary
 			else if options.boolValue('help')
 				.doHelp
 			else if options.boolValue('version')
@@ -715,8 +729,37 @@ class CommandLine
 
 	def doDocument(paths as List<of String>) as Compiler
 		comp = .doCompile(paths, false, false, do(c as Compiler)=c.lastPhase inherits BindInterfacePhase)
-		GenerateHtmlDocVisitor().gen(comp)
+		GenerateHtmlDocVisitor(do(module)=module inherits CobraModule).gen(comp)
 		return comp
+
+	def doDocumentLibrary
+		docModules = Set<of Module>()
+		comp = Compiler(.verbosity)
+		comp.commandLineArgParser = _argParser
+		comp.options = .options
+		Node.setCompiler(comp)
+		try
+			comp.readSystemTypes
+			reference = .options['document-library'] to String  # to-do: pick out type name. to-do: support multiple references
+			if not reference.endsWith('.dll') and not reference.endsWith('.exe'), reference += '.dll'  # todo-backend
+			if comp.loadReference(reference)
+				module = comp.modules.last to AssemblyModule
+				_prepIfNeeded(module.topNameSpace)
+				docModules.add(module)
+			else
+				print 'error: Cannot locate library reference "[reference]".'
+				# to-do: exit code
+				return
+		finally
+			Node.setCompiler(nil)
+		GenerateHtmlDocVisitor(do(m)=docModules.contains(m to Module)).gen(comp)  # CC: shouldn't need typecast
+
+	def _prepIfNeeded(decl)
+		if decl inherits NameSpace
+			for subDecl in decl.declsInOrder
+				_prepIfNeeded(subDecl to passthrough)
+		else if decl inherits Box
+			decl.prepIfNeeded
 
 	def doTest(paths as List<of String>)
 		if paths.count == 0
@@ -815,8 +858,7 @@ class CommandLine
 		leftMarginStr = '        '
 		width = _calcWidth()
 		for spec in CommandLineOptionSpecs().specsList
-			if spec.containsKey('type') and spec['type']=='main' # CC: spec.get('main', '')
-				continue
+			if spec.isMain, continue
 			if spec.containsKey('developer-only') and spec['developer-only'] to bool and not Utils.isDevMachine
 				continue
 			if spec.isOptionSpecRestrictionViolated

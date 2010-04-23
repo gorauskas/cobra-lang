@@ -3,6 +3,11 @@ The main test case for the doc generator is the Cobra compiler itself:
 
 cd Source
 cobra -doc -files:files-to-compile.text
+
+You can also try a library like:
+cobra -doc-lib:Cobra.Lang
+cobra -doc-lib:System.Web
+
 """
 
 
@@ -14,7 +19,7 @@ class GenerateHtmlDocVisitor inherits Visitor
 	Quick characteristics:
 	
 	* Writes HTML summary information for namespaces, modules and types.
-	* Results go in an 'gen-docs' subdirectory of the current directory.
+	* Results go in a 'gen-docs' subdirectory of the current directory.
 	* Each namespace gets a file named "nsFoo.html".
 	* Each module gets a file named "Foo.html"
 	* Each type is written in the same file as the module that declared it.
@@ -80,9 +85,12 @@ class GenerateHtmlDocVisitor inherits Visitor
 
 	var _moduleList = List<of List<of String>>()
 
-	cue init
+	cue init(willVisitModule as Predicate<of dynamic>)
 		base.init
+		_willVisitModule = willVisitModule
 		Directory.createDirectory(.targetDirectory)
+
+	get willVisitModule from var as Predicate<of dynamic>
 
 	get methodName as String is override
 		return 'gen'
@@ -133,15 +141,13 @@ class GenerateHtmlDocVisitor inherits Visitor
 
 	def writeDocString(s as String?)
 		if s
-			if s.trim == ''
-				return
+			if s.trim == '', return
 			_tw.write('<span class="ds">')
 			for i in _indent, _tw.write('    ')
 			_tw.writeLine('"""')
 			_isBOL = true
 			s = s.replace('\r', '')
-			while s.endsWith('\n')
-				s = s[:-1]
+			while s.endsWith('\n'), s = s[:-1]
 			# s = s.replace('\t','xxx.')  # for debugging
 			s = .encode(s)
 			# print
@@ -152,9 +158,7 @@ class GenerateHtmlDocVisitor inherits Visitor
 			.writeLine
 
 	def encode(s as String) as String
-		"""
-		Encode a string for inclusion in HTML output.
-		"""
+		""" Encode a string for inclusion in HTML output. """
 		return CobraCore.htmlEncode(s)
 
 	def indent
@@ -164,9 +168,7 @@ class GenerateHtmlDocVisitor inherits Visitor
 		_indent -= 1
 
 	def ref(type as IType?) as String
-		"""
-		Return a reference to a type in HTML.
-		"""
+		""" Return a reference to a type in HTML. """
 		s = if(type, .encode(type.name), '(nil type)')
 		if ',' in s and ', ' not in s
 			# Dictionary<of Type,MethodInfo> --> Dictionary<of Type, MethodInfo>
@@ -174,6 +176,12 @@ class GenerateHtmlDocVisitor inherits Visitor
 		return s
 
 	## Generate
+
+	def dispatch(obj as Object?)
+		try
+			base.dispatch(obj)
+		catch exc as Exception
+			print ' *** exception for obj [obj]: [exc.typeOf.name]: [exc.message]'
 
 	def gen(c as Compiler)
 		# .dispatch(c.globalNS)
@@ -208,29 +216,29 @@ class GenerateHtmlDocVisitor inherits Visitor
 		pass
 
 	def gen(mod as AssemblyModule)
-		pass
+		check = .willVisitModule
+		if check(mod), _gen(mod)
 
 	def gen(mod as CobraModule)
+		check = .willVisitModule
+		if check(mod), _gen(mod)
+	
+	def _gen(mod as Module)
 		fileName = .startFile(Path.getFileNameWithoutExtension(mod.fileName) to !)
 		.writeLine('<div class="mono">')
 		.writeLine('<pre>')
 		_moduleList.add([mod.fileName, fileName])
 		try
 			.writeDocString(mod.docString to !)
-			for decl in mod.topNameSpace.declsInOrder
+			for decl in (mod to dynamic).topNameSpace.declsInOrder
 				.dispatch(decl)
 		finally
 			.writeLine('<br> </pre>')
 			.writeLine('</div> <!-- div.mono -->')
 			.finishFile
 
-	# not used right now
-#	def gen(ns as NameSpace)
-#		print '<> <> NameSpace'
-#		print ns
-#		for decl in ns.declsInOrder
-#			print
-#			print decl
+	def gen(ns as NameSpace)
+		for decl in ns.declsInOrder, .dispatch(decl)
 
 	# TODO: can merge code in the following three after they fully mature
 
@@ -256,7 +264,7 @@ class GenerateHtmlDocVisitor inherits Visitor
 		.writeBoxMembers(struc)
 
 	def gen(ext as Extension)
-		.writeLine('<div class="typeDecl"><span class="kwtd">extend</span> <span class="bdn">[ext.extendedBox.name]</span>')
+		.writeLine('<div class="typeDecl"><span class="kwtd">extend</span> <span class="bdn">[if(ext.extendedBox, ext.extendedBox.name, "(no extended box)")]</span>')
 		.writeIsNames(ext)
 		.writeDocString(ext.docString)
 		.writeBoxMembers(ext)
