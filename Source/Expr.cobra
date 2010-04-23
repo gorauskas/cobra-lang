@@ -557,8 +557,7 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 	def _bindImp is override
 		base._bindImp
 		assert _superNode inherits DotExpr  # otherwise, for something like List<of int>(), the parser creates a PostCallExpr
-		if _genericArgProxies
-			_setGenericArgTypes
+		if _genericArgProxies, _setGenericArgTypes
 		dotNode = _superNode to DotExpr
 		assert this is dotNode.right
 
@@ -610,6 +609,7 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 									params = definition.params
 									if _checkParamsCount(definition, args, params)
 										_checkArgsAssignable(definition, args, params)
+						_checkInOutArguments
 				else
 					throw FallThroughException(definition)
 			if type is nil, type = .compiler.passThroughType
@@ -617,6 +617,7 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 			if _definition, _definition.isUsed = true
 			_type = type
 		assert _type, _definition
+
 		if .args.count == 0 and .hasParens
 			# TODO:
 			# if .definition inherits BoxMember and .definition.isMethod and not dotNode.isImplicit
@@ -766,6 +767,16 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 					arg.recordError('Argument [i+1] of method "[_name]" expects a non-nilable type ([param.type.name]), but the call is supplying a nilable type ([arg.type.name]).')
 				else
 					arg.recordError('Argument [i+1] of method "[_name]" expects type [param.type.name], but the call is supplying type [arg.type.name].')
+
+	def _checkInOutArguments
+		for arg in .args
+			if arg.argumentLabel <> ArgumentLabel.None
+				if not arg.hasError
+					error as String?
+					argDefi = arg.definition
+					if argDefi inherits Property, error = 'A property'
+					else if argDefi inherits Indexer, error = 'An indexer'
+					if error, arg.recordError('[error] cannot be passed as an "[arg.argumentLabel.toString.toLower]" parameter.')
 
 	def toCobraSource as String is override
 		sb = StringBuilder()
