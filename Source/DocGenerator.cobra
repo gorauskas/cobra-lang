@@ -113,6 +113,8 @@ class GenerateHtmlDocVisitor inherits Visitor
 		.writeLine('<meta http-equiv="Content-Type" content="text/html; charset=utf-8">')
 		.writeLine('<title>[name]</title>')
 		.writeLine('<link rel="stylesheet" href="../styles-cobra-doc.css" type="text/css">')
+		.writeLine('<link rel="stylesheet" href="../styles/styles-cobra-doc.css" type="text/css">')
+		.writeLine('<link rel="stylesheet" href="styles-cobra-doc.css" type="text/css">')
 		.writeLine('</head>')
 		.writeLine('<body>')
 		return fileName
@@ -167,21 +169,27 @@ class GenerateHtmlDocVisitor inherits Visitor
 	def outdent
 		_indent -= 1
 
-	def ref(type as IType?) as String
+	def typeRef(type as IType?) as String
 		""" Return a reference to a type in HTML. """
 		s = if(type, .encode(type.name), '(nil type)')
 		if ',' in s and ', ' not in s
 			# Dictionary<of Type,MethodInfo> --> Dictionary<of Type, MethodInfo>
 			s = s.replace(',', ', ')
-		return s
+		return '<span class="type-ref">[s]</span>'
 
 	## Generate
 
 	def dispatch(obj as Object?)
-		try
+		if true
 			base.dispatch(obj)
-		catch exc as Exception
-			print ' *** exception for obj [obj]: [exc.typeOf.name]: [exc.message]'
+		else
+			try
+				base.dispatch(obj)
+			catch exc as Exception
+				while exc inherits TargetInvocationException and exc.innerException, exc = exc.innerException to !
+				print
+				print ' *** exception for obj [obj]:'
+				print ' ### [exc.typeOf.name]: [exc.message]'
 
 	def gen(c as Compiler)
 		# .dispatch(c.globalNS)
@@ -333,16 +341,29 @@ class GenerateHtmlDocVisitor inherits Visitor
 
 	def gen(bc as BoxConst)
 		if bc.isPublic or bc.isProtected
-			.writeLine('<span class="kwmd">const</span> <span class="constName">[bc.name]</span> = [bc.initExpr.toCobraSource] (as [.ref(bc.type)])')
+			if bc.initExpr inherits SharpExpr, init = (bc.initExpr to SharpExpr).sharpSource
+			else if bc.initExpr, init = bc.initExpr.toCobraSource
+			else, init = '(unknown)'
+			.writeLine('<span class="kwmd">const</span> <span class="constName">[bc.name]</span> = [init] (as [.typeRef(bc.type)])')
 			# TODO: is names, attributes, etc.	
 
 	def gen(bv as BoxVar)
 		if bv.isPublic or bv.isProtected
-			.writeLine('<span class="kwmd">var</span> <span class="varName">[bv.name]</span> as [.ref(bv.type)]')
+			.writeLine('<span class="kwmd">var</span> <span class="varName">[bv.name]</span> as [.typeRef(bv.type)]')
 			# TODO: is names, attributes, etc.
 
+	def gen(evt as BoxEvent)
+		.writeLine('<span class="kwmd">event</span> <span class="eventName">[evt.name]</span> as [.typeRef(evt.handlerType)]')
+		# to-do: is names, attributes, etc.
+		
 	def gen(method as AbstractMethod)
-		.write('<span class="kwmd">def</span> <span class="methodName">[method.name]</span>')
+		_gen(method, 'def', method.name)
+		
+	def gen(init as Initializer)
+		_gen(init, 'cue', 'init')
+
+	def _gen(method as AbstractMethod, keyword as String, name as String)
+		.write('<span class="kwmd">[keyword]</span> <span class="methodName">[name]</span>')
 		if method.params.count
 			.write('(')
 			sep = ''
@@ -354,8 +375,10 @@ class GenerateHtmlDocVisitor inherits Visitor
 		.writeLine
 
 	def gen(param as Param)
-		.write('[param.name] as [.ref(param.type)]')
-		# TODO: param modifiers
+		if param.isInOut, kind = 'inout '
+		else if param.isOut, kind = 'out '
+		else, kind = ''
+		.write('[param.name] as [kind][.typeRef(param.type)]')
 		# TODO: styles
 
 	def gen(prop as Property)
@@ -365,7 +388,7 @@ class GenerateHtmlDocVisitor inherits Visitor
 			.write('<span class="kwmd">set</span>')
 		else
 			.write('<span class="kwmd">pro</span>')
-		.writeLine(' [prop.name] as [.ref(prop.resultType)]')
+		.writeLine(' [prop.name] as [.typeRef(prop.resultType)]')
 
 	def gen(indexer as Indexer)
 		if indexer.getPart and not indexer.setPart
@@ -381,7 +404,7 @@ class GenerateHtmlDocVisitor inherits Visitor
 			.dispatch(param)
 			sep = ', '
 		.write(']')		
-		.writeLine(' as [.ref(indexer.resultType)]')
+		.writeLine(' as [.typeRef(indexer.resultType)]')
 
 	def gen(ed as EnumDecl)
 		.writeLine('<div class="typeDecl"><span class="kwtd">enum</span> <span class="bdn">[ed.name]</span>')
@@ -436,8 +459,10 @@ class GenerateHtmlDocVisitor inherits Visitor
 		if obj inherits EnumDecl, return 0
 		if obj inherits MethodSig, return 10
 		if obj inherits Box, return 20
+		if obj inherits BoxConst, return 25
 		if obj inherits BoxVar, return 30
 		if obj inherits Initializer, return 40
+		if obj inherits BoxEvent, return 45
 		if obj inherits Property, return 50
 		if obj inherits Indexer, return 60
 		if obj inherits Method, return 70
