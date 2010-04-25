@@ -457,6 +457,8 @@ static public class CobraImp {
 	}
 
 	static public bool Is(Enum a, Enum b) {
+		if (a==null) return b==null;
+		if (b==null) return false;
 		return a.Equals(b);
 		//return a==b;  this returns false when you would expect true!
 	}
