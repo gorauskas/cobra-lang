@@ -1,0 +1,31 @@
+# test fix for ticket:163 - failure to infer return type of re.matches, items of a MatchCollection
+use System.Text.RegularExpressions
+
+class TestReMatch
+
+	def main is shared
+		str = '@param folly' # some string
+		pattern = r'^\s*@param\s+(.*)$'
+		m = Regex.match(str, pattern) 
+		if m.success
+			assert m.captures[0].value == str
+			#print 'Success: capture=[m.groups[1].captures[0]]'
+			assert m.groups[1].captures[0].value == 'folly'
+			
+		str = '@param polly\n@param wally\n@param doodle alladay' # some string
+		
+		expectCaptures = ['polly', 'wally', 'doodle alladay']
+		groupsZero = System.Collections.ArrayList(str.split(c'\n'))
+
+		# This used to only compile if the var was explicitly typed, as below
+		#for match as Match in Regex.matches(str, pattern, RegexOptions.Multiline)
+		
+		for match in Regex.matches(str, pattern, RegexOptions.Multiline)
+			assert match.groups[1].captures[0].value == expectCaptures[0]
+			gl = [groupsZero[0], expectCaptures[0]]
+			for g in match.groups
+				#print g.value
+				assert g.value == gl[0]  # also was fail here
+				gl.removeAt(0)
+			groupsZero.removeAt(0)
+			expectCaptures.removeAt(0)
