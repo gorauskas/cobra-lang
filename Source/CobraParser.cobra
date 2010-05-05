@@ -1821,7 +1821,7 @@ class CobraParser inherits Parser
 		token = .expect('ID')
 		identifier = token.value to String
 		.checkStartsLowercase(identifier, 'Parameter')
-		kind = Param.KindEnum.Value
+		dir = Direction.In
 		type as ITypeProxy?
 		if .optional('AS')
 			# code below expresses an undocumented dependency and ordering
@@ -1831,11 +1831,11 @@ class CobraParser inherits Parser
 				on 'VARI'
 					type = VariTypeIdentifier(.grab, .typeId)
 				on 'OUT'
-					kind = Param.KindEnum.Out
+					dir = Direction.Out
 					.grab
 					type = .typeId
 				on 'INOUT'
-					kind = Param.KindEnum.InOut
+					dir = Direction.InOut
 					.grab
 					type = .typeId
 				on 'REF'
@@ -1852,7 +1852,7 @@ class CobraParser inherits Parser
 			attribs.add(AttributeDecl(.attribExpr(0)))
 		# note: isMissingType is currently used to generate a warning in .paramDecls above
 		# and may be used for anonymous method parameter type inference at some point
-		return Param(token, type, isMissingType=isMissingType, kind=kind, attributes=attribs)
+		return Param(token, type, isMissingType=isMissingType, direction=dir, attributes=attribs)
 
 
 	##
@@ -2954,17 +2954,17 @@ class CobraParser inherits Parser
 		"""
 		if .peek
 			branch .peek.which
-				on 'OUT', label = ArgumentLabel.Out
-				on 'INOUT', label = ArgumentLabel.InOut
-				else, label = ArgumentLabel.None
+				on 'OUT', label = Direction.Out
+				on 'INOUT', label = Direction.InOut
+				else, label = Direction.In
 				# TODO? on 'VARI': ...
-			if label <> ArgumentLabel.None, .grab
+			if label <> Direction.In, .grab
 		_allowKeywordAssignment = true
 		try
 			expr = .expression
 		finally
 			_allowKeywordAssignment = false
-		expr.argumentLabel = label
+		expr.direction = label
 		return expr
 
 	def commaSepExprsPartial(terminators as String, binOpBreakWhich as String) as List<of Expr>

@@ -35,12 +35,6 @@ interface IExpr inherits ISyntaxNode
 	def toCobraSource as String
 
 
-enum ArgumentLabel
-	None
-	Out
-	InOut
-
-
 class Expr inherits Stmt implements IExpr is abstract, partial
 
 	var _type as IType?
@@ -64,7 +58,7 @@ class Expr inherits Stmt implements IExpr is abstract, partial
 		"""
 	var _contextType as IType?
 	var _isParened as bool
-	var _argumentLabel = ArgumentLabel.None
+	var _direction = Direction.In
 
 	cue init(token as IToken)
 		base.init(token)
@@ -78,7 +72,7 @@ class Expr inherits Stmt implements IExpr is abstract, partial
 		""" Subclasses should override to yield the .allExprs of their direct sub-expressions. """
 		yield this
 
-	pro argumentLabel from var
+	pro direction from var
 		"""
 		Indicates the label for an argument such as 'out' or 'inout'.
 		"""
@@ -540,7 +534,7 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 
 	get willChangeVar as bool is override
 		for arg in _args, if arg.willChangeVar, return true
-		for arg in _args, if arg.argumentLabel <> ArgumentLabel.None, return true
+		for arg in _args, if arg.direction <> Direction.In, return true
 		return false
 
 	get isCalling as bool is override
@@ -746,8 +740,8 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 			assert arg.didBindImp
 			assert param.didBindInt
 			# check any in/out/inout expectations are matched
-			if not param.matchLabel(arg.argumentLabel)
-				arg.recordError('Argument [i+1] of method "[_name]" expects a parameter labeled as ([param.kind]), but the call is supplying a label of ([arg.argumentLabel]).')
+			if param.direction <> arg.direction				
+				arg.recordError('Argument [i+1] of method "[_name]" expects [_toErrorPhrase(param.direction)] parameter, but the call is supplying [_toErrorPhrase(arg.direction)] one.')
 			if arg.canBeAssignedTo(param.type)
 				arg.contextType = param.type
 			else if param.type inherits GenericParam
@@ -771,15 +765,22 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 				else
 					arg.recordError('Argument [i+1] of method "[_name]" expects type [param.type.name], but the call is supplying type [arg.type.name].')
 
+	def _toErrorPhrase(d as Direction) as String
+		branch d
+			on Direction.In, return 'a regular'
+			on Direction.Out, return 'an "out"'
+			on Direction.InOut, return 'an "inout"'
+			else, throw FallThroughException(d)
+
 	def _checkInOutArguments
 		for arg in .args
-			if arg.argumentLabel <> ArgumentLabel.None
+			if arg.direction <> Direction.In
 				if not arg.hasError
 					error as String?
 					argDefi = arg.definition
 					if argDefi inherits Property, error = 'A property'
 					else if argDefi inherits Indexer, error = 'An indexer'
-					if error, arg.recordError('[error] cannot be passed as an "[arg.argumentLabel.toString.toLower]" parameter.')
+					if error, arg.recordError('[error] cannot be passed as an "[arg.direction.toString.toLower]" parameter.')
 
 	def toCobraSource as String is override
 		sb = StringBuilder()
