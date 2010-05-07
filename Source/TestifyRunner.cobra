@@ -302,13 +302,30 @@ class TestifyRunner
 			if willCopyLibs
 				# _cleanDir will remove these later
 				for libName in libNames
-					# The file operations below are not wrapped with try...catch and a 'warning' because
-					# if the current library files cannot be copied into the test directory,
-					# then the test is not valid.
+					# Ideally, the file operations below would not be wrapped with try...catch and a
+					# 'warning' because if the current library files cannot be copied into the test
+					# directory, then the test is not valid. However, Windows has problems with
+					# deleting and/or copying over Cobra.Lang.dll right after it has been used. This
+					# comes up on Tests\340-contracts whose testify.kv config file specifies two
+					# runs of the directory.
 					targetPath = Path.combine(dirName, libName)
-					if File.exists(targetPath), File.delete(targetPath)
+					if File.exists(targetPath)
+						if Utils.isRunningOnUnix
+							File.delete(targetPath)
+						else
+							# Windows is just too damn picky...
+							try
+								File.delete(targetPath)
+							catch UnauthorizedAccessException
+								print 'testify warning: cannot delete:', targetPath
 					if libName == 'Cobra.Lang.dll' or File.exists(libName)
-						File.copy(Path.combine(saveDir, libName), targetPath)
+						if Utils.isRunningOnUnix
+							File.copy(Path.combine(saveDir, libName), targetPath)
+						else
+							try
+								File.copy(Path.combine(saveDir, libName), targetPath, true)
+							catch IOException
+								print 'testify warning: cannot copy or copy over:', targetPath
 			Directory.setCurrentDirectory(dirName)
 			try
 				setUpScript = if(Utils.isRunningOnUnix, 'testify-set-up', 'testify-set-up.bat')
