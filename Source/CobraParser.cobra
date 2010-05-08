@@ -13,6 +13,9 @@ class ErrorMessages
 		get expectingStatementInsteadOfIndentation as String
 			return 'Expecting a statement instead of extra indentation. One indent level is 4 spaces or 1 tab with display width of 4.'
 
+		get localVariablesMustStartLowercase as String
+			return 'Local variables must start with a lowercase letter. This avoids collisions with other identifiers such as classes and enums.'
+
 
 extend String
 	"""
@@ -2766,6 +2769,8 @@ class CobraParser inherits Parser
 						right = MemberExpr(.grab) to Expr
 					else
 						right = .expression(prec)
+					if op == 'ASSIGN' and left inherits IdentifierExpr and (left to IdentifierExpr).name.startsWithNonLowerLetter
+						.recordError(ErrorMessages.localVariablesMustStartLowercase)			
 					left = BinaryOpExpr.make(opToken to !, op to !, left to !, right)
 			finally
 				.opStack.pop
@@ -2885,6 +2890,8 @@ class CobraParser inherits Parser
 				if .allowKeywordAssignment and peekToken.isKeyword and .peek is not nil and .peek.which == 'ASSIGN'
 					assert .last is peekToken
 					word, op = .last, .grab
+					if word.text.startsWithNonLowerLetter
+						.recordError(ErrorMessages.localVariablesMustStartLowercase)
 					return AssignExpr(op, 'ASSIGN', IdentifierExpr(word), .expression)
 				else if pe.message.contains('Unrecognized type')
 					msg = 'Expecting an expression.'
@@ -3108,7 +3115,7 @@ class CobraParser inherits Parser
 			return MemberExpr(nameToken)
 		if .peek.which=='AS'
 			if not name.startsWithLowerLetter
-				.throwError('Local variable declarations must start with a lowercase letter. This avoids collisions with other identifiers such as classes and enums.')
+				.recordError(ErrorMessages.localVariablesMustStartLowercase)
 			return AsExpr(.grab, nameToken, .typeId)
 		else
 			return IdentifierExpr(nameToken, name)
@@ -3290,7 +3297,7 @@ class CobraParser inherits Parser
 		name = nameToken.text
 		if .peek.which=='AS'
 			if not name.startsWithLowerLetter
-				.throwError('Local variable declarations must start with a lowercase letter. This avoids collisions with other identifiers such as classes and enums.')
+				.recordError(ErrorMessages.localVariablesMustStartLowercase)
 			return AsExpr(.grab, nameToken, .typeId)
 		else
 			return IdentifierExpr(nameToken, name)
