@@ -1125,7 +1125,7 @@ class CobraParser inherits Parser
 			.indent
 			while true
 				peek = .peek
-				if peek is nil, .throwError('expecting a namespace member, but source code ended')
+				if peek is nil, .throwError('Expecting a namespace member, but source code ended.')
 				tok = peek to !
 				if tok.which == 'DEDENT', break
 				branch tok.which
@@ -1137,7 +1137,7 @@ class CobraParser inherits Parser
 					on 'NAMESPACE',	.nameSpaceDecl
 					on 'ENUM',		_nameSpaceAddDecl(curNameSpace, .enumDecl)
 					on 'SIG',		_nameSpaceAddDecl(curNameSpace, .declareMethodSig)
-					else,			.throwError('expecting a namespace member but got [tok]')
+					else,			.throwError('Expecting a namespace member but got [tok].')
 			.dedent
 		finally
 			for tok in idTokens
@@ -2051,7 +2051,16 @@ class CobraParser inherits Parser
 			if .verbosity>=5
 				print '<> last statement start token=[token]'
 				print '<> s = [s]'
-			.expect('EOL')
+			try
+				.expect('EOL')
+			catch pe as ParserException
+				# example: puts 5
+				token = .last(1)
+				if token <> nil
+					sugg = if(token.text.length, Compiler.suggestionFor(token.text), nil)
+					sugg = if(sugg, ' Try "[sugg]" instead of "[token.text]".', nil)
+					if sugg, pe = pe.cloneWithMessage(pe.message + sugg)
+				throw pe
 		_finishSpaceAgnostic
 		return s
 

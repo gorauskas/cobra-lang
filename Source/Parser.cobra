@@ -1,5 +1,4 @@
-class ParserException
-	inherits SourceException
+class ParserException inherits SourceException
 
 	var _token as IToken?
 	var _fileName as String
@@ -11,10 +10,15 @@ class ParserException
 		_fileName = _token.fileName
 		_lineNum = _token.lineNum
 
-	cue init(fileName as String, msg as String)
-		base.init(msg)
+	cue init(fileName as String, message as String)
+		base.init(message)
 		_fileName = fileName
 		_lineNum = 1
+
+	cue init(message as String) is protected
+		# for use by def clone...
+		base.init(message)
+		_fileName = ''
 
 	get hasSourceSite as bool is override
 		return true
@@ -22,6 +26,13 @@ class ParserException
 	get fileName from var is override
 
 	get lineNum from var is override
+
+	def cloneWithMessage(message as String) as ParserException
+		pe = ParserException(message)
+		pe._token = _token
+		pe._fileName = _fileName
+		pe._lineNum = _lineNum
+		return pe
 
 
 interface IWarningRecorder
@@ -90,11 +101,15 @@ class Parser
 		ensure .peek == token
 		_tokens[_nextTokenIndex] = token
 		
-	get last as IToken?
+	def last as IToken?
+		return .last(0)
+
+	def last(n as int) as IToken?
 		""" Returns the last token returned by .grab or nil if .grab was never invoked. """
-		if _nextTokenIndex > 0, token = _tokens[_nextTokenIndex-1] to ?
+		require n >= 0
+		if _nextTokenIndex > n, token = _tokens[_nextTokenIndex-n-1] to ?
 		else, token = nil
-		if _willShowTokens, print 'last    --> [token]'
+		if _willShowTokens, print 'last([n]) --> [token]'
 		return token
 
 	def lastN(n as int) as List<of NumberedToken>  # CC: use List<of Pair<of int, IToken>>
@@ -114,6 +129,8 @@ class Parser
 			assert t[1].token.which=='ID'
 			assert t.count==2
 #/
+		require
+			n >= 0
 		body
 			tokens = List<of NumberedToken>()
 			if _nextTokenIndex > 0
