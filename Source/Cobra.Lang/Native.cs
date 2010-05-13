@@ -60,6 +60,7 @@ static public class CobraImp {
 		PushPrintTo(Console.Out);
 		_printStringMaker = new PrintStringMaker();
 		_techStringMaker = new TechStringMaker();
+		PromoteNumerics = NumericTypeInfo.PromoteNumerics;
 	}
 
 	static public T CheckNonNil<T>(Object obj, string sourceCode, T value,
@@ -973,9 +974,23 @@ static public class CobraImp {
 		}
 	}
 
+	static public PromoteNumericsMethod PromoteNumerics = null;
+	
 	static public object DynamicOp(String opMethodName, Object value1, Object value2) {
+		return DynamicOp(opMethodName, value1, value2, true);
+	}
+
+//	static int __dynamicOpCount = 100;
+	
+	static public object DynamicOp(String opMethodName, Object value1, Object value2, bool promote) {
+		if (value1 == null) throw new NullReferenceException("value1");
+		if (value2 == null) throw new NullReferenceException("value2");
 		Type type = value1.GetType();
-		MethodInfo mi = type.GetMethod(opMethodName, BindingFlags.Static|BindingFlags.Public);
+		Type[] types = new Type[] { type, value2.GetType() };
+		MethodInfo mi = type.GetMethod(opMethodName, BindingFlags.Static|BindingFlags.Public, null, types, null);
+//		Console.WriteLine(" <> (   type specs) {7}, op={0}, value1={1}, type1={2}, value2={3}, type2={4}, type={5}, mi={6}, promote={8}",
+//			opMethodName, value1, value1.GetType(), value2, value2.GetType(), type, mi, __dynamicOpCount, promote);
+//		__dynamicOpCount++;
 		if (mi!=null) {
 			return mi.Invoke(value1, new object[] { value1, value2 });
 		} else {
@@ -989,6 +1004,8 @@ static public class CobraImp {
 				return typeof(CobraImp).InvokeMember(name, BindingFlags.Public|BindingFlags.Static|BindingFlags.InvokeMethod, null, null, new object[] { value1, value2 });
 			} catch (MissingMethodException) {
 			}
+			if (promote && PromoteNumerics != null && PromoteNumerics(ref value1, ref value2))
+				return DynamicOp(opMethodName, value1, value2, false);
 			throw new UnknownMemberException(value1, opMethodName + " or " + name, type);
 		}
 	}
@@ -1094,6 +1111,58 @@ static public class CobraImp {
 
 	static public int op_IntegerDivisionAssignment_Int32_Int32(int a, int b) {
 		return a / b;
+	}
+
+	// float64/double operations
+
+	static public double op_Addition_Double_Double(double a, double b) {
+		return a + b;
+	}
+
+	static public double op_Subtraction_Double_Double(double a, double b) {
+		return a - b;
+	}
+
+	static public double op_Multiply_Double_Double(double a, double b) {
+		return a * b;
+	}
+
+	static public double op_Division_Double_Double(double a, double b) {
+		return a / b;
+	}
+
+	static public int op_IntegerDivision_Double_Double(double a, double b) {
+		return (int)(a / b);
+	}
+
+	static public double op_Modulus_Double_Double(double a, double b) {
+		return a % b;
+	}
+
+	// decimal operations
+	
+	static public decimal op_Addition_Decimal_Decimal(decimal a, decimal b) {
+		return a + b;
+	}
+
+	static public decimal op_Subtraction_Decimal_Decimal(decimal a, decimal b) {
+		return a - b;
+	}
+
+	static public decimal op_Multiply_Decimal_Decimal(decimal a, decimal b) {
+		return a * b;
+	}
+
+	static public decimal op_Division_Decimal_Decimal(decimal a, decimal b) {
+		return a / b;
+	}
+
+	static public int op_IntegerDivision_Decimal_Decimal(decimal a, decimal b) {
+		return (int)(a / b);
+	}
+
+	static public decimal op_Modulus_Decimal_Decimal(decimal a, decimal b) {
+		return a % b;
 	}
 
 	static public String op_Addition_String_String(String a, String b) {
