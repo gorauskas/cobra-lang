@@ -1034,6 +1034,8 @@ static public class CobraImp {
 		if (a==null) return 0;
 		if (b==null) return 1;
 		if (a is IComparable) {
+			if (PromoteNumerics != null)
+				PromoteNumerics(ref a, ref b); // takes no action if types are same or one of the types is not numeric
 			try {
 				return ((IComparable)a).CompareTo(b);
 			} catch (ArgumentException) {
