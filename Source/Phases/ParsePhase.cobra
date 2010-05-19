@@ -27,7 +27,14 @@ class ParsePhase inherits Phase
 			# CC: parser = CobraParser(verbosity=.verbosity, typeProvider=this, warningRecorder=this, errorRecorder=this, globalNS=compiler.globalNS, parseCommandLineArgs=ref .parseCommandLineArgsCallBack)
 			parser = CobraParser(verbosity=.verbosity, typeProvider=compiler, warningRecorder=compiler, errorRecorder=compiler, globalNS=compiler.globalNS)
 			parser.parseCommandLineArgs = ref .parseCommandLineArgsCallBack
-			module = parser.parseSource('_ch_cobra-extra-source.cobra', extraSource)  # ch = compiler helper
+			errorsCount = compiler.errors.count
+			try
+				module = parser.parseSource('_ch_cobra-extra-source.cobra', extraSource)  # ch = compiler helper
+			catch
+				_printExtraSource(extraSource)
+				throw
+			if compiler.errors.count > errorsCount
+				_printExtraSource(extraSource)
 			for r in parser.references, compiler.loadReference(r.fixLibExtension)
 			modules.add(module)
 
@@ -58,6 +65,15 @@ class ParsePhase inherits Phase
 		compiler.modules.addRange(modules)
 		_parsedModules = nil
 
+	def _printExtraSource(extraSource as String)
+		# added 2010-05 in response to http://cobra-language.com/forums/viewtopic.php?f=4&t=612
+		bar = String(c'-', 80)
+		print bar
+		print 'Extra source failed:'
+		print bar
+		print extraSource
+		print bar
+	
 	def parseCommandLineArgsCallBack(args as IList<of String>, isAvailable as out bool) as String?
 		"""
 		This is the call back for implementing the `args` directive as encountered in the Parser.
