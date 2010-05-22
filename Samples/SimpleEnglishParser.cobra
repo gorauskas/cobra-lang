@@ -1,0 +1,363 @@
+"""
+SimpleEnglishParser.cobra
+
+Parses a limited set of English sentences using a recursive descent parser.
+
+To run:
+
+	cobra SimpleEnglishParser.cobra
+
+Some test sentences are included. Example output:
+
+>> John took the orange.
+sentence
+    noun-phrase
+        name/"John"
+    verb-phrase
+        verb/"took"
+        noun-phrase
+            determiner/"the"
+            noun/"orange"
+
+
+== Grammar
+
+Sentence -> NounPhrase VerbPhrase
+NounPhrase -> Name | Pronoun | Determiner Adjective* Noun | NounPhrase PrepositionalPhrase
+VerbPhrase -> Verb | Verb NounPhrase | VerbPhrase PrepositionalPhrase
+PrepositionalPhrase -> Preposition NounPhrase
+
+See the Lexer class for the vocabulary of words that are recognized.
+
+
+== Limitations
+
+ * Technically, this is a parser for a formal language, but English is a natural language and there
+   are many, many English sentences that wouldn't fit the grammatical structure covered here.
+ * Does not intelligently handle groups of words like "Los Angeles" or "May 5th".
+ * The vocabularly is hard coded in the source code instead of taken from an external source such as
+   text files or a WordNet database.
+ * The location of a token is not recorded.
+ * The location of a parse error is not reported.
+
+
+== To Do
+
+ * Even though this is a small sample application, it might still be nice to include the
+   100 most-used words in the base vocabulary.
+   See http://s.wsj.net/public/resources/documents/info-numbguy-sort.html
+
+
+== See Also
+
+ * http://en.wikipedia.org/wiki/Recursive_descent_parser
+ * This English grammar is an example taken from "Paradigms of AI Programming" 1992 by Norvig
+
+"""
+
+
+class SimpleEnglishParser
+
+	def main
+		verbose = true
+		cases = [
+			['John saw Mary.', 'sentence(noun-phrase(name/"John"), verb-phrase(verb/"saw", noun-phrase(name/"Mary")))'],
+			['John took the orange.', 'sentence(noun-phrase(name/"John"), verb-phrase(verb/"took", noun-phrase(determiner/"the", noun/"orange")))'],
+			['The green ball hit John.', 'sentence(noun-phrase(determiner/"The", adjective/"green", noun/"ball"), verb-phrase(verb/"hit", noun-phrase(name/"John")))'],
+			['The green ball hit John in the face.', 'sentence(noun-phrase(determiner/"The", adjective/"green", noun/"ball"), verb-phrase(verb/"hit", noun-phrase(noun-phrase(name/"John"), prepositional-phrase(preposition/"in", noun-phrase(determiner/"the", noun/"face")))))'],
+			['The woman hit the man with a little green ball.', 'sentence(noun-phrase(determiner/"The", noun/"woman"), verb-phrase(verb/"hit", noun-phrase(noun-phrase(determiner/"the", noun/"man"), prepositional-phrase(preposition/"with", noun-phrase(determiner/"a", adjective/"little", adjective/"green", noun/"ball")))))'],
+			['The woman hit the man with a little green ball on the table.', 'sentence(noun-phrase(determiner/"The", noun/"woman"), verb-phrase(verb/"hit", noun-phrase(noun-phrase(determiner/"the", noun/"man"), prepositional-phrase(preposition/"with", noun-phrase(noun-phrase(determiner/"a", adjective/"little", adjective/"green", noun/"ball"), prepositional-phrase(preposition/"on", noun-phrase(determiner/"the", noun/"table")))))))'],
+		]
+		for input, expected in cases
+			if verbose
+				print
+				print '>>', input
+			s = .parseOne(input)
+			s.print
+			if verbose and s.toString <> expected
+				print 'expected:', expected
+				print 'actual:  ', s
+			assert s.toString == expected, input
+		if verbose
+			print
+			print 'done.'
+
+	get tokens from var as TokenStream?
+
+	## Parse
+	
+	# to-do: def parseMany for multiple sentences
+	
+	def parseOne(sentence as String) as Node
+		return .parseOne(sentence, Lexer())
+		
+	def parseOne(sentence as String, lexer as Lexer) as Node
+		_tokens = lexer.lexOne(sentence)
+		node = .sentence
+		if .tokens.peek
+			throw ParseException('Did not consume all output. Next token: [.tokens.peek]')
+		return node
+
+	## Non-terminals
+	
+	def sentence as Node
+		return Node('sentence', .nounPhrase, .verbPhrase)
+
+	def nounPhrase as Node
+		"""
+		NounPhrase -> Name | Pronoun | Determiner Adjective* Noun | NounPhrase PrepositionalPhrase
+		"""
+		node = _nounPhrase
+		peek = .tokens.peek
+		if peek and peek.category == 'preposition'
+			node = Node('noun-phrase', node, .prepositionalPhrase)
+		return node
+
+	def _nounPhrase as Node
+		# -> .name
+		token = .name
+		if token, return Node('noun-phrase', token)
+		
+		# -> .pronoun
+		token = .pronoun
+		if token, return Node('noun-phrase', token)
+
+		# -> .determiner .adjective* .noun
+		token = .determiner
+		if token
+			subnodes = List<of Part>()
+			subnodes.add(token)
+			while true
+				adj = .adjective
+				if adj, subnodes.add(adj)
+				else, break
+			token = .noun
+			if token, subnodes.add(token)
+			else, throw ParseException('Expecting a noun after adjectives.')
+			return Node('noun-phrase', subnodes)
+			
+		throw ParseException('Expecting noun phrase.')
+	
+	def verbPhrase as Node
+		""" VerbPhrase -> Verb | Verb NounPhrase | VerbPhrase PrepositionalPhrase """
+		verb = .verb
+		if verb
+			# check for noun phrase
+			peek = .tokens.peek
+			if peek and peek.category in {'determiner', 'name', 'pronoun'}
+				node = Node('verb-phrase', verb, .nounPhrase)
+			else
+				node = Node('verb-phrase', verb)
+			# check for prepositional phrase
+			peek = .tokens.peek
+			if peek and peek.category == 'preposition'
+				node = Node('verb-phrase', node, .prepositionalPhrase)
+			return node
+		throw ParseException('Expecting verb phrase.')
+	
+	def prepositionalPhrase as Node
+		""" PrepositionalPhrase -> Preposition NounPhrase """
+		return Node('prepositional-phrase', .preposition, .nounPhrase)
+
+	## Terminals
+	
+	def adjective as Token?
+		return .tokens.optional('adjective')
+		
+	def determiner as Token?
+		return .tokens.optional('determiner')
+	
+	def name as Token?
+		return .tokens.optional('name')
+
+	def noun as Token?
+		return .tokens.optional('noun')
+		
+	def preposition as Token?
+		return .tokens.optional('preposition')
+		
+	def pronoun as Token?
+		return .tokens.optional('pronoun')
+	
+	def verb as Token?
+		return .tokens.optional('verb')
+
+
+class ParseException inherits Exception
+
+	cue init(message as String)
+		.init(message, nil)
+	
+	cue init(message as String, innerExc as Exception?)
+		base.init(message, innerExc)
+
+
+class Lexer
+
+	test
+		lx = Lexer()
+		ts = lx.lexOne('you')
+		assert ts.next.doesMatch('pronoun', 'you', 'you')
+		assert ts.peek is nil
+
+		ts = lx.lexOne('  You   saw  ')
+		assert ts.next.doesMatch('pronoun', 'You', 'you')
+		assert ts.next.doesMatch('verb', 'saw', 'saw')
+		assert ts.peek is nil
+
+	var _categories = [
+		'pronoun = i you he she it me him her',
+		'name = john mary',
+		'adjective = big little old young blue green orange perspicuous',
+		'determiner = the a an',
+		'noun = ball face hall man noun orange saw table verb woman',
+		'preposition = with for at on by of in',
+		'verb = hit took liked saw saws walks',
+	]
+
+	var _wordToCategory = Dictionary<of String, String>()
+
+	cue init
+		base.init
+		_unpack
+		
+	def _unpack
+		for line in _categories
+			parts = line.toLower.split(c'=')
+			cat = parts[0].trim
+			for word in parts[1].split
+				word = word.trim
+				if word <> '', _wordToCategory[word] = cat
+		assert _wordToCategory.count > 0
+		# trace _wordToCategory
+		
+	def lexOne(sentence as String) as TokenStream
+		tokens = List<of Token>()
+		if sentence.endsWith('.'), sentence = sentence[:-1]
+		for word in sentence.split
+			word = word.trim
+			if word == '', continue
+			normalized = word.toLower
+			cat = _wordToCategory.get(normalized, '_unknown')
+			# trace cat, word, normalized
+			tokens.add(Token(cat, word, normalized))
+		return TokenStream(tokens)
+
+
+class Part is abstract
+	"""
+	The parser yields parts which are either Nodes or Tokens.
+	All parts have a .category.
+	"""
+
+	cue init(category as String)
+		base.init
+		_category = category
+		
+	get category from var as String
+
+	def print
+		.print(0)
+
+	def print(indent as int) is abstract
+
+
+class Node inherits Part
+	"""
+	Used to represent non-terminals in the grammar as recognized by the parser.
+	In other words, nodes represent structure through their subnodes.
+	"""
+
+	cue init(category as String, subnodes as vari Part)
+		.init(category, subnodes to Part*)
+	
+	cue init(category as String, subnodes as Part*)
+		base.init(category)
+		_subnodes = subnodes
+	
+	get subnodes from var as Part*
+
+	def print(indent as int) is override
+		print String(c' ', 4*indent) stop
+		print .category
+		indent += 1
+		for subnode in .subnodes
+			subnode.print(indent)
+
+	def toString as String is override
+		sb = StringBuilder('[.category](')
+		sep = ''
+		for node in .subnodes
+			sb.append('[sep][node]')
+			sep = ', '
+		sb.append(')')
+		return sb.toString
+
+
+class TokenStream
+	"""
+	A token stream represents a linear stream of tokens that can be easily traversed and examined
+	with .next, .optional and .peek. By setting .verbose to true, you can observe the consumption of
+	tokens by the parser as it happpens.
+	"""
+	
+	test
+		ts = TokenStream([Token('a', 'a', 'a'), Token('b', 'b', 'b'), Token('c', 'c', 'c')])
+		assert ts.peek.category == 'a'
+		assert ts.next.category == 'a'
+		assert ts.peek.category == 'b'
+		assert ts.next.category == 'b'
+		assert ts.peek.category == 'c'
+		assert ts.next.category == 'c'
+		assert ts.peek is nil
+
+	var _tokens as List<of Token>
+	var _index = -1
+	
+	cue init(tokens as Token*)
+		base.init
+		_tokens = List<of Token>(tokens)
+
+	pro verbose from var = false
+	
+	def next as Token?
+		""" Returns the next token, or nil if there are none left. """
+		if _index < _tokens.count, _index += 1
+		if _index < _tokens.count
+			result = _tokens[_index]
+			if .verbose, print '<> TokenStream.next =', result
+			return result
+		return nil
+
+	def optional(category as String) as Token?
+		if .peek and .peek.category == category
+			result = .next
+			if .verbose, print '<> TokenStream.optional =', result
+			return result
+		return nil
+		
+	def peek as Token?
+		if _index + 1 < _tokens.count, return _tokens[_index+1]
+		return nil
+
+
+class Token inherits Part
+
+	cue init(category as String, originalText as String, normalizedText as String)
+		base.init(category)
+		_originalText, _normalizedText = originalText, normalizedText
+
+	get originalText from var as String
+
+	get normalizedText from var as String
+
+	def doesMatch(category as String, originalText as String, normalizedText as String) as bool
+		return .category == category and .originalText == originalText and _
+			.normalizedText == normalizedText
+
+	def print(indent as int) is override
+		print String(c' ', 4*indent) stop
+		print this
+
+	def toString as String is override
+		return '[.category]/"[.originalText]"'
