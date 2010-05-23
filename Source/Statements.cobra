@@ -884,27 +884,25 @@ class AbstractPrintStmt inherits Stmt is abstract, partial
 
 class PrintStmt inherits AbstractPrintStmt is partial
 
-	var _args as List<of Expr>
-	var _stop as bool
-
 	cue init(token as IToken, destination as Expr?, args as List<of Expr>, stopp as bool)
 		base.init(token, destination)
-		_args = args
-		_stop = stopp
+		_args, _stop = args, stopp
 
-	get args from var
+	get args from var as List<of Expr>
 		has Subnodes
 
-	get stop from var
+	get stop from var as bool
 
 	def _bindImp
 		base._bindImp
-		for i, arg in _args.numbered
+		for i, arg in .args.numbered
 			try
 				arg.bindImp
 			catch ne as NodeException
-				ne.prefixMessage('For arg [i]: ')
+				ne.prefixMessage('For "print" arg [i+1]: ')
 				.compiler.recordError(ne)
+			if arg.type and arg.type inherits VoidType
+				.recordError('For "print" arg [i+1]: Expression cannot be printed because it does not return a value.')
 
 	def addSubFields
 		base.addSubFields
