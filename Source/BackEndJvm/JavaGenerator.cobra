@@ -690,8 +690,10 @@ class Box is partial
 	
 			sw.writeAndIndent('{\n')
 			.writeJavaInvariantMethod(sw)
-			if _testMethod
-				_testMethod.writeJavaDef(sw)
+			for tm in _testMethods
+				.compiler.boxMemberStack.push(tm)
+				try,     tm.writeJavaDef(sw)
+				finally, .compiler.boxMemberStack.pop
 			for decl in _declsInOrder
 				if not .willWriteDeclJavaDef(decl), continue
 				.compiler.boxMemberStack.push(decl)
@@ -773,22 +775,7 @@ class Box is partial
 			sw.dedent
 
 	def writeJavaTest(sw as CurlyWriter)
-		# Running tests from the static initializer seems like a good idea, but has been problematic at various times on both .NET and Mono, so no more:
-		# sw.write('\nstatic [.rootName]() { RunTestsIfNeeded(); }\n')
-		# -- er, it turned out that the problem was likely -dst on SourceSite. Consequently we could try returning to static initializers to trigger tests.
-		sw.write('\nprivate static boolean __didStartTests = false;\n')
-		newWord = .newForJavaTest
-		sw.write('\npublic static[newWord] void RunTestsIfNeeded() { if (!__didStartTests) RunTests(); }\n')
-		sw.write('\npublic static[newWord] void RunTests()')
-		sw.writeAndIndent(' {\n')
-		sw.write('__didStartTests = true;\n')
-		sw.write('Cobra.Lang.CobraImp.TestBegan("[.name]");\n')
-		if _testMethod
-			sw.write('[_testMethod.javaName]();\n')
-		for decl in _declsInOrder
-			decl.writeJavaTestInvocation(sw)
-		sw.write('Cobra.Lang.CobraImp.TestEnded("[.name]");\n')
-		sw.dedentAndWrite('}\n')
+		pass
 
 	var _didWriteJavaTestInvocation = false
 

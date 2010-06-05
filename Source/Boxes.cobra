@@ -30,7 +30,7 @@ class Box
 	var _attribs as AttributeList
 
 	var _invariants as List<of Expr>
-	var _testMethod as TestMethod?
+	var _testMethods as List<of TestMethod>
 
 	var _nativeType as NativeType?
 	var _needScanNativeType as bool
@@ -54,6 +54,7 @@ class Box
 		_baseInterfaces = List<of Interface>()
 		_overloads = List<of MemberOverload>()
 		_invariants = List<of Expr>()
+		_testMethods = List<of TestMethod>()
 
 	def _initNativeType(t as NativeType)
 		ensure .needScanNativeType
@@ -272,7 +273,7 @@ class Box
 		assert .didBindInh
 		return _baseClass
 
-	pro testMethod from var
+	pro testMethods from var
 
 	get isExtern as bool
 		return 'extern' in _isNames
@@ -671,12 +672,10 @@ class Box
 				.compiler.boxMemberStack.pop
 		if not hasError
 			_finishOverloads
-			if _testMethod
-				.compiler.boxMemberStack.push(_testMethod)
-				try
-					_testMethod.bindInt
-				finally
-					.compiler.boxMemberStack.pop
+			for tm in _testMethods
+				.compiler.boxMemberStack.push(tm)
+				try,     tm.bindInt
+				finally, .compiler.boxMemberStack.pop
 			if _constructedTypes
 				if .compiler.errors.count <= errorCount  # completing construction on constructed types leads to chaos if this generic def had errors during bind interface
 					for ct in List<of Box>(_constructedTypes.values)   # CC: clone
@@ -751,12 +750,10 @@ class Box
 				ol.bindImp
 			catch ne as NodeException
 				.compiler.recordError(ne)
-		if _testMethod
-			.compiler.boxMemberStack.push(_testMethod)
-			try
-				_testMethod.bindImp
-			finally
-				.compiler.boxMemberStack.pop
+		for tm in _testMethods
+			.compiler.boxMemberStack.push(tm)
+			try,     tm.bindImp
+			finally, .compiler.boxMemberStack.pop
 
 	def _prepLibraryBox
 		ensure .didBindInh
