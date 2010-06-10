@@ -341,28 +341,200 @@ class UseDirective is partial
 	pass
 
 
-## SharpGenerator.cobra 643
-## to-do stubs ------------------------------------------------------------------------------------------
+##
+## Types
+##
 
 class BasicLibraryType is partial
 
-	def writeObjcDef(cw as CurlyWriter)
-		pass
-	
-	def writeObjcTestInvocation(cw as CurlyWriter)
-		pass
+	get objcInit as String
+		throw NoSourceGenerationException(this)
 
 	get objcName as String
-		return .name
+		throw NoSourceGenerationException(this)
+
+	get objcNameComponent as String
+		throw NoSourceGenerationException(this)
+
+	get objcParamRef as String
+		throw NoSourceGenerationException(this)
+
+	get objcRef as String
+		throw NoSourceGenerationException(this)
+
+	def writeObjcDef(sw as CurlyWriter)
+		throw NoSourceGenerationException(this)
+
+	def writeObjcTestInvocation(sw as CurlyWriter)
+		throw NoSourceGenerationException(this)
+
+
+interface IType is partial
+
+	get objcInit as String
+
+	get objcNameComponent as String
+		"""
+		Returns a string that refers to this type and is suitable for embedding in a larger
+		identifier (meaning there will be no punction, spaces or comments).
+		"""
+
+	get objcRef as String
+		"""
+		Returns a string that refers to this type.
+		Examples: 'int'  'NSMutableArray'  'object'
+		"""
+
+	get objcParamRef as String
+		"""
+		Returns a string that refers to this type including any necessary parameter declaration
+		specification such as C# 'params' or 'out'. Invoked by Param.writeObjcDef.  to-do
+		"""
 
 
 class CobraType is partial
 
-	def writeObjcTestInvocation(cw as CurlyWriter)
-		pass
+	get objcInit as String is abstract
 
 	get objcName as String
 		return .name
+
+	get objcNameComponent as String
+		name = .name
+		i = name.indexOf('/*')  # form: /*foo*/bar
+		if i <> -1
+			j = name.indexOf('*/', i)
+			name = name[:i] + name[j+2:]
+		name = name.replace('.', '_').replace('<', '_').replace('>', '_').replace(', ', '_')
+		return name
+
+	get objcRef as String
+		return .objcName
+
+	get objcParamRef as String
+		return .objcRef
+
+	def writeObjcTestInvocation(sw as CurlyWriter)
+		pass
+
+
+class BoolType is partial
+
+	get objcInit as String is override
+		return 'NO'
+
+
+class CharType is partial
+
+	get objcInit as String is override
+		return '(char)0'
+
+
+class DynamicType is partial
+
+	get objcInit as String is override
+		return 'nil'
+
+	get objcName as String is override
+		return 'id'
+
+
+class FloatType is partial
+
+	get objcName as String is override
+		return _nativeType.fullName
+
+
+class IntType is partial
+
+	get objcName as String is override
+		return _nativeType.fullName
+
+
+class NilableType is partial
+
+	get objcInit as String is override
+		return 'null'
+
+	get objcRef as String is override
+		# to-do: how to handle nullable value types?
+		return _wrappedType.objcRef + if(not _wrappedType.isReference, '?', '')
+
+
+class NilType is partial
+
+	get objcInit as String is override
+		return 'nil'
+
+	get objcRef as String is override
+		return '/*nil*/id'
+
+
+class AbstractNumberType is partial
+
+	get objcInit as String is override
+		return '0'
+
+
+class PassThroughType is partial
+
+	get objcInit as String is override
+		return 'nil'
+
+	get objcRef as String is override
+		return '/*passthrough*/id'
+
+
+class StreamType is partial
+
+	get objcInit as String is override
+		return 'new CobraLangInternal.EmptyStream<[.theWrappedType.objcRef]>()'  # to-do
+
+	get objcRef as String is override
+		assert .didBindInh and .didBindInt
+		return '/*[.name]*/[.box.objcRef]'
+
+
+class VoidType is partial
+
+	get objcInit as String is override
+		throw Exception('Cannot init a void type.')
+
+
+class WrappedType is partial
+
+	get objcInit as String is override
+		return _wrappedType.objcInit
+
+
+class ArrayType is partial
+
+	get objcRef as String is override
+		return '[_wrappedType.objcRef]' + r'[]'  # to-do?
+
+	get objcInit as String is override
+		return 'nil'
+
+
+class VariType is partial
+
+	get objcRef as String is override
+		return '[_wrappedType.objcRef]' + r'[]'  # to-do
+
+	get objcParamRef as String is override
+		return 'params ' + .objcRef  # to-do
+
+
+class UnspecifiedType is partial
+	
+	get objcInit as String is override
+		# to-do: throw Exception('Not expecting code gen for unspecified types.')
+		return '!UnspecifiedType!'
+
+
+## SharpGenerator.cobra 864
+
+## to-do stubs ------------------------------------------------------------------------------------------
 
 class EnumMember is partial
 
@@ -404,3 +576,7 @@ class Extension is partial
 	get objcInit as String is override
 		return ''
 
+class GenericParam is partial
+
+	get objcInit as String is override
+		return ''
