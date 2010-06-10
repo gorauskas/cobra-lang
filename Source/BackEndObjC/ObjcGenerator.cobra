@@ -1,6 +1,10 @@
 """
+Objective-C Code Generator
+
 The code in this file should not .throwError, record warnings, etc.
 All of that happens during .bindFoo phases.
+
+cobra -back-end:objc hello
 
 Check-in comment:
 ObjC back-end progress.
@@ -271,6 +275,73 @@ interface IMember is partial
 		""" Write the Obj-C call to the test method for this member. """
 
 
+##
+## Namespace
+##
+
+class NameSpace is partial
+
+	get objcFullName as String
+		value as Object?
+		if not .addOnValues.tryGetValue('objcFullName', out value)
+			fullName = .fullName
+			if fullName == 'Cobra.Lang'
+				name = 'Cobra.Lang' + .compiler.embedRunTimeSuffix
+			else if fullName.startsWith('Cobra.Lang.')
+				name = 'Cobra.Lang[.compiler.embedRunTimeSuffix].' + fullName['Cobra.Lang.'.length:]
+			else
+				name = fullName
+			name = name.replace('.', '_x_')  # no real namespaces in ObjC
+			.addOnValues['objcFullName'] = name
+			return name
+		else
+			return value to String
+
+	get objcInit as String is override  # TODO: remove when not a type
+		assert false
+		return ''
+
+	get objcRef as String is override
+		if _superNameSpace is nil
+			return 'global::'
+		else
+			return .objcFullName
+
+	get objcQualifier as String
+		ensure result.endsWith('.') or result == 'global::'
+		if _superNameSpace is nil
+			return 'global::'
+		else
+			return .objcFullName + '.'
+	
+	def writeObjcDef(sw as CurlyWriter) is override
+		assert not .isUnified
+		base.writeObjcDef(sw)
+		if not .isRoot
+			suffix = if(.fullName == 'Cobra.Lang', .compiler.embedRunTimeSuffix, '')
+			sw.writeAndIndent('namespace [.name][suffix] {\n\n')
+		for ud in _useDirectives
+			ud.writeObjcDef(sw)
+		for decl in _declsInOrder
+			if decl inherits Box
+				.compiler.boxStack.push(decl)
+			decl.writeObjcDef(sw)
+			if decl inherits Box
+				.compiler.boxStack.pop
+		if not .isRoot
+			sw.dedentAndWrite('} // namespace [.name]\n')
+
+	def writeObjcTestInvocation(sw as CurlyWriter) is override
+		for decl in _declsInOrder
+			decl.writeObjcTestInvocation(sw)
+
+
+class UseDirective is partial
+
+	pass
+
+
+## SharpGenerator.cobra 643
 ## to-do stubs ------------------------------------------------------------------------------------------
 
 class BasicLibraryType is partial
@@ -309,11 +380,6 @@ class AssemblyDecl is partial
 		pass
 
 class EnumDecl is partial
-
-	get objcInit as String is override
-		return ''
-
-class NameSpace is partial
 
 	get objcInit as String is override
 		return ''
