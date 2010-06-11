@@ -51,7 +51,7 @@ class Compiler is partial
 			_moduleFileName_to_curlyToCobraLineNum = Dictionary<of String, Dictionary<of int, int>>()
 			for _curModule in _modules
 				if not _curModule.fileName.endsWith('SystemInterfaces.cobra')
-					objcToCobraLineNum = _curModule.writeJavaDef
+					objcToCobraLineNum = _curModule.writeObjcDef
 					_moduleFileName_to_curlyToCobraLineNum[_curModule.fileName] = objcToCobraLineNum
 					_moduleFileName_to_curlyToCobraLineNum[Path.getFullPath(_curModule.fileName)] = objcToCobraLineNum
 		finally
@@ -64,13 +64,102 @@ class Compiler is partial
 	def compileObjc
 		.compileObjc('')
 
-	def compileObjc(extraGccOptions as String)
+	def compileObjc(extraNativeOptions as String)
 		require
 			.modules.count
 		body
 			if .verbosity >= 2, print 'Compiling generated code'
-			# options = .options
-			print 'Not compiling objc code yet.'
+			options = .options
+
+			# locate the native compiler
+			compilerPath = options.getDefault('native-compiler', '') to String
+			if compilerPath == 'auto', compilerPath = ''
+			if compilerPath <> ''
+				if File.exists(compilerPath)
+					pass
+				else if File.exists(compilerPath+'.exe')
+					compilerPath += '.exe'
+				else
+					# to-do: change print statement to an error
+					print 'Cannot find compiler specified by -native-compiler argument: [compilerPath]'
+					throw StopCompilation(this)
+			else
+				compilerPath = if(Utils.isRunningOnUnix, 'gcc', 'gcc.exe')
+
+			# to-do: use or axe: optChar = '-'
+			
+			# exeNames
+			outName = .computeOutNameObjc
+
+			# compute backEndOptions
+			backEndOptions = ''
+
+			backEndOptions += ' -O3'  # to-do: make conditional on Cobra's -o option.
+			backEndOptions += ' -fobjc-gc-only'
+			backEndOptions += ' -framework Foundation'
+
+			# to-do: debug flag
+			
+			# to-do: respect -native-compiler
+			compilerPath = 'gcc'
+			
+			backEndOptions += ' ' + extraNativeOptions
+			
+			nativeArgs = .options.getDefault('native-compiler-args', '') to String
+			if nativeArgs.length
+				if nativeArgs.length > 2 and nativeArgs[0]=="'" and nativeArgs[nativeArgs.length-1]=="'"
+					# on Windows, you should really use double quotes instead of single, but
+					# we try to compensate here.
+					nativeArgs = nativeArgs[1:-1]
+				backEndOptions += ' ' + nativeArgs
+
+			# to-do: framework and library references
+			
+			# source files
+			sourceFileNameList = List<of String>()
+			for module in _modules[1:]
+				if module.objcFileName.length
+					sourceFileNameList.add(module.objcFileName)
+
+			# compilation command
+			if _verbosity
+				print 'Compiling to produce [outName]'
+
+			# TODO: need to encapsulate this in CobraCore to avoid .NET dependency
+			p = System.Diagnostics.Process()
+			p.startInfo.fileName = compilerPath
+			sourceFileNames = (for fileName in sourceFileNameList get '"' + fileName + '"').join(' ')
+			p.startInfo.arguments = '[backEndOptions] [sourceFileNames]'
+			if true or _verbosity >= 2  # to-do: remove 'true'
+				print '[p.startInfo.fileName] [p.startInfo.arguments]'
+			output = CobraCore.runAndCaptureAllOutput(p)
+			# TODO: check p.exitCode, especially if output is empty
+			_parseObjcCompilerOutput(output)
+
+			if .errors.count
+				_exitFromErrors
+
+			_deleteIntermediateFiles
+
+	def _parseObjcCompilerOutput(output as String)
+		for line in output.split(c'\n')
+			line = line.trim
+			if not line.length, continue
+			if ObjcCompilationMessage.willSkipMessage(line)
+				continue
+			else
+				if _verbosity >= 3
+					print 'objc message: [line]'
+				_addMessage(ObjcCompilationMessage(line, this))
+
+
+class ObjcCompilationMessage inherits SourceException  # to-do: break out to separate file and complete
+
+	def willSkipMessage(line as String) as bool is shared
+		return false
+	
+	cue init(line as String, compiler as Compiler)
+		base.init(line)
 
 
 ##
