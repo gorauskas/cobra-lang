@@ -1670,11 +1670,17 @@ class CobraParser inherits Parser
 		# TODO: if the var was declared separately, then warn about redeclaring its type, or error if the type is different
 		possibleVarDef = .curBox.declForName(varName)
 		if not possibleVarDef
-			if not initExpr and not declVarType
+			if initExpr or declVarType
+				varDef = BoxVar(token, token, .curBox, varName, declVarType, List<of String>(_isNamesStack), initExpr, nil, 'Automatic backing var for property "[name]".')
+				.curBox.addDecl(varDef)
+				return varDef
+			if not varName.startsWith('_') or varName.startsWith('__')
 				.throwError('There is no variable named "[varName]" to match the property "[name]".')
-			varDef = BoxVar(token, token, .curBox, varName, declVarType, List<of String>(_isNamesStack), initExpr, nil, 'Automatic backing var for property "[name]".')
-			.curBox.addDecl(varDef)
-			return varDef
+			# tried looking for '_varName' now try '__varName'
+			varName0, varName = varName, '_' + varName
+			possibleVarDef = .curBox.declForName(varName)
+			if not possibleVarDef
+				.throwError('There is no variable named "[varName0]" or "[varName]" to match the property "[name]".')
 				
 		if possibleVarDef inherits BoxVar
 			varDef = possibleVarDef
