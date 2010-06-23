@@ -8,6 +8,10 @@ cobra -back-end:objc hello
 
 Check-in comment:
 ObjC back-end progress.
+
+to-do: write headers
+to-do: appkit example
+to-do: self compile
 """
 
 
@@ -53,8 +57,7 @@ class Compiler is partial
 			Node.setCompiler(nil)
 
 	def writeObjcTestInvocation
-		# TODO
-		pass
+		pass  # to-do
 
 	def compileObjc
 		.compileObjc('')
@@ -241,6 +244,8 @@ class AssemblyModule is partial
 		return nil
 
 
+sig WriteObjcMethod(cw as CurlyWriter)
+
 class CobraModule is partial
 
 	get objcFileName as String is override
@@ -248,7 +253,13 @@ class CobraModule is partial
 			_objcFileName = _fileName + '.m'
 		return _objcFileName
 
+	def writeObjcHeader as Dictionary<of int, int>?
+		return _writeObjcFile(ref .topNameSpace.writeObjcHeader)
+		
 	def writeObjcDef as Dictionary<of int, int>? is override
+		return _writeObjcFile(ref .topNameSpace.writeObjcDef)
+
+	def _writeObjcFile(writeObjc as WriteObjcMethod) as Dictionary<of int, int>?
 		file = (.compiler to Compiler).createObjcFile(.objcFileName)
 		using sw = CurlyWriter(file, CurlyLineNumberTreatment.PoundLine)
 			.compiler.addIntermediateFile(_objcFileName)
@@ -261,7 +272,7 @@ class CobraModule is partial
 
 			# to-do: axe or change: sw.write('using CobraLangInternal = Cobra.Lang[.compiler.embedRunTimeSuffix];\n')
 			
-			.topNameSpace.writeObjcDef(sw)
+			writeObjc(sw)
 			d = sw.curlyToCobraLineNum
 		if false
 			bar = '----------------------------------------------'
@@ -400,6 +411,9 @@ class NameSpace is partial
 		else
 			return .objcFullName + '.'
 	
+	def writeObjcHeader(sw as CurlyWriter)
+		pass  # to-do
+
 	def writeObjcDef(sw as CurlyWriter) is override
 		assert not .isUnified
 		base.writeObjcDef(sw)
@@ -624,6 +638,9 @@ class UnspecifiedType is partial
 
 class EnumDecl is partial
 
+	def writeObjcHeader(sw as CurlyWriter)
+		pass  # to-do
+
 	def writeObjcTestInvocation(cw as CurlyWriter) is override
 		pass
 
@@ -644,25 +661,248 @@ class EnumMember is partial
 
 class Box is partial
 
-	def writeObjcTestInvocation(cw as CurlyWriter) is override
-		pass  # to-do
+	get objcNameComponent as String is override
+		name = .objcName
+		i = name.indexOf('/*')  # form: /*foo*/bar
+		if i <> -1
+			j = name.indexOf('*/', i)
+			name = name[:i] + name[j+2:]
+		# qualified types and generics need cleanup
+		for ch in '.<>, '
+			name = name.replace(ch, c'_')
+		return name
+
+	get objcThis as String
+		""" Returns 'this' as you would expect. Overridden by Extension. """
+		return 'this'
+
+	get objcKeyWord as String is abstract
+
+	get objcName as String is override
+		return _name.replace('<of', '<')
+
+	get _computeObjcRef as String is override
+		if _genericParams.count
+			sb = StringBuilder()
+			# generic
+			name = .rootName
+			sb.append(name)
+			sb.append('<')
+			sep = ''
+			for param in _genericParams
+				sb.append(sep)
+				sb.append(param.objcRef)
+				sep = ', '
+			sb.append('>')
+			source = sb.toString
+		else
+			source = .objcName
+		if .parentNameSpace and not .parentNameSpace.isRoot
+			source = .parentNameSpace.objcQualifier + source
+		else if .parentBox
+			source = .parentBox.objcRef + '.' + source
+		return source
+
+	def writeObjcHeader(sw as CurlyWriter)
+		if .isExtern, return
+		.compiler.boxStack.push(this)
+		try
+			assert not .isConstructed
+			# to-do .writeObjcAttribs(sw)
+			# to-do .writeObjcIsNames(sw)
+			sw.write('@interface')  # to-do: not valid for interface or struct
+			.writeObjcDefName(sw)
+			.writeObjcInheritance(sw)
+
+			sep = ''
+			for inter in _baseInterfaces
+				sw.write(sep)
+				sw.write(inter.objcRef)
+				sep = ', '
+	
+			if _genericParams.count
+				sw.indent
+				for param in _genericParams
+					if param inherits GenericParam
+						param.writeObjcConstraint(sw)
+				sw.dedent
+	
+			sw.writeAndIndent('{\n')
+
+			for decl in _declsInOrder
+				if not .willWriteDeclObjcDef(decl), continue
+				.compiler.boxMemberStack.push(decl)
+				try
+					decl.writeObjcHeader(sw)
+				finally
+					.compiler.boxMemberStack.pop
+
+			sw.dedentAndWrite('} // [.objcKeyWord] [.name]\n')
+			sw.write('\n')
+		finally
+			.compiler.boxStack.pop
+
+# uu
+	def writeObjcDef(sw as CurlyWriter)
+		base.writeObjcDef(sw)
+		if .isExtern, return
+		.compiler.boxStack.push(this)
+		try
+			assert not .isConstructed
+			sw.write('[.objcKeyWord] ')
+			.writeObjcDefName(sw)
+			sw.writeAndIndent('{\n')
+			.writeObjcInvariantMethod(sw)
+			for tm in _testMethods
+				.compiler.boxMemberStack.push(tm)
+				try,     tm.writeObjcDef(sw)
+				finally, .compiler.boxMemberStack.pop
+			for decl in _declsInOrder
+				if not .willWriteDeclObjcDef(decl), continue
+				.compiler.boxMemberStack.push(decl)
+				try
+					decl.writeObjcDef(sw)
+				finally
+					.compiler.boxMemberStack.pop
+			if .compiler.includeTests
+				.writeObjcTest(sw)
+			sw.dedentAndWrite('} // [.objcKeyWord] [.name]\n')
+			sw.write('\n')
+		finally
+			.compiler.boxStack.pop
+
+	def willWriteDeclObjcDef(decl) as bool
+		return true
+
+	def writeObjcAttribs(sw as CurlyWriter)
+		for attrib in _attribs
+			attrib.writeObjcDef(sw)
+
+	def writeObjcDefName(sw as CurlyWriter)
+		sw.write('[.rootName]')
+		if _genericParams.count
+			sw.write('<')
+			sep = ''
+			for param in _genericParams
+				sw.write(sep)
+				param.writeObjcDef(sw)
+				sep = ', '
+			sw.write('>')
+
+	def writeObjcInheritance(sw as CurlyWriter)
+		"""
+		Class uses this to write its base class declaration.
+		No box uses this to write interface implementation--that's handled in the Box class.
+		"""
+		pass
+
+	get objcInvariantVisibility as String is abstract
+
+	def writeObjcInvariantMethod(sw as CurlyWriter)
+		if .compiler.options['contracts'] <> 'none'
+			sw.write('\nint _ih_invariantGuard;\n\n')
+		if .compiler.options['contracts'] <> 'methods'
+			return
+		sw.write('\n[.objcInvariantVisibility] void invariant_[.rootName]() {\n')
+		sw.indent
+		if _baseClass and (not _baseClass.isFromBinaryLibrary or _baseClass.declForName('invariant_[_baseClass.rootName]'))
+			sw.write('invariant_[_baseClass.rootName]();\n')
+		.writeObjcInvariantChecks(sw)
+		sw.dedent
+		sw.write('}\n\n')
+
+	def writeAllObjcInvariantChecks(sw as CurlyWriter)
+		"""
+		Writes all Objc invariant checks including inherited. In support of -contracts:inline
+		"""
+		_writeAllObjcInvariantChecks(sw, this)
+
+	def _writeAllObjcInvariantChecks(sw as CurlyWriter, box as Box)
+		if box.baseClass and not box.baseClass.isFromBinaryLibrary
+			_writeAllObjcInvariantChecks(sw, box.baseClass to !)
+		box.writeObjcInvariantChecks(sw)
+		
+	def writeObjcInvariantChecks(sw as CurlyWriter)
+		"""
+		Writes the Objc invariant checks just for this class.
+		"""
+		for expr in _invariants
+			objcThis = '[.objcName].class'
+			sw.write('if (!')
+			expr.writeObjcDef(sw)
+			sw.write(')\n')
+			sw.indent
+			sw.write('throw new Cobra.Lang.InvariantException([expr.objcSourceSite(.name, "invariant", objcThis)], ')  # to-do
+			expr.writeObjcBreakdown(sw)
+			sw.write('[objcThis], null);\n')
+			sw.dedent
+
+	def writeObjcTest(sw as CurlyWriter)
+		pass
+
+	var _didWriteObjcTestInvocation = false
+
+	def writeObjcTestInvocation(sw as CurlyWriter) is override
+		# used by the test option
+		if _didWriteObjcTestInvocation
+			return
+		if .isExtern
+			return
+		if .isGenericDef  # sorry, but static methods always require a type arg even if you don't need it. workaround. make another class with a 'test' section that tests the generic class TODO: make Cobra do this, but then watch for use of the generic param!
+			return
+		assert .parentNameSpace
+		sw.write('\t\t[.objcRef].RunTestsIfNeeded();\n')
+		_didWriteObjcTestInvocation = true
+
+	get newForObjcTest as String
+		return ''
 
 
 class ClassOrStruct is partial
 
-	pass  # to-do
+	get objcRef as String
+		if .isGeneric and .isGenericDef
+			return .qualifiedRootName + '<' + String(c',',.genericParams.count-1) + '>'
+		else
+			return base.objcRef
 
 
 class Class is partial
 
 	get objcInit as String is override
-		return ''
+		return 'nil'
+
+	get objcInvariantVisibility as String is override
+		return 'protected'
+
+	get objcKeyWord as String is override
+		return '@implementation'
+
+	def writeObjcInheritance(sw as CurlyWriter) is override
+		sw.write(' : ')
+		if _baseClass
+			sw.write(_baseClass.objcRef)
+			didWrite = true
+		if didWrite
+			if _baseInterfaces.count
+				sw.write(', ')
+			else
+				sw.write(' ')
+
+	get newForObjcTest as String is override
+		return if(not _baseClass.isExtern, ' new', '')
 
 
 class Interface is partial
 
 	get objcInit as String is override
 		return ''
+
+	get objcInvariantVisibility as String is override
+		return 'to-do'
+
+	get objcKeyWord as String is override
+		return 'to-do'
 
 
 class Mixin is partial
@@ -675,6 +915,12 @@ class Struct is partial
 	get objcInit as String is override
 		return ''
 
+	get objcInvariantVisibility as String is override
+		return 'to-do'
+
+	get objcKeyWord as String is override
+		return 'to-do'
+
 
 class MethodSig is partial
 
@@ -682,6 +928,11 @@ class MethodSig is partial
 
 
 class GenericParam is partial
+
+	# to-do
+
+	def writeObjcConstraint(sw as CurlyWriter)
+		pass  
 
 	get objcInit as String is override
 		return ''
@@ -711,6 +962,12 @@ class Extension is partial
 
 	get objcInit as String is override
 		return ''
+
+	get objcInvariantVisibility as String is override
+		return 'to-do'
+
+	get objcKeyWord as String is override
+		return 'to-do'
 
 
 ##
@@ -747,7 +1004,15 @@ class ResultVar is partial
 ##
 
 
+interface IBoxMember is partial
+
+	def writeObjcHeader(sw as CurlyWriter)
+
+
 class BoxMember is partial
+
+	def writeObjcHeader(sw as CurlyWriter)
+		pass  # to-do
 
 	def writeObjcTestInvocation(cw as CurlyWriter)
 		pass  # to-do
@@ -1009,7 +1274,13 @@ class MultiTargetAssignStatement is partial
 
 class Expr is partial
 
-	pass  # to-do
+	# to-do
+
+	def objcSourceSite(args as vari dynamic) as String
+		return ''
+
+	def writeObjcBreakdown(sw as CurlyWriter)
+		pass
 
 
 class NameExpr is partial
