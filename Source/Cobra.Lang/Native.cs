@@ -831,8 +831,10 @@ static public class CobraImp {
 
 	// Dynamic Binding
 
-	static private readonly BindingFlags PropertyFlags = BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.GetProperty;
-	static private readonly BindingFlags FieldFlags = BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.GetField;
+	static private readonly BindingFlags BaseDynamicFlags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy;	
+	static private readonly BindingFlags MethodFlags      = BaseDynamicFlags | BindingFlags.InvokeMethod;
+	static private readonly BindingFlags PropertyFlags    = BaseDynamicFlags | BindingFlags.GetProperty;
+	static private readonly BindingFlags FieldFlags       = BaseDynamicFlags | BindingFlags.GetField;
 
 	static public IEnumerable GetEnumerable(Object obj) {
 		// IEnumerator GetEnumerator()
@@ -855,7 +857,7 @@ static public class CobraImp {
 			throw new ArgumentNullException("obj");
 		if (propertyName==null)
 			throw new ArgumentNullException("propertyName");
-		Type type = obj.GetType();
+		Type type = obj as System.Type ?? obj.GetType();
 		PropertyInfo pi = type.GetProperty(propertyName, PropertyFlags);
 		if (pi!=null) {
 			if (pi.CanRead) {
@@ -864,7 +866,7 @@ static public class CobraImp {
 				throw new CannotReadPropertyException(obj, propertyName, type);
 			}
 		} else {
-			MethodInfo mi = type.GetMethod(propertyName, Type.EmptyTypes); // example Cobra that gets here: obj.getType
+			MethodInfo mi = type.GetMethod(propertyName, MethodFlags, null, Type.EmptyTypes, null); // example Cobra that gets here: obj.getType
 			if (mi!=null) {
 				return mi.Invoke(obj, null);
 			} else {
@@ -881,7 +883,7 @@ static public class CobraImp {
 			throw new ArgumentNullException("obj");
 		if (propertyName==null)
 			throw new ArgumentNullException("propertyName");
-		Type type = obj.GetType();
+		Type type = obj as System.Type ?? obj.GetType();
 		PropertyInfo pi = type.GetProperty(propertyName, PropertyFlags);
 		if (pi!=null) {
 			if (pi.CanWrite) {
@@ -905,12 +907,12 @@ static public class CobraImp {
 			throw new ArgumentNullException("obj");
 		if (methodName==null)
 			throw new ArgumentNullException("methodName");
-		Type type = obj.GetType();
+		Type type = obj as System.Type ?? obj.GetType();
 		Type[] argsTypes = args==null ? new Type[0] : new Type[args.Length];
 		for (int i=0; i<argsTypes.Length; i++) {
 			argsTypes[i] = args[i].GetType();
 		}
-		MethodInfo mi = type.GetMethod(methodName, argsTypes);
+		MethodInfo mi = type.GetMethod(methodName, MethodFlags, null, argsTypes, null);
 		if (mi!=null) {
 			return mi.Invoke(obj, args);
 		} else {
@@ -944,7 +946,7 @@ static public class CobraImp {
 	static public object GetIndexerValue(Object obj, params object[] args) {
 		if (obj==null)
 			throw new ArgumentNullException("obj");
-		Type type = obj.GetType();
+		Type type = obj as System.Type ?? obj.GetType();
 		Type[] argsTypes = args==null ? new Type[0] : new Type[args.Length];
 		for (int i=0; i<argsTypes.Length; i++) {
 			argsTypes[i] = args[i].GetType();
@@ -960,7 +962,7 @@ static public class CobraImp {
 	static public object SetIndexerValue(Object obj, Object value, params object[] args) {
 		if (obj==null)
 			throw new ArgumentNullException("obj");
-		Type type = obj.GetType();
+		Type type = obj as System.Type ?? obj.GetType();
 		Type[] argsTypes = args==null ? new Type[0] : new Type[args.Length];
 		for (int i=0; i<argsTypes.Length; i++) {
 			argsTypes[i] = args[i].GetType();
