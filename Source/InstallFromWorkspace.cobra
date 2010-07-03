@@ -23,14 +23,14 @@ potentially hack on it.
 TO RUN
 
 	On Windows
-	
+
 		Update, if desired:
 		> cd \path\to\Workspace
 		> svn up
-		
+
 		Get into the Source:
 		> cd Source
-	
+
 		Use the batch file:
 		> install-from-workspace
 
@@ -39,21 +39,21 @@ TO RUN
 		Update, if desired:
 		$ cd /path/to/Workspace
 		$ svn up
-		
+
 		Get into the Source:
 		$ cd Source
-		
+
 		Use the script:
 		$ sudo ./install-from-workspace
 
 
 	The installer prints "Success!" at the end, if successful.
 	Otherwise you will see an error message.
-	
+
 	It's safe to run the installer more than once.
-	
+
 	The installer does not change any workspace files that are under source code control.
-	
+
 	To test the installation, try invoking Cobra from *outside* the workspace.
 
 
@@ -83,6 +83,7 @@ TODO
 """
 
 use System.Diagnostics
+use System.Reflection
 use System.Text.RegularExpressions
 
 # for GAC installation
@@ -140,7 +141,7 @@ class InstallFromWorkspace
 		args = CobraCore.commandLineArgs
 		if args.count > 1, return args[1]  # TODO: should be a join of args[1:]
 		else, return '-turbo'
-		
+
 	get isRunningOnUnix as bool
 		"""
 		Returns true if the current process is running on Unix/Posix/Linux/BSD/etc.
@@ -206,7 +207,7 @@ class InstallFromWorkspace
 				file.attributes = sharp'file.Attributes & ~System.IO.FileAttributes.ReadOnly'
 				# file.attributes = file.attributes & ~FileAttributes.ReadOnly
 		for subDir in dir.getDirectories
-			_unReadOnly(subDir)	
+			_unReadOnly(subDir)
 
 	def findAndDeleteDir(baseDir as String, findDir as String)
 		.findAndDeleteDir(DirectoryInfo(baseDir), findDir)
@@ -218,7 +219,7 @@ class InstallFromWorkspace
 			else
 				.findAndDeleteDir(sourceSubDir, findDir)
 
-	def requireDir(dir as String)		
+	def requireDir(dir as String)
 		if Directory.exists(dir)
 			print 'found dir:', dir
 		else
@@ -310,7 +311,7 @@ class InstallFromWorkspace
 			if useDir and useDir.trim.length, default = useDir.trim
 		# TODO: prompt the user for the location
 		.requireDir(default)
-		_targetDir = default	
+		_targetDir = default
 		print
 
 	def verifyInWorkspace
@@ -365,7 +366,7 @@ class InstallFromWorkspace
 			pass
 		catch ComponentModel.Win32Exception
 			pass
-		
+
 		if not found
 			# try to find the gacutil
 			print 'Searching for gacutil...'
@@ -479,7 +480,7 @@ class InstallFromWorkspace
 		require _targetDir is not nil
 		.startStage('Copy files to install directory')
 		slash = .slash
-		targetDir = _targetDir		
+		targetDir = _targetDir
 
 		if targetDir, .requireDir(targetDir)
 		if Directory.exists(Path.combine(targetDir, 'Source'))
@@ -593,14 +594,31 @@ class InstallFromWorkspace
 				print 'Your PATH already contains [baseBinDir]'
 				print 'so you can invoke "cobra" from any directory.'
 			else
-				print 'copy from:', _cobraCommandPath
-				print '       to:', commandPath
-				File.copy(_cobraCommandPath, commandPath, true)
-				print
-				print 'The existing "cobra" in your path has been replaced'
-				print 'with the new one.'
+				if .newlyCompiledFileIsSymlinkedFromOneFoundOnPath(_cobraCommandPath, commandPath)
+					print 'The existing "cobra" in your path is the correct'
+					print 'symbolic link and has not been changed.'
+				else
+					print 'copy from:', _cobraCommandPath
+					print '       to:', commandPath
+					try, File.delete(commandPath)
+					catch Exception, pass
+					File.copy(_cobraCommandPath, commandPath, true)
+					print
+					print 'The existing "cobra" in your path at'
+					print commandPath
+					print 'has been replaced with the new one.'
 		else
-			# TODO: on unix, attempt to install in /usr/local/bin or /usr/bin if they exist and are in the path
+			# TODO: on unix, create a symlink in /usr/local/bin or /usr/bin if they exist and are in the path
 			print 'The Cobra compiler is not in your PATH. To remedy you can:'
 			print '1. Add [Path.getDirectoryName(_cobraCommandPath)] to your PATH'
 			print '2. Copy [_cobraCommandPath] to any directory in your PATH'
+
+	def newlyCompiledFileIsSymlinkedFromOneFoundOnPath(cobraCommandPath, commandPath) as bool
+		if .isRunningOnUnix
+			monoAssembly = Assembly.load('Mono.Posix, Version=2.0.0.0, Culture=neutral, PublicKeyToken=0738eb9f132ed756')
+			unixFileSystemInfo = monoAssembly.getType('Mono.Unix.UnixFileSystemInfo') to dynamic
+			if unixFileSystemInfo
+				fileInfo = unixFileSystemInfo.getFileSystemEntry(commandPath)
+				if fileInfo.isSymbolicLink and fileInfo.contentsPath == cobraCommandPath
+					return true
+		return false

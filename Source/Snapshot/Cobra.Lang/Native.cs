@@ -902,7 +902,7 @@ static public class CobraImp {
 			throw new ArgumentNullException("obj");
 		if (methodName==null)
 			throw new ArgumentNullException("methodName");
-		Type type = obj.GetType();
+		Type type = obj as System.Type ?? obj.GetType();
 		Type[] argsTypes = args==null ? new Type[0] : new Type[args.Length];
 		for (int i=0; i<argsTypes.Length; i++) {
 			argsTypes[i] = args[i].GetType();
