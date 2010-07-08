@@ -1,0 +1,62 @@
+"""
+This test verifies that error messages from the compiler have the correct format.
+
+There was a bug where errors from tokenizing and parsing would double up the location information like so:
+
+parser-error.cobra(4): error: parser-error.cobra(4,7): error: Unexpected line continuation character.
+"""
+
+use System.Text.RegularExpressions
+
+
+class CheckErrorMessageFormat
+
+	var _verbose = false
+
+	def main
+		.check('100-tokenizer-error.cobra')
+		.check('110-parser-error.cobra')
+		.check('120-bind-error.cobra')
+
+	def check(sourceName as String)
+		re = Regex(r"[A-Za-z\.]+cobra\(\d+\): (error|warning): [^\(]+$", RegexOptions(Compiled, CultureInvariant))
+		# example output for regex ta match:
+		# bind-error.cobra(4): error: Cannot find "y". There is a member named ".getType" with a similar name.
+
+		output = .run('-c ' + sourceName)
+		assert 'Compilation failed' in output
+		foundError = false
+		for line in output.split(c'\n')
+			if line.trim == '', continue
+			if 'Compilation failed' in line, continue
+			if '(' in line, assert 'error' in line or 'warning' in line
+			if 'error' in line or 'warning' in line
+				if 'error' in line, foundError = true  # expecting an error for each file tested
+				assert '(' in line
+				assert re.match(line).success, line
+			if '(' in line, assert line.count(c'(') == 1
+		assert foundError
+		
+	def run(args as String) as String
+		cobraPath = CobraCore.findCobraExe to !
+		
+		if _verbose
+			print
+			print 'cobra', args
+			print '[cobraPath] [args]'
+			print '-------'
+			.flush
+		
+		p as System.Diagnostics.Process?
+		output = CobraCore.runCobraExe(cobraPath, args, out p)
+
+		if _verbose
+			if output.length
+				print output stop
+			print '-------'
+			.flush
+
+		return output
+
+	def flush
+		CobraCore.printDestination.flush
