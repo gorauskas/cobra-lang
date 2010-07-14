@@ -60,6 +60,7 @@ static public class CobraImp {
 		PushPrintTo(Console.Out);
 		_printStringMaker = new PrintStringMaker();
 		_techStringMaker = new TechStringMaker();
+		PromoteNumerics = NumericTypeInfo.PromoteNumerics;
 	}
 
 	static public T CheckNonNil<T>(Object obj, string sourceCode, T value,
@@ -457,6 +458,8 @@ static public class CobraImp {
 	}
 
 	static public bool Is(Enum a, Enum b) {
+		if (a==null) return b==null;
+		if (b==null) return false;
 		return a.Equals(b);
 		//return a==b;  this returns false when you would expect true!
 	}
@@ -828,8 +831,10 @@ static public class CobraImp {
 
 	// Dynamic Binding
 
-	static private readonly BindingFlags PropertyFlags = BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.GetProperty;
-	static private readonly BindingFlags FieldFlags = BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.GetField;
+	static private readonly BindingFlags BaseDynamicFlags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy;	
+	static private readonly BindingFlags MethodFlags      = BaseDynamicFlags | BindingFlags.InvokeMethod;
+	static private readonly BindingFlags PropertyFlags    = BaseDynamicFlags | BindingFlags.GetProperty;
+	static private readonly BindingFlags FieldFlags       = BaseDynamicFlags | BindingFlags.GetField;
 
 	static public IEnumerable GetEnumerable(Object obj) {
 		// IEnumerator GetEnumerator()
@@ -852,7 +857,7 @@ static public class CobraImp {
 			throw new ArgumentNullException("obj");
 		if (propertyName==null)
 			throw new ArgumentNullException("propertyName");
-		Type type = obj.GetType();
+		Type type = obj as System.Type ?? obj.GetType();
 		PropertyInfo pi = type.GetProperty(propertyName, PropertyFlags);
 		if (pi!=null) {
 			if (pi.CanRead) {
@@ -861,7 +866,7 @@ static public class CobraImp {
 				throw new CannotReadPropertyException(obj, propertyName, type);
 			}
 		} else {
-			MethodInfo mi = type.GetMethod(propertyName, Type.EmptyTypes); // example Cobra that gets here: obj.getType
+			MethodInfo mi = type.GetMethod(propertyName, MethodFlags, null, Type.EmptyTypes, null); // example Cobra that gets here: obj.getType
 			if (mi!=null) {
 				return mi.Invoke(obj, null);
 			} else {
@@ -878,7 +883,7 @@ static public class CobraImp {
 			throw new ArgumentNullException("obj");
 		if (propertyName==null)
 			throw new ArgumentNullException("propertyName");
-		Type type = obj.GetType();
+		Type type = obj as System.Type ?? obj.GetType();
 		PropertyInfo pi = type.GetProperty(propertyName, PropertyFlags);
 		if (pi!=null) {
 			if (pi.CanWrite) {
@@ -907,7 +912,7 @@ static public class CobraImp {
 		for (int i=0; i<argsTypes.Length; i++) {
 			argsTypes[i] = args[i].GetType();
 		}
-		MethodInfo mi = type.GetMethod(methodName, argsTypes);
+		MethodInfo mi = type.GetMethod(methodName, MethodFlags, null, argsTypes, null);
 		if (mi!=null) {
 			return mi.Invoke(obj, args);
 		} else {
@@ -941,7 +946,7 @@ static public class CobraImp {
 	static public object GetIndexerValue(Object obj, params object[] args) {
 		if (obj==null)
 			throw new ArgumentNullException("obj");
-		Type type = obj.GetType();
+		Type type = obj as System.Type ?? obj.GetType();
 		Type[] argsTypes = args==null ? new Type[0] : new Type[args.Length];
 		for (int i=0; i<argsTypes.Length; i++) {
 			argsTypes[i] = args[i].GetType();
@@ -957,7 +962,7 @@ static public class CobraImp {
 	static public object SetIndexerValue(Object obj, Object value, params object[] args) {
 		if (obj==null)
 			throw new ArgumentNullException("obj");
-		Type type = obj.GetType();
+		Type type = obj as System.Type ?? obj.GetType();
 		Type[] argsTypes = args==null ? new Type[0] : new Type[args.Length];
 		for (int i=0; i<argsTypes.Length; i++) {
 			argsTypes[i] = args[i].GetType();
@@ -971,9 +976,23 @@ static public class CobraImp {
 		}
 	}
 
+	static public PromoteNumericsMethod PromoteNumerics = null;
+	
 	static public object DynamicOp(String opMethodName, Object value1, Object value2) {
+		return DynamicOp(opMethodName, value1, value2, true);
+	}
+
+//	static int __dynamicOpCount = 100;
+	
+	static public object DynamicOp(String opMethodName, Object value1, Object value2, bool promote) {
+		if (value1 == null) throw new NullReferenceException("value1");
+		if (value2 == null) throw new NullReferenceException("value2");
 		Type type = value1.GetType();
-		MethodInfo mi = type.GetMethod(opMethodName, BindingFlags.Static|BindingFlags.Public);
+		Type[] types = new Type[] { type, value2.GetType() };
+		MethodInfo mi = type.GetMethod(opMethodName, BindingFlags.Static|BindingFlags.Public, null, types, null);
+//		Console.WriteLine(" <> (   type specs) {7}, op={0}, value1={1}, type1={2}, value2={3}, type2={4}, type={5}, mi={6}, promote={8}",
+//			opMethodName, value1, value1.GetType(), value2, value2.GetType(), type, mi, __dynamicOpCount, promote);
+//		__dynamicOpCount++;
 		if (mi!=null) {
 			return mi.Invoke(value1, new object[] { value1, value2 });
 		} else {
@@ -987,6 +1006,8 @@ static public class CobraImp {
 				return typeof(CobraImp).InvokeMember(name, BindingFlags.Public|BindingFlags.Static|BindingFlags.InvokeMethod, null, null, new object[] { value1, value2 });
 			} catch (MissingMethodException) {
 			}
+			if (promote && PromoteNumerics != null && PromoteNumerics(ref value1, ref value2))
+				return DynamicOp(opMethodName, value1, value2, false);
 			throw new UnknownMemberException(value1, opMethodName + " or " + name, type);
 		}
 	}
@@ -1015,6 +1036,8 @@ static public class CobraImp {
 		if (a==null) return 0;
 		if (b==null) return 1;
 		if (a is IComparable) {
+			if (PromoteNumerics != null)
+				PromoteNumerics(ref a, ref b); // takes no action if types are same or one of the types is not numeric
 			try {
 				return ((IComparable)a).CompareTo(b);
 			} catch (ArgumentException) {
@@ -1092,6 +1115,58 @@ static public class CobraImp {
 
 	static public int op_IntegerDivisionAssignment_Int32_Int32(int a, int b) {
 		return a / b;
+	}
+
+	// float64/double operations
+
+	static public double op_Addition_Double_Double(double a, double b) {
+		return a + b;
+	}
+
+	static public double op_Subtraction_Double_Double(double a, double b) {
+		return a - b;
+	}
+
+	static public double op_Multiply_Double_Double(double a, double b) {
+		return a * b;
+	}
+
+	static public double op_Division_Double_Double(double a, double b) {
+		return a / b;
+	}
+
+	static public int op_IntegerDivision_Double_Double(double a, double b) {
+		return (int)(a / b);
+	}
+
+	static public double op_Modulus_Double_Double(double a, double b) {
+		return a % b;
+	}
+
+	// decimal operations
+	
+	static public decimal op_Addition_Decimal_Decimal(decimal a, decimal b) {
+		return a + b;
+	}
+
+	static public decimal op_Subtraction_Decimal_Decimal(decimal a, decimal b) {
+		return a - b;
+	}
+
+	static public decimal op_Multiply_Decimal_Decimal(decimal a, decimal b) {
+		return a * b;
+	}
+
+	static public decimal op_Division_Decimal_Decimal(decimal a, decimal b) {
+		return a / b;
+	}
+
+	static public int op_IntegerDivision_Decimal_Decimal(decimal a, decimal b) {
+		return (int)(a / b);
+	}
+
+	static public decimal op_Modulus_Decimal_Decimal(decimal a, decimal b) {
+		return a % b;
 	}
 
 	static public String op_Addition_String_String(String a, String b) {
