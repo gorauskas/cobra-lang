@@ -1,0 +1,127 @@
+namespace Cobra.Lang
+
+	sig PromoteNumericsMethod(a as inout dynamic?, b as inout dynamic?) as bool
+
+
+	class NumericTypeInfo
+		"""
+		In support of `NumericTypeInfo.promoteNumerics`, or use for your own purposes.
+		"""
+
+		var isNumeric as bool
+		var isInt as bool
+		var isFloat as bool
+		var isDecimal as bool
+	
+		var size as int
+		var isUnsigned as bool
+
+		invariant
+			.isNumeric == (.isInt or .isFloat or .isDecimal)
+			.isNumeric == (.size > 0)
+			.isUnsigned implies .isInt
+
+		cue init(t as Type)
+			base.init
+			branch Type.getTypeCode(t)
+				on TypeCode.SByte
+					.isNumeric = .isInt = true
+					.size = 8
+				on TypeCode.Byte
+					.isNumeric = .isInt = .isUnsigned = true
+					.size = 8
+				on TypeCode.Int16
+					.isNumeric = .isInt = true
+					.size = 16
+				on TypeCode.UInt16
+					.isNumeric = .isInt = .isUnsigned = true
+					.size = 16
+				on TypeCode.Int32
+					.isNumeric = .isInt = true
+					.size = 32
+				on TypeCode.UInt32
+					.isNumeric = .isInt = .isUnsigned = true
+					.size = 32
+				on TypeCode.Int64
+					.isNumeric = .isInt = true
+					.size = 64
+				on TypeCode.UInt64
+					.isNumeric = .isInt = .isUnsigned = true
+					.size = 64
+				on TypeCode.Single
+					.isNumeric = .isFloat = true
+					.size = 32
+				on TypeCode.Double
+					.isNumeric = .isFloat = true
+					.size = 64
+				on TypeCode.Decimal
+					.isNumeric = .isDecimal = true
+					.size = 128
+
+		def promoteNumerics(a as inout dynamic?, b as inout dynamic?) as bool is shared
+			"""
+			If appropriate, promote one or both of the types for `a` or `b` to make them
+			compatible for numeric operations such as addition and multiplication. Numeric
+			types include int and uint of sizes 8, 16, 32 and 64 as well as the fractionals:
+			float32, float64 and decimal.
+	
+			Note that floats and decimal are not compatible.
+
+			If no promotion is necessary or cannot be attempted because neither type is
+			numeric, false is returned.
+
+			If the promotion cannot be done,
+				throw ArithmeticException('Cannot promote [atype.name] ([a]) and [btype.name] ([b]) to a common type.')
+	
+			See also: PromoteNumericsMethod
+			"""
+			require
+				a is not nil and b is not nil
+			ensure
+				old a and old b and old a.getType == old b.getType implies not result
+			test
+				a as Object?
+				b as Object?
+				for a, b in [[1, 2.3f], [2.3f, 1], [1, 2.3d], [2.3d, 1]]
+					didPromote = .promoteNumerics(inout a, inout b)
+					assert didPromote
+
+				a, b = 2.3f, 4.5d
+				expect ArithmeticException, .promoteNumerics(inout a, inout b)
+
+				a, b = 1, 's'
+				didPromote = .promoteNumerics(inout a, inout b)
+				assert not didPromote
+			body
+				if a is nil or b is nil, throw NullReferenceException()
+				atype, btype = a.getType, b.getType
+				if atype == btype, return false
+				ainfo, binfo = NumericTypeInfo(atype), NumericTypeInfo(btype)
+				if not ainfo.isNumeric or not binfo.isNumeric, return false
+				assert ainfo.isInt or ainfo.isFloat or ainfo.isDecimal
+				assert binfo.isInt or binfo.isFloat or binfo.isDecimal
+				bad = false
+				if ainfo.isInt
+					if binfo.isInt
+						# to-do
+						return false
+					else
+						a = Convert.changeType(a, btype)
+				else if ainfo.isFloat
+					if binfo.isInt
+						b = Convert.changeType(b, atype)
+					else if binfo.isFloat
+						# must be different sizes
+						if ainfo.size < binfo.size, a = Convert.changeType(a, btype)
+						else, b = Convert.changeType(b, atype)
+					else if binfo.isDecimal
+						bad = true
+				else if ainfo.isDecimal
+					if binfo.isInt
+						b = Convert.changeType(b, atype)
+					else if binfo.isFloat
+						bad = true
+					else if binfo.isDecimal
+						return false  # shouldn't really get here. all decimals are same type (and size)
+				if bad, throw ArithmeticException('Cannot promote [atype.name] ([a]) and [btype.name] ([b]) to a common type.')
+				return true
