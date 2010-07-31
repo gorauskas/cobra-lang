@@ -1,0 +1,169 @@
+# .require. dotnet
+# .compile-only.
+"""
+xna.cobra
+
+This sample shows basic XNA use.
+
+XNA is Microsoft's .NET-based API for game programming on Windows, Xbox and other Microsoft devices.
+
+To use this sample:
+ * Download and install XNA Game Studio 3.1
+ * Correct the XNA paths below if needed.
+ * Run with: cobra 700-XNA.cobra
+ * Use the arrow keys to move the man.
+ * You can hold more than one arrow key down at a time.
+
+If you don't see a gingerbread man and a dog, or you get errors about urls or images, then adjust
+the `_getImages` method or supply your own man.png and dog.png.
+
+You can also run with "cobra -d ..." for debugging symbols and "cobra -turbo ..."
+for maximum speed (and minimum checks).
+
+You can search the web for more information about XNA.
+
+For a cross platform alternative see http://cobra-language.com/trac/cobra/wiki/SFMLFramework
+
+Credit: Kurper, CobraCommander
+"""
+
+# A typical directory for XNA follows. Correct if needed for your system.
+@args -lib:"C:\Program Files\Microsoft XNA\XNA Game Studio\v3.1\References\Windows\x86"
+
+# 64-bit Windows is a little different:
+@args -lib:"C:\Program Files (x86)\Microsoft XNA\XNA Game Studio\v3.1\References\Windows\x86"
+
+@ref 'Microsoft.Xna.Framework'
+@ref 'Microsoft.Xna.Framework.Game'
+@ref 'System.Drawing'
+
+@number float32
+
+use System.IO
+use System.Net
+use Microsoft.Xna.Framework
+use Microsoft.Xna.Framework.Graphics
+use Microsoft.Xna.Framework.Input
+
+
+class Sprite
+
+	var _texture as Texture2D
+	var _batch as SpriteBatch
+	var _pos as Vector2
+
+	cue init(texture as Texture2D, batch as SpriteBatch, pos as Vector2)
+		base.init
+		_texture = texture
+		_batch = batch
+		_pos = pos
+
+	def draw
+		""" Draw this sprite on the screen. """
+		_batch.draw(_texture, _pos, Color.white)
+
+	get x as number
+		return _pos.x
+
+	get y as number
+		return _pos.y
+
+	def move(dx as number, dy as number)
+		""" Moves this sprite dx pixels to the right and dy pixels down. """
+		_pos.x += dx
+		_pos.y += dy
+
+
+class MyGame inherits Game
+
+	var _tick as uint
+	var _graphics as GraphicsDeviceManager
+	var _spriteBatch as SpriteBatch?
+	var _sprites as IList<of Sprite>
+
+	cue init
+		base.init
+		_graphics = GraphicsDeviceManager(this)
+		_sprites = List<of Sprite>()
+		_getImages
+
+	def _getImages
+		maxWidth = 128
+		_fetchImage('man.png', maxWidth, 'http://icons.iconseeker.com/png/fullsize/the-real-christmas-05/gingerbread-man.png')
+		_fetchImage('dog.png', maxWidth, 'http://www.capek9cardio.com/wp-content/uploads/2009/05/bad-dog.png')
+
+	def _fetchImage(fileName as String, maxWidth as int, url as String)
+		if File.exists(fileName), return
+		print 'Fetching a [fileName] from the web...'
+		WebClient().downloadFile(url, fileName)
+		_constrainImage(fileName, maxWidth)
+
+	def _constrainImage(fileName as String, width as int)
+		# A `use System.Drawing` above would give us two Color types, two Graphics types, etc.
+		# so use fully qualified type names here as this is the only place that needs
+		# System.Drawing.
+		bm = System.Drawing.Bitmap(fileName)
+		if bm.width <= width, return
+		height = ((width / bm.width) * bm.height) to int  # scale down height proportionately
+		newBM = System.Drawing.Bitmap(width, height)
+		using g = System.Drawing.Graphics.fromImage(newBM)
+			g.compositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality
+			g.smoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality
+			g.interpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic
+			g.drawImage(bm, System.Drawing.Rectangle(0, 0, width, height))
+		# avoid Windows file locks with a temp file, .dispose and .move:
+		tmpFileName = '-tmp-' + fileName
+		newBM.save(tmpFileName, System.Drawing.Imaging.ImageFormat.png)
+		newBM.dispose
+		bm.dispose
+		File.delete(fileName)
+		File.move(tmpFileName, fileName)
+
+	def loadContent is override, protected
+		_spriteBatch = SpriteBatch(_graphics.graphicsDevice)
+		# The canonical XNA way to do this is a content pipeline, but doing that
+		# without Visual Studio is a major pain. Instead, load from files directly.
+		# This is probably somewhat less efficient, but it shouldn't make a big
+		# difference unless you have a LOT of sprites.
+		man = Texture2D.fromFile(_graphics.graphicsDevice, 'man.png')
+		dog = Texture2D.fromFile(_graphics.graphicsDevice, 'dog.png')
+		# Create a few sprites at various positions.
+		_sprites.add(Sprite(man, _spriteBatch, Vector2(0, 0)))
+		_sprites.add(Sprite(dog, _spriteBatch, Vector2(man.width*2, 0)))
+
+	def unloadContent is override, protected
+		# If you have any unloading to do, I guess you should put it here.
+		# We don't, or at least we're blissfully unaware if we do.
+		pass
+
+	def update(gameTime as GameTime?) is override, protected
+		base.update(gameTime)
+		# Move the player's sprite depending on keyboard input.
+		# We just define the first thing in _sprites to be the player's.
+		# A real game should probably do something a bit more robust.
+		assert _sprites.count
+		_tick += 1
+		player = _sprites[0]
+		keys = Keyboard.getState
+		if keys.isKeyDown(Keys.Left), player.move(-1, 0)
+		if keys.isKeyDown(Keys.Right), player.move(1, 0)
+		if keys.isKeyDown(Keys.Up), player.move(0, -1)
+		if keys.isKeyDown(Keys.Down), player.move(0, 1)
+		if _tick % 2 == 0
+			dog = _sprites[1]
+			if dog.x > player.x, dog.move(-1, 0)
+			else if dog.x < player.x, dog.move(1, 0)
+			if dog.y > player.y, dog.move(0, -1)
+			else if dog.y < player.y, dog.move(0, 1)
+
+	def draw(gameTime as GameTime?) is override, protected
+		_graphics.graphicsDevice.clear(Color.cornflowerBlue)
+		_spriteBatch.begin
+		# Draw all the sprites.
+		for sprite in _sprites, sprite.draw
+		_spriteBatch.end
+		base.draw(gameTime)
+
+	def main
+		.run
+
