@@ -54,13 +54,11 @@ class Sprite
 
 	cue init(texture as Texture2D, batch as SpriteBatch, pos as Vector2)
 		base.init
-		_texture = texture
-		_batch = batch
-		_pos = pos
+		_texture, _batch, _pos = texture, batch, pos
 
-	def draw
+	def draw(sb as SpriteBatch)
 		""" Draw this sprite on the screen. """
-		_batch.draw(_texture, _pos, Color.white)
+		sb.draw(_texture, _pos, Color.white)
 
 	get x as number
 		return _pos.x
@@ -89,35 +87,15 @@ class MyGame inherits Game
 
 	def _getImages
 		maxWidth = 128
-		_fetchImage('man.png', maxWidth, 'http://icons.iconseeker.com/png/fullsize/the-real-christmas-05/gingerbread-man.png')
-		_fetchImage('dog.png', maxWidth, 'http://www.capek9cardio.com/wp-content/uploads/2009/05/bad-dog.png')
+		imgTools = ImageTools()
 
-	def _fetchImage(fileName as String, maxWidth as int, url as String)
-		if File.exists(fileName), return
-		print 'Fetching a [fileName] from the web...'
-		WebClient().downloadFile(url, fileName)
-		_constrainImage(fileName, maxWidth)
+		url = 'http://icons.iconseeker.com/png/fullsize/the-real-christmas-05/gingerbread-man.png'
+		imgTools.fetchImage('man.png', url)
+		imgTools.constrainImageWidth('man.png', maxWidth)
 
-	def _constrainImage(fileName as String, width as int)
-		# A `use System.Drawing` above would give us two Color types, two Graphics types, etc.
-		# so use fully qualified type names here as this is the only place that needs
-		# System.Drawing.
-		bm = System.Drawing.Bitmap(fileName)
-		if bm.width <= width, return
-		height = ((width / bm.width) * bm.height) to int  # scale down height proportionately
-		newBM = System.Drawing.Bitmap(width, height)
-		using g = System.Drawing.Graphics.fromImage(newBM)
-			g.compositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality
-			g.smoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality
-			g.interpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic
-			g.drawImage(bm, System.Drawing.Rectangle(0, 0, width, height))
-		# avoid Windows file locks with a temp file, .dispose and .move:
-		tmpFileName = '-tmp-' + fileName
-		newBM.save(tmpFileName, System.Drawing.Imaging.ImageFormat.png)
-		newBM.dispose
-		bm.dispose
-		File.delete(fileName)
-		File.move(tmpFileName, fileName)
+		url = 'http://www.capek9cardio.com/wp-content/uploads/2009/05/bad-dog.png'
+		imgTools.fetchImage('dog.png', url)
+		imgTools.constrainImageWidth('dog.png', maxWidth)
 
 	def loadContent is override, protected
 		_spriteBatch = SpriteBatch(_graphics.graphicsDevice)
@@ -139,8 +117,9 @@ class MyGame inherits Game
 	def update(gameTime as GameTime?) is override, protected
 		base.update(gameTime)
 		# Move the player's sprite depending on keyboard input.
-		# We just define the first thing in _sprites to be the player's.
-		# A real game should probably do something a bit more robust.
+		# We just define the first thing in _sprites to be the player's
+		# and the second to be the dog.
+		# A real game would do something a bit more robust and organized.
 		assert _sprites.count
 		_tick += 1
 		player = _sprites[0]
@@ -149,6 +128,7 @@ class MyGame inherits Game
 		if keys.isKeyDown(Keys.Right), player.move(1, 0)
 		if keys.isKeyDown(Keys.Up), player.move(0, -1)
 		if keys.isKeyDown(Keys.Down), player.move(0, 1)
+		# dog
 		if _tick % 2 == 0
 			dog = _sprites[1]
 			if dog.x > player.x, dog.move(-1, 0)
@@ -158,12 +138,45 @@ class MyGame inherits Game
 
 	def draw(gameTime as GameTime?) is override, protected
 		_graphics.graphicsDevice.clear(Color.cornflowerBlue)
-		_spriteBatch.begin
-		# Draw all the sprites.
-		for sprite in _sprites, sprite.draw
-		_spriteBatch.end
+		batch = _spriteBatch to !
+		batch.begin
+		for sprite in _sprites, sprite.draw(batch)
+		batch.end
 		base.draw(gameTime)
 
 	def main
 		.run
+
+
+class ImageTools
+	"""
+	Fetches images from URLs and can size them down to a max constrained width.
+	Uses System.Net and System.Drawing to accomplish these.
+	"""
+
+	def fetchImage(fileName as String, url as String)
+		if File.exists(fileName), return
+		print 'Fetching a [fileName] from the web...'
+		System.Net.WebClient().downloadFile(url, fileName)
+
+	def constrainImageWidth(fileName as String, width as int)
+		# A `use System.Drawing` above would expose two Color types, two Graphics types, etc.
+		# due to XNA having these things too. So instead this method uses fully qualified type names
+		# as this is the only place that needs System.Drawing.
+		bm = System.Drawing.Bitmap(fileName)
+		if bm.width <= width, return
+		height = ((width / bm.width) * bm.height) to int  # scale down height proportionately
+		newBM = System.Drawing.Bitmap(width, height)
+		using g = System.Drawing.Graphics.fromImage(newBM)
+			g.compositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality
+			g.smoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality
+			g.interpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic
+			g.drawImage(bm, System.Drawing.Rectangle(0, 0, width, height))
+		# avoid Windows file locks with a temp file, .dispose and .move:
+		tmpFileName = '-tmp-' + fileName
+		newBM.save(tmpFileName, System.Drawing.Imaging.ImageFormat.png)
+		newBM.dispose
+		bm.dispose
+		File.delete(fileName)
+		File.move(tmpFileName, fileName)
 
