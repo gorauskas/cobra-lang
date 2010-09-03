@@ -4374,7 +4374,13 @@ class CompareExpr
 		# Compute the C# operation which will be an operator or method call
 		if op=='EQ' or op=='NE'
 			if not left.type.isReference and not right.type.isReference
-				op = _cobraToSharp[_op]
+				# struct/value types
+				if not left.type inherits PrimitiveType and not right.type inherits PrimitiveType
+					# user-defined structs
+					op = '.Equals('
+				else
+					# primitives like ints and decimals (even mixed like someDecimal == someInt)
+					op = _cobraToSharp[_op]
 			else
 				done = false
 				stringType = .compiler.stringType
@@ -4419,10 +4425,17 @@ class CompareExpr
 				if not done
 					op = _cobraToSharp[_op]
 		# Write the C# code
-		if op.length<=2
+		if op.length <= 2
 			left.writeSharpDef(sw)
 			sw.write(op)
 			right.writeSharpDef(sw)
+		else if op == '.Equals('
+			if _op == 'NE', sw.write('!(')
+			left.writeSharpDef(sw)
+			sw.write(op)
+			right.writeSharpDef(sw, false)
+			sw.write(')')
+			if _op == 'NE', sw.write(')')
 		else if op == '.CompareTo('
 			left.writeSharpDef(sw)
 			sw.write(op)
