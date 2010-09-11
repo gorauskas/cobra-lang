@@ -8,17 +8,6 @@ TODO
 	[ ] Gothic chess
 	[ ] Different board game, like Pente: http://www.boardgamegeek.com/game/1295
 	
-COBRA TODO
-
-* if(_piece,_piece,"") should work, but C# complains:
-  Type of conditional expression cannot be determined because there is no implicit conversion between `Cell._piece' and `string'.
-
-* _piece ? "" also complains, although it should work with the expression type being Object
-
-* Methods on constructed types expect "T" instead of the actual type.
-
-* yield return statement
-
 """
 
 class Program
@@ -33,17 +22,14 @@ class Program
 
 class Game
 
-	var _board as Board
-	var _white as Player
-	var _black as Player
-	var _whoseTurn as Player
-	var _moves as List<of Move>
+	var _moves as IList<of Move>
 	
-	def init(board as Board, white as Player, black as Player)
+	cue init(board as Board, white as Player, black as Player)
 		require
 			white.color == Color.white
 			black.color == Color.black
 		body
+			base.init
 			_board = board
 			_white = white
 			_black = black
@@ -51,29 +37,14 @@ class Game
 			black.game = this
 			_whoseTurn = white
 			_moves = List<of Move>()
-		
-	pro board as Board
-		get
-			return _board
-		set
-			require .board is nil
-			_board = value
+
+	get board from var as Board
 	
-	pro white as Player
-		get
-			return _white
-		set
-			require .white is nil
-			_white = value
-		
-	pro black as Player
-		get
-			return _black
-		set
-			require .black is nil
-			_black = value
-	
-	get whoseTurn from var
+	get white from var as Player
+
+	get black from var as Player
+
+	get whoseTurn from var as Player
 	
 	def print
 		whiteTurn = if(_whoseTurn is _white, '> ', '  ')
@@ -96,8 +67,7 @@ class Move
 	pass
 	
 	
-class Board
-	implements IEnumerable<of Cell>
+class Board implements IEnumerable<of Cell>
 	
 	var _numCols as int
 	var _numRows as int
@@ -124,11 +94,12 @@ class Board
 			b.setCell(King(Color.white), maxRow, 2)
 			return b
 			
-	def init(numRows as int, numCols as int)
+	cue init(numRows as int, numCols as int)
 		require
 			numCols >= 2
 			numRows >= 2
 		body
+			base.init
 			_numRows = numRows
 			_numCols = numCols
 			_rows = List<of List<of Cell>>(numRows)
@@ -143,76 +114,34 @@ class Board
 		cell.piece = piece
 		piece.cell = cell
 
-	get [rowIndex as int] as List<of Cell>
+	get rows as IList<of Cell>*
+		for row in _rows, yield row
+
+	get [rowIndex as int] as IList<of Cell>
 		return _rows[rowIndex]
 		
-    def getEnumerator as IEnumerator<of Cell>
-        return BoardEnumerator(this)
-		#CC:
-		#for row in _rows
-		#	for cell in row
-		#		yield return cell
+	def getEnumerator as IEnumerator<of Cell>
+		for row in .rows, for cell in row, yield cell
 
-    def getEnumerator as System.Collections.IEnumerator
-        implements System.Collections.IEnumerable
+	def getEnumerator as System.Collections.IEnumerator
+		implements System.Collections.IEnumerable
 		return .getEnumerator to System.Collections.IEnumerator
 	
 	def print
-		for row in _rows
-			for cell in row
-				cell.dump
+		for row in .rows
+			for cell in row, cell.dump
 			print
 
-
-class BoardEnumerator
-	implements IEnumerator<of Cell>
-	# TODO: would be nicer to use 'yield return' in Board.getEnumerator and then axe this class
-	
-	var _board as Board
-	var _rowIndex as int
-	var _colIndex as int
-	var _numRows as int
-	var _numCols as int
-	
-	def init(board as Board)
-		_board = board
-		_colIndex = -1
-	
-	get current as Cell
-		return _board[_rowIndex][_colIndex]
-
-	get current as Object
-		implements System.Collections.IEnumerator
-		return _board[_rowIndex][_colIndex]
-		
-	def moveNext as bool
-		if _rowIndex >= _numRows
-			return false
-		_colIndex += 1
-		if _colIndex == _numCols
-			_colIndex = 0
-			_rowIndex += 1
-			if _rowIndex == _numRows
-				return false
-		return true
-	
-	def reset
-		_rowIndex = 0
-		_colIndex = -1
-		
-	def dispose
-		pass
-	
-	
 
 class Player
 	
 	var _game as Game?
 	var _board as Board?
 	var _color as Color
-	var _pieces as List<of Piece>
+	var _pieces as IList<of Piece>
 	
-	def init(color as Color)
+	cue init(color as Color)
+		base.init
 		_color = color
 		_pieces = List<of Piece>()
 		
@@ -239,10 +168,9 @@ class Player
 		throw Exception('override playOneMove')
 		
 		
-class ComputerPlayer
-	inherits Player
+class ComputerPlayer inherits Player
 
-	def init(color as Color)
+	cue init(color as Color)
 		base.init(color)
 
 	def toString as String is override
@@ -252,10 +180,9 @@ class ComputerPlayer
 		pass
 		
 
-class HumanPlayer
-	inherits Player
+class HumanPlayer inherits Player
 	
-	def init(color as Color)
+	cue init(color as Color)
 		base.init(color)
 	
 	
@@ -271,7 +198,8 @@ class Cell
 	var _displayRow as int
 	var _piece as Piece?
 	
-	def init(rowNum as int, colNum as int, displayRow as int)
+	cue init(rowNum as int, colNum as int, displayRow as int)
+		base.init
 		_rowNum = rowNum
 		_colNum = colNum
 		_displayRow = displayRow
@@ -293,7 +221,8 @@ class Piece
 	var _cell as Cell?
 	var _color as Color
 	
-	def init(color as Color)
+	cue init(color as Color)
+		base.init
 		_color = color
 	
 	get color from var
@@ -304,30 +233,25 @@ class Piece
 		return '[.getType.name]-[.color]'
 		
 		
-class Pawn
-	inherits Piece
+class Pawn inherits Piece
 	
-	def init(color as Color)
+	cue init(color as Color)
 		base.init(color)
 		
 		
-class Rook
-	inherits Piece
+class Rook inherits Piece
 	
-	def init(color as Color)
+	cue init(color as Color)
 		base.init(color)
 
 
-class Bishop
-	inherits Piece
+class Bishop inherits Piece
 	
-	def init(color as Color)
+	cue init(color as Color)
 		base.init(color)
 		
 	
-class King
-	inherits Piece
+class King inherits Piece
 	
-	def init(color as Color)
+	cue init(color as Color)
 		base.init(color)
-		
