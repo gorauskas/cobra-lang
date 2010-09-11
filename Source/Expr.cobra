@@ -1450,16 +1450,18 @@ class MemberExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 				effectiveType = _definition.resultType
 				receiverType = nil
 			_type = effectiveType
-			# TODO: there should be a subclass of BinaryOpExpr called DotExpr and it should do the following work and maybe even the work above.
-			# TODO: _receiverType = receiverType
-			.binarySuperNode.type = .type  # the type of foo.bar is what bar returns. A MemberExpr is the "bar" part.
-			.binarySuperNode.receiverType = receiverType
-			
+
 			if _definition inherits BoxMember
 				_bindImpBoxMember(_definition, left)  # resolve overloads and check visibility
 			else
 				# TODO: type access like enum, class, delegate
 				pass
+
+			# TODO: there should be a subclass of BinaryOpExpr called DotExpr and it should do the following work and maybe even the work above.
+			# TODO: _receiverType = receiverType
+			.binarySuperNode.type = .type  # the type of foo.bar is what bar returns. A MemberExpr is the "bar" part.
+			.binarySuperNode.receiverType = receiverType
+			
 		assert _type
 
 	def _bindImpBoxMember(defn as BoxMember, left as Expr)
@@ -1485,7 +1487,22 @@ class MemberExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 				params = defn.params
 				if params.count <> 0 and not (params.count == 1 and params[0].type inherits VariType)
 					.throwError('The method "[defn.name]" is expecting [params.count] argument[Utils.plural(params)], but no arguments are being supplied in this call.')
-			
+				else if .name <> 'getType'  # ug, more special handling for getType
+					box = .binarySuperNode.left.type to? Box
+					if box
+						# If there are multiple methods with the name, but this is not an overload,
+						# then prefer the one returning a generic type.
+						# This is for getEnumerator:
+						#     def getEnumerator as IEnumerator
+						#     def getEnumerator as IEnumerator<of T>
+						members = box.allMembersForName(.name)
+						if members.count > 1
+							for mbr in members
+								if mbr.resultType inherits Box and (mbr.resultType to Box).isGeneric
+									_definition = mbr
+									_type = mbr.resultType
+									break
+
 		# check visibility: public, protected, private, internal
 		if defn.isPublic
 			pass
