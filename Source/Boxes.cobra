@@ -425,10 +425,8 @@ class Box
 			_declsInOrder.add(decl)
 
 	def paramForName(name as String) as IType?
-		# TODO: make faster
-		for param in _genericParams
-			if name==param.name
-				return param
+		# linear search is okay since generic arg count is usually 0, 1 or 2
+		for param in _genericParams, if name == param.name, return param
 		return nil
 
 	def symbolForName(name as String, haveThis as bool) as IMember?
@@ -1489,6 +1487,30 @@ class Struct
 		if m is nil and _baseClass
 			m = _baseClass.memberForName(name)
 		return m
+
+	def _makeInitializers
+		base._makeInitializers
+		if .isFromBinaryLibrary, return
+		# Check for explicit parameterless inits which are disallowed in structs
+		hasParameterlessInit = false
+		for decl in .declsInOrder
+			if decl inherits Initializer
+				if not decl.hasParams
+					decl.recordError('Structs cannot contain explicit parameterless initializers. A default one is provided.')
+					hasParameterlessInit = true
+		# Create the implicit parameterless init
+		if hasParameterlessInit, return
+		init = Initializer(.token, .token, this, List<of Param>(), ['public'], AttributeList(), 'Default struct initializer.', isImplicit = true)
+		other = .declForName('cue.init')
+		overload = nil to MemberOverload?
+		if other inherits MemberOverload
+			overload = other
+		else if other
+			overload = MemberOverload(other to BoxMember)
+			.registerOverload(overload to !)
+		else
+			.addDecl(init)
+		if overload, overload.addMember(init)
 
 
 class MethodSig inherits Class is partial
