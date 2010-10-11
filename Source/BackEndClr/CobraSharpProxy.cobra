@@ -11,25 +11,11 @@ class CobraSharpProxy
 	Cobra Sharp library.
 	"""
 
-	shared
-		# TODO: not sure yet how we're going to handle different mono versions yet
-		var _dllNames = [
-			'Cobra.Sharp.2_4_2_3.dll',
-			'Cobra.Sharp.dll',
-		]
-	
 	var _invokeCompiler as MethodInfo?
 	# InvokeCompiler(args as String[], error as TextWriter, filename_to_source as Hashtable?) 
 
 	var _reset as MethodInfo?
 	# Reset()
-
-	
-	cue init
-		base.init
-		for dllName in _dllNames
-			_load(dllName)
-			if .error is nil, break
 
 	cue init(dllName as String)
 		base.init
@@ -48,15 +34,14 @@ class CobraSharpProxy
 		"""
 	
 	def invokeCompiler(args as String[], error as TextWriter, filenameToSource as IDictionary<of String, String>?) as bool
-		if filenameToSource is nil
-			return .invokeCompiler(args, error, nil to Hashtable?)
-		else
+		try
+			# Mono 2.8's InvokeCompiler takes an IDictionary<of String, String>
+			return _invokeCompiler.invoke(nil, @[args, error, filenameToSource]) to bool
+		catch ArgumentException
+			# Older versions of Mono take a Hashtable
 			h = Hashtable()
-			for key, value in filenameToSource, h[key] = value
-			return .invokeCompiler(args, error, h)
-
-	def invokeCompiler(args as String[], error as TextWriter, filenameToSource as Hashtable?) as bool
-		return _invokeCompiler.invoke(nil, @[args, error, filenameToSource]) to bool
+			if filenameToSource, for key, value in filenameToSource, h[key] = value
+			return _invokeCompiler.invoke(nil, @[args, error, h]) to bool
 	
 	def reset
 		_reset.invoke(nil, nil)
@@ -74,9 +59,10 @@ class CobraSharpProxy
 			_error = 'Cannot find "[dllName]".'
 			return
 
-		t = a.getType('Mono.CSharp.CompilerCallableEntryPoint') to ?
+		entryPointName = 'Mono.CSharp.CompilerCallableEntryPoint'
+		t = a.getType(entryPointName) to ?
 		if t is nil
-			_error = 'Cannot find "Mono.CSharp.CompilerCallableEntryPoint" in "[dllName]".'
+			_error = 'Cannot find "[entryPointName]" in "[dllName]".'
 			return
 
 		for m in t.getMethods(BindingFlags(Public, Static))

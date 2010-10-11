@@ -29,14 +29,16 @@ class GenerateSharpCodePhase inherits Phase
 		nativeCompiler = c.options.getDefault('native-compiler', '') to String
 		if nativeCompiler == 'auto'
 			if CobraCore.isRunningOnMono
-				cobraSharp = Path.combine(Path.getDirectoryName(Assembly.getEntryAssembly.location), 'Cobra.Sharp.dll')
-				if File.exists(cobraSharp)
-					if v >= 3, print '-native-compiler:auto ... Found [cobraSharp]'
-					nativeCompiler = cobraSharp
-				else
-					nativeCompiler = ''
+				nativeCompiler = 'provider'
+				entryAssemblyDir = Path.getDirectoryName(Assembly.getEntryAssembly.location)
+				for candidateDllName in _candidateDllNames
+					cobraSharp = Path.combine(entryAssemblyDir, candidateDllName)
+					if File.exists(cobraSharp)
+						if v >= 2, print '-native-compiler:auto ... Found [cobraSharp]'
+						nativeCompiler = cobraSharp
+						break
 			else
-				if v >= 3, print '-native-compiler:auto ... Not running on Mono'
+				if v >= 2, print '-native-compiler:auto ... Not running on Mono'
 				nativeCompiler = 'provider'
 		c.nativeCompiler = nativeCompiler
 		c.willWriteSharpToDisk = not nativeCompiler.endsWith('.dll')  # only Cobra.Sharp.dll will take in-memory source code
@@ -44,6 +46,18 @@ class GenerateSharpCodePhase inherits Phase
 		c.writeSharp  # extension method
 		if c.willWriteTestInvocation
 			c.writeSharpTestInvocation
+
+
+	def _candidateDllNames as String* is private
+		# .monoVersionString could be '2.6.7' or 'Cobra.Sharp.2_8 (tarball Mon Oct 11 00:24:15 PDT 2010).dll'
+		monoVer = CobraCore.monoVersionString.split(c' ')[0].trim
+		if '.' in monoVer
+			parts = monoVer.split(c'.')
+			if parts.length >= 2
+				ver = parts[0] + '_' + parts[1]  # ex: '2.4', '2.6', '2.7'
+				name = 'Cobra.Sharp.' + ver + '.dll'
+				yield name
+		yield 'Cobra.Sharp.dll'
 
 
 class CompileSharpCodePhase inherits Phase
