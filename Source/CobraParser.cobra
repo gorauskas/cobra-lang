@@ -16,6 +16,9 @@ class ErrorMessages
 		get localVariablesMustStartLowercase as String
 			return 'Local variables must start with a lowercase letter. This avoids collisions with other identifiers such as classes and enums.'
 
+		get syntaxErrorAfterDot as String
+			return 'Syntax error after "."'
+
 
 extend String
 	"""
@@ -2781,7 +2784,9 @@ class CobraParser inherits Parser
 					else
 						right = .expression(prec)
 					if op == 'ASSIGN' and left inherits IdentifierExpr and (left to IdentifierExpr).name.startsWithNonLowerLetter
-						.recordError(ErrorMessages.localVariablesMustStartLowercase)			
+						.recordError(ErrorMessages.localVariablesMustStartLowercase)
+					if op == 'DOT' and not right inherits IDotRightExpr
+						.throwError(ErrorMessages.syntaxErrorAfterDot)
 					left = BinaryOpExpr.make(opToken to !, op to !, left to !, right)
 			finally
 				.opStack.pop
@@ -2828,7 +2833,7 @@ class CobraParser inherits Parser
 				else if peek=='OPEN_GENERIC'
 					expr = .callExpr
 				else
-					.throwError('Syntax error after "."')
+					.throwError(ErrorMessages.syntaxErrorAfterDot)
 			finally
 				.opStack.pop
 			return BinaryOpExpr.make(token to !, 'DOT', ThisLit(token, isImplicit=true), expr)
