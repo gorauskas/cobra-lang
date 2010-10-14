@@ -1,0 +1,119 @@
+# .skip.
+# .compile-only.
+"""
+How To User OpenTK
+
+OpenTK provides type-safe, well organized wrappers around OpenGL, OpenCL and OpenAL.
+
+http://www.opentk.com/
+
+
+If you're on Mono, and you want to build OpenTK from source, try:
+
+svn co https://opentk.svn.sourceforge.net/svnroot/opentk/trunk opentk
+cd opentk/
+xbuild
+
+Then look in Binaries/ subdirectory for the OpenTK binary libraries.
+
+Tested on Mac OS X 10.6 with Mono 2.6.7 and OpenTK subversion revisions 2755 and 2780.
+
+"""
+
+@ref 'System.Drawing'
+@ref 'OpenTK'
+@number float64
+
+use OpenTK
+use OpenTK.Graphics
+use OpenTK.Graphics.OpenGL
+use OpenTK.Audio
+use OpenTK.Audio.OpenAL
+use OpenTK.Input
+
+
+class ThisGameWindow inherits GameWindow
+
+	var _rotation = 0.0
+	var _rotationSpeed = 20.0
+
+	cue init
+		""" Creates a 800x600 window with the specified title. """
+		base.init(800, 600, GraphicsMode.default, 'OpenTK Quick Start Sample')
+		# .windowState = WindowState.Fullscreen   # to run in fullscreen
+		.vSync = if(.windowState == WindowState.Fullscreen, VSyncMode.On, VSyncMode.Off)
+
+	def onLoad(e as EventArgs?) is protected, override
+		""" Load resources here. """
+		base.onLoad(e)
+		GL.clearColor(0.1f32, 0.2f32, 0.5f32, 0.0f32)
+		GL.enable(EnableCap.DepthTest)
+		.printDisplayDevices
+
+	def printDisplayDevices
+		for device in DisplayDevice.availableDisplays
+			print
+			print 'DisplayDevice'
+			trace device
+			trace device.isPrimary
+			trace device.bounds
+			trace device.refreshRate
+			trace device.bitsPerPixel
+			# for res in device.availableResolutions, trace res
+		print
+
+	def onResize(e as EventArgs?) is protected
+		"""
+		Called when your window is resized. Set your viewport here. It is also
+		a good place to set up your projection matrix (which probably changes
+		along when the aspect ratio of your window).
+		"""
+		base.onResize(e)
+		cr = .clientRectangle
+		GL.viewport(cr.x, cr.y, cr.width, cr.height)
+		projection = Matrix4d.createPerspectiveFieldOfView(
+			Math.pi / 4, .width / (.height to number), 1.0, 64.0)
+		GL.matrixMode(MatrixMode.Projection)
+		GL.loadMatrix(inout projection)
+
+	def onUpdateFrame(e as FrameEventArgs?) is protected
+		""" Called when it is time to setup the next frame. Add you game logic here. """
+		base.onUpdateFrame(e)
+		if .keyboard[Key.Escape], .exit
+
+	def onRenderFrame(e as FrameEventArgs?) is protected
+		""" Called when it is time to render the next frame. Add your rendering code here. """
+		base.onRenderFrame(e)
+
+		GL.clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit)
+
+		modelview = Matrix4.lookAt(Vector3.zero, Vector3.unitZ, Vector3.unitY)
+		GL.matrixMode(MatrixMode.Modelview)
+		GL.loadMatrix(inout modelview)
+
+		dt = e.time
+		_rotation += _rotationSpeed * dt
+		# trace _rotation, dt
+		GL.rotate(_rotation, 0, 0, 1)
+		
+		GL.begin(BeginMode.Triangles)
+
+		GL.color3(1.0, 1.0, 0.0)
+		GL.vertex3(-1.0, -1.0, 4.0)
+		
+		GL.color3(1.0, 0.0, 0.0)
+		GL.vertex3(1.0, -1.0, 4.0)
+		
+		GL.color3(0.2, 0.9, 1.0)
+		GL.vertex3(0.0, 1.0, 4.0)
+
+		GL.end
+
+		.swapBuffers
+
+	def main is shared has STAThread
+		# The 'using' idiom guarantees proper resource cleanup.
+		# We request 30 UpdateFrame events per second, and unlimited
+		# RenderFrame events (as fast as the computer can handle).
+		using game = ThisGameWindow()
+			game.run(30.0)
