@@ -374,6 +374,8 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 			.printMessages
 
 	def _compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool, stopCompilation as Predicate<of Compiler>?)
+		timeit = .options.boolValue('timeit') and .verbosity
+		timings, totalElapsed = [], 0.0f
 		.willWriteTestInvocation = writeTestInvocation
 		_pathsToCompile = paths
 		# now, essentially, do this:
@@ -383,7 +385,28 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		for phase in .makePhases
 			if stopCompilation and stopCompilation(this), break
 			if not hasErrors or phase.willRunWithErrors
+				sw = System.Diagnostics.Stopwatch()
+				sw.start
 				if .runPhase(phase), hasErrors = true
+				sw.stop
+				if timeit
+					totalElapsed += sw.elapsed.totalSeconds
+					timings.add([sw.elapsed, phase.description])
+				sw.reset
+		if timeit
+			# to see timings try:
+			# cobra -c -v -timeit hello.cobra
+#			timings.sort(do(a, b)=b[0].compareTo(a[0]))
+			sharp'timings.Sort(delegate(object a, object b) { return ((System.TimeSpan)((System.Collections.Generic.List<object>)b)[0]).CompareTo((System.TimeSpan)((System.Collections.Generic.List<object>)a)[0]); })'
+			print
+			print 'Phase timings:'
+			for timing in timings
+				elapsed, description = timing[0].totalSeconds to float, timing[1] to String
+				percent = 100 * elapsed / totalElapsed
+				print '   [percent:00.00]%  [elapsed:00.00]secs  [description]'
+			print '  100.00%  [totalElapsed:00.00]secs  Total for all phases'
+			print
+
 		if hasErrors, _exitFromErrors
 
 	def testifyFilesNamed(fileNames as IList<of String>, options as OptionValues, resultsWriter as IndentedWriter, verbose as bool)
