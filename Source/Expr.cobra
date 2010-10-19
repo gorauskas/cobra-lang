@@ -2368,7 +2368,9 @@ class UnaryOpExpr
 						else
 							throw FallThroughException(op)
 					nodeType = expr.getType
-					expr = nodeType(token).bindAll to Expr
+					expr = nodeType(token)
+					expr.type = _type
+					expr.bindAll
 					_transformTo(expr)
 
 	def toCobraSource as String is override
@@ -2526,7 +2528,8 @@ class FloatLit
 
 	def _bindImp is override
 		base._bindImp
-		_type = if(.token.info inherits int, .compiler.floatType(.token.info to int), .compiler.floatType)
+		if _type is nil
+			_type = if(.token.info inherits int, .compiler.floatType(.token.info to int), .compiler.floatType)
 
 
 class IntegerLit
@@ -2558,13 +2561,14 @@ class IntegerLit
 
 	def _bindImp is override
 		base._bindImp
-		if .token.info inherits int
-			size = .token.info to int
-			signed = size < 0
-			size = if(signed, -1, +1) * size
-			_type = .compiler.intType(signed, size)
-		else
-			_type = .compiler.intType
+		if _type is nil
+			if .token.info inherits int
+				size = .token.info to int
+				signed = size < 0
+				size = if(signed, -1, +1) * size
+				_type = .compiler.intType(signed, size)
+			else
+				_type = .compiler.intType
 
 
 class NilLiteral
