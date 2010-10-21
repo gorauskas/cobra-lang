@@ -561,7 +561,8 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 				_transformToEnumDecl(dotNode, enumDefi)
 				return
 
-		hasErrors = _bindImpArgs
+		needInferOutArgs = false  # to-do: after next snapshot remove this line. 2010-10-20
+		hasErrors = _bindImpArgs(out needInferOutArgs)
 		definition as IMember?
 		type as IType?
 
@@ -586,6 +587,14 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 					if not .hasError and not hasErrors
 						args = _args
 						if definition inherits MemberOverload
+							# to-do: Correct this dependency; Need args bindImp done to calc bestOverload, 
+							# but need best overload to infer (undefined out) variable type
+							if needInferOutArgs
+								moDefn = definition.members[0]  # not guaranteed to have the best param list 
+								if moDefn.hasParams
+									params = moDefn.params
+									_inferOutArgs(args, params, true)	
+									
 							# Note that overloads can have different return types (even if more than just the return type is needed to distinguish them). Example: Math.
 							# Plenty of info here:
 							# http://www.google.com/search?hl=en&q=C%23+overloaded+method+resolution
@@ -602,6 +611,7 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 								else
 									params = definition.params
 									if _checkParamsCount(definition, args, params)
+										if needInferOutArgs, _inferOutArgs(args, params, false)	
 										_checkArgsAssignable(definition, args, params)
 						_checkInOutArguments
 				else
@@ -681,24 +691,39 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 		_type = postCall.type
 		transformTarget._transformTo(postCall)
 
-	def _bindImpArgs as bool
-		hasErrors = false
-		num = 1
-		for arg in List<of Expr>(_args)
+	def _undefinedOutArg(arg as Expr) as bool
+		if arg.direction == Direction.Out
+			if arg inherits IdentifierExpr
+				if not arg.findDefinition
+					return true
+		return false
+				
+	def _bindImpArgs(needInferOutArgs as out bool) as bool
+		"""
+		Do bindImp on callExprs args.
+		Defer binding on undefined out args but flag that is inference needed later (see _bindImp).
+		"""
+		hasErrors = needInferOutArgs = false
+		for num, arg in _args.clone.numbered
 			try
 				if arg inherits AssignExpr
 					arg.right.bindImp  # 'x=y' has special treatment in arguments
 				else
-					boundArg = arg.bindImp
-					if boundArg is not arg  # transformation
-						_args[num-1] = boundArg
-					assert boundArg.didBindImp
+					if needInferOutArgs == false and _undefinedOutArg(arg)
+						needInferOutArgs = true
+						continue
+					_bindImpArg(num, arg)
 			catch ne as NodeException
-				ne.prefixMessage('For "[_name]" arg [num]: ')
+				ne.prefixMessage('For "[_name]" arg [num+1]: ')
 				.compiler.recordError(ne)
 				hasErrors = true
-			num += 1
 		return hasErrors
+
+	def _bindImpArg(num as int, arg as Expr)
+		boundArg = arg.bindImp
+		if boundArg is not arg  # transformation
+			_args[num] = boundArg
+		assert boundArg.didBindImp
 
 	def _didVariArgs(definition as BoxMember) as bool
 		hasVari = false
@@ -728,7 +753,21 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 			else
 				.throwError('The method "[definition.name]" is expecting [params.count] argument[Utils.plural(params)], but [args.count] are being supplied in this call.')
 		return true
-				
+
+	def _inferOutArgs(args as IList<of Expr>, params as IList<of Param>, warn as bool) 
+		for num, arg in args.numbered
+			if _undefinedOutArg(arg)
+				inferredType = params[num].type
+				newDefn = LocalVar(arg.token, inferredType).bindAll to LocalVar
+				.compiler.codeMemberStack.peek.addLocal(newDefn)
+				(arg to IdentifierExpr).setDefinition(newDefn)
+				arg.type = newDefn.type
+				_bindImpArg(num, arg)
+				# the warning below is temporary till we sort out arg.bindImp vs calculating Best overload
+				if warn
+					sugg = 'You may want to disambiguate this by declaring the variable explicitly.'
+					.compiler.warning(this, 'Cobra has implicitly declared a variable "[newDefn.name] as [newDefn.type.name]" for an undefined out parameter variable but the type inferred may not be correct as the method called is overloaded. [sugg]')
+			
 	def _checkArgsAssignable(definition as BoxMember, args as IList<of Expr>, params as IList<of Param>) 
 		for i in args.count
 			arg = args[i]
@@ -1025,16 +1064,8 @@ class IdentifierExpr
 	def _bindImp is override
 		base._bindImp
 		if _definition is nil
+			_definition = .findDefinition 
 			canBeUndottedMember = _name.canBeUndottedMemberName
-			if canBeUndottedMember
-				# assert .compiler.boxStack.count TODO: identifier expr is being used by PostCallExpr which is used for attribute calls
-				_definition = .compiler.symbolForName(_name, false)
-			else
-				# local var ref: foo
-				if .compiler.codeMemberStack.count  # could be: var _x = y   or: has foo
-					_definition = .compiler.findLocal(_name)
-				if _definition is nil
-					_definition  = .compiler.symbolForName(_name, false, true)  # 3rd party DLLs have lowercase class names like iConnection
 			if _definition is nil and not canBeUndottedMember
 				if _superNode inherits BinaryOpExpr
 					if _superNode.right is this
@@ -1058,6 +1089,20 @@ class IdentifierExpr
 				else
 					.throwUnknownIdError
 					throw FallThroughException()
+
+	def findDefinition as INamedNode?
+		definition as INamedNode?
+		canBeUndottedMember = _name.canBeUndottedMemberName
+		if canBeUndottedMember
+			# assert .compiler.boxStack.count TODO: identifier expr is being used by PostCallExpr which is used for attribute calls
+			definition = .compiler.symbolForName(_name, false)
+		else
+			# local var ref: foo
+			if .compiler.codeMemberStack.count  # could be: var _x = y   or: has foo
+				definition = .compiler.findLocal(_name)
+			if definition is nil
+				definition = .compiler.symbolForName(_name, false, true)  # 3rd party DLLs have lowercase class names like iConnection
+		return definition		
 
 	def bindImp as dynamic
 		base.bindImp
