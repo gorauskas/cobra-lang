@@ -587,47 +587,13 @@ class CobraParser inherits Parser
 					.genericConstraints(token, genericParams)
 				on 'INHERITS'
 					if .optional('INHERITS')
-						expectComma = false
-						while true
-							if expectComma
-								if .peek.isKeyword, break
-								.expect('COMMA')
-							inheritsProxies.add(.typeId)
-							expectComma = true
-							if .peek.which == 'EOL'
-								.grab
-								break
-							else if .peek.isKeyword
-								break
+						_commaSepTypes(inheritsProxies)
 				on 'IMPLEMENTS'
 					if .optional('IMPLEMENTS')
-						# TODO: use a nested def to eliminate duplication with on 'INHERITS' just above
-						expectComma = false
-						while true
-							if expectComma
-								if .peek.isKeyword, break
-								.expect('COMMA')
-							implementsProxies.add(.typeId)
-							expectComma = true
-							if .peek.which == 'EOL'
-								.grab
-								break
-							else if .peek.isKeyword
-								break
+						_commaSepTypes(implementsProxies)
 				on 'ADDS'
 					if .optional('ADDS')
-						expectComma = false
-						while true
-							if expectComma
-								if .peek.isKeyword, break
-								.expect('COMMA')
-							addsProxies.add(.typeId)
-							expectComma = true
-							if .peek.which == 'EOL'
-								.grab
-								break
-							else if .peek.isKeyword
-								break
+						_commaSepTypes(addsProxies)
 				else
 					isDone = true
 			if last.isOneOf('EOL.INDENT.'), continue
@@ -637,6 +603,20 @@ class CobraParser inherits Parser
 			encountered.add(last)
 		if not didIndent, .indent
 		return TypeSpecs(isNames, attribs, inheritsProxies, implementsProxies, addsProxies)
+
+	def _commaSepTypes(proxies as List<of ITypeProxy>)
+		expectComma = false
+		while true
+			if expectComma
+				if .peek.isKeyword, break
+				.expect('COMMA')
+			proxies.add(.typeId)
+			expectComma = true
+			if .peek.which == 'EOL'
+				.grab
+				break
+			else if .peek.isKeyword
+				break
 
 	def endOfTypeSpecClause
 		"""
@@ -1346,43 +1326,19 @@ class CobraParser inherits Parser
 		opener = .grab to !
 		if not opener.which.isOneOf('ID.OPEN_CALL.OPEN_GENERIC.') and not opener.isKeyword
 			.throwError('Encountered [opener.which] when expecting an identifier.')
-		if opener.which == 'OPEN_GENERIC'
-			genericParams = .declGenericParams(opener)
-		else
-			genericParams = List<of GenericParam>()
+		genericParams = _methodGenericParams(opener)
+
 		name = opener.value to String
 		curBox = .curBox
 		if name == curBox.name or name.capitalized == curBox.name
 			.throwError('Method names cannot be the same as their enclosing [curBox.englishName]. Use `cue init` for creating an initializer/constructor or choose another name.')  # TODO list the enclosing types location
 
-		unnecessary = false
-		if opener.which == 'OPEN_CALL'
-			params = .paramDecls(/#skipParen=#/true)
-			if params.count == 0, unnecessary = true
-		else if opener.which == 'OPEN_GENERIC'
-			if .optional('LPAREN')
-				params = .paramDecls(/#skipParen=#/true)
-				if params.count == 0, unnecessary = true
-			else
-				params = List<of Param>()
-		else if opener.which == 'ID'  and  .optional('LPAREN')
-			# def id (... - misplaced space after name  
-			.throwError('Misplaced space between method name and opening brace "("') 
-		else
-			params = List<of Param>()
-		if unnecessary
-			_warning(opener, 'Unnecessary parentheses. You can remove them.')
-
-		if .optional('AS')
-			returnType = .typeId to ITypeProxy?
-		else
-			returnType = _typeProvider.voidType
-		assert returnType
+		params = _methodParams(opener)
+		returnType = _methodReturnType
 
 		isNames = List<of String>(_isNamesStack)
 		attribs = AttributeList()
 		implementsType = nil to ITypeProxy?
-
 		method as AbstractMethod?
 
 		# Rules:
@@ -1429,6 +1385,76 @@ class CobraParser inherits Parser
 			encountered.add(last)
 		assert .last.which.isOneOf('EOL.INDENT.')
 
+		nothingMore = _endMethodDecl(didIndent)
+		docString = .docString
+		if token.which == 'CUE' and name == 'init'
+			_verifyInitializer(returnType, implementsType)
+			method = Initializer(token, opener, .curBox, params, isNames, attribs, docString)
+		else
+			method = Method(token, opener, .curBox, name, .makeList<of IType>(genericParams), params, returnType, implementsType, isNames, attribs, docString)
+		if nothingMore
+			if not 'abstract' in isNames and not curBox inherits Interface
+				.throwError('Missing method body for "[name]".')
+		else
+			.statementsFor(method)
+
+		_verifyMethodStatements(method to !, isNames, curBox)
+		assert method
+		overload = _overloadIfNeeded(method.token, curBox, method.name)  # also checks for various errors
+		if overload
+			overload.addMember(method to !)
+			return nil
+		return method
+
+	def _methodGenericParams(opener as IToken) as List<of GenericParam>
+		""" Returns a list of declared GenericParams, possibly empty if there are none. Helper for .declareMethod. """
+		if opener.which == 'OPEN_GENERIC'
+			genericParams = .declGenericParams(opener)
+		else
+			genericParams = List<of GenericParam>()
+		return genericParams	
+		
+	def _methodReturnType as ITypeProxy
+		""" Returns declared method return type or void type if none declared. Helper for .declareMethod. """
+		if .optional('AS')
+			returnType = .typeId to ITypeProxy
+		else
+			returnType = _typeProvider.voidType
+		return returnType
+
+	def _methodParams(opener as IToken) as List<of Param>		
+		""" Returns a list of declared parameters, possibly empty if there were none declared. Helper for .declareMethod. """
+		unnecessary = false
+		if opener.which == 'OPEN_CALL'
+			params = .paramDecls(/#skipParen=#/true)
+			if params.count == 0, unnecessary = true
+		else if opener.which == 'OPEN_GENERIC'
+			if .optional('LPAREN')
+				params = .paramDecls(/#skipParen=#/true)
+				if params.count == 0, unnecessary = true
+			else
+				params = List<of Param>()
+		else if opener.which == 'ID'  and  .optional('LPAREN')
+			# def id (... - misplaced space after name  
+			.throwError('Misplaced space between method name and opening brace "("') 
+		else
+			params = List<of Param>()
+		if unnecessary, _warning(opener, 'Unnecessary parentheses. You can remove them.')
+		return params	
+
+	def	_verifyMethodStatements(method as AbstractMethod, isNames as IList<of String>, curBox as Box)
+		""" Error checks on statements. Helper for .declareMethod. """
+		if method.statements.count
+			if 'abstract' in isNames
+				.throwError('Cannot have statements for an abstract method.')
+			if not curBox.canHaveStatements
+				.throwError('Cannot have statements for a method in an [curBox.englishName].')
+		else
+			if not 'abstract' in isNames and not curBox inherits Interface
+				.throwError('Missing statements. Use "pass" or other statements.')
+
+	def _endMethodDecl(didIndent as bool) as bool	
+		""" Slurp up indentation and indicate if end of declaration. Helper for .declareMethod. """
 		if _spaceAgnosticIndentLevel
 			sail = _spaceAgnosticIndentLevel
 			if sail > 0, _spaceAgnosticIndentLevel -= 1  # for missing indent
@@ -1440,40 +1466,17 @@ class CobraParser inherits Parser
 				nothingMore = .last.which == 'INDENT' and .peek.which <> 'INDENT'  # _spaceAgnosticIndentLevel == 0
 		else
 			nothingMore = not didIndent and .last.which == 'EOL'
-
-		docString = .docString
-		if token.which == 'CUE' and name == 'init'
-			if curBox inherits Interface
-				.throwError('Cannot declare an initializer for an interface.')
-			if returnType is not .typeProvider.voidType
-				.throwError('Cannot declare a return type for an initializer.')
-			if implementsType
-				.throwError('Cannot specify `implements` for an initializer.')
-			method = Initializer(token, opener, .curBox, params, isNames, attribs, docString)
-		else
-			method = Method(token, opener, .curBox, name, .makeList<of IType>(genericParams), params, returnType, implementsType, isNames, attribs, docString)
-		if nothingMore
-			if not 'abstract' in isNames and not curBox inherits Interface
-				.throwError('Missing method body for "[name]".')
-		else
-			.statementsFor(method)
-
-		if method.statements.count
-			if 'abstract' in isNames
-				.throwError('Cannot have statements for an abstract method.')
-			if not curBox.canHaveStatements
-				.throwError('Cannot have statements for a method in an [curBox.englishName].')
-		else
-			if not 'abstract' in isNames and not curBox inherits Interface
-				.throwError('Missing statements. Use "pass" or other statements.')
-
-		assert method
-		overload = _overloadIfNeeded(method.token, curBox, method.name)  # also checks for various errors
-		if overload
-			overload.addMember(method to !)
-			return nil
-		else
-			return method
+		return nothingMore
+		
+	def _verifyInitializer(returnType as ITypeProxy, implementsType as ITypeProxy?)
+		""" Error checks on initializer. Helper for .declareMethod. """
+		if .curBox inherits Interface
+			.throwError('Cannot declare an initializer for an interface.')
+		if returnType is not .typeProvider.voidType
+			.throwError('Cannot declare a return type for an initializer.')
+		if implementsType
+			.throwError('Cannot specify `implements` for an initializer.')
+			
 
 	def declareMethodSig as MethodSig
 		require _typeProvider
@@ -2052,22 +2055,24 @@ class CobraParser inherits Parser
 					s.afterParserRecognizesStatement
 					if .optional('COMMA')
 						s = .multiTargetAssign(s to Expr)
-		if expectEOL
-			if .verbosity>=5
-				print '<> last statement start token=[token]'
-				print '<> s = [s]'
-			try
-				.expect('EOL')
-			catch pe as ParserException
-				# example: puts 5
-				token = .last(1)
-				if token <> nil
-					sugg = if(token.text.length, Compiler.suggestionFor(token.text), nil)
-					sugg = if(sugg, ' Try "[sugg]" instead of "[token.text]".', nil)
-					if sugg, pe = pe.cloneWithMessage(pe.message + sugg)
-				throw pe
+		if expectEOL, _handleStmtEOL(token, s)
 		_finishSpaceAgnostic
 		return s
+		
+	def _handleStmtEOL(token as IToken?, s as Stmt?)	
+		if .verbosity>=5
+			print '<> last statement start token=[token]'
+			print '<> s = [s]'
+		try
+			.expect('EOL')
+		catch pe as ParserException
+			# example: puts 5
+			token = .last(1)
+			if token <> nil
+				sugg = if(token.text.length, Compiler.suggestionFor(token.text), nil)
+				sugg = if(sugg, ' Try "[sugg]" instead of "[token.text]".', nil)
+				if sugg, pe = pe.cloneWithMessage(pe.message + sugg)
+			throw pe
 
 
 	##
@@ -2795,8 +2800,7 @@ class CobraParser inherits Parser
 		return left to !
 
 	def expression2 as Expr
-		if _spaceAgnosticExprLevel > 0
-			_spaceAgnostic
+		if _spaceAgnosticExprLevel > 0, _spaceAgnostic
 		peekToken = .peek
 		peek = peekToken.which
 		if _unaryOpPrec.containsKey(peek)
@@ -2809,114 +2813,115 @@ class CobraParser inherits Parser
 				on 'OLD', return OldExpr(token, unaryExpr)
 				on 'REF', return RefExpr(token, unaryExpr)
 				else, return UnaryOpExpr(token, peek, unaryExpr)
-		# TODO: make a branch statement
-		else if peek=='LPAREN'
-			.grab
-			_spaceAgnosticExprLevel += 1
-			node = .expression(0, nil)
-			.expect('RPAREN')
-			_spaceAgnosticExprLevel -= 1
-			node.isParened = true
-			return node
-		else if peek=='DOT'
-			# leading dot
-			token = .grab
-			.opStack.push('DOT')
-			try
-				peekToken = .peek
-				peek = peekToken.which
-				if peek=='ID' or peekToken.isKeyword
-					memberToken = .idOrKeyword
-					expr = MemberExpr(memberToken) to Expr
-				else if peek=='OPEN_CALL'
-					expr = .callExpr
-				else if peek=='OPEN_GENERIC'
-					expr = .callExpr
+		branch peek
+			on 'LPAREN'
+				.grab
+				_spaceAgnosticExprLevel += 1
+				node = .expression(0, nil)
+				.expect('RPAREN')
+				_spaceAgnosticExprLevel -= 1
+				node.isParened = true
+				return node
+			on 'DOT'
+				# leading dot
+				token = .grab
+				.opStack.push('DOT')
+				try
+					peekToken = .peek
+					peek = peekToken.which
+					if peek=='ID' or peekToken.isKeyword
+						memberToken = .idOrKeyword
+						expr = MemberExpr(memberToken) to Expr
+					else if peek=='OPEN_CALL'
+						expr = .callExpr
+					else if peek=='OPEN_GENERIC'
+						expr = .callExpr
+					else
+						.throwError(ErrorMessages.syntaxErrorAfterDot)
+				finally
+					.opStack.pop
+				return BinaryOpExpr.make(token to !, 'DOT', ThisLit(token, isImplicit=true), expr)
+			on 'NIL'
+				return NilLiteral(.grab)
+			on 'TRUE'
+				return BoolLit(.grab)
+			on 'FALSE'
+				return BoolLit(.grab)
+			on 'THIS'
+				return ThisLit(.grab)
+			on 'BASE'
+				return BaseLit(.grab)
+			on 'VAR'
+				assert _curCodePart
+				if _curCodePart inherits ProperDexerXetter
+					return VarLit(.grab, _curCodePart)
 				else
-					.throwError(ErrorMessages.syntaxErrorAfterDot)
-			finally
-				.opStack.pop
-			return BinaryOpExpr.make(token to !, 'DOT', ThisLit(token, isImplicit=true), expr)
-		else if peek=='NIL'
-			return NilLiteral(.grab)
-		else if peek=='TRUE'
-			return BoolLit(.grab)
-		else if peek=='FALSE'
-			return BoolLit(.grab)
-		else if peek=='THIS'
-			return ThisLit(.grab)
-		else if peek=='BASE'
-			return BaseLit(.grab)
-		else if peek=='VAR'
-			assert _curCodePart
-			if _curCodePart inherits ProperDexerXetter
-				return VarLit(.grab, _curCodePart)
-			else
-				.throwError('Cannot refer to `var` in expressions outside of a property `get` or `set`.')
-				throw FallThroughException() # stop a warning
-		else if peek=='CHAR_LIT_SINGLE'
-			return CharLit(.grab)
-		else if peek=='CHAR_LIT_DOUBLE'
-			return CharLit(.grab)
-		else if peek=='STRING_START_SINGLE'
-			return .stringWithSubstitutionLit('STRING_START_SINGLE', 'STRING_PART_SINGLE', 'STRING_STOP_SINGLE')
-		else if peek=='STRING_START_DOUBLE'
-			return .stringWithSubstitutionLit('STRING_START_DOUBLE', 'STRING_PART_DOUBLE', 'STRING_STOP_DOUBLE')
-		else if peek=='STRING_SINGLE'
-			return StringLit(.grab)
-		else if peek=='STRING_DOUBLE'
-			return StringLit(.grab)
-		else if peek=='INTEGER_LIT'
-			return IntegerLit(.grab)
-		else if peek=='DECIMAL_LIT'
-			return DecimalLit(.grab)
-		else if peek=='FRACTIONAL_LIT'
-			return FractionalLit(.grab)
-		else if peek=='FLOAT_LIT'
-			return FloatLit(.grab)
-		else if peek=='LBRACKET'
-			return .literalList
-		else if peek=='ARRAY_OPEN'
-			return .literalArray
-		else if peek=='LCURLY'
-			return .literalDictOrSet
-		else if peek.isOneOf('OPEN_DO.DO.')
-			return .doExpr
-		else if peek=='OPEN_IF'
-			return .ifExpr
-		else if peek=='FOR'
-			return .forExpr
-		else if peek=='OPEN_CALL'
-			return .callExpr
-		else if peek=='OPEN_GENERIC'
-			if .opStack.count and .opStack.peek == 'DOT'
+					.throwError('Cannot refer to `var` in expressions outside of a property `get` or `set`.')
+					throw FallThroughException() # stop a warning
+			on 'CHAR_LIT_SINGLE'
+				return CharLit(.grab)
+			on 'CHAR_LIT_DOUBLE'
+				return CharLit(.grab)
+			on 'STRING_START_SINGLE'
+				return .stringWithSubstitutionLit('STRING_START_SINGLE', 'STRING_PART_SINGLE', 'STRING_STOP_SINGLE')
+			on 'STRING_START_DOUBLE'
+				return .stringWithSubstitutionLit('STRING_START_DOUBLE', 'STRING_PART_DOUBLE', 'STRING_STOP_DOUBLE')
+			on 'STRING_SINGLE'
+				return StringLit(.grab)
+			on 'STRING_DOUBLE'
+				return StringLit(.grab)
+			on 'INTEGER_LIT'
+				return IntegerLit(.grab)
+			on 'DECIMAL_LIT'
+				return DecimalLit(.grab)
+			on 'FRACTIONAL_LIT'
+				return FractionalLit(.grab)
+			on 'FLOAT_LIT'
+				return FloatLit(.grab)
+			on 'LBRACKET'
+				return .literalList
+			on 'ARRAY_OPEN'
+				return .literalArray
+			on 'LCURLY'
+				return .literalDictOrSet
+			on 'OPEN_DO' or 'DO'
+				return .doExpr
+			on 'OPEN_IF'
+				return .ifExpr
+			on 'FOR'
+				return .forExpr
+			on 'OPEN_CALL'
 				return .callExpr
-			else
-				return TypeExpr(.typeId)
-		else if peek=='ID'
-			return .identifierExpr
-		else if peek.isOneOf('SHARP_OPEN.SHARP_SINGLE.SHARP_DOUBLE.')
-			return .sharpExpr
-		else if .opStack.count and .opStack.peek=='DOT' and .peek.isKeyword
-			return .identifierExpr
-		else
-			try
-				return .typeExpr
-			catch pe as ParserException
-				if .allowKeywordAssignment and peekToken.isKeyword and .peek is not nil and .peek.which == 'ASSIGN'
-					assert .last is peekToken
-					word, op = .last, .grab
-					if word.text.startsWithNonLowerLetter
-						.recordError(ErrorMessages.localVariablesMustStartLowercase)
-					return AssignExpr(op, 'ASSIGN', IdentifierExpr(word), .expression)
-				else if pe.message.contains('Unrecognized type')
-					msg = 'Expecting an expression.'
-					if peekToken.isKeyword
-						msg += ' "[peekToken.text]" is a reserved keyword that is not expected here.'
-					.throwError(msg)
-					throw FallThroughException()
+			on 'OPEN_GENERIC'
+				if .opStack.count and .opStack.peek == 'DOT'
+					return .callExpr
 				else
-					throw
+					return TypeExpr(.typeId)
+			on 'ID'
+				return .identifierExpr
+			on 'SHARP_OPEN' or 'SHARP_SINGLE' or 'SHARP_DOUBLE'
+				return .sharpExpr
+			else
+				if .opStack.count and .opStack.peek=='DOT' and .peek.isKeyword
+					return .identifierExpr
+				else
+					try
+						return .typeExpr
+					catch pe as ParserException
+						if .allowKeywordAssignment and peekToken.isKeyword and .peek is not nil and .peek.which == 'ASSIGN'
+							assert .last is peekToken
+							word, op = .last, .grab
+							if word.text.startsWithNonLowerLetter
+								.recordError(ErrorMessages.localVariablesMustStartLowercase)
+							return AssignExpr(op, 'ASSIGN', IdentifierExpr(word), .expression)
+						else if pe.message.contains('Unrecognized type')
+							msg = 'Expecting an expression.'
+							if peekToken.isKeyword
+								msg += ' "[peekToken.text]" is a reserved keyword that is not expected here.'
+							.throwError(msg)
+							throw FallThroughException()
+						else
+							throw
 
 	def multiTargetAssign(arg0 as Expr) as Stmt
 		# id, |[id,]... = <expr>

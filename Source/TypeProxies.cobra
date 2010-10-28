@@ -168,15 +168,9 @@ class ClrTypeProxy inherits AbstractTypeProxy
 		
 		# Must return the Cobra primitive types in place of System.Boolean, System.Char, System.Int16, etc.
 		# because it's the primitives that are used all over the compiler.
-
 		clrPrimitiveToIType = .compiler.clrPrimitiveToITypeCache
 		if clrPrimitiveToIType is nil or clrPrimitiveToIType.count == 0
-			clrPrimitiveToIType = Dictionary<of System.Type, IType>()
-			for bt in .compiler.basicTypes
-				if bt.systemAliasProxy
-					key = (.compiler.nativeType((bt.systemAliasProxy to LibraryTypeProxy).qualifiedName) to ClrNativeType).clrType # TODO: cleanup
-					clrPrimitiveToIType[key] = bt
-			assert clrPrimitiveToIType.count == 0 or clrPrimitiveToIType.count > 9
+			clrPrimitiveToIType = _makePrimitiveTypesDict
 		basicType as IType?
 		if clrPrimitiveToIType.tryGetValue(clrType, out basicType)
 			return basicType to !
@@ -211,7 +205,52 @@ class ClrTypeProxy inherits AbstractTypeProxy
 		if clrType.isGenericParameter
 			return GenericParam(ClrNativeType(clrType))
 
-		# compute type name
+		typeName = _computeTypeName(clrType)
+		missing = false
+		curNS = _computeNameSpace(clrType, level, out missing)
+		if missing
+			# since the CLR type exists, but cannot be located in our namespaces,
+			# it must be pulled from a dependent DLL that was not directly referenced
+			# but maybe it was already attempted
+			if level > 0, .throwError('Cannot read CLR type "[clrType.fullName]" or its assembly "[clrType.assembly]". Please report to the Cobra discussion forums (http://cobra-language.com/).')
+
+			(.compiler to dynamic).readAssembly(clrType.assembly)
+			return _realTypeWithoutCache(clrType, level+1) # recurse. guard is just above.
+
+		# return namespace member
+		member as IMember? = curNS.declForName(typeName)
+		if member inherits IType
+			if member inherits Box
+				if clrType.isGenericType and not clrType.isGenericTypeDefinition
+					# So we have something like ICollection<of KeyValuePair<of TKey,TValue>> which is all CLR types.
+					# We need the Cobra types of those args so we can construct the Cobra type from the generic cobra type
+					# otherwise, we would just end up returning the generic definition.
+					member = _typeForArgsOfGeneric(clrType, member)
+			return member
+		else
+			msg = 'Cannot locate CLR type "[clrType]".'
+			if clrType.namespace and clrType.namespace.startsWith('System.')
+				# TODO: On .NET 2.0 only \Tests\110-basics-two\550-collection-equality.cobra
+				# fails with: Cannot locate CLR type "System.Collections.KeyValuePairs[]".
+				# Figure out why.
+				if .compiler and .compiler.verbosity > 1
+					print msg
+				# TODO: .compiler.warning(msg)
+				return .compiler.objectType
+			else
+				.throwError(msg)
+		return .compiler.intType  # CC: to make C# code gen happy.
+
+	def _makePrimitiveTypesDict as Dictionary<of System.Type, IType>
+		clrPrimitiveToIType = Dictionary<of System.Type, IType>()
+		for bt in .compiler.basicTypes
+			if bt.systemAliasProxy
+				key = (.compiler.nativeType((bt.systemAliasProxy to LibraryTypeProxy).qualifiedName) to ClrNativeType).clrType # TODO: cleanup
+				clrPrimitiveToIType[key] = bt
+		assert clrPrimitiveToIType.count == 0 or clrPrimitiveToIType.count > 9
+		return clrPrimitiveToIType
+
+	def _computeTypeName(clrType as Type) as String
 		typeName = clrType.name
 		if '`' in typeName
 			# generic like IComparable`1
@@ -221,8 +260,9 @@ class ClrTypeProxy inherits AbstractTypeProxy
 			pass
 		else
 			.throwError('Cannot locate CLR type "[clrType]".')
+		return typeName
 
-		# compute namespace
+	def _computeNameSpace(clrType as Type, level as int, missing as out bool) as NameSpace
 		missing = false
 		nameParts = clrType.namespace.split(c'.')
 		member = .compiler.globalNS.symbolForName(nameParts[0])
@@ -241,48 +281,19 @@ class ClrTypeProxy inherits AbstractTypeProxy
 				else
 					.throwError('Found "[namePart]" at component [i+1] of CLR type "[clrType.fullName]", but it is a [possible.englishName].')
 				i += 1
+		return curNS	
 
-		if missing
-			# since the CLR type exists, but cannot be located in our namespaces,
-			# it must be pulled from a dependent DLL that was not directly referenced
-			
-			# but maybe it was already attempted
-			if level > 0
-				.throwError('Cannot read CLR type "[clrType.fullName]" or its assembly "[clrType.assembly]". Please report to the Cobra discussion forums (http://cobra-language.com/).')
-
-			(.compiler to dynamic).readAssembly(clrType.assembly)
-			return _realTypeWithoutCache(clrType, level+1)  # recurse. guard is just above.
-
-		# return namespace member
-		member = curNS.declForName(typeName)
-		if member inherits IType
-			if member inherits Box
-				if clrType.isGenericType and not clrType.isGenericTypeDefinition
-					# So we have something like ICollection<of KeyValuePair<of TKey,TValue>> which is all CLR types.
-					# We need the Cobra types of those args so we can construct the Cobra type from the generic cobra type
-					# otherwise, we would just end up returning the generic definition.
-					args = List<of IType>()
-					for genArg in clrType.getGenericArguments
-						args.add(_realTypeWithCache(genArg))
-					if member.qualifiedName == 'System.Nullable<of>'
-						assert args.count == 1
-						member = .typeProvider.nilableType(args[0])
-					else
-						member = (member to Box).constructedTypeFor(args)
-			return member
+	def _typeForArgsOfGeneric(clrType as Type, member as IType) as IType
+		args = List<of IType>()
+		for genArg in clrType.getGenericArguments
+			args.add(_realTypeWithCache(genArg))
+		boxMember = member to Box
+		if boxMember.qualifiedName == 'System.Nullable<of>'
+			assert args.count == 1
+			member = .typeProvider.nilableType(args[0])
 		else
-			msg = 'Cannot locate CLR type "[clrType]".'
-			if clrType.namespace and clrType.namespace.startsWith('System.')
-				# TODO: On .NET 2.0 only \Tests\110-basics-two\550-collection-equality.cobra
-				# fails with: Cannot locate CLR type "System.Collections.KeyValuePairs[]".
-				# Figure out why.
-				if .compiler and .compiler.verbosity > 1
-					print msg
-				# TODO: .compiler.warning(msg)
-				return .compiler.objectType
-			else
-				.throwError(msg)
-		return .compiler.intType  # CC: to make C# code gen happy.
+			member = boxMember.constructedTypeFor(args)
+		return member	
 
 	def _hack(clrType as Type) as IType
 		if clrType.isInterface

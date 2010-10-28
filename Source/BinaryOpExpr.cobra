@@ -321,33 +321,14 @@ class NumericPromoExpr inherits BinaryOpExpr is partial
 					_type = .compiler.numberType
 				else
 					_type = tgcd
-			else if rightType.isDescendantOf(tdecimal)
-				_type = tdecimal
-			else if rightType.isDescendantOf(tfloat)
-				_type = tgcd
+			else
+				cannotMix = _ifRightTypeThen(tdecimal, tdecimal, tfloat, tgcd)
 		else if leftType.isDescendantOf(tdecimal)
-			if rightType.isDescendantOf(tdecimal)
-				_type = tdecimal
-			else if rightType.isDescendantOf(tint)
-				_type = tdecimal
-			else if rightType.isDescendantOf(tfloat)
-				cannotMix = true
-			else
-				cannotMix = true
+			cannotMix = _ifRightTypeThen(tdecimal, tdecimal, tint, tdecimal)
 		else if leftType.isDescendantOf(tfloat)
-			if rightType.isDescendantOf(tfloat)
-				_type = tgcd
-			else if rightType.isDescendantOf(tint)
-				_type = tgcd
-			else if rightType.isDescendantOf(tdecimal)
-				cannotMix = true
-			else
-				cannotMix = true
+			cannotMix = _ifRightTypeThen(tfloat, tgcd, tint, tgcd)
 		else if leftType.isDescendantOf(tstring)
-			if rightType.isDescendantOf(tstring)
-				_type = tstring
-			else
-				cannotMix = true
+			cannotMix = _ifRightTypeThen(tstring, tstring)
 		else if leftType inherits Box
 			if leftType.isGeneric and leftType.isDescendantOf(.compiler.collectionOfType.constructedTypeFor([leftType.genericParams[0]]))
 				if leftType.genericParams.count > 1
@@ -386,6 +367,18 @@ class NumericPromoExpr inherits BinaryOpExpr is partial
 					.throwError('Cannot apply [_op] to [leftType.name]. [sugg]')
 				else
 					.throwError('Cannot apply [_op] to [leftType.name] and [rightType.name]. [sugg]')
+
+	def _ifRightTypeThen(ifThenPairs as vari IType) as bool
+		rightType = _right.type.nonNil
+		i = 0
+		while i < ifThenPairs.length
+			matchType, resultType = ifThenPairs[i], ifThenPairs[i+1]
+			i += 2
+			if rightType.isDescendantOf(matchType)
+				_type = resultType
+				return false
+		return true		
+						
 	
 
 class AugAssignMathExpr inherits NumericPromoExpr is partial

@@ -686,26 +686,11 @@ class IfStmt
 				left = cond.left
 				if left inherits IdentifierExpr
 					leftVar = left.namedDefinition
-					if leftVar inherits IVar  # if-inherits smarts only work on variables
-						# if x inherits Y ...
-						if (right = cond.right) inherits IPotentialTypeExpr
-							assert right.potentialType
-							leftVar.ifInheritsStack.push(right.potentialType to !)
-						else
-							throw FallThroughException(right)
-						ifInherits = true
-						_trueStmts.setIfInherits(leftVar, leftVar.ifInheritsStack.peek)
+					ifInherits = _ivarIfInherits(cond, leftVar)
 				else if left inherits AssignExpr
 					if left.left inherits IdentifierExpr
 						leftVar = left.left.definition
-						if leftVar inherits IVar
-							# if (x = expr) inherits Y ...
-							if (right = cond.right) inherits IPotentialTypeExpr
-								leftVar.ifInheritsStack.push(right.potentialType to !)
-							else
-								throw FallThroughException(right)
-							ifInherits = true
-							_trueStmts.setIfInherits(leftVar, leftVar.ifInheritsStack.peek)
+						ifInherits = _ivarIfInherits(cond, leftVar)
 			if not ifInherits
 				# check for an if-not-nil
 				if cond inherits TruthExpr
@@ -754,6 +739,19 @@ class IfStmt
 		if _falseStmts
 			_falseStmts.parent = this
 			_falseStmts.bindImp
+
+	def _ivarIfInherits(cond as InheritsExpr, leftVar as INamedNode?) as bool
+		ifInherits = false
+		if leftVar inherits IVar  # if-inherits smarts only work on variables
+			# if x inherits Y ...
+			if (right = cond.right) inherits IPotentialTypeExpr
+				assert right.potentialType
+				leftVar.ifInheritsStack.push(right.potentialType to !)
+			else
+				throw FallThroughException(right)
+			ifInherits = true
+			_trueStmts.setIfInherits(leftVar, leftVar.ifInheritsStack.peek)
+		return ifInherits	
 
 	def doNotPopIfInheritsStack
 		_doNotPopIfInheritsStack = true
