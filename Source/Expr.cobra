@@ -95,6 +95,14 @@ class Expr inherits Stmt implements IExpr is abstract, partial
 		"""
 		return false
 
+	get canBeStatement as bool
+		return false
+
+	def afterStatementBindImp is override
+		base.afterStatementBindImp
+		if not .hasError and not .canBeStatement
+			.recordError('Only assignment, call and new object expressions can be used as a statement.')
+
 	pro type from var
 
 	pro receiverType as IType?
@@ -426,6 +434,9 @@ class AsExpr
 	def addSubFields is override
 		base.addSubFields
 		.addField('typeNode', _typeNode)
+
+	get canBeStatement as bool is override
+		return true
 
 	def _bindImp is override
 		base._bindImp
@@ -1032,6 +1043,9 @@ class IdentifierExpr
 		# cannot override definition with a set, because base does not do a set
 		_definition = value
 
+	get canBeStatement as bool is override
+		return _definition inherits Method
+
 	get isCalling as bool is override
 		assert _definition
 		return _definition.isMethod
@@ -1131,15 +1145,6 @@ class IdentifierExpr
 	def postBindImpAssertType is override
 		# TODO: document why this is disabled
 		pass
-
-	def afterStatementBindImp
-		base.afterStatementBindImp
-		if not .hasError
-			if not .isCalling
-				if .definition inherits IVar
-					.throwError('A simple reference to a variable or parameter cannot be a statement.')
-				else
-					.throwError('A single identifier cannot be a statement (unless it is an underscored method invocation such as "_foo").')
 
 	def toCobraSource as String is override
 		return _name
@@ -1656,6 +1661,9 @@ class PostCallExpr
 		for expr in base.allExprs, yield expr
 		for expr in .expr.allExprs, yield expr
 		for arg in .args, for expr in arg.allExprs, yield expr
+
+	get canBeStatement as bool is override
+		return true
 
 	get expr from var
 
