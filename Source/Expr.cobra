@@ -494,6 +494,38 @@ class CallOrMemberExpr inherits Expr is abstract, partial
 		#   has AttributeUsage(AttributeTargets.Method, allowMultiple=false)
 		return name
 
+	def _checkVisibility(defn as BoxMember, left as Expr)
+		""" Check visibility: public, protected, private, internal. """
+		if defn.isPublic, return
+		# search for 'def pub' and/or 'def prot' for the relevant test cases for this
+		curBox, defnParentBox = .compiler.curBox, defn.parentBox
+		if defn.isProtected
+			if not left inherits BaseLit _
+				and not left inherits ThisLit _
+				and not curBox is defnParentBox _
+				and not defnParentBox.isDescendantOf(curBox) _
+				and not (left.type.isDescendantOf(curBox) and curBox.isDescendantOf(defnParentBox)) _
+				and not _subCheckVisibility(defn, left, curBox)
+				# then
+				msg = 'Cannot access protected "[_name]" in "[left.toCobraSource]"[left.whoseTypeIsMessage].'
+				if curBox.isDescendantOf(defnParentBox) or _
+					(curBox.isGeneric and defnParentBox.isConstructed and curBox.isIndirectConstructionOf(defnParentBox.genericDef to !))
+					# then
+					msg += ' The qualifier must be of type "[curBox.nameWithGenericParams]" or derived from it.'
+				.throwError(msg)
+		else if defn.isPrivate
+			if not curBox is defnParentBox and not curBox is defnParentBox.genericDef
+				.throwError('Cannot access private "[_name]" in "[left.toCobraSource]"[left.whoseTypeIsMessage].')
+		else if defn.isInternal
+			# TODO
+			pass
+
+	def _subCheckVisibility(defn as BoxMember, left as Expr, curBox as Box) as bool
+		leftBox = left.type to? Box
+		if leftBox
+			return leftBox.isGeneric and curBox.isGenericDef and leftBox.isIndirectConstructionOf(curBox) and leftBox.isDescendantOf(defn.parentBox)
+		return false
+
 
 class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 	"""
@@ -625,6 +657,7 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 										if needInferOutArgs, _inferOutArgs(args, params, false)	
 										_checkArgsAssignable(definition, args, params)
 						_checkInOutArguments
+						_checkVisibility(definition, dotNode.left)
 				else
 					throw FallThroughException(definition)
 			if type is nil, type = .compiler.passThroughType
@@ -1502,7 +1535,8 @@ class MemberExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 			_type = effectiveType
 
 			if _definition inherits BoxMember
-				_bindImpBoxMember(_definition, left)  # resolve overloads and check visibility
+				_bindImpBoxMember(_definition, left)
+				_checkVisibility(_definition, left)
 			else
 				# TODO: type access like enum, class, delegate
 				pass
@@ -1525,7 +1559,7 @@ class MemberExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 							didResolveOverload = true
 							break
 				if not didResolveOverload
-					for member in defn.members 
+					for member in defn.members
 						if member inherits AbstractMethod
 							if member.params.count == 1 and member.params[0].type inherits VariType
 								_definition = member
@@ -1553,19 +1587,6 @@ class MemberExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 									_type = mbr.resultType
 									break
 
-		# check visibility: public, protected, private, internal
-		if defn.isPublic
-			pass
-		else if defn.isProtected
-			if not .compiler.curBox.isDescendantOf(defn.parentBox)
-				.throwError('Cannot access protected "[_name]" in "[left.toCobraSource]"[left.whoseTypeIsMessage].')
-		else if defn.isPrivate
-			if not .compiler.curBox is defn.parentBox
-				.throwError('Cannot access private "[_name]" in "[left.toCobraSource]"[left.whoseTypeIsMessage].')
-		else if defn.isInternal
-			# TODO
-			pass
-			
 	def toCobraSource as String is override
 		return _name
 
