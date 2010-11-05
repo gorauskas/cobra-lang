@@ -872,17 +872,20 @@ class PrimitiveType
 		base._bindInh
 		if _superType is nil
 			_superType = .compiler.objectType
-		if .compiler  # will be nil during unit tests
-			_box = Class(Token.empty, Token.empty, '[.getType.name]_[.serialNum]', List<of IType>(), List<of String>(), AttributeList(), ClrTypeProxy(Object), List<of ITypeProxy>(), List<of ITypeProxy>(), nil)
-			_box.bindInh
-	
-	def _bindInt
-		base._bindInt
 		if not _systemAliasType and _systemAliasProxy
 			_systemAliasType = _systemAliasProxy.realType
-		# causes an exception and isn't necessary:
-		#if _systemAliasType
-		#	_systemAliasType.bindInt
+			_systemAliasType.bindInh
+		if .compiler  # will be nil during unit tests
+			_box = Class(Token.empty, Token.empty, '[.getType.name]_[.serialNum]', List<of IType>(), List<of String>(), AttributeList(), ClrTypeProxy(Object), List<of ITypeProxy>(), List<of ITypeProxy>(), nil)
+			if _systemAliasType inherits Box
+				for bip in _systemAliasType.baseInterfaceProxies
+					_box.baseInterfaceProxies.add(bip)
+			_box.bindInh
+
+	def _bindInt
+		base._bindInt
+
+		if _systemAliasType, _systemAliasType.bindInt
 
 		if .compiler and _nativeType
 			meths = List<of Method>()
@@ -893,23 +896,26 @@ class PrimitiveType
 			# ultimately, extensions of primitive types should be supported
 			_installNativeMethodsFrom('CobraLangInternal', ClrNativeType(Cobra.Lang.DecimalTools.getType), meths)
 
-			_box.bindInt
-			if false
-				# print out the methods
-				# useful for documentation
-				print
-				print 'type', .name
-				sharedMeths = for meth in meths where meth.isShared
-				if sharedMeths.count
-					sharedMeths.sort(ref .compareMethodNames)
-					print '    shared'
-					for meth in sharedMeths
-						print '        [meth.cobraSourceSignature(false)]'
-				objectMeths = for meth in meths where not meth.isShared
-				if objectMeths.count
-					objectMeths.sort(ref .compareMethodNames)
-					for meth in objectMeths
-						print '    [meth.cobraSourceSignature]'
+			# _printMethods(meths)
+
+		_box.bindInt
+
+	def _printMethods(meths as IList<of Method>)
+		# print out the methods
+		# useful for documentation
+		print
+		print 'type', .name
+		sharedMeths = for meth in meths where meth.isShared
+		if sharedMeths.count
+			sharedMeths.sort(ref .compareMethodNames)
+			print '    shared'
+			for meth in sharedMeths
+				print '        [meth.cobraSourceSignature(false)]'
+		objectMeths = for meth in meths where not meth.isShared
+		if objectMeths.count
+			objectMeths.sort(ref .compareMethodNames)
+			for meth in objectMeths
+				print '    [meth.cobraSourceSignature]'
 
 	def _installNativeMethodsFrom(namespaceName as String, nativeType as NativeType, meths as List<of Method>)
 		argClrType = (nativeType to ClrNativeType).clrType
@@ -983,12 +989,16 @@ class PrimitiveType
 		return member
 
 	def isAssignableTo(type as IType) as bool
-		r = base.isAssignableTo(type)
-		if not r, r = _systemAliasType == type
-		return r
+		return this == type _
+			or _systemAliasType == type _
+			or (_box and _box.isAssignableTo(type)) _
+			or base.isAssignableTo(type)
 
-	def isComparableTo(t as IType) as bool
-		return this is t or base.isComparableTo(t)
+	def isComparableTo(type as IType) as bool
+		return this == type _
+			or _systemAliasType == type _
+			or (_box and _box.isComparableTo(type)) _
+			or base.isComparableTo(type)
 
 # TODO?
 #	def isEquatableTo(t as IType) as bool
