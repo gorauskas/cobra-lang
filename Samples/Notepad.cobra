@@ -1,0 +1,443 @@
+"""
+Cobra Notepad Sample
+by Todd A., Charles Esterbrook
+
+This program is a basic text editor written with Cobra and the Windows Presentation Framework (WPF).
+"""
+
+@args -lib:'C:\Program Files\Reference Assemblies\Microsoft\Framework\v3.0'
+@ref 'PresentationFramework'
+@ref 'PresentationCore'
+@ref 'WindowsBase'
+
+use System.ComponentModel
+use System.Windows
+use System.Windows.Controls
+use System.Windows.Controls.Primitives
+use System.Windows.Documents
+use System.Windows.Input
+use System.Windows.Media
+use System.Windows.Threading
+use Microsoft.Win32
+
+
+class CustomCommands
+
+	shared
+
+		var increaseFontSize = RoutedCommand('IncreaseFontSize', CustomCommands.getType, _
+			InputGestureCollection([KeyGesture(Key.OemPlus, ModifierKeys.Control, 'Ctrl++')]))
+
+		var decreaseFontSize = RoutedCommand('DecreaseFontSize', CustomCommands.getType, _
+			InputGestureCollection([KeyGesture(Key.OemMinus, ModifierKeys.Control, 'Ctrl+-')]))
+
+		var resetFontSize = RoutedCommand('ResetFontSize', CustomCommands.getType, _
+			InputGestureCollection([KeyGesture(Key.D0, ModifierKeys.Control)]))
+
+
+sig CanExecuteMethod(sender, e as CanExecuteRoutedEventArgs)
+
+sig ExecutedMethod(sender, e as ExecutedRoutedEventArgs)
+
+sig RoutedMethod(sender, e as RoutedEventArgs)
+
+
+class MainWindow inherits Window
+
+	var _path as String?
+	var _isModified as bool
+	var _textBox as TextBox
+	var _status as TextBlock
+	var _filters = 'All Files|*.*;*|Config|*.conf;*.config|Text|*.txt;*.text'
+
+	cue init
+		base.init
+		.buildLayout
+		.bindCommands
+		.path = nil
+
+		listen _textBox.textChanged, ref .textChangeHandler
+		listen .loaded, ref .loadedHandler
+		listen .closing, ref .closingHandler
+
+	get appName as String
+		return 'Cobra Notepad Sample'
+
+	get fileName as String?
+		return if(.path, Path.getFileName(.path), 'Untitled')
+
+	pro path as String?
+		get
+			return _path
+		set
+			_path = value
+			if _path
+				fileName = Path.getFileName(_path)
+				dirName = Path.getDirectoryName(_path)
+				.title = '[.appName] - [fileName] - [dirName]'
+			else
+				.title = '[.appName] - Untitled'
+
+	pro status as String
+		get
+			return _status.text ? ''
+		set
+			_status.text = '[value]  ([DateTime.now])'
+
+	def loadedHandler(sender, e as RoutedEventArgs)
+		_textBox.focus
+		_textBox.fontFamily = FontFamily('Consolas')
+
+	def closingHandler(sender, e as CancelEventArgs)
+		res = .promptUserToSave
+		if res == MessageBoxResult.Cancel
+			e.cancel = true
+			return
+		else if res == MessageBoxResult.Yes
+			.saveFile(_path to !, _textBox.text to !)
+
+	def showAbout(sender, e as RoutedEventArgs)
+		MessageBox.show('Copyright © 2010 Cobra Language. All rights reserved.',
+			'About [.appName]', MessageBoxButton.OK)
+
+	def buildLayout
+		menu = .push(Menu())
+
+		.pushMenuItem('_File')
+		if true
+			.addMenuItem('_New', ApplicationCommands.new)
+			.addMenuItem('_Open...', ApplicationCommands.open)
+			.addMenuItem('_Save', ApplicationCommands.save)
+			.addMenuItem('Save As...', ApplicationCommands.saveAs)
+			.addSeparator
+			.addMenuItem('_Print...', ApplicationCommands.print)
+			.addSeparator
+			.addMenuItem('_Exit', ApplicationCommands.close)
+		.popItem
+
+		.pushMenuItem('_Edit')
+		if true
+			.addMenuItem('Undo', ApplicationCommands.undo)
+			.addMenuItem('Redo', ApplicationCommands.redo)
+			.addSeparator
+			.addMenuItem('Cut', ApplicationCommands.cut)
+			.addMenuItem('Copy', ApplicationCommands.copy)
+			.addMenuItem('Paste', ApplicationCommands.paste)
+			.addMenuItem('Delete', ApplicationCommands.delete)
+			.addSeparator
+			.addMenuItem('Select All', ApplicationCommands.selectAll)
+		.popItem
+
+		.pushMenuItem('_Format')
+		if true
+			.pushMenuItem('Font Size')
+			if true
+				.addMenuItem('Increase', CustomCommands.increaseFontSize, ref .increaseFontHandler)
+				.addMenuItem('Decrease', CustomCommands.decreaseFontSize, ref .decreaseFontHandler)
+				.addSeparator
+				.addMenuItem('Reset', CustomCommands.resetFontSize, ref .resetFontHandler)
+			.popItem
+			# .addMenuItem('Font...', ... to-do
+		.popItem
+
+		.pushMenuItem('_Help')
+		if true
+			.addMenuItem('About', ref .showAbout)
+		.popItem
+
+		.popItem  # main menu
+
+		_textBox = TextBox(acceptsReturn=true, acceptsTab=true)
+		_textBox.verticalScrollBarVisibility = ScrollBarVisibility.Auto
+		_textBox.horizontalScrollBarVisibility = ScrollBarVisibility.Auto
+		listen _textBox.previewMouseWheel, ref .textMouseWheelHandler
+
+		statusBar = Grid()
+		_status = TextBlock(text='',
+			horizontalAlignment=HorizontalAlignment.Left,
+			margin=Thickness(5))
+		statusBar.children.add(_status)
+
+		grid = Grid()
+		grid.rowDefinitions.add(RowDefinition(height=GridLength.auto))
+		grid.rowDefinitions.add(RowDefinition())
+		grid.rowDefinitions.add(RowDefinition(height=GridLength.auto))
+
+		.content = grid
+
+		grid.children.add(menu)
+		grid.children.add(_textBox)
+		grid.children.add(statusBar)
+
+		Grid.setRow(menu, 0)
+		Grid.setRow(_textBox, 1)
+		Grid.setRow(statusBar, 2)
+
+	## Building menus
+
+	var _itemsControlStack = Stack<of ItemsControl>()
+
+	def push(ic as ItemsControl) as ItemsControl
+		_itemsControlStack.push(ic)
+		return ic
+
+	def pushMenuItem(header as String) as MenuItem
+		mi = .addMenuItem(header, nil, nil)
+		.push(mi)
+		return mi
+
+	def addMenuItem(header as String, command as RoutedCommand?) as MenuItem
+		return .addMenuItem(header, command, nil)
+
+	def addMenuItem(header as String, handler as RoutedMethod?) as MenuItem
+		return .addMenuItem(header, nil, handler)
+
+	def addMenuItem(header as String, command as RoutedCommand?, handler as RoutedMethod?) as MenuItem
+		mi = MenuItem(header=header, command=command)
+		if handler, listen mi.click, RoutedEventHandler(handler)
+		.addControl(mi)
+		return mi
+
+	def addSeparator
+		.addControl(Separator())
+
+	def addControl(c as Control)
+		_itemsControlStack.peek.items.add(c)
+
+	def popItem as ItemsControl
+		return _itemsControlStack.pop
+
+	## Bind commands
+
+	def bindCommands
+		.bindCommand(ApplicationCommands.new to !, ref .defaultCanExecute, ref .newExecuted)
+		.bindCommand(ApplicationCommands.open to !, ref .defaultCanExecute, ref .openExecuted)
+		.bindCommand(ApplicationCommands.save to !, ref .saveCanExecute, ref .saveExecuted)
+		.bindCommand(ApplicationCommands.saveAs to !, ref .defaultCanExecute, ref .saveAsExecuted)
+		.bindCommand(ApplicationCommands.print to !, ref .defaultCanExecute, ref .printExecuted)
+		.bindCommand(ApplicationCommands.close to !, ref .defaultCanExecute, ref .exitExecuted)
+
+		.bindCommand(ApplicationCommands.undo to !, ref .undoCanExecute, ref .undoExecuted)
+		.bindCommand(ApplicationCommands.redo to !, ref .defaultCanExecute, ref .redoExecuted)
+
+		.bindCommand(ApplicationCommands.cut to !, ref .defaultCanExecute, ref .cutExecuted)
+		.bindCommand(ApplicationCommands.copy to !, ref .defaultCanExecute, ref .copyExecuted)
+		.bindCommand(ApplicationCommands.paste to !, ref .defaultCanExecute, ref .pasteExecuted)
+
+		.bindCommand(ApplicationCommands.delete to !, ref .defaultCanExecute, ref .deleteExecuted)
+
+		.bindCommand(ApplicationCommands.selectAll to !, ref .defaultCanExecute, ref .selectAllExecuted)
+		
+		.bindCommand(CustomCommands.increaseFontSize, ref .defaultCanExecute, ref .increaseFontHandler)		
+		.bindCommand(CustomCommands.decreaseFontSize, ref .defaultCanExecute, ref .decreaseFontExecuted)
+		.bindCommand(CustomCommands.resetFontSize, ref .defaultCanExecute, ref .resetFontExecuted)
+
+	def bindCommand(command as ICommand, canExecute as CanExecuteMethod, executed as ExecutedMethod)
+		cb = CommandBinding(command)
+		listen cb.canExecute, CanExecuteRoutedEventHandler(canExecute)
+		listen cb.executed, ExecutedRoutedEventHandler(executed)
+		.commandBindings.add(cb)
+
+	def textChangeHandler(sender, e as TextChangedEventArgs)
+		if not _isModified
+			_isModified = true
+			.status = 'Modified'
+			
+	def increaseFontHandler(sender, e as RoutedEventArgs?)
+		_textBox.fontSize += 1f
+		if _textBox.fontSize > 24f, _textBox.fontSize = 24f
+		.status = 'Increased font size.'
+	
+	def decreaseFontHandler(sender, e as RoutedEventArgs?)
+		_textBox.fontSize -= 1f
+		if _textBox.fontSize < 6f, _textBox.fontSize = 6f
+		.status = 'Decreased font size.'
+
+	def resetFontHandler(sender, e as RoutedEventArgs?)
+		_textBox.fontSize = 12f
+		.status = 'Reset font size.'
+
+	def textMouseWheelHandler(sender, e as MouseWheelEventArgs)
+		if (Keyboard.modifiers & ModifierKeys.Control) to int > 0
+			if e.delta > 0
+				.increaseFontHandler(nil, nil)
+			else if e.delta < 0
+				.decreaseFontHandler(nil, nil)
+			e.handled = true
+
+	def defaultCanExecute(sender, e as CanExecuteRoutedEventArgs)
+		e.canExecute = true
+		e.handled = true
+
+	def saveCanExecute(sender, e as CanExecuteRoutedEventArgs)
+		e.canExecute = _isModified
+		e.handled = true
+
+	def undoCanExecute(sender, e as CanExecuteRoutedEventArgs)
+		e.canExecute = _textBox.canUndo
+		e.handled = true
+
+	def redoCanExecute(sender, e as CanExecuteRoutedEventArgs)
+		e.canExecute = _textBox.canRedo
+		e.handled = true
+
+	def newExecuted(sender, e as ExecutedRoutedEventArgs)
+		res = .promptUserToSave
+		if res == MessageBoxResult.Cancel
+			return
+		else
+			_textBox.text = ''
+			.path = nil
+			.revive
+			.status = 'New.'
+		e.handled = true
+
+	def openExecuted(sender, e as ExecutedRoutedEventArgs)
+		res = .promptUserToSave
+		if res == MessageBoxResult.Cancel
+			return
+		else if res == MessageBoxResult.Yes
+			.saveFile(_path, _textBox.text)
+		else
+			dialog = OpenFileDialog(filter=_filters)
+			if dialog.showDialog
+				.path = dialog.fileName to !
+				_textBox.text = File.readAllText(_path)
+				.revive
+				.status = 'Opened.'
+		e.handled = true
+
+	def saveExecuted(sender, e as ExecutedRoutedEventArgs)
+		# If a path is set for the currently edited file then save the text,
+		# else prompt the user for a filename then save to that location
+		if _path and _isModified
+			.saveFile(_path, _textBox.text)
+		else if _isModified
+			newPath = .promptSaveFileName
+			if newPath
+				.path = newPath
+				.saveFile(_path, _textBox.text)
+		e.handled = true
+
+	def saveAsExecuted(sender, e as ExecutedRoutedEventArgs)
+		newPath = .promptSaveFileName
+		if newPath
+			.path = newPath
+			.saveFile(_path, _textBox.text)
+	
+	def printExecuted(sender, e as ExecutedRoutedEventArgs)
+		dialog = PrintDialog()
+		if dialog.showDialog
+			.status = 'Printing...'
+			flowDoc = FlowDocument(columnWidth=700.0f, fontFamily=FontFamily('Consolas'))
+			lines = _textBox.text.split(c'\n')
+			for line in lines
+				para = Paragraph(margin=Thickness(0))
+				para.inlines.add(Run(line))
+				flowDoc.blocks.add(para)
+			paginator = (flowDoc to IDocumentPaginatorSource).documentPaginator
+			dialog.printDocument(paginator, _path)
+			.status = 'Printed.'
+		
+	def exitExecuted(sender, e as ExecutedRoutedEventArgs)
+		.close
+
+	def undoExecuted(sender, e as ExecutedRoutedEventArgs)
+		_textBox.undo
+		e.handled = true
+
+	def redoExecuted(sender, e as ExecutedRoutedEventArgs)
+		_textBox.redo
+		e.handled = true
+
+	def cutExecuted(sender, e as ExecutedRoutedEventArgs)
+		_textBox.cut
+		e.handled = true
+
+	def copyExecuted(sender, e as ExecutedRoutedEventArgs)
+		_textBox.copy
+		e.handled = true
+
+	def pasteExecuted(sender, e as ExecutedRoutedEventArgs)
+		_textBox.paste
+		e.handled = true
+
+	def deleteExecuted(sender, e as ExecutedRoutedEventArgs)
+		_textBox.selectedText = ''
+		e.handled = true
+
+	def selectAllExecuted(sender, e as ExecutedRoutedEventArgs)
+		_textBox.selectAll
+		e.handled = true
+		
+	def increaseFontExecuted(sender, e as ExecutedRoutedEventArgs)
+		.increaseFontHandler(nil, nil)
+		e.handled = true
+		
+	def decreaseFontExecuted(sender, e as ExecutedRoutedEventArgs)
+		.decreaseFontHandler(nil, nil)
+		e.handled = true
+		
+	def resetFontExecuted(sender, e as ExecutedRoutedEventArgs)
+		.resetFontHandler(nil, nil)
+		e.handled = true
+
+	def promptUserToSave as MessageBoxResult
+		"""
+		Prompt's the user to commit unsaved changes.
+		Returns true if a save was performed, else false
+		"""
+		if _isModified
+			res = MessageBox.show('Do you want to save changes to [.fileName]?',
+					'Save changes', MessageBoxButton.YesNoCancel)
+			if res == MessageBoxResult.Yes
+				# If the current file is a new file that has never been written to disk then 
+				# prompt the user to provide a name and save it.
+				if not _path
+					newPath = .promptSaveFileName
+
+					# If the user provides a filename/path then load this path, else if they cancel the
+					# dialog box then return a 'No' result.
+					if newPath
+						.path = newPath
+					else
+						return MessageBoxResult.No
+
+				if _path and _path.trim <> ''
+					.saveFile(_path, _textBox.text)
+			return res
+
+		return MessageBoxResult.No
+
+	def promptSaveFileName as String?
+		dialog = SaveFileDialog(filter=_filters)
+		dialog.fileName = .fileName
+		if dialog.showDialog
+			newPath = dialog.fileName to !
+			return newPath
+		return nil
+
+	def saveFile(path as String?, content as String?)
+		if path, File.writeAllText(path, content ? '')
+		.revive
+		.status = 'Saved.'
+
+	def revive
+		_isModified = false
+		.status = ''
+
+
+class Program
+
+	def main is shared has STAThread
+		Program().run
+
+	def run
+		app = Application()
+		listen app.dispatcherUnhandledException, ref .unhandledExceptionHandler
+		app.run(MainWindow())
+
+	def unhandledExceptionHandler(sender, args as DispatcherUnhandledExceptionEventArgs)
+		msg = 'Exception: ' + args.exception.message
+		MessageBox.show(msg, 'Unhandled Exception', MessageBoxButton.OK)
+		args.handled = true
