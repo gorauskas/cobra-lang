@@ -25,7 +25,7 @@ Support:
 
 Credits:
     Pygments library by Georg Brandl.
-    Cobra mods by Chuck Esterbrook.
+    Cobra mods by Charles Esterbrook.
 """
 
 class MoreNotes:
