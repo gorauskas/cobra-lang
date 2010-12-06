@@ -388,6 +388,30 @@ static public class CobraImp {
 		return i!=null && i.Value!=0;
 	}
 
+	static public bool IsTrue(uint i) {
+		return i!=0;
+	}
+
+	static public bool IsTrue(uint? i) {
+		return i!=null && i.Value!=0;
+	}
+
+	static public bool IsTrue(long i) {
+		return i!=0;
+	}
+
+	static public bool IsTrue(long? i) {
+		return i!=null && i.Value!=0;
+	}
+
+	static public bool IsTrue(ulong i) {
+		return i!=0;
+	}
+
+	static public bool IsTrue(ulong? i) {
+		return i!=null && i.Value!=0;
+	}
+
 	static public bool IsTrue(decimal d) {
 		return d!=0;
 	}
