@@ -104,16 +104,16 @@ class CobraTokenizer inherits Tokenizer
 			r'OPEN_IF				if\(',
 			r'OPEN_CALL				[A-Za-z_][A-Za-z0-9_]*\(',
 
-			r'HEX_LIT_UNSIGN		0x[\dA-Fa-f][\dA-Fa-f]*(u|_u)(8|16|32|64)?',
+			r'HEX_LIT_UNSIGN		0x[\dA-Fa-f][\dA-Fa-f]*(_?u)(8|16|32|64)?',
 			r'HEX_LIT_EXPLICIT		0x[\dA-Fa-f][\dA-Fa-f]*_(8|16|32|64)?',
 			r'HEX_LIT				0x[\dA-Fa-f][\dA-Fa-f]*',
 
 			r'FLOAT_LIT_1			\d[\d_]*\.\d+_?f(32|64)?',
-			r'FLOAT_LIT_2			\d[\d_]*(f|_f)(32|64)?',
-			r'DECIMAL_LIT			\d[\d_]*\.\d+(d|_d)',
+			r'FLOAT_LIT_2			\d[\d_]*(_?f)(32|64)?',
+			r'DECIMAL_LIT			\d[\d_]*(\.\d+)?(_?d)',
+			r'NUMBER_LIT			\d[\d_]*(\.\d+)?(_?n)',
 			r'FRACTIONAL_LIT		\d[\d_]*\.\d+',
-			r'INTEGER_LIT_SIGN		\d[\d_]*(i|_i)(8|16|32|64)?',
-			r'INTEGER_LIT_UNSIGN	\d[\d_]*(u|_u)(8|16|32|64)?',
+			r'INTEGER_LIT_EXPLICIT	\d[\d_]*_?[iu](8|16|32|64)?',
 			r'INTEGER_LIT			\d[\d_]*',
 
 			r'INT_SIZE				int[0-9]+(?=[^A-Za-z0-9_])',
@@ -519,6 +519,12 @@ class CobraTokenizer inherits Tokenizer
 			.recordError('Range overflow for decimal literal "[tok.text]".')
 		return tok
 
+	def onNUMBER_LIT(tok as IToken) as IToken?
+		require tok.text.endsWith('n')
+		tok.which = 'FRACTIONAL_LIT'
+		tok.text = tok.text[:-1]
+		return .onFRACTIONAL_LIT(tok)
+
 	def onFRACTIONAL_LIT(tok as IToken) as IToken?
 		s = tok.text.replace('_', '')
 		try
@@ -548,34 +554,17 @@ class CobraTokenizer inherits Tokenizer
 			.recordError('Range overflow for integer literal "[tok.text]".')
 		return tok
 
-	def onINTEGER_LIT_SIGN(tok as IToken) as IToken?
+	def onINTEGER_LIT_EXPLICIT(tok as IToken) as IToken?
 		require
-			'i' in tok.text
-		ensure
-			result.which == 'INTEGER_LIT'
-			(result.info to int) in [-8, -16, -32, -64]  # CC: axe cast
-		body
-			_onINTEGER_LIT_EXPLICIT(tok, true)
-			return tok
-	
-	def onINTEGER_LIT_UNSIGN(tok as IToken) as IToken?
-		require
-			'u' in tok.text
-		ensure
-			result.which == 'INTEGER_LIT'
-			(result.info to int) in [8, 16, 32, 64]  # CC: axe cast
-		body
-			_onINTEGER_LIT_EXPLICIT(tok, false)
-			return tok
-			
-	def _onINTEGER_LIT_EXPLICIT(tok as IToken, signed as bool)
+			'i' in tok.text or 'u' in tok.text
 		ensure
 			tok.which == 'INTEGER_LIT'
 			(tok.info to int) in [-8, 8, -16, 16, -32, 32, -64, 64]  # CC: axe cast
 		body
-			k = if(signed, 'i', 'u')	
 			s = tok.text.replace('_', '')
-			if s.endsWith(k)
+			for c in s, if not c.isDigit, break
+			# c will be 'i' or 'u'
+			if s[s.length-1] == c
 				size = 32
 				s = s[:-1]
 			else if s.endsWith('32')
@@ -602,8 +591,9 @@ class CobraTokenizer inherits Tokenizer
 			catch OverflowException
 				.recordError('Range overflow for integer literal "[tok.text]".')
 			tok.which = 'INTEGER_LIT'
-			tok.info = if(signed, -1, +1) * size
-			
+			tok.info = if(c == c'i', -1, +1) * size
+			return tok
+
 	def onHEX_LIT_UNSIGN(tok as IToken) as IToken? 
 		require
 			'u' in tok.text
