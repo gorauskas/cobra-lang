@@ -1,0 +1,83 @@
+"""
+HexDump program in Cobra.
+by Johannes Krampf, Mike Hopkirk, Charles Esterbrook
+
+Produces output like hexdump -C  
+"""
+
+
+class HexDump
+
+	def main
+		args = CobraCore.commandLineArgs
+		if args.count <> 2
+			binary_name = Path.getFileName(args[0])
+			print 'Usage: [binary_name] \[filename\]'
+			CobraCore.exit(1)
+		for i in 1 : args.count
+			.dumpFileNamed(args[i], 16)
+
+	def dumpFileNamed(filename as String, width as int)
+		require width % 2 == 0
+		.dumpBytes(FileByteStream(filename).read, width)
+
+	def dumpBytes(bytes as int*, width as int)
+		require
+			width % 2 == 0  # width must be even
+		test
+			cases = [
+				['aoeu', '00000000  61 6f  65 75  |aoeu|\n00000004\n'],
+				['aoe\nasdf', '00000000  61 6f  65 0a  |aoe.|\n00000004  61 73  64 66  |asdf|\n00000008\n'],
+			]
+			for input, expected in cases
+				sw = StringWriter()
+				print to sw
+					bytes = for b in Encoding.ascii.getBytes(input) get b to int
+					HexDump().dumpBytes(bytes, 4)
+				actual = sw.toString.replace('\r', '')
+				assert actual == expected, input
+		body
+			halfWidth = width // 2
+			hexPart = asciiPart = ''	
+			for n, byte in bytes.toList.numbered
+				if (n % width) == 0  # file offset in hex
+					line = '[n:x8]'
+					hexPart += '[line]  '
+				hex = '[byte:x2]'
+				hexPart += '[hex] '  #  accumulate hex chars space separated
+				asciiPart += if(0x1f < byte < 0x80, Convert.toChar(byte).toString, '.')
+				if (n+1) % width == 0  # display a full line
+					print '[hexPart] |[asciiPart]|'
+					hexPart = asciiPart = ''
+				else if (n+1) % halfWidth == 0  # extra space in middle of hex
+					hexPart += ' '
+
+			n += 1
+			if n % width
+				# space pad both parts of partially filled last line 
+				hpad = 3*(width - (n % width)) + if(0 < (n % width) <= halfWidth, 1, 0)
+				hexPart += ' '.padLeft(hpad)
+				apad = width - (n % width)
+				asciiPart += ' '.padLeft(apad)
+				print '[hexPart] |[asciiPart]|'
+
+			print '[n:x8]'  # file byte count
+
+
+class FileByteStream
+
+	var _input as FileStream
+
+	cue init(filename as String)
+		base.init
+		try
+			_input = File.openRead(filename)
+		catch ioe as IOException
+			print 'I/O Error: [ioe.message]'
+
+	def read as int*
+		while true
+			current = _input.readByte
+			if current == -1, break
+			yield current
+		yield break
