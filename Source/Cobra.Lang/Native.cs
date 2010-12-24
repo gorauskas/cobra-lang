@@ -897,6 +897,7 @@ static public class CobraImp {
 				FieldInfo fi = type.GetField(propertyName, FieldFlags);
 				if (fi!=null)
 					return fi.GetValue(obj);
+				if (propertyName == "TypeOf") return GetPropertyValue(obj, "GetType");
 				throw new UnknownMemberException(obj, propertyName, type);
 			}
 		}
