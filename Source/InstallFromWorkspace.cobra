@@ -57,6 +57,15 @@ TO RUN
 	To test the installation, try invoking Cobra from *outside* the workspace.
 
 
+NOTES
+
+	In some special cases, users have required that Cobra.Lang.dll not be
+	installed to the GAC. There is an option for this called -skip-std-lib.
+	Any other command line options are passed to the Cobra snapshot compiler
+	when invoked to compile the compiler source code. If no options are
+	specified, -turbo is the default.
+
+	
 ASSUMPTIONS
 
 	* Your system meets the requirements for Novell Mono 2.4 or .NET 2.0
@@ -84,6 +93,7 @@ TODO
 
 use System.Diagnostics
 use System.Reflection
+use System.Security.Principal
 use System.Text.RegularExpressions
 
 # for GAC installation
@@ -95,7 +105,10 @@ class InstallFromWorkspace
 
 	var installDirectories = [r'C:\Cobra', '/usr/local/cobra']
 
-	var configFileName = 'install-directory.text'
+	const configFileName = 'install-directory.text'
+
+	const _standardLibName = 'Cobra.Lang'
+	const _standardLibPath = _standardLibName + '.dll'
 
 	def main is shared
 		InstallFromWorkspace().run
@@ -108,7 +121,8 @@ class InstallFromWorkspace
 	var _targetDir as String?         # ex: 'C:\Cobra', '/usr/local/cobra'
 	var _versionDir as String?        # ex: 'C:\Cobra\Cobra-0.8.0-post', 'C:\Cobra\Cobra-0.8.0-post-2009-03-01', '/usr/local/cobra/Cobra-0.8.1-post'
 	var _cobraCommandPath as String?  # ex: 'C:\Cobra\bin\cobra.bat', '/usr/local/cobra/bin/cobra'
-
+	var _args = List<of String>()
+	var _skipStdLib = false
 
 	def run
 		print
@@ -117,6 +131,8 @@ class InstallFromWorkspace
 		print
 		print 'Working...'
 		print
+		_args = .parseCommandLineArgs
+		.verifyElevatedPermissions
 		.verifyInstallDirectory
 		.verifyInWorkspace
 		.verifyVirtualMachineVersion
@@ -124,9 +140,11 @@ class InstallFromWorkspace
 		# .locateGacUtil
 		.buildCobraCompiler
 		.getBaseVersion
-		.buildCobraLibrary
+		if not _skipStdLib
+			.buildCobraLibrary
+			.installCobraLibraryToGAC
+			.verifyGacInstallation
 		.verifyNewlyBuiltCobra
-		.installCobraLibraryToGAC
 		.copyFilesToInstallDirectory
 		.verifyNewlyInstalledCobra
 		.cleanUpWorkspace
@@ -138,8 +156,7 @@ class InstallFromWorkspace
 	## Self utils
 
 	get compileFlags as String
-		args = CobraCore.commandLineArgs
-		if args.count > 1, return args[1]  # TODO: should be a join of args[1:]
+		if _args.count > 0, return _args.join(' ')
 		else, return '-turbo'
 
 	get isRunningOnUnix as bool
@@ -155,6 +172,15 @@ class InstallFromWorkspace
 	get slash as char
 		return Path.directorySeparatorChar
 
+	def parseCommandLineArgs as List<of String>
+		args = CobraCore.commandLineArgs
+		args = args[1:]
+		i = args.indexOf('-skip-std-lib')
+		if i > -1
+			_skipStdLib = true
+			args.removeAt(i)
+		return args
+
 	def error(msg)
 		print '** ERROR:', msg
 		Environment.exit(1)
@@ -162,6 +188,11 @@ class InstallFromWorkspace
 
 	def warning(msg)
 		print '** WARING:', msg
+
+	def isAdmin as bool
+		wi = WindowsIdentity.getCurrent
+		wp = WindowsPrincipal(wi)
+		return wp.isInRole(WindowsBuiltInRole.Administrator) or wi.token == IntPtr.zero
 
 
 	## File system
@@ -302,6 +333,12 @@ class InstallFromWorkspace
 
 
 	## Stages
+
+	def verifyElevatedPermissions
+		.startStage('Verify running as admin user')
+		if not .isAdmin
+			.error('Please run this executable as an admin user.')
+			
 
 	def verifyInstallDirectory
 		.startStage('Verify installation directory')
@@ -452,29 +489,50 @@ class InstallFromWorkspace
 		.startStage('Verify newly built Cobra compiler')
 		.runSourceCobra('-about')
 		msg = 'Cannot run hello.cobra with new compiler.'
-		output = .runSourceCobra('-ert:no hello')
-		if not output.startsWith('Hello'), .error(msg)
+		if not _skipStdLib
+			output = .runSourceCobra('-ert:no hello')
+			if not output.startsWith('Hello'), .error(msg)
+			output = .runSourceCobra('hello')
+			if not output.startsWith('Hello'), .error(msg)
 		output = .runSourceCobra('-ert:yes hello')
-		if not output.startsWith('Hello'), .error(msg)
-		output = .runSourceCobra('hello')
 		if not output.startsWith('Hello'), .error(msg)
 
 	def installCobraLibraryToGAC
 		.startStage('Install Cobra standard library to the GAC')
 		print 'Invoking Publish.GacInstall...'
 		try
-			Publish().gacInstall('Cobra.Lang.dll')
+			Publish().gacInstall(_standardLibPath)
 			print 'Done.'
 		catch NotImplementedException
 			print 'Not implemented exception.'
 			print 'Will attempt to use gacutil.exe.'
 			.locateGacUtil(false)
-			.runCommand(_gacutil, '-i Cobra.Lang.dll -f')
-			output = .runCommand(_gacutil, '-l Cobra.Lang')
-			if 'Cobra.Lang, Version=' not in output
-				.error('Cannot see Cobra.Lang in the gacutil output to list it above.')
-			# TODO: verify the version number: Cobra.Lang, Version=0.0.1.0
+			.runCommand(_gacutil, '-i [_standardLibPath] -f')
+		catch e as Exception
+			print '[e.getType] e.message'
 		print
+
+	def verifyGacInstallation
+		# TODO: verify the version number: Cobra.Lang, Version=0.0.1.0
+		.startStage('Verifying Cobra standard library installed to the GAC')
+		try 
+			# temporarily rename the standard library to ensure that assembly
+			# loading is attempted from the GAC.
+			tmpFileName = 'temp-[Process.getCurrentProcess.id]-[_standardLibPath]'
+			File.move(_standardLibPath, tmpFileName)
+			a = Assembly.loadWithPartialName(_standardLibName)
+			if a.globalAssemblyCache
+				print '[_standardLibPath] has been successfully installed to the GAC.'
+			File.move(tmpFileName, _standardLibPath)
+		catch NotImplementedException
+			print 'Attempting to use gacutil.'
+			if not _gacutil, .locateGacUtil(false)
+			output = .runCommand(_gacutil, '-l Cobra.Lang')
+			if '[_standardLibName], Version=' in output
+				print '[_standardLibPath] has been successfully installed to the GAC.'
+			else
+				.error('Installing the standard library to the GAC was unsuccessful.')
+		print		
 
 	def copyFilesToInstallDirectory
 		require _targetDir is not nil
