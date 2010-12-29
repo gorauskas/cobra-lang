@@ -259,14 +259,14 @@ namespace Cobra.Lang
 					throw IOException('Cannot locate cobra.exe using CobraCore.findCobraExe. Consider invoking .findCobraExe with additional search paths and passing the result to .runCobraExe.')
 				return .runCobraExe(cobraExePath, args, out process)
 
-			def runCobraExe(cobraExePath as String, args as String, process as out System.Diagnostics.Process?) as String
-				require cobraExePath.length
+			def runCobraExe(cobraPath as String, args as String, process as out System.Diagnostics.Process?) as String
+				require cobraPath.length
 				p = System.Diagnostics.Process()
-				if CobraCore.isRunningOnMono
+				if cobraPath.toLower.endsWith('.exe') and CobraCore.isRunningOnMono
 					p.startInfo.fileName = 'mono'
-					p.startInfo.arguments = cobraExePath + ' ' + args
+					p.startInfo.arguments = cobraPath + ' ' + args
 				else
-					p.startInfo.fileName = cobraExePath
+					p.startInfo.fileName = cobraPath
 					p.startInfo.arguments = args
 				# print '[p.startInfo.fileName] [p.startInfo.arguments]'
 				process = p
@@ -277,41 +277,35 @@ namespace Cobra.Lang
 
 			def findCobraExe(extraPaths as IList<of String>?) as String?
 				"""
-				Finds cobra.exe on the current system by looking in various places:
+				Finds "cobra" script or "cobra.exe" on the current system by looking in various places:
 					* the current directory
 					* the directory where the current executable resides
-					* the path of the cobra.exe that produced the current executable
 					* the path of the COBRA environment variable
 					* the system PATH
+					* the path of the cobra.exe that produced the current executable
 					* educated guesses like \WINDOWS\Program Files\Cobra\bin and /usr/local/bin
 					* the extraPaths argument
 				"""
 				# check previous cached result first
-				if _findCobraCache
-					return _findCobraCache
+				if _findCobraCache, return _findCobraCache
 				# check the current directory
 				path = _findCobraExe(Environment.currentDirectory)
-				if path
-					return path
+				if path, return path
 				# check the directory where the current executable resides
-				path = _findCobraExe(CobraCore.exePath)
-				if path
-					return path
-				# check for the cobra that created the current executable
-				if File.exists(CobraInfo.cobraPath)
-					return CobraInfo.cobraPath
+				path = _findCobraExe(Path.getDirectoryName(CobraCore.exePath))
+				if path, return path
 				# check COBRA environment variable
 				path = Environment.getEnvironmentVariable('COBRA') ? ''
 				if path <> ''
 					path = _findCobraExe(path)
-					if path
-						return path
+					if path, return path
 				# check the PATH
 				paths = (Environment.getEnvironmentVariable('PATH') ? '').split(Path.pathSeparator)
 				for sysPath in paths
 					path = _findCobraExe(sysPath)
-					if path
-						return path
+					if path, return path
+				# check for the cobra that created the current executable
+				if File.exists(CobraInfo.cobraPath), return CobraInfo.cobraPath
 				# check common locations and extraPaths
 				morePaths = [
 					r'\WINDOWS\Program Files\Cobra\bin',
@@ -320,12 +314,10 @@ namespace Cobra.Lang
 					r'/usr/bin',
 					r'/bin',
 				]
-				if extraPaths
-					morePaths.addRange(extraPaths)
+				if extraPaths, morePaths.addRange(extraPaths)
 				for path in morePaths
 					path = _findCobraExe(path)
-					if path
-						return path
+					if path, return path
 				# cannot find cobra.exe
 				return nil
 
@@ -343,19 +335,19 @@ namespace Cobra.Lang
 				return _findCobraCache
 
 			def _findCobraExe(path as String, firstTime as bool) as String?
+				path = _expandTilde(path)
 				if path <> CobraCore.exePath and path.endsWith('cobra.exe')
 					# ^ first condition guards against test cases like "invoke-cobra.exe" from endlessly invoking themselves
-					if File.exists(path)
-						return path
-					else
-						return nil
+					if File.exists(path), return path
+					else, return nil
 				else if Directory.exists(path)
-					exe = Path.combine(path, 'cobra.exe')
-					if File.exists(exe)
-						return exe
-					exe = Path.combine(Path.combine(path, 'bin'), 'cobra.exe')
-					if File.exists(exe)
-						return exe
+					exts = ['', '.cmd', '.bat', '.exe']
+					for ext in exts
+						filePath = Path.combine(path, 'cobra' + ext)
+						if File.exists(filePath), return filePath
+					for ext in exts
+						filePath = Path.combine(Path.combine(path, 'bin'), 'cobra' + ext)
+						if File.exists(filePath), return filePath
 					if firstTime
 						# check for a 'Cobra' subdirectory
 						return _findCobraExe(Path.combine(path, 'Cobra'), false)
@@ -363,6 +355,12 @@ namespace Cobra.Lang
 						return nil
 				else
 					return nil
+
+			def _expandTilde(path as String) as String
+				if path.startsWith('~/')
+					home = Environment.getFolderPath(Environment.SpecialFolder.Personal)
+					path = home + path[1:]
+				return path
 
 
 			## Other util
