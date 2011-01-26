@@ -1339,7 +1339,6 @@ class CobraParser inherits Parser
 		isNames = List<of String>(_isNamesStack)
 		attribs = AttributeList()
 		implementsType = nil to ITypeProxy?
-		method as AbstractMethod?
 
 		# Rules:
 		#  * if curBox is an Interface then no body
@@ -1389,20 +1388,17 @@ class CobraParser inherits Parser
 		docString = .docString
 		if token.which == 'CUE' and name == 'init'
 			_verifyInitializer(returnType, implementsType)
-			method = Initializer(token, opener, .curBox, params, isNames, attribs, docString)
+			method = Initializer(token, opener, .curBox, params, isNames, attribs, docString) to AbstractMethod
 		else
 			method = Method(token, opener, .curBox, name, .makeList<of IType>(genericParams), params, returnType, implementsType, isNames, attribs, docString)
 		if nothingMore
-			if not 'abstract' in isNames and not curBox inherits Interface
-				.throwError('Missing method body for "[name]".')
+			if method.bodyExclusion is nil, .throwError('Missing method body for "[name]".')
 		else
 			.statementsFor(method)
-
-		_verifyMethodStatements(method to !, isNames, curBox)
-		assert method
+		_verifyMethodStatements(method, isNames, curBox)
 		overload = _overloadIfNeeded(method.token, curBox, method.name)  # also checks for various errors
 		if overload
-			overload.addMember(method to !)
+			overload.addMember(method)
 			return nil
 		return method
 
@@ -1422,7 +1418,7 @@ class CobraParser inherits Parser
 			returnType = _typeProvider.voidType
 		return returnType
 
-	def _methodParams(opener as IToken) as List<of Param>		
+	def _methodParams(opener as IToken) as List<of Param>
 		""" Returns a list of declared parameters, possibly empty if there were none declared. Helper for .declareMethod. """
 		unnecessary = false
 		if opener.which == 'OPEN_CALL'
@@ -1445,12 +1441,15 @@ class CobraParser inherits Parser
 	def	_verifyMethodStatements(method as AbstractMethod, isNames as IList<of String>, curBox as Box)
 		""" Error checks on statements. Helper for .declareMethod. """
 		if method.statements.count
-			if 'abstract' in isNames
-				.throwError('Cannot have statements for an abstract method.')
-			if not curBox.canHaveStatements
-				.throwError('Cannot have statements for a method in an [curBox.englishName].')
+			branch method.bodyExclusion
+				on nil, pass
+				on 'abstract',   .throwError('Cannot have statements for an abstract method.')
+				on 'interface',  .throwError('Cannot have statements for a method in an [curBox.englishName].')
+				on 'dll import', .throwError('Cannot have statements for a DllImport method.')
+				on 'extern box', .throwError('Cannot have statements for an extern type.')
+				else, throw FallThroughException([method.bodyExclusion, method])
 		else
-			if not 'abstract' in isNames and not curBox inherits Interface
+			if method.bodyExclusion is nil
 				.throwError('Missing statements. Use "pass" or other statements.')
 
 	def _endMethodDecl(didIndent as bool) as bool	
@@ -1476,7 +1475,6 @@ class CobraParser inherits Parser
 			.throwError('Cannot declare a return type for an initializer.')
 		if implementsType
 			.throwError('Cannot specify `implements` for an initializer.')
-			
 
 	def declareMethodSig as MethodSig
 		require _typeProvider

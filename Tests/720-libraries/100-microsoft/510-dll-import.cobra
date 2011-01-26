@@ -1,0 +1,36 @@
+# .require. dotnet
+
+# test DllImport
+
+use System.Runtime.InteropServices
+
+class Test
+    
+    def isCharLower(ch as char) as bool is shared
+		has DllImport("user32.dll")
+
+    def getUserName(lpBuffer as uint8[] has MarshalAs(UnmanagedType.LPArray), nSize as int32[] has MarshalAs(UnmanagedType.LPArray)) as bool is shared, extern
+        has DllImport("Advapi32.dll", setLastError = true, entryPoint = "GetUserName", exactSpelling=false)
+        
+    def main
+		.testIsCharLower
+		.testGetUserName
+	
+	def testIsCharLower
+        assert .isCharLower(c'a') 
+        assert not .isCharLower(c'A') 
+        print .isCharLower(c'!') 
+
+	def testGetUserName
+        userNameBytes = uint8[](256)
+        len = int[](1)
+        len[0] = 256
+        .getUserName(userNameBytes,len)
+        userName = System.Text.Encoding.ascii.getString(userNameBytes).trim(c'\0')
+		#print userName
+        #For confirmation: alternative .Net approach:
+        userCred = System.Security.Principal.WindowsIdentity.getCurrent.name.toString
+        #print userCred
+		if userCred.contains('\\') 
+            userCred = userCred.split(c'\\')[1]
+        assert userCred == userName, "WinAPI call doesn't match the .Net Principal call"

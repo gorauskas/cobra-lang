@@ -610,11 +610,16 @@ class AnonymousMethod
 		if _returnTypeNode is nil
 			_returnType = .compiler.passThroughType  # TODO: infer return type from return statement like C# does
 
+# uu
 	def _bindImp is override
 		base._bindImp
 		numErrors = .compiler.errors.count
 		base._bindImp
-		if .compiler.errors.count==numErrors and _returnType not in [.compiler.voidType to IType, .compiler.passThroughType to IType] and not .hasReturnStmt and not .hasYieldStmt and not .hasThrowStmt and not .isAbstract and not .parentBox.isExtern and not .parentBox inherits Interface
+		if .compiler.errors.count == numErrors and _
+			_returnType not in [.compiler.voidType to IType, .compiler.passThroughType to IType] and _
+			not .hasReturnStmt and not .hasYieldStmt and not .hasThrowStmt and _
+			.bodyExclusion is nil
+			# then
 			.throwError('Missing return statement for method "[_name]" which returns [_returnType.name].')
 		hasYield = false
 		for stmt in _stmts
@@ -679,6 +684,14 @@ class AbstractMethod
 
 	pro isCompilerGenerated from var
 
+	def bodyExclusion as String?
+		ensure result in [nil, 'abstract', 'interface', 'extern box', 'dll import']
+		if 'abstract' in .isNames, return 'abstract'
+		if .parentBox inherits Interface and not .parentBox inherits Mixin, return 'interface'
+		if .parentBox.isExtern, return 'extern box'
+		for attrib in .attributes, if attrib.name in ['DllImport', 'DllImportAttribute'], return 'dll import'
+		return nil
+		
 	def addStmt(stmt as Stmt)
 		_stmts.add(stmt)
 
@@ -721,8 +734,7 @@ class AbstractMethod
 			.findLocal(local.name) is nil
 		body
 			other = .findLocalCI(local.name)
-			if other
-				.throwError('Parameters and locals must vary by more than just their case. Change "[local.name]" or "[other.name]" to match, or rename one of them to something different.')
+			if other, .throwError('Parameters and locals must vary by more than just their case. Change "[local.name]" or "[other.name]" to match, or rename one of them to something different.')
 			local.isTracked = true
 			_locals.add(local)
 	
@@ -1195,6 +1207,7 @@ class Method inherits AbstractMethod is partial
 		for param in _genericParams, param.bindInt
 		base._bindInt
 		if .name == '__init__', .compiler.warning(this, 'Initializers are named "init" with no surrounding underscores.')
+		if not 'extern' in .isNames and .bodyExclusion == 'dll import', _isNames.add('extern')
 
 	def _bindImp is override
 		numErrors = .compiler.errors.count
@@ -1204,7 +1217,11 @@ class Method inherits AbstractMethod is partial
 		if _implementsTypeNode
 			_implementsType = _implementsTypeNode.realType
 			# TODO: make sure the type is among the interfaces of the box
-		if .compiler.errors.count==numErrors and _returnType not in [.compiler.voidType to IType, .compiler.passThroughType to IType] and not .hasReturnStmt and not .hasYieldStmt and not .hasThrowStmt and not .isAbstract and not .parentBox.isExtern and not .parentBox inherits Interface
+		if .compiler.errors.count == numErrors and _
+			_returnType not in [.compiler.voidType to IType, .compiler.passThroughType to IType] and _
+			not .hasReturnStmt and not .hasYieldStmt and not .hasThrowStmt and _
+			.bodyExclusion is nil
+			# nil
 			.throwError('Missing return statement for method "[_name]" which returns [_returnType.name].')
 		# check for `return` and `yield` in the same method
 		if .resultType is not .compiler.voidType
