@@ -1,5 +1,10 @@
 """
 The Cobra Parser
+	Recursive descent parser for the Cobra Language. 
+	Uses CobraTokenizer to obtain a stream of Cobra lexical tokens,
+	then enumerates through these tokens according to grammar rules,
+	generating nodes (or rather subclasses thereof) for recognized constructs.
+	The root node is a Cobra Module.
 
 Rules:
 	* Do not invoke Box.memberForName. Use Box.declForName instead. Inheritance relationships are not established during parsing.
@@ -90,7 +95,10 @@ class CobraParser inherits Parser
 	var _uppercaseLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 	var _isNamesStack as Stack<of String>?
+		""" Stack for recording modifier for items in modifier sections (e.g.shared). """
+
 	var _boxStack as Stack<of Box>?
+		""" Stack to record the box the current level of box member declarations is for. """
 
 	var _globalNS as NameSpace?
 	var _nameSpaceStack as Stack<of NameSpace>
@@ -179,7 +187,7 @@ class CobraParser inherits Parser
 
 	def parseSource(fileName as String, source as String) as CobraModule
 		"""
-		Parses module source code and returns resulting module.
+		Parses module source code and returns resulting Cobra module.
 		The fileName is recorded, but the file is not physically accessed.
 		After parsing, .references will hold a list of any @ref directive references that were parsed.
 		"""
@@ -199,10 +207,11 @@ class CobraParser inherits Parser
 
 	def _preParseSource(fileName as String, source as String) as bool
 		"""
-		Sets up for parsing, but does not invoke `parseTokens`.
+		Sets up for parsing - inits stack variables, generates token stream and handles explicit line continuation, 
+		but does not invoke `parseTokens`.
 		Used by `parseSource` and various test sections.
 		Returns true if successful, false if there were one or more errors.
-		Upon success, you can use token methods lik .grab.
+		Upon success, you can use token methods like .grab.
 		Does not .throwError but may .recordError.
 		"""
 		_fileName = fileName
@@ -336,9 +345,7 @@ class CobraParser inherits Parser
 	var _module as CobraModule?
 
 	def _parseTokens as CobraModule
-		"""
-		Parses and then returns an instance of Module.
-		"""
+		""" Parses and then returns an instance of CobraModule. """
 		.zeroOrMore('EOL')
 		docString = .docString
 		_module = CobraModule(_fileName, _verbosity, docString, _globalNS)  # TODO: does module really need verbosity?
@@ -524,6 +531,7 @@ class CobraParser inherits Parser
 	var _syntaxForClassInheritanceMsg = 'The syntax for inheritance is to put "inherits BaseClass" on the following line, indented.'
 
 	def assemblyDecl as AssemblyDecl
+		""" Parse a module-level `assembly` declaration containing attributes. """
 		token = .expect('ID')
 		assert token.text == 'assembly'
 		.indent
@@ -674,7 +682,7 @@ class CobraParser inherits Parser
 				.throwError('Cannot nest a type underneath a [parentBox.englishName]')  # TODO: needs a test case
 
 		_boxStack.push(theClass)
-#		.isNamesStack = Stack<of String>
+#		.isNamesStack = Stack<of String>()
 		.bodiedBoxMemberDecls(theClass)
 		_boxStack.pop
 
@@ -753,9 +761,6 @@ class CobraParser inherits Parser
 		names = _isDeclNamesNoEOL(out hasIsNames)
 		if hasIsNames
 			.endOfTypeSpecClause
-		# TODO: error on virtual and override
-		# TODO: error on virtual and shared
-		# TODO: error if 2 or more of 'public', 'protected', 'private', 'internal'
 		return names
 
 	def _isDeclNamesNoEOL(hasIsNames as out bool) as List<of String>
@@ -781,12 +786,22 @@ class CobraParser inherits Parser
 				if .peek.text in .validIsNames
 					.throwError(.peek, 'Multiple access modifiers should be separated by commas such as "[what], [.peek.text]".')
 				break
-		# TODO: error on virtual and override
 		# TODO: error on virtual and shared
-		# TODO: error if 2 or more of 'public', 'protected', 'private', 'internal'
+		# to-do: move these to _bindInt
+		# error on non virtual and override
+		if 'nonvirtual' in names and 'override' in names
+			.recordError(.last, 'Cannot specify both "nonvirtual" and "override".')
+		# to-do: cannot specify 'new' and 'override'
+		# error if 2 or more of 'public', 'protected', 'private', 'internal'
+		accessModifierCount = 0
+		for vam in _validAccessModifiers
+			if vam in names, accessModifierCount += 1
+		if accessModifierCount > 1
+			.recordError(.last, 'Can only specify one of "public", "protected", "private" or "internal".')
 		return names
 
 	var _validIsNames as List<of String>?
+	var	_validAccessModifiers = ['public', 'protected', 'private', 'internal']
 
 	get validIsNames as List<of String>
 		if _validIsNames is nil
@@ -867,7 +882,7 @@ class CobraParser inherits Parser
 
 		# TODO when supporting nested classes, look at the _boxStack and set a back pointer here
 		_boxStack.push(theMixin)
-#		.isNamesStack = Stack<of String>
+#		.isNamesStack = Stack<of String>()
 		.bodiedBoxMemberDecls(theMixin)
 		_boxStack.pop
 
@@ -906,7 +921,7 @@ class CobraParser inherits Parser
 		theInterface = Interface(wordToken, idToken, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, typeSpecs.inheritsProxies, docString)
 
 		_boxStack.push(theInterface)
-#		.isNamesStack = Stack(str)
+#		.isNamesStack = Stack<of String>()
 		.bodiedBoxMemberDecls(theInterface)  # TODO: this shouldn't be bodiedBoxMemberDecls, right?
 		_boxStack.pop
 
@@ -944,7 +959,7 @@ class CobraParser inherits Parser
 				.throwError('Cannot nest a type underneath a [parentBox.englishName]')  # TODO: needs a test case
 
 		_boxStack.push(theStruct)
-#		.isNamesStack = Stack(str)
+#		.isNamesStack = Stack<of String>()
 		.bodiedBoxMemberDecls(theStruct)
 		_boxStack.pop
 
@@ -1534,6 +1549,7 @@ class CobraParser inherits Parser
 		
 	def declareProperty as ProperDexer?
 		"""
+		Parse full ('pro') form of a property (and indexer)
 		Example source
 			pro age as int
 				get
@@ -1637,6 +1653,7 @@ class CobraParser inherits Parser
 			return prop
 
 	def declarePropertyFrom(token as IToken, idToken as IToken, name as String, coverWhat as String) as Property
+		""" Parse the 'from ...' form of pro/get/set property decl. """
 		require coverWhat.isOneOf('get.set.getset.')
 		if .optional('VAR')
 			varName = '_' + name
@@ -1697,6 +1714,8 @@ class CobraParser inherits Parser
 
 	def _declareGetOrSetOnlyProperty(getOrSet as int) as ProperDexer?
 		"""
+		Parse shortcut forms (get and set) of property (and indexer) declarations.
+		
 		Example source
 			get meaningOfLife as int
 				return 42
