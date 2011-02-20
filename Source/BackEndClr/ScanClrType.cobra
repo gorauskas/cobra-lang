@@ -391,13 +391,16 @@ class Box is partial
 						# use the type name in case "NotNull" attributes become a .NET convention
 						if typeName.endsWith('.NotNull') or typeName == 'NotNull'
 							isNotNull = true
-				type = _memberTypeProxy(paramInfo.parameterType, isNotNull)
+				isRef = paramInfo.parameterType.isByRef and not paramInfo.isOut
+				# Unpack "ByRef" types. Comes up with WinForm's .processCmdKey which has a ByRef struct argument (Message&)
+				parameterType = if(isRef, paramInfo.parameterType.getElementType, paramInfo.parameterType)
+				type = _memberTypeProxy(parameterType, isNotNull)
 				if isVari, type = VariTypeProxy(type)
 				# In XNA 3.1 some types such as GraphicsDevice and Texture have a Dispose method
 				# with one argument with an empty name (''). Cobra doesn't dig that.
 				name = if(paramInfo.name == '', 'noname', paramInfo.name)
 				param = Param(name, type)
-				if paramInfo.parameterType.isByRef and not paramInfo.isOut
+				if isRef
 					param.direction = Direction.InOut
 				else if paramInfo.isIn and paramInfo.isOut and paramInfo.parameterType.isArray
 					# an array with both InAttribute and OutAttribute
