@@ -2805,8 +2805,6 @@ class CobraParser inherits Parser
 						right = MemberExpr(.grab) to Expr
 					else
 						right = .expression(prec)
-					if op == 'ASSIGN' and left inherits IdentifierExpr and (left to IdentifierExpr).name.startsWithNonLowerLetter
-						.recordError(ErrorMessages.localVariablesMustStartLowercase)
 					if op == 'DOT' and not right inherits IDotRightExpr
 						.throwError(ErrorMessages.syntaxErrorAfterDot)
 					left = BinaryOpExpr.make(opToken to !, op to !, left to !, right)
@@ -2926,9 +2924,11 @@ class CobraParser inherits Parser
 						return .typeExpr
 					catch pe as ParserException
 						if .allowKeywordAssignment and peekToken.isKeyword and .peek is not nil and .peek.which == 'ASSIGN'
+							# example: f = Foo(where=3)  # note that 'where' is a keyword
 							assert .last is peekToken
 							word, op = .last, .grab
 							if word.text.startsWithNonLowerLetter
+								# shouldn't happen in practice because keywords are always lowercase
 								.recordError(ErrorMessages.localVariablesMustStartLowercase)
 							return AssignExpr(op, 'ASSIGN', IdentifierExpr(word), .expression)
 						else if pe.message.contains('Unrecognized type')
@@ -3152,8 +3152,6 @@ class CobraParser inherits Parser
 		if .opStack.count and .opStack.peek=='DOT'
 			return MemberExpr(nameToken)
 		if .peek.which=='AS'
-			if not name.startsWithLowerLetter
-				.recordError(ErrorMessages.localVariablesMustStartLowercase)
 			return AsExpr(.grab, nameToken, .typeId)
 		else
 			return IdentifierExpr(nameToken, name)
@@ -3334,8 +3332,6 @@ class CobraParser inherits Parser
 		nameToken = .expect('ID')
 		name = nameToken.text
 		if .peek.which=='AS'
-			if not name.startsWithLowerLetter
-				.recordError(ErrorMessages.localVariablesMustStartLowercase)
 			return AsExpr(.grab, nameToken, .typeId)
 		else
 			return IdentifierExpr(nameToken, name)
