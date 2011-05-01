@@ -935,20 +935,31 @@ static public class CobraImp {
 		Type type = obj as System.Type ?? obj.GetType();
 		Type[] argsTypes = args==null ? new Type[0] : new Type[args.Length];
 		for (int i=0; i<argsTypes.Length; i++) {
-			argsTypes[i] = args[i].GetType();
+			object arg = args[i];
+			argsTypes[i] = arg == null ? typeof(Object) : arg.GetType();
 		}
 		MethodInfo mi = type.GetMethod(methodName, MethodFlags, null, argsTypes, null);
-		if (mi!=null) {
+		if (mi!=null)
 			return mi.Invoke(obj, args);
-		} else {
-			// HACK. TODO. This needs to be generalized where extension methods can be registered with the dynamic binder. Will/does DLR have something like this?
-			if (methodName == "Swap" && obj is System.Collections.IList) {
-				Type extension = Type.GetType("Cobra.Lang.Extend_IList_ExtendList");
-				Type extendedType = typeof(System.Collections.IList); // this reference could be put with the extension using an attribute
-				return InvokeMethodFromExtension(extension, extendedType, obj, methodName, argsTypes, args);
-			}
-			throw new UnknownMemberException(obj, methodName, type);
+		// Given: obj.foo(1, nil, 3)
+		// It's impossible to infer the correct type of the 2nd parameter which could be
+		// Object?, int?, bool? or something else. The first attempt above infers as Object?
+		// (or `System.Object` in .NET), but this will fail if the declared argument type
+		// in the method is more specific such as `int?`.
+		// Check if there is exactly one method and if so, invoke it.
+		MemberInfo[] methods = type.GetMember(methodName, MemberTypes.Method, MethodFlags);
+		if (methods.Length == 1) {
+			mi = methods[0] as MethodInfo;
+			if (mi != null)
+				return mi.Invoke(obj, args);
 		}
+		// HACK. TODO. This needs to be generalized where extension methods can be registered with the dynamic binder. Will/does DLR have something like this?
+		if (methodName == "Swap" && obj is System.Collections.IList) {
+			Type extension = Type.GetType("Cobra.Lang.Extend_IList_ExtendList");
+			Type extendedType = typeof(System.Collections.IList); // this reference could be put with the extension using an attribute
+			return InvokeMethodFromExtension(extension, extendedType, obj, methodName, argsTypes, args);
+		}
+		throw new UnknownMemberException(obj, methodName, type);
 	}
 
 	static public object InvokeMethodFromExtension(System.Type extension, System.Type extendedType, Object obj, string methodName, Type[] argTypes, object[] args) {
