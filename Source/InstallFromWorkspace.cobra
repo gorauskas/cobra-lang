@@ -107,8 +107,18 @@ class InstallFromWorkspace
 
 	const configFileName = 'install-directory.text'
 
-	const _standardLibName = 'Cobra.Lang'
-	const _standardLibPath = _standardLibName + '.dll'
+	var libs = [
+		{
+			'name': 'Cobra.Lang',
+			'flags': '-build-standard-library',
+			'files': 'Cobra.Lang/AssemblyAttrs.cobra',
+		},
+		{
+			'name': 'Cobra.Lang.Compiler',
+			'flags': '-c -t:lib -namespace:Cobra.Lang.Compiler -files:files-to-compile.text',
+			'files': 'cobra.cobra',
+		},
+	]
 
 	def main is shared
 		InstallFromWorkspace().run
@@ -141,9 +151,11 @@ class InstallFromWorkspace
 		.buildCobraCompiler
 		.getBaseVersion
 		if not _skipStdLib
-			.buildCobraLibrary
-			.installCobraLibraryToGAC
-			.verifyGacInstallation
+			for lib in .libs
+				# keys: name, flags
+				libName = lib['name']
+				assert not libName.endsWith('.dll')
+				.installLibrary(libName, lib['flags'], lib['files'].replace('/', .slash.toString))
 		.verifyNewlyBuiltCobra
 		.copyFilesToInstallDirectory
 		.verifyNewlyInstalledCobra
@@ -480,15 +492,58 @@ class InstallFromWorkspace
 		print 'base version: [_baseVersion]'
 		print
 
-	def buildCobraLibrary
+	def installLibrary(name as String, flags as String, files as String)
+		.buildLibrary(name, flags, files as String)
+		.installLibraryToGAC(name)
+		.verifyGacInstallation(name)
+
+	def buildLibrary(name as String, flags as String, files as String)
 		"""
 		Builds the copy of the Cobra Standard Library for installation to the GAC.
 		Must build the library using the Source cobra.exe, not the Snapshot
 		Always build with -debug since this is the copy for GAC installation. The debug info (mdb file)
 		will be installed to the GAC along with the dll. This is required for the -d compiler option.
 		"""
-		.startStage('Build Cobra standard library')
-		.runSourceCobra('-bsl -debug [.compileFlags] Cobra.Lang[.slash]AssemblyAttrs.cobra -key-file:Cobra.Lang[.slash]Cobra.Lang.snk')
+		.startStage('Build [name] library')
+		.runSourceCobra('[flags] -debug [.compileFlags] -out:[name].dll -key-file:Cobra.Lang[.slash]Cobra.Lang.snk [files]')
+
+	def installLibraryToGAC(name as String)
+		.startStage('Install [name] library to the GAC')
+		print 'Invoking Publish.GacInstall...'
+		dllName = name + '.dll'
+		try
+			Publish().gacInstall(dllName)
+			print 'Done.'
+		catch NotImplementedException
+			print 'Not implemented exception.'
+			print 'Will attempt to use gacutil.exe.'
+			.locateGacUtil(false)
+			.runCommand(_gacutil, '-i [dllName] -f')
+		catch e as Exception
+			print '[e.getType] e.message'
+
+	def verifyGacInstallation(name as String)
+		# TODO: verify the version number: Cobra.Lang, Version=0.0.1.0
+		dllName = name + '.dll'
+		.startStage('Verifying [dllName] installed to the GAC')
+		try 
+			# temporarily rename the standard library to ensure that assembly
+			# loading is attempted from the GAC.
+			tmpFileName = 'temp-[Process.getCurrentProcess.id]-[dllName]'
+			File.move(dllName, tmpFileName)
+			a = Assembly.loadWithPartialName(name)
+			if a.globalAssemblyCache
+				print '[dllName] has been successfully installed to the GAC.'
+			File.move(tmpFileName, dllName)
+		catch NotImplementedException
+			print 'Attempting to use gacutil.'
+			if not _gacutil, .locateGacUtil(false)
+			output = .runCommand(_gacutil, '-l Cobra.Lang')
+			if '[dllName], Version=' in output
+				print '[dllName] has been successfully installed to the GAC.'
+			else
+				.error('Installing the standard library to the GAC was unsuccessful.')
+		print		
 
 	def verifyNewlyBuiltCobra
 		.startStage('Verify newly built Cobra compiler')
@@ -501,43 +556,6 @@ class InstallFromWorkspace
 			if not output.startsWith('Hello'), .error(msg)
 		output = .runSourceCobra('-ert:yes hello')
 		if not output.startsWith('Hello'), .error(msg)
-
-	def installCobraLibraryToGAC
-		.startStage('Install Cobra standard library to the GAC')
-		print 'Invoking Publish.GacInstall...'
-		try
-			Publish().gacInstall(_standardLibPath)
-			print 'Done.'
-		catch NotImplementedException
-			print 'Not implemented exception.'
-			print 'Will attempt to use gacutil.exe.'
-			.locateGacUtil(false)
-			.runCommand(_gacutil, '-i [_standardLibPath] -f')
-		catch e as Exception
-			print '[e.getType] e.message'
-		print
-
-	def verifyGacInstallation
-		# TODO: verify the version number: Cobra.Lang, Version=0.0.1.0
-		.startStage('Verifying Cobra standard library installed to the GAC')
-		try 
-			# temporarily rename the standard library to ensure that assembly
-			# loading is attempted from the GAC.
-			tmpFileName = 'temp-[Process.getCurrentProcess.id]-[_standardLibPath]'
-			File.move(_standardLibPath, tmpFileName)
-			a = Assembly.loadWithPartialName(_standardLibName)
-			if a.globalAssemblyCache
-				print '[_standardLibPath] has been successfully installed to the GAC.'
-			File.move(tmpFileName, _standardLibPath)
-		catch NotImplementedException
-			print 'Attempting to use gacutil.'
-			if not _gacutil, .locateGacUtil(false)
-			output = .runCommand(_gacutil, '-l Cobra.Lang')
-			if '[_standardLibName], Version=' in output
-				print '[_standardLibPath] has been successfully installed to the GAC.'
-			else
-				.error('Installing the standard library to the GAC was unsuccessful.')
-		print		
 
 	def copyFilesToInstallDirectory
 		require _targetDir is not nil
