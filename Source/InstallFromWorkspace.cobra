@@ -187,11 +187,63 @@ class InstallFromWorkspace
 	def parseCommandLineArgs as List<of String>
 		args = CobraCore.commandLineArgs
 		args = args[1:]
+
 		i = args.indexOf('-skip-std-lib')
 		if i > -1
-			_skipStdLib = true
 			args.removeAt(i)
+			_skipStdLib = true
+
+		i = args.indexOf('-net4')
+		if i == -1, i = args.indexOf('-dotnet4')
+		if i > -1
+			args.removeAt(i)
+			.setUpCLR4(args)
+
 		return args
+
+	def setUpCLR4(args as List<of String>)
+		# locate the external C# .NET 4 compiler
+		if CobraCore.isRunningOnMono
+			.setUpCLR4InMono(args)
+		else if CobraCore.isRunningOnUnix
+			# does not compute. hmmm maybe DotGNU?
+			.error('Running on UNIX, but not running Mono. Cannot support -net4.')
+		else
+			.setUpCLR4InDotNet4(args)
+		args.add('-turbo')
+
+	def setUpCLR4InMono(args as List<of String>)
+		# look for dmcs - the Mono C# .NET 4 compiler
+		found = false
+		for path in Environment.getEnvironmentVariable('PATH').split(c':')
+			dmcs = Path.combine(path, 'dmcs')
+			if File.exists(dmcs)
+				found = true
+				break
+		if not found
+			.error('Cannot find the Mono dmcs compiler required by -net4. Make sure you have Mono 2.10+ installed and that dmcs is on your path.')
+		args.add('-native-compiler:' + dmcs)
+
+	def setUpCLR4InDotNet4(args as List<of String>)
+		# should be on Windows and Microsoft.NET at this point
+		# look for the Microsoft .NET 4.0 compiler
+		# Unfortunately, it's mere existance can be a red herring--
+		# a Windows 7 Ult 32-bit user for example, will have this file, but will still need to
+		# install either .NET 4.0 or one of the Microsoft Visual 2010 products.
+		
+		# the 'Windows' enum is only in .NET 4:
+		# windowsPath = Environment.getFolderPath(Environment.SpecialFolder.Windows)  # typically C:\Windows
+
+		for envVarName in ['windir', 'WINDIR', 'systemroot', 'SYSTEMROOT']
+			windowsPath = Environment.getEnvironmentVariable(envVarName)
+			if windowsPath and windowsPath <> ''
+				break
+		if windowsPath is nil or windowsPath == ''
+			.error('Cannot locate the Windows system directory required by -net4.')
+		csc = Path.combine(windowsPath, r'\Framework\v4.0.30319\csc.exe')
+		if not File.exists(csc)
+			.error('Cannot find the Microsoft csc compiler required by -net4. Try installing MS .NET 4.0, or the 4.0+SDK or one of the Visual 2010 products (the Express ones are free).')
+		args.add('-native-compiler:' + csc)
 
 	def error(msg)
 		print '** ERROR:', msg
