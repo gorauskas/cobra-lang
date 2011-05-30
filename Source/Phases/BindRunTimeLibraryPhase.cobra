@@ -26,6 +26,10 @@ class BindRunTimeLibraryPhase inherits Phase
 			print '    class CobraInfo'
 			print '        get cobraPath as String is shared'
 			print '            return r"[CobraCore.exePath]"'
+			print '        get date as String is shared'
+			print '            return "[DateTime.now.toString("yyyy-MM-dd")]"'
+			print '        get subversionRevision as String is shared'
+			print '            return "[_subversionRevision]"'
 		.options.addExtraSource(sw.toString)
 
 		# Add the Cobra.Lang run-time file paths to the compiler's pathsToCompile
@@ -46,6 +50,19 @@ class BindRunTimeLibraryPhase inherits Phase
 			else
 				pathsToCompile.insert(0, runTimePath)
 
+	def _subversionRevision as String
+		if Directory.exists('.svn'), dir = '.svn'
+		else if Directory.exists('_svn'), dir = '_svn'
+		else, return ''
+		path = Path.combine(dir, 'entries')
+		if not File.exists(path), return ''
+		using tr = File.openText(path)
+			for i in 3, tr.readLine
+			revision = tr.readLine.trim
+		revisionNumber = 0
+		if not int.tryParse(revision, out revisionNumber), return ''
+		return revision
+		
 	def _refRunTime	
 		if .verbosity >= 2, print 'Referencing Cobra run-time'
 		.compiler.addRunTimeRef(.options)  # then reference run-time dll
