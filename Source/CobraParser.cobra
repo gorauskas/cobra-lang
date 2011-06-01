@@ -15,6 +15,9 @@ class ErrorMessages
 
 	shared
 	
+		get unexpectedEndOfFile as String
+			return 'Unexpected end of file'
+			
 		get expectingStatementInsteadOfIndentation as String
 			return 'Expecting a statement instead of extra indentation. One indent level is 4 spaces or 1 tab with display width of 4.'
 
@@ -366,16 +369,16 @@ class CobraParser inherits Parser
 			_nameSpaceStack.pop
 		return _module to !
 
-	def parseTopLevel as INode?
+	def parseTopLevel as ISyntaxNode?
 		""" Returns the node that was parsed, but will return nil for EOL, EOF and compiler directives. """
-		what as INameSpaceMember?
+		what as ISyntaxNode?
 		tok = .peek
 		if tok is nil, return nil
 		isGood = true
 		branch tok.which
 			on 'AT_ID'
 				.compilerDirective
-			on 'PERCENTPERCENT'
+			on 'PERCENTPERCENT'  # deprecated
 				.compilerDirective
 			on 'USE'
 				_module.topNameSpace.addUseDirective(.useDirective)
@@ -410,8 +413,8 @@ class CobraParser inherits Parser
 			sugg = if(tok.text.length, Compiler.suggestionFor(tok.text), nil)
 			sugg = if(sugg, ' Try "[sugg]".', '')
 			.throwError('Expecting use, assembly, namespace, class, interface or enum, but got [tok].[sugg]')
-		if what and not what inherits NameSpace
-			what = _nameSpaceAddDecl(_module.topNameSpace, what to !)
+		if what implements INameSpaceMember and not what inherits NameSpace
+			what = _nameSpaceAddDecl(_module.topNameSpace, what to INameSpaceMember)
 			if what inherits Box
 				assert what.parentNameSpace
 		return what
@@ -425,8 +428,10 @@ class CobraParser inherits Parser
 			_warning(pp, 'Use "@[token.text]" instead of "%% [token.text]" for compiler directives.')
 		branch token.value to String
 			on 'help'
-				_warning('@help is parsed, but not yet implemented at this level')
-				# to-do: .parseTopLevel
+				if .peek is nil, .throwError(ErrorMessages.unexpectedEndOfFile)
+				node = .parseTopLevel
+				if node is nil, _warning(token, '@help is not implemented for this element.')
+				else, node.isHelpRequested = true
 			on 'throw'
 				# throw an internal error. used for testing that the compiler will catch and report these as internal errors
 				.expect('EOL')
@@ -2826,7 +2831,12 @@ class CobraParser inherits Parser
 				on 'ANY', return AnyExpr(token, unaryExpr)
 				on 'OLD', return OldExpr(token, unaryExpr)
 				on 'REF', return RefExpr(token, unaryExpr)
-				on 'AT_ID', return HelpExpr(token, unaryExpr)
+				on 'AT_ID'
+					if token.text == '@help'
+						unaryExpr.isHelpRequested = true
+						return unaryExpr
+					else
+						.recordError(token, 'Unexpected compiler directive.')
 				else, return UnaryOpExpr(token, peek, unaryExpr)
 		branch peek
 			on 'LPAREN'
