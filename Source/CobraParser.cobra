@@ -361,76 +361,72 @@ class CobraParser inherits Parser
 				topNS.addUseDirective(UseDirective(useToken, ['System', 'IO']))
 				topNS.addUseDirective(UseDirective(useToken, ['System', 'Text']))
 				topNS.addUseDirective(UseDirective(useToken, ['Cobra', 'Lang']))
-			what as INameSpaceMember?
-			keepParsing = true
-			while keepParsing
-				what = nil
-				tok = .peek
-				if tok is nil, break
-				isGood = true
-				branch tok.which
-					on 'AT_ID'
-						.compilerDirective
-					on 'PERCENTPERCENT'
-						if .peek(1) and .peek(1).text == 'stop'
-							keepParsing = false
-						else
-							.compilerDirective
-					on 'USE'
-						topNS.addUseDirective(.useDirective)
-#					on 'IMPORT'
-#						what = .importDirective
-					on 'CLASS'
-						what = .classDecl
-					on 'MIXIN'
-						what = .mixinDecl
-					on 'INTERFACE'
-						what = .interfaceDecl
-					on 'SIG'
-						what = .declareMethodSig
-					on 'STRUCT'
-						what = .structDecl
-					on 'ENUM'
-						what = .enumDecl
-					on 'EXTEND'
-						what = .extendDecl
-					on 'EOL'
-						.grab
-					on 'NAMESPACE'
-						.nameSpaceDecl
-					on 'ID'
-						if tok.text == 'assembly'  # pseudo keyword
-							what = .assemblyDecl
-						else
-							isGood = false
-					else
-						isGood = false
-				if not isGood
-					sugg = if(tok.text.length, Compiler.suggestionFor(tok.text), nil)
-					sugg = if(sugg, ' Try "[sugg]".', '')
-					.throwError('Expecting use, assembly, namespace, class, interface or enum, but got [tok].[sugg]')
-				if what
-					what = _nameSpaceAddDecl(_module.topNameSpace, what)
-					if what inherits Box
-						assert what.parentNameSpace
+			while .peek, .parseTopLevel
 		finally
 			_nameSpaceStack.pop
 		return _module to !
+
+	def parseTopLevel as INode?
+		""" Returns the node that was parsed, but will return nil for EOL, EOF and compiler directives. """
+		what as INameSpaceMember?
+		tok = .peek
+		if tok is nil, return nil
+		isGood = true
+		branch tok.which
+			on 'AT_ID'
+				.compilerDirective
+			on 'PERCENTPERCENT'
+				.compilerDirective
+			on 'USE'
+				_module.topNameSpace.addUseDirective(.useDirective)
+#			on 'IMPORT'
+#				what = .importDirective
+			on 'CLASS'
+				what = .classDecl
+			on 'MIXIN'
+				what = .mixinDecl
+			on 'INTERFACE'
+				what = .interfaceDecl
+			on 'SIG'
+				what = .declareMethodSig
+			on 'STRUCT'
+				what = .structDecl
+			on 'ENUM'
+				what = .enumDecl
+			on 'EXTEND'
+				what = .extendDecl
+			on 'EOL'
+				.grab
+			on 'NAMESPACE'
+				what = .nameSpaceDecl
+			on 'ID'
+				if tok.text == 'assembly'  # pseudo keyword
+					what = .assemblyDecl
+				else
+					isGood = false
+			else
+				isGood = false
+		if not isGood
+			sugg = if(tok.text.length, Compiler.suggestionFor(tok.text), nil)
+			sugg = if(sugg, ' Try "[sugg]".', '')
+			.throwError('Expecting use, assembly, namespace, class, interface or enum, but got [tok].[sugg]')
+		if what and not what inherits NameSpace
+			what = _nameSpaceAddDecl(_module.topNameSpace, what to !)
+			if what inherits Box
+				assert what.parentNameSpace
+		return what
 
 	def compilerDirective
 		if .peek.which == 'AT_ID'
 			token = .grab
 		else
-			# pp =
-			.expect('PERCENTPERCENT')
+			pp = .expect('PERCENTPERCENT')
 			token = .grab
-			# 2009-04-06 Maybe in a month.
-			# TODO: _warning(pp, 'Use "@[token.text]" instead of "%% [token.text]" for compiler directives.')
-		# 'stop' is already handled in main parse loop
+			_warning(pp, 'Use "@[token.text]" instead of "%% [token.text]" for compiler directives.')
 		branch token.value to String
 			on 'help'
 				_warning('@help is parsed, but not yet implemented at this level')
-				# to-do: re-enter _parseTokens, or rather factor out its middle to new method
+				# to-do: .parseTopLevel
 			on 'throw'
 				# throw an internal error. used for testing that the compiler will catch and report these as internal errors
 				.expect('EOL')
@@ -2723,7 +2719,7 @@ class CobraParser inherits Parser
 			'ANY':   _binaryOpPrec['AND']+1,
 			'REF':   _binaryOpPrec['STARSTAR']+1,
 			'OLD':   _binaryOpPrec['STARSTAR']+1,
-			'AT_ID': _binaryOpPrec['STARSTAR']+1,  # uu
+			'AT_ID': _binaryOpPrec['STARSTAR']+1,
 		}
 
 	var _inExpression as int
