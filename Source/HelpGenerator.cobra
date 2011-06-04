@@ -1,0 +1,168 @@
+use System.Diagnostics
+use System.Reflection
+
+
+class HelpGenerator
+
+	const defaultMaxFileNameLength = 64
+	
+	cue init(topic as String, node as ISyntaxNode, member as IBoxMember?, types as IList<of IType>)
+		base.init
+		_topic, _node, _member, _types = topic, node, member, types
+
+	pro node from var as ISyntaxNode
+
+	pro member from var as IBoxMember?
+
+	pro types from var as IList<of IType>
+
+	
+	pro topic from var = ''
+	
+	pro path from var = ''
+
+	def generate
+		directory = .setting('directory', '.')
+		fileName = .setting('file name', 'Help_for_TOPIC.html')
+		fileName = .cleanFileName(fileName.replace('TOPIC', .topic))
+		.path = .reducePath(Path.combine(directory, fileName))
+		using tw = File.createText(.path)
+			print to tw
+				print '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">'
+				print '<html xmlns="http://www.w3.org/1999/xhtml">'
+				print '<head>'
+				print '    <title>[.topic]</title>'
+				print '    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />'
+				.printStylesheet
+				print '</head>'
+				print '<body>'
+				.printContent
+				print '</body>'
+				print '</html>'
+		.open
+
+	def cleanFileName(fileName as String) as String
+		s = fileName
+		for bad in ['\a', '\n', '\r', '\t', '\v']  # CC: '\f'
+			s = s.replace(bad, ' ')
+		while s.contains('  '), s = s.replace('  ', ' ')
+		s = s.replace(' ', '_')
+		for c in Path.getInvalidFileNameChars
+			s = s.replace(c.toString, '')
+		maxLen = .setting('max file name length', .defaultMaxFileNameLength)
+		s = s[:maxLen]
+		return s
+
+	def reducePath(path as String) as String
+		prefix = '.' + Path.directorySeparatorChar.toString
+		if path.startsWith(prefix)
+			path = path[prefix.length:]
+		return path
+
+	def printStylesheet
+		print '<style type="text/css">'
+		print 'body {'
+		print '    font-family: Verdana, Helvetica, Arial, sans-serif;'
+		print '    font-size: 12px;'
+		print '}'
+		print '.heading {'
+		print '    color: #00a;'
+		print '    font-size: 16px;'
+		print '    font-weight: bold;'
+		print '    padding: 1em 0 0.5em 0;'
+		print '}'
+		print 'tr.r0 td {'
+		print '    background-color: #e6e6e6;'
+		print '}'
+		print 'tr.r1 td {'
+		print '    background-color: #f2f2f2;'
+		print '}'
+		print '</style>'
+	
+	def printContent
+		.printHeader
+		.printLocation
+		.printProperties(.node)
+		.printFooter
+
+	def printHeader
+		pass
+
+	def printLocation
+		.heading('Location')
+		print '<table>'
+		node = .node
+		if node inherits Expr
+			source = node.toCobraSource
+		else
+			source = node.token.text + ' ...'
+		print '<tr> <td> help for </td> <td> [source.htmlEncode] </td> </tr>'
+		if .member
+			what = if(.member inherits AbstractMethod, 'method', 'member')
+			print '<tr> <td> in [what] </td> <td> [.member.name.htmlEncode] </td> </tr>'
+		print '</table>'
+
+	def printProperties(obj)
+		.heading('Node Properties')
+		.p('These are compiler internals.')
+		props = obj.typeOf.getProperties.toList
+		props.sort(do(a as PropertyInfo, b as PropertyInfo)=a.name.compareTo(b.name))
+		print '<table>'
+		i = 0
+		for prop in props
+			if prop.canRead
+				name = Utils.cobraNameForSharpMemberName(prop.name)
+				try
+					value = prop.getValue(obj, nil)
+				catch exc as Exception
+					value = '(exception: [exc.typeOf.name]: [exc.message])'
+				value = CobraCore.toTechString(value).htmlEncode
+				print '<tr class="r[i]"> <td> [name] </td> <td> [value] </td> </tr>'
+				i += 1
+				i %= 2
+		print '</table>'
+
+	def printFooter
+		pass
+
+	def setting(name as String, defaultValue as String) as String
+		"""
+		Return a setting from the environment variables,
+		returning `defaultValue` if no env var is set.
+		"""
+		envVarName = 'COBRA_HELP_' + name.toUpper.replace(' ', '_')
+		value = Environment.getEnvironmentVariable(envVarName) ? ''
+		value = value.trim
+		if value == '', value = defaultValue
+		return value
+
+	def setting(name as String, defaultValue as int) as int
+		# to-do: is this needed?
+		return int.parse(.setting(name, defaultValue.toString))
+
+	def htmlEncode(obj as Object) as String
+		return CobraCore.htmlEncode(obj)
+
+	def htmlEncode(s as String) as String
+		return CobraCore.htmlEncode(s)
+
+	def heading(name as String)
+		print '<div class="heading">[name.htmlEncode]</div>'
+
+	def p(html as String)
+		print '<p>' + html + '</p>'
+
+	def open
+		open = .setting('open', '1').trim
+		if open.toLower in ['false', '0']
+			pass
+		else, if open.toLower in ['true', '1']
+			Process.start(.path)
+		else
+			Process.start(open, .path)
+
+
+extend String
+
+	def htmlEncode as String
+		return CobraCore.htmlEncode(this)
