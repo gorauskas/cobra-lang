@@ -6,7 +6,7 @@ class HelpGenerator
 
 	const defaultMaxFileNameLength = 64
 	
-	cue init(topic as String, node as ISyntaxNode, member as IBoxMember?, types as IList<of IType>)
+	cue init(topic as String, node as ISyntaxNode, member as IBoxMember?, type as IType?, types as IList<of IType>)
 		base.init
 		_topic, _node, _member, _types = topic, node, member, types
 
@@ -14,6 +14,8 @@ class HelpGenerator
 
 	pro member from var as IBoxMember?
 
+	pro type from var as IType?
+	
 	pro types from var as IList<of IType>
 
 	
@@ -61,23 +63,20 @@ class HelpGenerator
 
 	def printStylesheet
 		print '<style type="text/css">'
-		print 'body {'
-		print '    font-family: Verdana, Helvetica, Arial, sans-serif;'
-		print '    font-size: 12px;'
-		print '}'
-		print '.heading {'
-		print '    color: #00a;'
-		print '    font-size: 16px;'
-		print '    font-weight: bold;'
-		print '    padding: 1em 0 0.5em 0;'
-		print '}'
-		print 'tr.r0 td {'
-		print '    background-color: #e6e6e6;'
-		print '}'
-		print 'tr.r1 td {'
-		print '    background-color: #f2f2f2;'
-		print '}'
+		.embedStyleSheet('styles-cobra-help')
 		print '</style>'
+	
+	def embedStyleSheet(name as String)
+		fileName = name + '.css'
+		dirs = [
+			Path.getDirectoryName(Assembly.getEntryAssembly.location),
+		]
+		for dir in dirs
+			if Directory.exists(dir)
+				path = Path.combine(dir, fileName)
+				if File.exists(path)
+					print File.readAllText(path)
+					return
 	
 	def printContent
 		.printHeader
@@ -85,22 +84,43 @@ class HelpGenerator
 		.printProperties(.node)
 		.printFooter
 
+	def description as String
+		if .node inherits Expr
+			return (.node to Expr).toCobraSource.htmlEncode
+		else
+			return (.node.token.text + ' ...').htmlEncode
+
 	def printHeader
-		pass
+		print '<div class="header">'
+		print '<div class="title">'
+		print 'Help for [.description]'
+		print '</div>'
+		print '<div class="cobra">'
+		print '<a href="http://cobra-language.com/">The Cobra Programming Language</a>'
+		print ' | <a href="http://cobra-language.com/support">Support</a>'
+		print ' | <a href="http://cobra-language.com/discuss">Discuss</a>'
+		print ' | <a href="http://cobra-language.com/wiki">Wiki</a>'
+		print '</div>'
+		print '</div>'
 
 	def printLocation
 		.heading('Location')
 		print '<table>'
-		node = .node
-		if node inherits Expr
-			source = node.toCobraSource
-		else
-			source = node.token.text + ' ...'
-		print '<tr> <td> help for </td> <td> [source.htmlEncode] </td> </tr>'
+		print '<tr> <td class="k"> help for </td> <td class="v"> [.description.htmlEncode] </td> </tr>'
+
 		if .member
 			what = if(.member inherits AbstractMethod, 'method', 'member')
-			print '<tr> <td> in [what] </td> <td> [.member.name.htmlEncode] </td> </tr>'
+			print '<tr> <td class="k"> in [what] </td> <td class="v"> [.member.name.htmlEncode] </td> </tr>'
+		
+		if .type
+			print '<tr> <td class="k"> in [.type.englishName] </td> <td class="v"> [.type.name] </td> </tr>'
+		
+		print '<tr> <td class="k"> in file </td> <td class="v"> [.node.token.fileName.htmlEncode] </td> </tr>'
+		
+		print '<tr> <td class="k"> at line </td> <td class="v"> [.node.token.lineNum] </td> </tr>'
+		
 		print '</table>'
+
 
 	def printProperties(obj)
 		.heading('Node Properties')
@@ -117,7 +137,7 @@ class HelpGenerator
 				catch exc as Exception
 					value = '(exception: [exc.typeOf.name]: [exc.message])'
 				value = CobraCore.toTechString(value).htmlEncode
-				print '<tr class="r[i]"> <td> [name] </td> <td> [value] </td> </tr>'
+				print '<tr class="r[i]"> <td class="k"> [name] </td> <td class="v"> [value] </td> </tr>'
 				i += 1
 				i %= 2
 		print '</table>'
