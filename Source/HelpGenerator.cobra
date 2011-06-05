@@ -6,17 +6,17 @@ class HelpGenerator
 
 	const defaultMaxFileNameLength = 64
 	
-	cue init(topic as String, node as ISyntaxNode, member as IBoxMember?, type as IType?, types as IList<of IType>?)
+	cue init(topic as String, node as ISyntaxNode, parentMember as IBoxMember?, parentType as IType?, types as IList<of IType>?)
 		base.init
-		_topic, _node, _member = topic, node, member
-		_type = type
+		_topic, _node = topic, node
+		_parentMember, _parentType = parentMember, parentType
 		_types = types ? List<of IType>()
 
 	pro node from var as ISyntaxNode
 
-	pro member from var as IBoxMember?
+	pro parentMember from var as IBoxMember?
 
-	pro type from var as IType?
+	pro parentType from var as IType?
 	
 	pro types from var as IList<of IType>
 
@@ -78,10 +78,11 @@ class HelpGenerator
 				path = Path.combine(dir, fileName)
 				if File.exists(path)
 					print File.readAllText(path)
-					return
+					continue
 	
 	def printContent
 		.printHeader
+		.printInfo
 		.printLocation
 		.printSearchLinks
 		.printProperties(.node)
@@ -101,17 +102,41 @@ class HelpGenerator
 		print '</div>'
 		print '</div>'
 
+	def printInfo
+		.heading('Info')
+
+		print '<table>'
+
+		print '<tr> <td class="k"> help for </td> <td class="v"> [.topic.htmlEncode] </td> </tr>'
+
+		defi as INamedNode?
+		try
+			defi = (.node to dynamic).definition
+		catch
+			pass
+		if defi
+			print '<tr> <td class="k"> definition </td> <td class="v"> [defi.idString.htmlEncode] </td> </tr>'
+
+		type as INamedNode?
+		try
+			type = (.node to dynamic).type
+		catch
+			pass
+		if type
+			print '<tr> <td class="k"> type </td> <td class="v"> [type.idString.htmlEncode] </td> </tr>'
+
+		print '</table>'
+
 	def printLocation
 		.heading('Location')
 		print '<table>'
-		print '<tr> <td class="k"> help for </td> <td class="v"> [.topic.htmlEncode] </td> </tr>'
 
-		if .member
-			what = if(.member inherits AbstractMethod, 'method', 'member')
-			print '<tr> <td class="k"> in [what] </td> <td class="v"> [.member.name.htmlEncode] </td> </tr>'
+		if .parentMember
+			what = if(.parentMember inherits AbstractMethod, 'method', 'member')
+			print '<tr> <td class="k"> in [what] </td> <td class="v"> [.parentMember.name.htmlEncode] </td> </tr>'
 		
-		if .type
-			print '<tr> <td class="k"> in [.type.englishName] </td> <td class="v"> [.type.name] </td> </tr>'
+		if .parentType
+			print '<tr> <td class="k"> in [.parentType.englishName] </td> <td class="v"> [.parentType.name] </td> </tr>'
 		
 		print '<tr> <td class="k"> in file </td> <td class="v"> [.node.token.fileName.htmlEncode] </td> </tr>'
 		
