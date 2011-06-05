@@ -4,6 +4,13 @@ use System.Reflection
 
 class HelpGenerator
 
+	var settings = [
+		['open', 'Can be set to a boolean value (true, 1, false or 0) or set to the path of a program to execute on the help file.'],
+		['directory', 'The directory to put the HTML files in. Defaults to the current directory.'],
+		['file name', 'The template for the file name for the HTML files. Defaults to "Help_for_TOPIC.html".'],
+		['max file name length', 'The maximum file name length in case TOPIC gets too long. Defaults to 64.'],
+	]
+
 	const defaultMaxFileNameLength = 64
 	
 	cue init(topic as String, node as ISyntaxNode, parentMember as IBoxMember?, parentType as IType?, types as IList<of IType>?)
@@ -86,6 +93,7 @@ class HelpGenerator
 		.printLocation
 		.printSearchLinks
 		.printProperties(.node)
+		.printSettings
 		.printFooter
 
 	def printHeader
@@ -169,6 +177,19 @@ class HelpGenerator
 				i %= 2
 		print '</table>'
 
+	def printSettings
+		.heading('Environment Variables')
+		.p('You can use the following environment variables to control @help\'s behavior.')
+		print '<table>'
+		i = 0
+		for name, description in .settings
+			name, description = .envVarName(name).htmlEncode, description.htmlEncode
+			print '<tr class="r[i]"> <td class="k"> [name] </td> <td class="v"> [description] </td> </tr>'
+			i += 1
+			i %= 2
+		print '</table>'
+		
+
 	def printFooter
 		print '<div class="footer"></div>'
 
@@ -177,7 +198,7 @@ class HelpGenerator
 		Return a setting from the environment variables,
 		returning `defaultValue` if no env var is set.
 		"""
-		envVarName = 'COBRA_HELP_' + name.toUpper.replace(' ', '_')
+		envVarName = .envVarName(name)
 		value = Environment.getEnvironmentVariable(envVarName) ? ''
 		value = value.trim
 		if value == '', value = defaultValue
@@ -186,6 +207,9 @@ class HelpGenerator
 	def setting(name as String, defaultValue as int) as int
 		# to-do: is this needed?
 		return int.parse(.setting(name, defaultValue.toString))
+
+	def envVarName(settingName as String) as String
+		return 'COBRA_HELP_' + settingName.toUpper.replace(' ', '_')
 
 	def htmlEncode(obj as Object) as String
 		return CobraCore.htmlEncode(obj)
