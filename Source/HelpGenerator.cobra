@@ -5,19 +5,30 @@ use System.Reflection
 class HelpGenerator
 
 	var settings = [
-		['open', 'Can be set to a boolean value (true, 1, false or 0) or set to the path of a program to execute on the help file.'],
-		['directory', 'The directory to put the HTML files in. Defaults to the current directory.'],
-		['file name', 'The template for the file name for the HTML files. Defaults to "Help_for_TOPIC.html".'],
-		['max file name length', 'The maximum file name length in case TOPIC gets too long. Defaults to 64.'],
+		['open',
+			'Can be set to a boolean value (true, 1, false or 0) or set to the path of a program to execute on the help file.'],
+		['directory',
+			'The directory to put the HTML files in. Defaults to the current directory.'],
+		['file name',
+			'The template for the file name for the HTML files. Defaults to "Help_for_TOPIC.html".'],
+		['max file name length',
+			'The maximum file name length in case TOPIC gets too long. Defaults to 64.'],
+		['show nodes',
+			'If true, show the compiler nodes and their properties.'],
+		['max node depth',
+			'When showing nodes, the maximum node depth to traverse. Default is 2.'],
 	]
 
 	const defaultMaxFileNameLength = 64
 	
+	var _settingNames as ISet<of String>
+
 	cue init(topic as String, node as ISyntaxNode, parentMember as IBoxMember?, parentType as IType?, types as IList<of IType>?)
 		base.init
 		_topic, _node = topic, node
 		_parentMember, _parentType = parentMember, parentType
 		_types = types ? List<of IType>()
+		_settingNames = Set<of String>(for spec in .settings get spec[0])
 
 	pro node from var as ISyntaxNode
 
@@ -66,8 +77,7 @@ class HelpGenerator
 
 	def reducePath(path as String) as String
 		prefix = '.' + Path.directorySeparatorChar.toString
-		if path.startsWith(prefix)
-			path = path[prefix.length:]
+		if path.startsWith(prefix), path = path[prefix.length:]
 		return path
 
 	def printStylesheet
@@ -92,7 +102,7 @@ class HelpGenerator
 		.printInfo
 		.printLocation
 		.printSearchLinks
-		.printProperties(.node)
+		.printNode
 		.printSettings
 		.printFooter
 
@@ -164,18 +174,32 @@ class HelpGenerator
 		
 		print '</table>'
 
-	
 	def printSearchLinks
 		# to-do: String.length  <.left.type>.<method>
 		pass
 
-	def printProperties(obj)
-		.heading('Node Properties')
-		.p('These are compiler internals.')
+	def printNode
+		if .setting('show nodes', '0').toLower in ['1', 'true']
+			.heading('Nodes')
+			_printNode('@help', .node, Set<of INode>(), 1, .setting('max node depth', 2))
+
+	def _printNode(source as String, node as INode, visited as Set<of INode>, depth as int, maxDepth as int)
+		if node in visited or depth > maxDepth, return
+		nodes = .printProperties(source, node)
+		visited.add(node)
+		depth += 1
+		for name as String, subNode as INode in nodes
+			if subNode not in visited
+				source = '[name.htmlEncode] of [.descriptionFor(node)]'
+				_printNode(source, subNode, visited, depth, maxDepth)
+
+	def printProperties(source as String, obj) as List<of dynamic>
+		nodes = List<of dynamic>()
 		props = obj.typeOf.getProperties.toList
 		props.sort(do(a as PropertyInfo, b as PropertyInfo)=a.name.compareTo(b.name))
 		print '<table>'
-		print '<tr> <td class="heading" colspan="2">[.headingFor(obj)]</td> </tr>'
+		print '<tr> <td class="heading" colspan="2">[.descriptionFor(obj)]</td> </tr>'
+		print '<tr> <td class="source" colspan="2">from [source]</td> </tr>'
 		i = 0
 		for prop in props
 			if prop.canRead
@@ -184,12 +208,14 @@ class HelpGenerator
 					value = prop.getValue(obj, nil)
 				catch exc as Exception
 					value = '(exception: [exc.typeOf.name]: [exc.message])'
+				if value implements INode, nodes.add([name, value])
 				value = CobraCore.toTechString(value).htmlEncode
 				print '<tr class="r[i]"> <td class="k"> [name] </td> <td class="v"> [value] </td> </tr>'
 				i = (i + 1) % 2
 		print '</table>'
+		return nodes
 
-	def headingFor(obj as INode) as String
+	def descriptionFor(obj as INode) as String
 		if obj inherits IExpr
 			return '[obj.toCobraSource.htmlEncode] / [obj.idString.htmlEncode]'
 		else
@@ -205,7 +231,6 @@ class HelpGenerator
 			print '<tr class="r[i]"> <td class="k"> [name] </td> <td class="v"> [description] </td> </tr>'
 			i = (i + 1) % 2
 		print '</table>'
-		
 
 	def printFooter
 		print '<div class="footer"></div>'
@@ -215,6 +240,7 @@ class HelpGenerator
 		Return a setting from the environment variables,
 		returning `defaultValue` if no env var is set.
 		"""
+		assert name in _settingNames
 		envVarName = .envVarName(name)
 		value = Environment.getEnvironmentVariable(envVarName) ? ''
 		value = value.trim
