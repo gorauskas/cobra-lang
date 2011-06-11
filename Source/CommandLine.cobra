@@ -737,27 +737,48 @@ class CommandLine
 		comp.options = .options
 		Node.setCompiler(comp)
 		try
-			comp.readSystemTypes
+			comp.initBackEnd
 			reference = .options['document-library'] to String  # to-do: pick out type name. to-do: support multiple references
 			if not reference.endsWith('.dll') and not reference.endsWith('.exe'), reference += '.dll'  # todo-backend
-			if comp.loadReference(reference)
-				module = comp.modules.last to AssemblyModule
-				_prepIfNeeded(module.topNameSpace)
-				docModules.add(module)
-			else
-				print 'error: Cannot locate library reference "[reference]".'
-				# to-do: exit code
-				return
+			.options['reference'] = [reference]
+			phaseClasses = [
+				BindRunTimeLibraryPhase,
+				ReadLibrariesPhase,
+				BindUsePhase,
+				BindInheritancePhase,
+				BindInterfacePhase,
+				ComputeMatchingBaseMembersPhase,
+			]
+			phases = for phaseClass in phaseClasses get phaseClass(comp) to Phase
+			hasErrors = false
+			for phase in phases
+				if not hasErrors or phase.willRunWithErrors
+					if comp.runPhase(phase), hasErrors = true
+			# running a phase unsets the compiler, so set it again:
+			Node.setCompiler(comp)
+			comp.printMessages
+			if hasErrors, Environment.exit(1)		
+			for module in comp.modules.clone
+				if module.fileName.endsWith(reference)
+					_prepIfNeeded(module)
+					docModules.add(module)
+			GenerateHtmlDocVisitor(do(m)=docModules.contains(m to Module)).gen(comp)  # CC: shouldn't need typecast
 		finally
 			Node.setCompiler(nil)
-		GenerateHtmlDocVisitor(do(m)=docModules.contains(m to Module)).gen(comp)  # CC: shouldn't need typecast
 
-	def _prepIfNeeded(decl)
-		if decl inherits NameSpace
-			for subDecl in decl.declsInOrder
-				_prepIfNeeded(subDecl to passthrough)
-		else if decl inherits Box
-			decl.prepIfNeeded
+	def _prepIfNeeded(node)
+		if node inherits AssemblyModule
+			_prepIfNeeded(node.topNameSpace to passthrough)
+		else if node inherits NameSpace
+			for decl in node.declsInOrder
+				_prepIfNeeded(decl to passthrough)
+		else if node inherits Box
+			node.prepIfNeeded
+		else if node implements INameSpaceMember
+			# ex: Enum
+			pass
+		else
+			throw FallThroughException(node)
 
 	def doTest(paths as List<of String>)
 		if paths.count == 0
