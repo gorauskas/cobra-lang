@@ -19,6 +19,28 @@ class HelpGenerator
 			'When showing nodes, the maximum node depth to traverse. Default is 2.'],
 	]
 
+	var searchEngines = [
+		['Google', 'http://www.google.com/search?q='],
+	]
+
+	var searchTermHelpers = ['Cobra', '.NET', 'C#']
+
+	var searchSites = [
+		{
+			'name': 'Cobra Language',
+			'host': 'cobra-language.com',
+		},
+		{
+			'name': 'MSDN',
+			'host': 'msdn.microsoft.com',
+		},
+		{
+			'name': 'Stack Overflow',
+			'host': 'stackoverflow.com',
+			'helpers': ['.NET', 'C#'],
+		},
+	]
+
 	const defaultMaxFileNameLength = 64
 	
 	var _settingNames as ISet<of String>
@@ -38,6 +60,8 @@ class HelpGenerator
 	
 	pro types from var as IList<of IType>
 
+	pro searchTerms from var = List<of String>()
+	
 	
 	pro topic from var = ''
 	
@@ -128,15 +152,6 @@ class HelpGenerator
 		print '<tr> <td class="k"> help for </td> <td class="v"> [.topic.htmlEncode] </td> </tr>'
 		.parentNameSpaceRow(.node)
 
-		defi as INamedNode?
-		try
-			defi = (.node to dynamic).definition
-		catch
-			pass
-		if defi
-			print '<tr> <td class="k"> definition </td> <td class="v"> [defi.idString.htmlEncode] </td> </tr>'
-			.parentNameSpaceRow(defi)
-
 		type as INamedNode?
 		try
 			type = (.node to dynamic).type
@@ -145,6 +160,15 @@ class HelpGenerator
 		if type
 			print '<tr> <td class="k"> type </td> <td class="v"> [type.name.htmlEncode] </td> </tr>'
 			.parentNameSpaceRow(type)
+
+		defi as INamedNode?
+		try
+			defi = (.node to dynamic).definition
+		catch
+			pass
+		if defi
+			print '<tr> <td class="k"> definition </td> <td class="v"> [defi.idString.htmlEncode] </td> </tr>'
+			.parentNameSpaceRow(defi)
 
 		print '</table>'
 
@@ -175,8 +199,30 @@ class HelpGenerator
 		print '</table>'
 
 	def printSearchLinks
-		# to-do: String.length  <.left.type>.<method>
-		pass
+		if .searchTerms.count == 0, return
+		.heading('Search')
+		print '<table>'
+		for name, url in .searchEngines
+			_printSearchLinks(name, url, nil, .searchTermHelpers)
+			for site in .searchSites
+				helpers = if(site.containsKey('helpers'), site['helpers'], nil)
+				_printSearchLinks(site['name'], url, site['host'], helpers)
+		print '</table>'
+
+	def _printSearchLinks(name as String, url as String, host as String?, helpers as IList<of String>?)
+		for keywords in .searchTerms
+			query = keywords
+			if host, query = 'site:[host] [query]'
+			query = query.replace(' ', '+').urlEncode
+			print '<tr> <td class="k"> [name.htmlEncode]: </td>'
+			print '<td> <a href="[url+query]">[keywords.htmlEncode]</a> </td>'
+			if helpers
+				for helper in helpers
+					query = '[keywords] [helper]'
+					if host, query = 'site:[host] [query]'
+					query = query.replace(' ', '+').urlEncode
+					print '<td> <a href="[url+query]">+ [helper]</a> </td>'
+			print '</tr>'
 
 	def printNode
 		if .setting('show nodes', '0').toLower in ['1', 'true']
@@ -185,7 +231,7 @@ class HelpGenerator
 
 	def _printNode(source as String, node as INode, visited as Set<of INode>, depth as int, maxDepth as int)
 		if node in visited or depth > maxDepth, return
-		nodes = .printProperties(source, node)
+		nodes = .printObject(source, node)
 		visited.add(node)
 		depth += 1
 		for name as String, subNode as INode in nodes
@@ -193,11 +239,11 @@ class HelpGenerator
 				source = '[name.htmlEncode] of [.descriptionFor(node)]'
 				_printNode(source, subNode, visited, depth, maxDepth)
 
-	def printProperties(source as String, obj) as List<of dynamic>
+	def printObject(source as String, obj) as List<of dynamic>
 		nodes = List<of dynamic>()
 		props = obj.typeOf.getProperties.toList
 		props.sort(do(a as PropertyInfo, b as PropertyInfo)=a.name.compareTo(b.name))
-		print '<table>'
+		print '<table class="object">'
 		print '<tr> <td class="heading" colspan="2">[.descriptionFor(obj)]</td> </tr>'
 		print '<tr> <td class="source" colspan="2">from [source]</td> </tr>'
 		i = 0
@@ -280,3 +326,6 @@ extend String
 
 	def htmlEncode as String
 		return CobraCore.htmlEncode(this)
+
+	def urlEncode as String  # to-do
+		return .replace('#', '%23')
