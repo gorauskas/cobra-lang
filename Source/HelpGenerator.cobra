@@ -3,7 +3,11 @@ use System.Reflection
 
 
 class HelpGenerator
-
+	"""
+	to-do: .cobraSourceSignature gives nice results for methods. Add it to properties, indexers and
+			vars as well. Possibly even types.
+	"""
+	
 	var settings = [
 		['open',
 			'Can be set to a boolean value (true, 1, false or 0) or set to the path of a program to execute on the help file.'],
@@ -68,6 +72,7 @@ class HelpGenerator
 	pro path from var = ''
 
 	def generate
+		.reduceSearchTerms
 		directory = .setting('directory', '.')
 		fileName = .setting('file name', 'Help_for_TOPIC.html')
 		fileName = .cleanFileName(fileName.replace('TOPIC', .topic))
@@ -86,6 +91,18 @@ class HelpGenerator
 				print '</body>'
 				print '</html>'
 		.open
+
+	def reduceSearchTerms
+		""" Get rid of duplicate search terms, trailing whitespace, etc. """
+		result = List<of String>()
+		visited = Set<of String>()
+		for term in .searchTerms
+			term = term.trim
+			while term.contains('  '), term = term.replace('  ', ' ')
+			if term.toLower not in visited
+				visited.add(term.toLower)
+				result.add(term)
+		.searchTerms = result
 
 	def cleanFileName(fileName as String) as String
 		s = fileName
@@ -161,13 +178,17 @@ class HelpGenerator
 			print '<tr> <td class="k"> type </td> <td class="v"> [type.name.htmlEncode] </td> </tr>'
 			.parentNameSpaceRow(type)
 
-		defi as INamedNode?
+		defi = nil
 		try
 			defi = (.node to dynamic).definition
 		catch
 			pass
 		if defi
-			print '<tr> <td class="k"> definition </td> <td class="v"> [defi.idString.htmlEncode] </td> </tr>'
+			try
+				value = defi.cobraSourceSignature
+			catch
+				value = defi.idString
+			print '<tr> <td class="k"> definition </td> <td class="v"> [value.toString.htmlEncode] </td> </tr>'
 			.parentNameSpaceRow(defi)
 
 		print '</table>'
