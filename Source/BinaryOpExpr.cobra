@@ -735,13 +735,23 @@ class DotExpr inherits BinaryOpExpr is partial
 					.compiler.warning(this, 'The receiver "[_left.toCobraSource]" may be nil which will cause an exception. You can guard against this with an "if" statement, an assignment, a coalesce or by changing the type.')
 
 	def _help(hg as HelpGenerator) is override
-		base._help(hg)
 		type = nil
 		try
 			type = .left.receiverType ? .left.type
 		catch
 			pass
-		_helpType(hg, type)
+		if type
+			terms = '[type.name] [.dotRight.name]'
+			hg.searchTerms.add(terms)
+			ns = type.parentNameSpace
+			if ns, hg.searchTerms.add(ns.fullName + ' ' + terms)
+			else if type inherits Box
+				pb = type.parentBox
+				if pb, hg.searchTerms.add(pb.qualifiedName + ' ' + terms)
+			_helpType(hg, type)
+		else
+			hg.searchTerms.add(.dotRight.name)
+		base._help(hg)
 	
 	def afterStatementBindImp
 		base.afterStatementBindImp
