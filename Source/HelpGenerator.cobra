@@ -1,5 +1,6 @@
 use System.Diagnostics
 use System.Reflection
+use System.Text.RegularExpressions
 
 
 class HelpGenerator
@@ -49,6 +50,8 @@ class HelpGenerator
 
 	const defaultMaxFileNameLength = 64
 	
+	var _testMethodRE = Regex(r'^test_[\w]+_\d+$', RegexOptions.Compiled)
+
 	var _settingNames as ISet<of String>
 
 	cue init(topic as String, node as ISyntaxNode, parentMember as IBoxMember?, parentType as IType?)
@@ -281,9 +284,11 @@ class HelpGenerator
 		.heading('[type.englishName] [type.name]')
 		print '<table>'
 		# types: primitive, box [ class, struct, interface ], enum, mixin, extension
-		if type inherits Box, _printBoxPairs(type)
-		# to-do: primitive type: show link to primitive type extension methods
-		# to-do: show interface as given by DocGenerator
+		if type inherits Box
+			_printBoxPairs(type)
+		else if type inherits PrimitiveType
+			if type.box, _printBoxPairs(type.box to !)
+		# to-do: show interface as given by DocGenerator. ... is that still needed?
 		print '</table>'
 	
 	def _printBoxPairs(box as Box)
@@ -310,6 +315,9 @@ class HelpGenerator
 		
 		# members: public vs. non, static vs. instance, member type
 		members = box.declsInOrder.sorted(do(a as IBoxMember, b as IBoxMember)=a.name.compareTo(b.name))
+		members = for member in members where not member inherits TestMethod
+		members = for member in members where not _testMethodRE.isMatch(member.name)
+
 		# to-do: constructors
 		memberKindNames = ['constants', 'variables', 'events', 'properties', 'indexers', 'methods']
 		for visibility in 0 : 2    # public, non-public
