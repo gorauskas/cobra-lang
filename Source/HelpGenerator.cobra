@@ -49,11 +49,10 @@ class HelpGenerator
 	
 	var _settingNames as ISet<of String>
 
-	cue init(topic as String, node as ISyntaxNode, parentMember as IBoxMember?, parentType as IType?, types as IList<of IType>?)
+	cue init(topic as String, node as ISyntaxNode, parentMember as IBoxMember?, parentType as IType?)
 		base.init
 		_topic, _node = topic, node
 		_parentMember, _parentType = parentMember, parentType
-		_types = types ? List<of IType>()
 		_settingNames = Set<of String>(for spec in .settings get spec[0])
 
 	pro node from var as ISyntaxNode
@@ -62,7 +61,7 @@ class HelpGenerator
 
 	pro parentType from var as IType?
 	
-	pro types from var as IList<of IType>
+	pro types from var = List<of IType>()
 
 	pro searchTerms from var = List<of String>()
 	
@@ -73,6 +72,7 @@ class HelpGenerator
 
 	def generate
 		.reduceSearchTerms
+		.reduceTypes
 		directory = .setting('directory', '.')
 		fileName = .setting('file name', 'Help_for_TOPIC.html')
 		fileName = .cleanFileName(fileName.replace('TOPIC', .topic))
@@ -103,6 +103,11 @@ class HelpGenerator
 				visited.add(term.toLower)
 				result.add(term)
 		.searchTerms = result
+
+	def reduceTypes
+		result = List<of IType>()
+		for type in .types, if type not in result, result.add(type)
+		.types = result
 
 	def cleanFileName(fileName as String) as String
 		s = fileName
@@ -144,6 +149,7 @@ class HelpGenerator
 		.printInfo
 		print '<div class="clear"></div>'
 		.printSearchLinks
+		.printTypes
 		.printNode
 		.printSettings
 		.printFooter
@@ -160,6 +166,25 @@ class HelpGenerator
 		print '[sep]<a href="http://cobra-language.com/discuss">Discuss</a>'
 		print '[sep]<a href="http://cobra-language.com/wiki">Wiki</a>'
 		print '</div>'
+		print '</div>'
+
+	def printLocation
+		print '<div class="left">'
+		.heading('Location')
+		print '<table>'
+
+		if .parentMember
+			what = if(.parentMember inherits AbstractMethod, 'method', 'member')
+			print '<tr> <td class="k"> in [what] </td> <td class="v"> [.parentMember.name.htmlEncode] </td> </tr>'
+		
+		if .parentType
+			print '<tr> <td class="k"> in [.parentType.englishName] </td> <td class="v"> [.parentType.name] </td> </tr>'
+		
+		print '<tr> <td class="k"> in file </td> <td class="v"> [.node.token.fileName.htmlEncode] </td> </tr>'
+		
+		print '<tr> <td class="k"> at line </td> <td class="v"> [.node.token.lineNum] </td> </tr>'
+		
+		print '</table>'
 		print '</div>'
 
 	def printInfo
@@ -218,25 +243,6 @@ class HelpGenerator
 		if ns
 			print '<tr> <td class="k"> in namespace </td> <td class="v"> [ns.fullName.htmlEncode] </td> </tr>'
 
-	def printLocation
-		print '<div class="left">'
-		.heading('Location')
-		print '<table>'
-
-		if .parentMember
-			what = if(.parentMember inherits AbstractMethod, 'method', 'member')
-			print '<tr> <td class="k"> in [what] </td> <td class="v"> [.parentMember.name.htmlEncode] </td> </tr>'
-		
-		if .parentType
-			print '<tr> <td class="k"> in [.parentType.englishName] </td> <td class="v"> [.parentType.name] </td> </tr>'
-		
-		print '<tr> <td class="k"> in file </td> <td class="v"> [.node.token.fileName.htmlEncode] </td> </tr>'
-		
-		print '<tr> <td class="k"> at line </td> <td class="v"> [.node.token.lineNum] </td> </tr>'
-		
-		print '</table>'
-		print '</div>'
-
 	def printSearchLinks
 		if .searchTerms.count == 0, return
 		.heading('Search')
@@ -262,6 +268,48 @@ class HelpGenerator
 					query = query.replace(' ', '+').urlEncode
 					print '<td> <a href="[url+query]">+ [helper]</a> </td>'
 			print '</tr>'
+
+	def printTypes
+		i = 0
+		while i < .types.count
+			_printType(.types[i])
+			i += 1
+
+	def _printType(type as IType)
+		.heading('[type.englishName] [type.name]')
+		print '<table>'
+		# types: primitive, box [ class, struct, interface ], enum, mixin, extension
+		if type inherits Box, _printBoxPairs(type)
+		# to-do: primitive type: show link to primitive type extension methods
+		# to-do: show interface as given by DocGenerator
+		print '</table>'
+	
+	def _printBoxPairs(box as Box)
+		if box.baseClass
+			.pair('base class', box.baseClass.name)
+		if box.baseInterfaces.count
+			.pair('base interfaces', (for i in box.baseInterfaces get i.name).sorted.join(', '))
+		if box.parentNameSpace
+			.pair('parent name space', box.parentNameSpace.fullName)
+		if box.innerType
+			.pair('for loop type', box.innerType.name)
+		if box.isGeneric
+			for gp in box.genericParams
+				if gp inherits GenericParam
+					# to-do: show generic constraints
+					pass
+				else if gp not in .types
+					.types.add(gp)
+		# to-do:	invariants
+		# members: static vs. instance, properties vs. indexers vs. methods, public vs. non
+		
+	def pair(key, value)
+		if not key inherits Html, key = .htmlEncode(key)
+		if not value inherits Html, value = .htmlEncode(value)
+		print '<tr>'
+		print '<td class="k">[key]</td>'
+		print '<td class="v">[value]</td>'
+		print '</tr>'
 
 	def printNode
 		if .setting('show nodes', '0').toLower in ['1', 'true']
