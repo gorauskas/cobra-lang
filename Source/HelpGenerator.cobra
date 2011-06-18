@@ -301,8 +301,80 @@ class HelpGenerator
 				else if gp not in .types
 					.types.add(gp)
 		# to-do:	invariants
-		# members: static vs. instance, properties vs. indexers vs. methods, public vs. non
+		# to-do: nested types
 		
+		# to-do: include extension methods
+		
+		# members: public vs. non, static vs. instance, member type
+		members = box.declsInOrder.sorted(do(a as IBoxMember, b as IBoxMember)=a.name.compareTo(b.name))
+		# to-do: constructors
+		memberKindNames = ['constants', 'variables', 'events', 'properties', 'indexers', 'methods']
+		for visibility in 0 : 2    # public, non-public
+			for level in 0 : 2     # shared, instance
+				for kind in 0 : 6  # member type
+					matches = List<of IBoxMember>()
+					for member in members
+						if member inherits Box
+							# to-do: subtypes
+							continue
+#							if visibility == 0 and not 'public' in member.isNames, continue
+#							if member.isFromBinaryLibrary and 'private' in member.isNames, continue
+						else if member inherits BoxMember
+							branch kind
+								on 0, if not member inherits BoxConst, continue
+								on 1, if not member inherits BoxVar, continue
+								on 2, if not member inherits BoxEvent, continue
+								on 3, if not member inherits Property, continue
+								on 4, if not member inherits Indexer, continue
+								on 5, if not member inherits Method, continue
+							if visibility == 0 and not member.isPublic, continue
+							if visibility == 1 and member.isPublic, continue
+							if member.isPrivate and member.parentBox.isFromBinaryLibrary, continue
+							if level == 0 and not member.isShared, continue
+							if level == 1 and member.isShared, continue
+						else
+							throw FallThroughException(member)
+						matches.add(member)
+					if matches.count
+						category = ['public', 'non-public'][visibility]
+						category += ' ' + ['shared', 'instance'][level]
+						category += ' ' + memberKindNames[kind]
+						print '<tr>'
+						print '<td class="k"> [category] </td>'
+						print '<td class="v">'
+						for match in matches
+							print '<span class="box-pair-member">'
+							print _boxPairMatchName(match)
+							print '</span>'
+						print '</td>'
+						print '</tr>'
+
+	def _boxPairMatchName(member as IBoxMember) as String
+		if member inherits BoxMember
+			name = StringBuilder()
+			if member inherits Indexer
+				name.append('\[')
+				sep = ''
+				for param in member.params
+					name.append(sep)
+					name.append('<span class="box-pair-param">[param.name.htmlEncode]</span>')
+					sep = ', '
+				name.append(']')
+			else
+				name.append('.' + member.name.htmlEncode)
+				if member inherits Method
+					if member.params.count > 0
+						name.append('(')
+						sep = ''
+						for param in member.params
+							name.append(sep)
+							name.append('<span class="box-pair-param">[param.name.htmlEncode]</span>')
+							sep = ', '
+						name.append(')')
+			return name.toString
+		else
+			return member.name.htmlEncode
+
 	def pair(key, value)
 		if not key inherits Html, key = .htmlEncode(key)
 		if not value inherits Html, value = .htmlEncode(value)
