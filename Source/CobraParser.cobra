@@ -2813,11 +2813,16 @@ class CobraParser inherits Parser
 					else if op == 'DOT' and .peek and .peek.isKeyword
 						# support foo.bar where bar is a keyword. Ex: foo.this
 						right = MemberExpr(.grab) to Expr
+					else if op == 'DOT' and _isHelpDirective(.peek)
+						# support foo.@help
+						left.isHelpRequested = true
+						op = ''  # cancel the creation of a new binary op expr
+						.grab
 					else
 						right = .expression(prec)
 					if op == 'DOT' and not right inherits IDotRightExpr
 						.throwError(ErrorMessages.syntaxErrorAfterDot)
-					left = BinaryOpExpr.make(opToken to !, op to !, left to !, right)
+					if op.length, left = BinaryOpExpr.make(opToken to !, op to !, left to !, right)
 			finally
 				.opStack.pop
 				_leftStack.pop
@@ -2867,6 +2872,9 @@ class CobraParser inherits Parser
 						expr = .callExpr
 					else if peek=='OPEN_GENERIC'
 						expr = .callExpr
+					else if _isHelpDirective(peekToken)
+						.grab
+						return ThisLit(token, isImplicit=true, isHelpRequested=true)
 					else
 						.throwError(ErrorMessages.syntaxErrorAfterDot)
 				finally
@@ -3623,7 +3631,10 @@ class CobraParser inherits Parser
 	def isOneOfKeywords(nToken as IToken?, keywords as List<of String>) as bool
 		token = nToken to !
 		return token.isKeyword and token.text in keywords
-		
+
+	def _isHelpDirective(token as IToken?) as bool
+		return token and token.which == 'AT_ID' and token.text == '@help'
+
 	def _overloadIfNeeded(token as IToken, box as Box, name as String) as MemberOverload?
 		"""
 		Creates an overload for a new member going into box--if needed.
