@@ -33,13 +33,12 @@ class HelpGenerator
 			'When showing nodes, the maximum node depth to traverse. Default is 2.'],
 	]
 
-	var searchEngines = [
-		['Google', 'http://www.google.com/search?q='],
-	]
-
-	var searchTermHelpers = ['Cobra', '.NET', 'C#']
-
 	var searchSites = [
+		{
+			'name': 'Google',
+			'url': 'http://www.google.com/search?q=',
+			'helpers': ['Cobra', '.NET', 'C#'],
+		},
 		{
 			'name': 'Cobra Language',
 			'host': 'cobra-language.com',
@@ -54,6 +53,8 @@ class HelpGenerator
 			'helpers': ['.NET', 'C#'],
 		},
 	]
+
+	var searchEngine = 'Google'  # should match a searchSites above that has a 'url'
 
 	const defaultMaxFileNameLength = 64
 	
@@ -97,6 +98,7 @@ class HelpGenerator
 				print '    <title>[.topic]</title>'
 				print '    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />'
 				.printStylesheet
+				.embedFile('WebAssets[Path.directorySeparatorChar]help.js')
 				print '</head>'
 				print '<body>'
 				.printContent
@@ -140,11 +142,10 @@ class HelpGenerator
 
 	def printStylesheet
 		print '<style type="text/css">'
-		.embedStyleSheet('styles-cobra-help')
+		.embedFile('styles-cobra-help.css')
 		print '</style>'
 	
-	def embedStyleSheet(name as String)
-		fileName = name + '.css'
+	def embedFile(fileName as String)
 		dirs = [
 			Path.getDirectoryName(Assembly.getEntryAssembly.location),
 		]
@@ -260,28 +261,47 @@ class HelpGenerator
 	def printSearchLinks
 		if .searchTerms.count == 0, return
 		.heading('Search')
-		print '<table>'
-		for name, url in .searchEngines
-			_printSearchLinks(name, url, nil, .searchTermHelpers)
-			for site in .searchSites
-				helpers = if(site.containsKey('helpers'), site['helpers'], nil)
-				_printSearchLinks(site['name'], url, site['host'], helpers)
-		print '</table>'
 
-	def _printSearchLinks(name as String, url as String, host as String?, helpers as IList<of String>?)
-		for keywords in .searchTerms
-			query = keywords
-			if host, query = 'site:[host] [query]'
-			query = query.replace(' ', '+').urlEncode
-			print '<tr> <td class="k"> [name.htmlEncode]: </td>'
-			print '<td> <a href="[url+query]">[keywords.htmlEncode]</a> </td>'
-			if helpers
-				for helper in helpers
-					query = '[keywords] [helper]'
-					if host, query = 'site:[host] [query]'
-					query = query.replace(' ', '+').urlEncode
-					print '<td> <a href="[url+query]">+ [helper]</a> </td>'
-			print '</tr>'
+		# extract the basic searchUrl
+		searchUrls = for site in .searchSites where site['name'] == .searchEngine get site['url']
+		assert searchUrls.count == 1
+		searchUrl = searchUrls[0]
+		
+		print '<div class="search-container">'
+		print '    <div id="sources" class="search-sources">'
+		first = true
+		for site in .searchSites
+			current = if(first, 'class="current" ', '')
+			name = site['name'] to String
+			rel = _siteId(name)
+			print '        <a [current]rel="[rel]" href="#">[name.htmlEncode]</a>'
+			first = false
+		print '    </div>'
+
+		print '<div id="queries" class="search-queries">'
+		first = true
+		for site in .searchSites
+			id = _siteId(site['name'])
+			style = if(first, '', ' style="display: none"')
+			print '<table id="[id]" class="query-category"[style]>'
+			if site.containsKey('url'), url = site['url']
+			else, url = searchUrl + 'site:[site["host"]]+'
+			for keywords in .searchTerms
+				print '<tr>'
+				keywordsForUrl = keywords.replace(' ', '+').urlEncode
+				print '<td><a href="[url][keywordsForUrl]">[keywords.htmlEncode]</a></td>'
+				if site.containsKey('helpers')
+					for helper as String in site['helpers']
+						helperForUrl = helper.replace(' ', '+').urlEncode
+						print '<td><a href="[url][keywords]+[helperForUrl]">+ [helper.htmlEncode]</a></td>'
+				print '</tr>'
+			print '</table>'
+			first = false
+		print '</div>'
+		print '</div>'
+
+	def _siteId(siteName as String) as String
+		return siteName.toLower.replace(' ', '-') + '-queries'
 
 	def printTypes
 		i = 0
