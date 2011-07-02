@@ -1,0 +1,299 @@
+= Java Backend Gen TODO =
+
+include-tests:no - remove Test invocation call
+
+
+fixup Object namespace for X-compile so items like System.Object are rooted off
+java.lang namespace ( rather than .Net system)
+    DONE  June-2011
+
+passthru compilation of *.java files 
+    - seems to work for single files But
+        - calc of main class fm passthru *.java files
+    
+computeOutName from name of main class (or first/only) class in file rather
+than permutation of input name
+    DONE 31-Jan-2011
+    
+
+cobra namespaces capitalized (as .Net) Java all lowercase
+    - convert namespaces in java code to lowcase
+    DONE 31-Jan-2011
+    
+
+java names lowcase 
+    method Names  - DONE 31-Jan-2011
+    var names - DONE 31-Jan-2011, corrected 10-Feb-2011 BoxField._backendName -> BoxField.{sharp,java}BackEndName
+    params
+    events
+    local variables
+    -> remove/reverse cobra conversion to upcase for C#/.Net
+        ( look for calls to .capitalized)       
+        DONE (I think)
+
+remove all uses of ClrNativeType in core compiler ( ->NativeType??)
+    Compiler/Enums/Types.cobra
+    DONE
+
+properties - pro/get/set
+    - auto convert to java getters/setters and map calls
+    - Whats the equiv for indexers
+        Look at Beans spec but otherwise use/convert to {get,set}Indexer method call.
+            <indexedT> getIndexer<T, indexedT>(T) and 
+                       setIndexer<T, indexedT>(T, indexedT)
+      DONE 
+                       
+Events
+    - auto add boiler plate for listener (de)registration
+        - event firing
+
+
+partial classes
+    Add extra phase to aggregate partial classes together into first Module
+    (Chk if cobra is doing sommat like this or relying on C# compiler)
+    
+Extensions
+    convert to static classes methods taking instance as first param
+    If lookup for name fails see if sig matches extension and remap call to extn static class method
+
+
+Parse error lines fm java giving source line, find (trailing comment) cobra
+line number and modify the java error msg line with the cobra lineno
+printing  that in any java error mesages so to relate the java error back 
+to the generating cobra code line.
+  - start with just spew the javac lines to output
+    - assemble into ErrorMessage Line and 'supporting lines associated with it - keeps error line count in sync
+    
+
+
+single file:
+    generate to java src files in namespace dir hier
+    compile to class file ( in class dir hier)
+    run class file
+ 
+If specify multiple files
+    generate thm all to java src in in namespace dir hier
+    compile to class files ( in class dir hier)
+    generate manifest file and generate classfiles to jar file
+    Leave jar file at root of hierarchy
+    
+
+ensure support ( as builtin alternative) for jikes compiler.
+        https://sourceforge.net/projects/jikes/files/Jikes/    
+
+
+add synonym for sharp''/sharp"" -> java''/java""
+    or general be''/be"" (for backend)
+
+
+see http://www.25hoursaday.com/CsharpVsJava.html
+
+java 'synchronized' (block is exact equivalent of C# 'lock' stmt.
+
+varargs 
+    'params' keyword in C# (qualifier to the last argument to the method which should be an array).
+    In Java, the same effect is achieved by appending the string "..." to the typename of the last argument to the method.
+    
+Attributes
+    C# extend Atttribute - metainfo also ([AttributeUsage(AttributeTargets.Class)])
+    java specify with @interface and Metainfo 
+        e.g @Documented //we want the annotation to show up in the Javadocs 
+            @Retention(RetentionPolicy.RUNTIME))
+
+Java has Set in its collections framework so use that instead of Cobra lib version.
+
+Cobra methods nonVirtual (C# not marked virtual) in java mark as final (Cannot redefine or override).
+
+out and inout (ref)
+        x as <Type>?  = nil
+        method(...., out x)  # def method(.... out x as <Type>)
+        # use X here
+    
+    becomes in java
+        Type x = nil
+        Object xRef = x
+        method(..., xRef)    // void method(..., xRef as Object) - inmethod xRef assigned to whatever x calculated as 
+        x = xRef
+        // use x here
+
+
+Cobra backend targetting stab language (explicitly) ??
+    backend 'stab-jvm'
+
+
+Decimal Type
+    Initially wrap it as new type thats is a Double with an associated DecimalFormatter
+    (giving same precision as .Net).
+    Calcs are all as doubles, toString uses formatter...
+     still get rounding error etc...
+     Decimal Type internally and emit as BigDecimal, trap math ops and map
+
+    Maybe easier to just default to Integer and ignore Decimal (initially)
+
+
+Add convenience methods to 
+    java.io.File for
+        remember
+            (Buffered)Reader(FileReader(File(path)           - read text 
+            (Buffered)InputStream(FileInputStream(File(path) - read bytestream
+                
+        static FileInputStream/FileOutputStream openRead/openWrite(String path)- r/w bytestream
+
+        static BufferedInputStream createRead(String path)  - open or create - bytes
+        static BufferedOutputStream createWrite(String path)  - open+truncate or create - bytes
+
+        static BufferedWriter createText(String path) - open or create Textfile for writing 
+        static BufferedReader openText(String path)  - open textfile for reading 
+
+        static byte[] readAllBytes(String path)
+        static String readAllText(String path)
+        static String[] readAllLines(String path)
+        static IEnumerable<of String> readLines(String path)
+
+
+= Issues =
+
+How support yield and conversion to enumerator/iterator?
+-------------------------------------------------------------------------
+
+Checked to Unchecked exceptions
+
+Fm http://www.mindview.net/Etc/Discussions/CheckedExceptions
+See also ExceptionChaining since JDK1.4
+
+ExceptionAdapter
+
+Here's a tool that I developed with the help of Heinz Kabutz.  It
+converts any checked exception into a RuntimeException while
+preserving all the information from the checked exception.
+
+import java.io.*;
+class ExceptionAdapter extends RuntimeException {
+  private final String stackTrace;
+  public Exception originalException;
+  public ExceptionAdapter(Exception e) {
+    super(e.toString());
+    originalException = e;
+    StringWriter sw = new StringWriter();
+    e.printStackTrace(new PrintWriter(sw));
+    stackTrace = sw.toString();
+  }
+  public void printStackTrace() { 
+    printStackTrace(System.err);
+  }
+  public void printStackTrace(java.io.PrintStream s) { 
+    synchronized(s) {
+      s.print(getClass().getName() + ": ");
+      s.print(stackTrace);
+    }
+  }
+  public void printStackTrace(java.io.PrintWriter s) { 
+    synchronized(s) {
+      s.print(getClass().getName() + ": ");
+      s.print(stackTrace);
+    }
+  }
+  public void rethrow() { throw originalException; }
+} 
+
+The original exception is stored in originalException, so you can
+always recover it.  In addition, its stack trace information is
+extracted into the stackTrace string, which will then be printed using
+the usual printStackTrace() if the exception gets all the way out to
+the console.  However, you can also put a catch clause at a higher
+level in your program to catch an ExceptionAdapter and look for
+particular types of exceptions, like this:
+
+catch(ExceptionAdapter ea) {
+  try {
+    ea.rethrow();
+  } catch(IllegalArgumentException e) {
+    // ...
+  } catch(FileNotFoundException e) {
+    // ...
+  }
+  // etc.
+}
+
+Here, you're still able to catch the specific type of exception but
+you're not forced to put in all the exception specifications and
+try-catch clauses everywhere between the origin of the exception and
+the place that it's caught.  An even more importantly, no one writing
+code is tempted to swallow the exception and thus erase it.  If you
+forget to catch some exception, it will show up at the top level.  If
+you want to catch exceptions somewhere in between, you can.
+
+Or, since originalException is public, you can also use RTTI to look
+for particular types of exceptions.
+
+Here's some test code, just to make sure it works (not the way I
+suggest using it, however):
+
+public class ExceptionAdapterTest {
+  public static void main(String[] args) {
+    try {
+      try {
+        throw new java.io.FileNotFoundException("Bla");
+      } catch(Exception ex) {
+        ex.printStackTrace();
+        throw new ExceptionAdapter(ex);
+      }   
+    } catch(RuntimeException e) {
+      e.printStackTrace();
+    }
+    System.out.println("That's all!");
+  }
+}
+
+By using this tool you can get the benefits of the unchecked exception
+approach (less code, cleaner code) without losing the core of the
+information about the exception.
+
+If you were writing code where you wanted to throw a particular type
+of checked exception, you could use (or modify, if it isn't already
+possible) the ExceptionAdapter like this:
+
+  if(futzedUp)
+    throw new ExceptionAdapter(new CloneNotSupportedException());
+
+This means you can easily use all the exceptions in their original
+role, but with unchecked-style coding.
+
+-------------------------------------------------------------------------
+I've managed to fiddle javac to not check exceptions anymore *evil
+grin*.
+
+Very simple really.  Add a directory java/lang to your project and
+copy into that directory Exception.java and RuntimeException.java
+
+Change Exception to extend RuntimeException and change
+RuntimeException to extend Throwable.
+
+Now the compile-time exception checking is turned off. 
+
+-- hops: Doesnt work unfortunately ---
+-------------------------------------------------------------------------
+
+
+
+
+
+-------------------------------------------------------------------------
+= Current compile cmd (X-compile) =
+
+cobra -back-end:jvm Name.cobra
+cobc0 -back-end:jvm -kif Name.cobra
+
+
+= MSW Default compiler cmd =
+File.cobra (containing class File)
+javac -cp '[CobraCore.exePath][pathSep]CobraLang.jar File.java
+javac -cp '../wkspace/Source/CobraLang.jar' File.java
+
+
+= MSW run cmd =
+java -cp ".;../wkspace/Source/CobraLang.jar" File
+
+
+= Other back ends =
+Fantom : compile to jvm or dotNet

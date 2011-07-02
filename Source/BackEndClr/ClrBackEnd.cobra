@@ -1,11 +1,55 @@
+use System.Diagnostics
 use System.Reflection
 
 
 class ClrBackEnd inherits BackEnd
 
+	var _objectTypeProxy as AbstractTypeProxy =  ClrTypeProxy(Object)
+	var _typeTypeProxy   as AbstractTypeProxy =  ClrTypeProxy(Type)
+
 	cue init(compiler as Compiler)
 		base.init(compiler)
+		_name = 'c#-clr'
+		_rtlName = 'Cobra.Lang.dll'
+	
+		_tagToTypeName = { 
+			'Object'	: 		'System.Object',
+			'Type'	 	: 		'System.Type',
+			'String'	: 		'System.String',
+			'Exception' : 		'System.Exception',
+			'Delegate'  : 		'System.Delegate',
+			'Attribute' : 		'System.Attribute',
+			'ICloneable': 		'System.ICloneable',
+			'IEnumerable': 		'System.Collections.IEnumerable',
+			'IEnumerator': 		'System.Collections.IEnumerator',
+			'IEnumerable<of>' : 'System.Collections.Generic.IEnumerable<of>',
+			'IEnumerator<of>' : 'System.Collections.Generic.IEnumerator<of>',
+			'IDictionaryEnumerator' : 'System.Collections.IDictionaryEnumerator',
+			'ICollection': 		'System.Collections.ICollection',
+			'ICollection<of>': 	'System.Collections.Generic.ICollection<of>',
+			'IList'	:  			'System.Collections.IList',
+			'IList<of>'	:  		'System.Collections.Generic.IList<of>',
+			'List<of>':   		'System.Collections.Generic.List<of>',
+			'IDictionary':   	'System.Collections.IDictionary',
+			'IDictionary<of,>': 'System.Collections.Generic.IDictionary<of,>',
+			'Dictionary<of,>' : 'System.Collections.Generic.Dictionary<of,>',
+			'Set<of>': 			'Cobra.Lang.Set<of>',
 
+			'bool'	:  'System.Boolean',
+			'char'  :  'System.Char',
+			'decimal': 'System.Decimal',
+			'single': 'System.Single',		
+			'double': 'System.Double',		
+			'sbyte'	: 'System.SByte',		
+			'int16'	: 'System.Int16',		
+			'int32'	: 'System.Int32',		
+			'int64'	: 'System.Int64',		
+			'byte'	: 'System.Byte',		
+			'uint16': 'System.UInt16',		
+			'uint32': 'System.UInt32',		
+			'uint64': 'System.UInt64',		
+			}
+		
 	def makePhases(phases as IList<of Phase>) is override
 		phases.add(GenerateSharpCodePhase(.compiler))
 		phases.add(CompileSharpCodePhase(.compiler))
@@ -13,7 +57,113 @@ class ClrBackEnd inherits BackEnd
 	def computeOutName as String is override
 		return .compiler.computeOutNameSharp
 		
+	def genNativeModule(filename as String, verbosity as int) as Module? is override
+		m as Module? = nil
+		if filename.endsWith('.cs')
+			if verbosity, print 'Noting  [filename] as SharpModule'  # extra space to line up with 'Parsing [filename]'
+			m = SharpModule(filename, verbosity)
+		return m
+	
+	def setupRunProcess(baseExe as String, fullExe as String) as Process is override
+		p = Process()
+		branch .compiler.platform
+			on PlatformEnum.Microsoft
+				p.startInfo.fileName = baseExe
+			on PlatformEnum.Novell
+				p.startInfo.fileName = 'mono'
+				args = ''
+				# mono also needs --debug when running
+				if .compiler.options.getDefault('debug', '') not in ['', '-']
+					args += '--debug '
+				args += '"[fullExe]"'
+				p.startInfo.arguments = args + ' '
+			else
+				throw FallThroughException(.compiler.platform)
+		return p		
+		
+	def setDefaultUseDirectives(ns as NameSpace) is override
+		useToken = Token('(implicit)', 1, 1, 1, 'USE', 'use', nil) 		# TODO: make an "implicit" token
+		ns.addUseDirective(UseDirective(useToken, ['System']))
+		ns.addUseDirective(UseDirective(useToken, ['System', 'Collections', 'Generic']))
+		ns.addUseDirective(UseDirective(useToken, ['System', 'IO']))
+		ns.addUseDirective(UseDirective(useToken, ['System', 'Text']))
+		ns.addUseDirective(UseDirective(useToken, ['Cobra', 'Lang']))
+	
+	def fixLibExtension(libRef as String) as String is override
+		"""
+		Augment given lib reference string with backend extension if not already have one
+		"""
+		or require libRef.length
+		and ensure result.endsWith('.dll') or result.endsWith('.exe')
+		if not libRef.endsWith('.dll') and not libRef.endsWith('.exe')
+			libRef += '.dll'
+		return libRef
+		
+	def loadLibReference(reference as String) as bool is override
+		return .compiler.dotNetLoadReference(reference)   # in ScanClrType
+	
+	def readSystemTypes is override
+		# TODO: Move the called support methods below out of Compiler
+		
+		# TODO: support targeting a specific CLR version, but not below 2.0
+		#.compiler.readAssembly(Assembly.load('mscorlib.dll') to !)
+		.compiler.clrReadAssembly(Assembly.load('mscorlib.dll') to !)
 
+		# TODO: .readAssembly(Assembly.loadFrom('System.dll') to !)
+		#       gives: Unhandled Exception: System.IO.FileNotFoundException: Could not load file or assembly 'System.dll' or one of its dependencies. The system cannot find the file specified.
+
+		t = System.Diagnostics.Process.getType
+		#.compiler.readAssembly(t.assembly) # System.dll
+		.compiler.clrReadAssembly(t.assembly) # System.dll
+		
+	def fixNilableMemberSigs is override
+		.compiler.dotNetfixNilableMemberSigs # in ScanClrType
+		
+	# Types
+	get objectTypeProxy from var  is override
+		"""Type proxy for BE root of Object hierarchy."""
+	get typeTypeProxy from var  is override
+		"""Type proxy for BE notion of a class describing a Type."""
+		
+	def cobraNameForNativeBoxName(nativeBoxName as String) as String is override
+		return ClrTypeProxy.cobraNameForSharpBoxName(nativeBoxName)
+		
+	def nativeTypeProxy(type as NativeType) as NativeTypeProxy  is override
+		return ClrTypeProxy(type)
+	
+	def nativeType(type as dynamic) as NativeType  is override
+		return ClrNativeType(type)
+	
+	def nativeTypeByName(qualifiedNameOrTag as String) as NativeType is override
+		qualifiedName = .resolveTypeTag(qualifiedNameOrTag)
+		return ClrNativeType(.compiler.clrTypeByName(qualifiedName))
+		/#
+		These are the type tags used directly by the compiler code.
+			
+		  	bool 		'System.Boolean'
+			char  		'System.Char'
+			decimal 	'System.Decimal'	
+			single 		'System.Single'		
+			double		'System.Double'		
+			sbyte		'System.SByte'		
+			int16		'System.Int16'		
+			int32		'System.Int32'		
+			int64		'System.Int64'		
+			byte		'System.Byte'		
+			uint16		'System.UInt16'		
+			uint32		'System.UInt32'		
+			uint64		'System.UInt64'		
+		#/
+	
+	def installNativeMethods(box as Box, nativeType as NativeType) is override
+		.compiler.installClrNativeMethods(box, nativeType) # in ScanClrType
+		
+	def addArrayInterfaces( interfaces as List<of ITypeProxy>) is override
+		iclone = .compiler.libraryType('ICloneable')
+		interfaces.insert(0, iclone to ITypeProxy)
+	
+	
+		
 class GenerateSharpCodePhase inherits Phase
 
 	cue init(c as Compiler)

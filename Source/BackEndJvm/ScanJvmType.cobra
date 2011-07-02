@@ -1,0 +1,784 @@
+# Load Jvm references and libraries
+
+class Compiler is partial
+
+	#var _didLoadJars = Set<of String>()
+
+	var _didReadJars = Set<of String>()
+	
+	var _jvmTypeToType = Dictionary<of JavaClassType, IType>()
+	
+	var _jvmTypeCache = Dictionary<of String, JavaClassType>()
+	
+	
+	# Java specific Reference loading
+	def jvmLoadReference(reference as String) as bool
+		try 
+			return 	__jvmLoadReference(reference)
+		catch fnfe as System.IO.FileNotFoundException
+			throw LoadReferenceException('FileNotFound', fnfe.fileName, fnfe.message)
+		catch fle as System.IO.FileLoadException
+			throw LoadReferenceException('FileLoadException', fle.fileName ? reference, fle.message)
+		catch fiop as InvalidOperationException
+			throw LoadReferenceException('InvalidOperationException', reference, fiop.message)
+			
+	def __jvmLoadReference(reference as String) as bool
+		# uses reference parameter
+		# compiler .referenceVerbosity
+		# fills .loadedReferences
+	
+		# Hopefully this is simpler than .Net case, look for reference which devolves to a pkgSig file
+		# in cwd or as abspathname or in cobra library-path settings.
+		# When running java native would probably also need to check the classpath
+		require
+			reference.endsWith('.jar')
+			reference not in ['.jar']
+		ensure
+			result implies .loadedReferences[.loadedReferences.count-1] == reference
+			not result implies .loadedReferences.count == old.loadedReferences.count
+		body
+			jarSig as JarSig? = nil
+			rv = .referenceVerbosity
+			assert not (reference.startsWith('-r') and '-r' in reference[2:])
+			sigFile =  reference + '.sig'
+			if rv, print 'Looking for sigfile("[sigFile]").'
+			sigFilePath = _lookForSigFile(sigFile, rv, reference)
+			if not sigFilePath
+				# eventually may also search CLASSPATH				
+				if rv, print 'Returning false for __jvmLoadReference("[reference]").'
+				return false 
+
+			if rv, print 'Will read jarsig: [sigFilePath]'
+			try
+				jarSig = JarSig(sigFilePath)
+			catch readExc as Exception
+				if rv, print 'Caught exception during jarSig creation: [readExc]'
+				throw
+			if rv
+				print 'Did find jarSig: [jarSig]'
+				print 'Will read jarsig contents: [jarSig]'
+			try
+				.javaReadJar(jarSig to !)
+			catch readExc as Exception
+				if rv, print 'Caught exception during javaReadJar: [readExc]'
+				throw
+			if rv, print 'Did read jar signature file: [jarSig]'
+			.loadedReferences.add(reference)
+			if rv, print 'Returning true for __jvmLoadReference("[reference]").'
+			return true
+		
+	def _lookForSigFile(sigFile as String, rv as int, reference as String) as String?
+		"""Pathname to sigfile if found in cwd, abspath or in library-directory paths, nil otherwise."""
+		if File.exists(sigFile) # current directory or abspathname
+			if rv, print '"[reference]" found as file in [sigFile].'
+			return sigFile	
+		ccPath = Path.getDirectoryName(CobraCore.exePath) to !
+		absSigFile =  Path.combine(ccPath, sigFile)
+		if File.exists(absSigFile)
+			if rv, print '"[reference]" found as file in [absSigFile].'
+			return absSigFile	
+			
+		if rv, print 'File does not exist in std places. Searching library-directory setting'
+		searchPaths = .options.getDefault('library-directory', List<of String>()) to List<of String>
+		if not searchPaths.count
+			if rv, print 'No lib paths to search.'
+			return nil
+				
+		found = false
+		for searchPath in searchPaths
+			if rv,  print 'Checking lib path: "[searchPath]"'
+			combinedPath = Path.combine(searchPath, sigFile)
+			if File.exists(combinedPath)
+				if rv, print '"[reference]" found as file in [combinedPath].'
+				found = true
+				break
+				
+		if not found
+			if rv and searchPaths.count, print 'Did not find "[reference]" in lib paths'
+			return nil
+		return combinedPath
+
+	def javaReadJar(jSig as JarSig)
+		"""
+		Reads the contents of a jar (actually JarSig) file so that they are accessible to the program.
+		"""
+		if jSig.name in _didReadJars, return
+		_didReadJars.add(jSig.name)
+		verbosity = .verbosity
+		if verbosity
+			print 'Reading jar(sig):  [jSig.name]'  # extra space lines up with 'Loading reference:'
+			print '              at:  [jSig.location]'
+		namespaceQualNameToNameSpaceObject = Dictionary<of String, NameSpace>()
+		module = AssemblyModule(jSig.location, .globalNS)
+		saveModule, _curModule = _curModule, module
+		try
+			_modules.add(module)
+			for type in jSig.getExportedTypes
+				if type.isNested #or type.declaringType
+					# these will be scanned by Box._scanNestedTypes
+					# print '### skipping [type.name] in [type.namespace]. isNested=[type.isNested], declaringType=[type.declaringType]'
+					continue
+				typeNamespace = type.package
+				if typeNamespace.length == 0
+					# happens for classes etc. that are not declared in a namespace
+					curNameSpace = module.topNameSpace
+				else
+					namespaceName = typeNamespace
+					if namespaceQualNameToNameSpaceObject.containsKey(namespaceName)
+						curNameSpace = namespaceQualNameToNameSpaceObject[namespaceName]
+					else
+						curNameSpace = module.topNameSpace
+						for name in typeNamespace.split(c'.')
+							curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(Token.empty, name)
+							assert not curNameSpace.isUnified
+						namespaceQualNameToNameSpaceObject[namespaceName] = curNameSpace
+				if verbosity >= 4
+					print '  Reading type [type.name] in namespace "[namespaceName]"'
+				jvmType = JvmNativeType(type)
+				if curNameSpace.unifiedNameSpace.declForName(jvmType.name)
+					.warning(CobraWarning('Already have declaration "[jvmType.name]" in namespace "[curNameSpace.fullName]".'))
+				else
+					if type.isClass
+						if type.name.startsWith('Extend_') and type.name.count(c'_') >= 2
+							# e.g.Extend_String - TODO 
+							curNameSpace.addDecl(Extension(jvmType, .backEnd))
+						else
+							curNameSpace.addDecl(Class(jvmType, .backEnd))
+					else if type.isInterface
+						curNameSpace.addDecl(Interface(jvmType, .backEnd))
+					else if type.isEnum
+						#print jvmType.name
+						curNameSpace.addDecl(EnumDecl(curNameSpace, jvmType, type.modifiers, ''))  # TODO: isNames; docString?
+					else if type.isValueType
+						curNameSpace.addDecl(Struct(jvmType, .backEnd))
+					else
+						throw FallThroughException(type)
+		finally
+			_curModule = saveModule
+
+	def jvmFixNilableMemberSigs
+		# TODO: this really needs to go in a separate file that the compiler reads each time
+
+		# fix up member sigs regarding methods returning nilable values
+		# hard coded below. TODO: read from a Cobra config file
+		# _fix is defined in ScanClrType
+	
+		# These are just reflected over from the .Net ones since I dont know what the basis for inclusion is/was
+		
+		_fix('java.lang.Object', 'toString getClass clone')
+			# ^ regarding .toString, not technically true, but common enough and life is too painful when the return type is nilable
+		#_fix('java.lang.System', 'out') #stdout
+		_fix('java.lang.String', 'padLeft padRight remove replace substring toLower toUpper trim')
+		#_fix('System.Type', 'assembly name toString')
+			# namespace can return nil if the Type is a generic parameter
+		#_fix('System.Environment', 'commandLine currentDirectory newLine version')
+		_fix('java.lang.Exception', 'message')
+		#_fix('System.Collections.Generic.IEnumerable<of>', r'getEnumerator')
+		#_fix('java.util.Enumeration<of>', r'getNext')
+		_fix('java.util.Iterator<of>', r'next')
+		_fix('java.util.ListIterator<of>', r'next previous')
+		_fix('java.util.Collection<of>', r'toArray')
+		
+		#_fix('System.Collections.Generic.List<of>', r'[]')
+		_fix('java.util.List<of>', r'[] get set remove')
+		_fix('java.util.AbstractList<of>', r'[] get set remove')
+		_fix('java.util.AbstractSequentialList<of>', r'[] get set remove')
+		_fix('java.util.ArrayList<of>', r'[] get set remove')
+		#_fix('java.util.CopyOnWriteArrayList<of>', r'[] get set remove')
+		#_fix('java.util.LinkedList<of>', r'[] get set remove element getFirst getLast peek peekFirst peekLast poll pollFirst pollLast pop removeFirst removeLast')
+		#_fix('java.util.Vector<of>', r'[] get set elementAt firstElement lastElement remove')
+		#_fix('java.util.Stack<of>', r'[] peek pop push')
+		
+		#_fix('System.Collections.Generic.IDictionary<of,>', r'[] keys values')
+		_fix('java.util.Map<of,>', r'[] get')
+		#    _fix('System.Collections.Generic.Dictionary<of,>', r'[]')
+		_fix('java.util.AbstractMap<of,>', r'[] get')
+		_fix('java.util.HashMap<of,>', r'[] get')
+		#_fix('java.util.ConcurrentHashMap<of,>', r'[] get')
+		#_fix('java.util.ConcurrentSkipListHashMap<of,>', r'[] get')
+		#_fix('java.util.EnumMap<of,>', r'[] get')
+		#_fix('java.util.IdentityHash<of,>', r'[] get')
+		#_fix('java.util.TreeMap<of,>', r'[] get')
+		#_fix('java.util.WeakHashMap<of,>', r'[] get')
+		_fix('java.util.Map.Entry<of,>', r'getKey getValue')
+		#_fix('java.util.AbstractMap.SimpleEntry<of,>', r'getKey getValue')
+		#_fix('java.util.AbstractMap.SimpleImmutableEntry<of,>', r'getKey getValue')
+		
+		#_fix('System.IO.File', 'create createText open openRead openText openWrite readAllBytes readAllLines readAllText')
+		#_fix('java.io.File', 'create createText open openRead openText openWrite readAllBytes readAllLines readAllText')
+		#_fix('System.IO.FileSystemInfo', 'name fullName')
+		#_fix('System.IO.TextWriter', 'newLine')
+		#_fix('System.IO.Path', 'combine getFullPath')
+		# 	combine = File(strA, strB).getPath(), getFullPath = File().getAbsolutePath()
+		#_fix('java.lang.StringBuilder', 'toString') # ??
+		_fix('java.lang.Text.RegularExpressions.Regex', 'match replace')
+		_fix('System.Diagnostics.Process', 'processName')
+		
+		_fix('System.Reflection.Assembly', 'getEntryAssembly getExecutingAssembly location')
+		_fix('System.Reflection.MemberInfo', 'name')
+		_fix('System.Reflection.FieldInfo', 'fieldType')
+		_fix('System.Reflection.ParameterInfo', 'parameterType')
+		_fix('System.Reflection.PropertyInfo', 'propertyType')
+
+		# TODO: shouldn't need the following. see comment in _fixSubs
+		#_fix('System.IO.StringWriter', 'toString')
+
+	
+		
+	#
+	# Jvm Type Cache
+
+	def typeForJvmType(jvmType as JavaClassType) as IType?
+		"""
+		Returns the Cobra type for a Java type if the Java type was previously scanned.
+		i.e this is access to the Java Type/Class cache.
+		"""
+		return if(_jvmTypeToType.containsKey(jvmType), _jvmTypeToType[jvmType], nil)
+
+	def addTypeForJvmType(type as IType, jvmType as JavaClassType)
+		require .typeForJvmType(jvmType) in [nil, type]
+		_jvmTypeToType[jvmType] = type
+		
+	def jvmTypeByName(qualifiedName as String) as JavaClassType
+		"""
+		Obtain the Jvm Type given by the fully qualified (cobra) name.
+		"""
+		t as JavaClassType?
+		_jvmTypeCache.tryGetValue(qualifiedName, out t)
+		if t is nil
+			# TODO - lookup the JavaClassType by name.
+			t = JarSig.classByNameCache[qualifiedName]
+			_jvmTypeCache[qualifiedName] = t to passthrough  # "to passthrough" instead of "to !" to avoid non-nil check
+		return t to passthrough
+	
+	
+	def installJvmNativeMethods(box as Box, nativeType as NativeType) 
+		print '++ TODO scanJvmType.installJvmNativeMethods'
+/#
+		meths = List<of Method>()
+		_installClrNativeMethodsFrom('System', nativeType, nativeType, box, meths)
+		_installClrNativeMethodsFrom('System', ClrNativeType(System.Math.getType), nativeType, box, meths)
+
+		# the next statement can be problematic in that you have to add new DecimalTools methods in Snapshot just so the compiler can see them
+		# ultimately, extensions of primitive types should be supported
+		_installClrNativeMethodsFrom('CobraLangInternal', ClrNativeType(Cobra.Lang.DecimalTools.getType), nativeType, box, meths)
+
+		 _printMethods(meths, box)
+		
+	def compareMethodNames(a as Method, b as Method) as int
+		return a.name.compareTo(b.name)
+		
+	def _printMethods(meths as IList<of Method>, box as Box)
+		# print out the methods, useful for documentation
+		print
+		print 'type', box.name
+		sharedMeths = for meth in meths where meth.isShared
+		if sharedMeths.count
+			sharedMeths.sort(ref .compareMethodNames)
+			print '    shared'
+			for meth in sharedMeths
+				print '        [meth.cobraSourceSignature(false)]'
+		objectMeths = for meth in meths where not meth.isShared
+		if objectMeths.count
+			objectMeths.sort(ref .compareMethodNames)
+			for meth in objectMeths
+				print '    [meth.cobraSourceSignature]'
+
+#/		
+
+
+class Box is partial
+
+	get _jvmType as JavaClassType
+		"""
+		Returns the Jvm NativeType (System.Class eventually)) boxed in the .nativeType.
+		Throws exception rather than return nil.
+		"""
+		return (.nativeType to JvmNativeType).backEndType
+
+	def isJvmSystemExceptionClass as bool
+		return .name == 'Exception' and .parentNameSpace and .parentNameSpace.fullName == 'java.lang'
+
+	def _scanNativeTypeJvm
+		"""
+		Subclasses should invoke base and then invoke the various _scanXXX methods that are appropriate for them.
+		"""
+		ensure not .needScanNativeType
+		_needScanNativeType = false
+		# print '<> _scanNativeType for [.name] in [_parentNameSpace.fullName], class is [.getType.name]'
+		
+	def _scanGenericArgsJvm
+		if _jvmType.isGenericType
+			for genArg in _jvmType.getGenericArguments
+				t = (.compiler to Compiler).typeForJvmType(genArg)
+				if t is nil
+					t = GenericParam(JvmNativeType(genArg), parentDefinition=this)
+					(.compiler to Compiler).addTypeForJvmType(t to !, genArg)
+				_genericParams.add(t)
+				
+	def _prepSystemObjectClassJvm
+		# map method getType to java getClass
+		# C#'s typeof(X) is X.getType in Cobra.
+		#existing = .declForName('getClass') to BoxMember
+		#overload = MemberOverload(existing)
+		#.registerOverload(overload)
+		meth = Method(TokenFix.empty, TokenFix.empty, this, 'getType', List<of Param>(), .compiler.typeTypeProxy, nil, ['shared'], AttributeList(), 'Returns the Type instance that defines this type.')
+		meth.sharedMethodBacking = 'getClass' 
+		#meth.sharedMethodBackingIsAlias = true # not static
+		#overload.addMember(meth)
+		.addDecl(meth)
+				
+	def _scanJvmIsNames
+		# TODO
+		_isNames.add('extern')  # to make the box like the ones that were in SystemInterfaces.cobra
+
+	def _scanJvmImplements
+		for interf in _jvmType.getInterfaces
+			if not _badJvmRelatedType(interf)
+				_baseInterfaceProxies.add(JvmTypeProxy(interf))
+
+/#
+	def _scanJvmNestedTypes
+		# TODO: enable and fix resulting bugs
+		# for type in .clrType.getNestedTypes(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
+		for type in _jvmType.getNestedTypes
+			_scanJvmNestedType(type)
+		#for type in _clrType.getNestedTypes(BindingFlags(Static, DeclaredOnly, NonPublic))
+		for type in _jvmType.getNestedTypes
+			if type.isEnum and not type.isPublic
+				_scanJvmNestedType(type)
+
+	def _scanJvmNestedType(type as JavaClassType)
+		nativeType = JvmNativeType(type)
+		if type.isClass
+			.addDecl(Class(nativeType, .compiler.backEnd))
+		else if type.isInterface
+			.addDecl(Interface(nativeType, .compiler.backEnd))
+		else if type.isEnum
+			isNames = List<of String>()
+			docString =''
+			.addDecl(EnumDecl(this, nativeType, isNames, docString))  # TODO: isNames; docString?
+		#else if type.isValueType
+		#	.addDecl(Struct(clrType, .compiler.backEnd))
+		#else if type.isAnsiClass
+		#	# The Enum class is an example that returns false for .isClass but true for .isAnsiClass
+		#	.addDecl(Class(clrType, .compiler.backEnd))
+		else
+			throw FallThroughException(type)
+		lastDecl = .declsInOrder[.declsInOrder.count-1] to dynamic
+		if (lastDecl to Object).getType.getProperty('ParentBox')  # CC: if lastDecl responds to (get parentBox as Box?)
+			lastDecl.parentBox = this
+			
+#/
+
+	def _scanJvmFields
+		for fieldInfo in _jvmType.getFields
+			#if fieldInfo.declaringType is not _jvmType, continue
+			if fieldInfo.isDefault, continue	# pkgprivate
+			if fieldInfo.isPrivate, continue
+			name = Utils.cobraNameForNativeMemberName(fieldInfo.name)
+			type = _jvmMemberTypeResultProxy(fieldInfo, fieldInfo.type)
+			attrs = AttributeList()
+			if fieldInfo.isProtected
+				isNames = ['protected']  # isNames = ['protected' 'internal']
+			#else if  fieldInfo.isDefault # pkgprivate
+			#	isNames = ['internal'] # 
+			else
+				isNames = ['public']  # private was guarded against above
+
+			if fieldInfo.isFinal and fieldInfo.isStatic 	# java static final fields are constants 
+				value = if(fieldInfo.isStatic, fieldInfo.getValue, nil)
+				initExpr = SharpExpr(TokenFix.empty, if(value, .toString, 'nil'))  # DocGenerator.cobra uses this
+				boxConst = BoxConst(TokenFix.empty, TokenFix.empty, this, name, type, isNames, initExpr, attrs, '')
+				boxConst.binaryName = fieldInfo.name
+				.addDecl(boxConst)
+			else
+				if fieldInfo.isStatic, isNames.add('shared')
+				if fieldInfo.isFinal, isNames.add('readonly') # final fields are readonly
+				varr = BoxVar(TokenFix.empty, TokenFix.empty, this, name, type, isNames, nil, attrs, '')
+				varr.binaryName = fieldInfo.name
+				.addDecl(varr)
+
+	def _scanJvmInitializers
+		for ctorInfo in _jvmType.getConstructors
+			if ctorInfo.isPrivate, continue
+			#if ctorInfo.declaringType is not _clrType, continue
+			skip = false
+			for paramInfo in ctorInfo.getParameters
+				if _badJvmRelatedType(paramInfo)
+					skip = true
+					break
+			if skip, continue
+			params = _scanJvmParams(ctorInfo.getParameters, ctorInfo.isVari)
+			isNames = _isNamesForJavaMemberInfo(ctorInfo)
+			attribs = _attribsForJavaMemberInfo(ctorInfo)
+			docString = ''  # TODO: get doc string for class?
+			initer = Initializer(TokenFix.empty, TokenFix.empty, this, params, isNames, attribs, docString)
+			overload as MemberOverload? = nil
+			other = .declForName('cue.init')
+			if other
+				if other inherits MemberOverload
+					overload = other
+				else if other inherits AbstractMethod
+					overload = MemberOverload(other)
+					.registerOverload(overload to !)
+				else
+					throw FallThroughException([this, initer, other])
+			if overload
+				overload.addMember(initer)
+			else
+				.addDecl(initer)
+				
+	def _scanJvmProperties
+		for propInfo in _jvmType.getProperties
+			getMethod = propInfo.getter 
+			setMethod = propInfo.setter
+			visible = false
+			if getMethod
+				if getMethod.isPublic or getMethod.isProtected
+					theMethod = getMethod
+					visible = true
+			if not visible and setMethod
+				if setMethod.isPublic or setMethod.isProtected
+					theMethod = setMethod to !
+					visible = true
+			if not visible, continue
+			#if theMethod.declaringType is not _jvmType, continue
+			if propInfo.isIndexer
+				_scanJvmIndexer(propInfo)
+				continue
+				
+			if _badJvmRelatedType(propInfo.type), 	continue
+			attribs = _attribsForJavaMemberInfo(propInfo)
+			docString = ''  # TODO: get doc string
+			isNames = _isNamesForJavaMemberInfo(theMethod)
+			#print propInfo
+			propName = Utils.cobraNameForNativeMemberName(propInfo.name)
+			#if _declsByName.containsKey(propName), propName = propInfo.name0+'_prop'
+			prop = Property(TokenFix.empty, TokenFix.empty, this, propName, _jvmMemberTypeResultProxy(propInfo, propInfo.type), isNames, attribs, docString)
+			prop.binaryName = propInfo.name
+			if propInfo.isReadable
+				prop.makeGetPart(TokenFix.empty)
+			if propInfo.isWritable
+				prop.makeSetPart(TokenFix.empty)
+			if _declsByName.containsKey(prop.name) # for 			# Double.naN
+				print 'DUP name already exists already for property [prop.name]', _declsByName[prop.name], prop
+				return # just drop the property, field or  method still available
+			.addDecl(prop)
+
+
+	def _scanJvmIndexer(propInfo as JavaFieldInfo)
+		for paramInfo in propInfo.getIndexParameters
+			if _badJvmRelatedType(paramInfo)
+				return
+		params = _scanJvmParams(propInfo.getIndexParameters, false)
+		attribs = _attribsForJavaMemberInfo(propInfo)
+		docString = ''
+		if propInfo.isReadable
+			isNames = _isNamesForJavaMemberInfo(propInfo.getter to !)
+		else if propInfo.isWritable
+			isNames = _isNamesForJavaMemberInfo(propInfo.setter to !)
+		else
+			throw FallThroughException(propInfo)
+		#name = Utils.cobraNameForNativeMemberName(propInfo.name)
+		name = r'[]'	
+		indexer = Indexer(TokenFix.empty, TokenFix.empty, this, name, params, _jvmMemberTypeResultProxy(propInfo, propInfo.type), isNames, attribs, docString)
+		overload as MemberOverload? = nil
+		other = .declForName(name)
+		if other
+			if other inherits MemberOverload
+				overload = other
+			else if other inherits Indexer
+				overload = MemberOverload(other)
+				.registerOverload(overload to !)
+			else
+				throw FallThroughException([this, indexer, other])
+		if overload
+			overload.addMember(indexer)
+		else
+			.addDecl(indexer)
+
+	# In Java  properties are methods with leading is/get/set names
+	# Indexers are methods as for properties but with additional indexes in paramList.
+	def _scanJvmMethods
+		for methInfo in _jvmType.getMethods
+			if methInfo.isPrivate, continue
+			if methInfo.isDefault, continue	# pkgPrivate
+			#if methInfo.declaringType is not _clrType, continue
+			skip = false
+			if _badJvmRelatedType(methInfo.returnType)
+				skip = true
+			else
+				for param in methInfo.getParameters
+					if _badJvmRelatedType(param)
+						skip = true
+						break
+			if skip, continue
+			name = Utils.cobraNameForNativeMemberName(methInfo.name)
+			genericParams = List<of IType>()
+			for genArg in methInfo.getGenericArguments
+				genericParams.add(GenericParam(JvmNativeType(genArg)))
+			params = _scanJvmParams(methInfo.getParameters, methInfo.isVari)
+			isNames = _isNamesForJavaMemberInfo(methInfo)
+			if methInfo.isOverride,	 isNames.add('override')	# only on methods
+			attribs = _attribsForJavaMemberInfo(methInfo)
+			docString = '' 
+			implementsTypeNode as ITypeProxy?  # TODO: explicit interface implementation?
+			method = Method(TokenFix.empty, TokenFix.empty, this, name, genericParams, params, _jvmMemberTypeResultProxy(methInfo, methInfo.returnType), implementsTypeNode, isNames, attribs, docString)
+			method.binaryName = methInfo.name
+			overload as MemberOverload? = nil
+			other = .declForName(name)
+			if other
+				if other inherits MemberOverload
+					overload = other
+				else if other inherits AbstractMethod
+					overload = MemberOverload(other)
+					.registerOverload(overload to !)
+				else
+					print 'Unexpected overload for name:', name, other
+					throw FallThroughException([this, method, other])
+			if overload
+				overload.addMember(method)
+			else
+				.addDecl(method)
+
+	def _scanJvmParams(jparams as List<of JavaClassType>?, isVariMethod as bool) as List<of Param>
+		"""
+		Returns a list of Cobra Params given a list of Java ClassTypes (presumably a java parameterList)
+		"""
+		params = List<of Param>()
+		if not jparams or not jparams.count
+			return params
+		
+		paramN = 0
+		for javaParam in jparams
+			paramN +=1 	
+			isVari = paramN == jparams.count and isVariMethod #and javaParam is an array
+			# TODO support varags detection.
+			#java encodes a variable length paramlist as method.isVarArgs==TRUE and varargs parameter as an array of the the LCD Type ( Object[], String[] ) ( and perhaps args has transient modifier)
+			
+			# TODO: detect nullable on paramlist types ?
+			# To support nilable on params need change representation to a javaParamType containing type + attributes (for param) ( + direction possibly)
+			# Java not support nilable directly so ignore for moment
+			#isNotNull = javaParam.isNonNullable
+			isNotNullable = false # can be null
+			parameterType = javaParam
+			type = _jvmMemberTypeProxy(parameterType, isNotNullable)
+			if isVari, type = VariTypeProxy(type)
+			name = 'unkname' # java not keep names of given formal parameters
+			param = Param(name, type)
+			param.direction = Direction.In # Java doesnt have Out or InOut equivs
+			params.add(param)
+		return params
+
+				
+	def _isNamesForJavaMemberInfo(mi as JavaMemberInfo) as List<of String>
+		"""
+		Returns the Cobra "is names" such as ['public', 'static'] that correspond to the properties of the JavaMember.
+		"""
+		isNames = List<of String>(8)
+		if mi.isDefault,     isNames.add('internal') # pkgPrivate/internal  and protected 
+		# actually
+		#if mi.isProtected
+		#	isNames.add('protected')
+		#	isNames.add('internal') 	# TODO: address this later
+		if mi.isProtected,   isNames.add('protected')
+		if mi.isPrivate,     isNames.add('private')
+		if mi.isPublic,      isNames.add('public')
+		if mi.isStatic,      isNames.add('shared')
+		if mi.isAbstract,    isNames.add('abstract')
+		if mi.isFinal,    	 isNames.add('readonly')
+		return isNames
+			
+	def _attribsForJavaMemberInfo(mi as JavaMemberInfo) as AttributeList
+		return AttributeList()  # TODO:
+
+
+	def _badJvmRelatedType(t as JavaClassType?) as bool
+		"""
+		Returns true if the given type, which comes from a parameter or return value, is unsupported.
+		For example, it's not public or it's nested. Members with bad types are skipped when scanning DLLs.
+		"""
+		if t is nil 
+			return false
+
+		if t.isNested and not (t.isPublic or t.isProtected)and not t.isGenericParameter  # TODO: need the generic param check?
+			print 'Type t.name is nested and not public,protected'
+			return true
+
+		# FYI: MS .NET 2.0 (but not Mono 1.2.6) will return true for .isNotPublic for types are "by ref"
+		#if t.isByRef # TODO: or t.isArray
+		#	return _badJvmRelatedType(t.getElementType)
+
+		return false
+
+	def _jvmMemberTypeProxy(jvmType as JavaClassType?) as ITypeProxy
+		return _jvmMemberTypeProxy(jvmType, false)
+
+	def _jvmMemberTypeProxy(jvmType as JavaClassType?, notNull as bool) as ITypeProxy		
+		"""
+		Returns a type proxy for a member type such as a parameter type.
+		In Java, reference types are nilable by default, but you can pass `true` for `notNull` to indicate there was a NotNull Annotation in the jar metadata.
+		"""
+		if jvmType is nil
+			return .compiler.voidType
+		else if jvmType.isValueType
+			return JvmTypeProxy(jvmType)
+		else
+			# TODO: for generic types, should look at constraints. if constraints don't dictate nilable or not, then need to treat type special during generic construction
+			tp = JvmTypeProxy(jvmType) to ITypeProxy
+			if not notNull
+				tp = NilableTypeProxy(tp)
+			return tp
+
+	def _jvmMemberTypeResultProxy(member as JavaMemberInfo, jvmType as JavaClassType?) as ITypeProxy
+		"""
+		Returns a type proxy for a member type such as a method return type, property or field.
+		In Java, reference types are nilable by default.
+		"""
+		if jvmType is nil
+			return .compiler.voidType
+		else if jvmType.isValueType
+			return JvmTypeProxy(jvmType)
+		else if jvmType.isValueType or jvmType.isGenericParameter
+			return JvmTypeProxy(jvmType)
+		else
+			notNull = member.isNonNullable
+			t = JvmTypeProxy(jvmType) to ITypeProxy
+			return if(notNull, t, NilableTypeProxy(t))
+
+
+class Class
+	is partial
+
+	def _scanNativeTypeJvm
+		base._scanNativeTypeJvm
+		print 'scanJvmNativeType ', .name
+		_scanJvmIsNames
+		_scanJvmImplements
+		#_scanJvmNestedTypes
+		_scanJvmFields
+		_scanJvmInitializers
+		_scanJvmMethods
+		_scanJvmProperties	# do props last since they are synthesized
+		##_scanJvmEvents TODO 
+		# TODO: _scanJvmEnums
+		# TODO: scan all other nested types
+		
+	
+class Interface
+	is partial
+
+	def _scanNativeTypeJvm
+		base._scanNativeTypeJvm
+		_scanJvmIsNames
+		_scanJvmImplements
+		#_scanJvmNestedTypes
+		_scanJvmFields
+		_scanJvmMethods
+		_scanJvmProperties
+		#_scanJvmEvents #TODO
+
+
+class Struct
+	is partial
+
+	def _scanNativeTypeJvm
+		base._scanNativeTypeJvm
+		_scanJvmIsNames
+		_scanJvmImplements
+		#_scanJvmNestedTypes
+		_scanJvmFields
+		_scanJvmInitializers
+		_scanJvmMethods
+		_scanJvmProperties
+		#_scanJvmEvents
+
+
+class Extension
+	is partial
+
+	def _scanNativeTypeJvm
+		# this only for Cobra specific extensions. Example: class Extend_String_1939
+		base._scanNativeTypeJvm
+		_scanJvmIsNames
+		#_scanJvmImplements
+		#_scanJvmNestedTypes
+		#_scanJvmFields
+		#_scanJvmInitializers
+		#_scanJvmProperties
+		_scanJvmMethods
+		#_scanJvmEvents
+
+	def _scanJvmParams(jparams as List<of JavaClassType>?, isVariMethod as bool) as List<of Param> is override
+		# the first argument is implicit in an Extension
+		results = base._scanJvmParams(jparams, isVariMethod)
+		return results[1:]
+		
+	def jvmExtnNativeType(nativeType as NativeType) as NativeType
+		# the real extended type is the type of the first argument of any method
+		for methInfo in _jvmType.getMethods 
+			nativeType = JvmNativeType(methInfo.getParameters[0])
+			break
+		return nativeType
+
+		
+
+class EnumDecl
+	is partial
+
+	def _setUnderlyingTypeJvm
+		pass
+
+	def _scanNativeTypeJvm
+		# TODO: read attribs
+		_needScanNativeType = false
+		_storageType = .compiler.anyIntType # tmp ??
+		
+		/# Enable when have Enum and JavaEnumType in PkgSig and JarSig
+		jvmType = (_nativeType to JvmNativeType).backEndType 
+		assert jvmType inherits JavaEnumType # temporary
+		for name, value in jvmType.getConstantValues	# list of names and values
+			intValue = value to int
+			member = EnumMember(name, intValue)
+			member.enumDecl = this
+			.addDecl(member)
+		#/
+			
+		/#
+		isByte  = Enum.getUnderlyingType(jvmType).name == 'Byte'
+		is64    = Enum.getUnderlyingType(jvmType).name == 'Int64'
+		isU32   = Enum.getUnderlyingType(jvmType).name == 'UInt32'
+		isU64   = Enum.getUnderlyingType(jvmType).name == 'UInt64'
+		values  = Enum.getValues(jvmType)
+		i = 0
+		for name in Enum.getNames(jvmType)
+			value = values.getValue(i)
+			# CC: lameness follows
+			if isByte
+				intValue = int.parse((value to uint8).toString)
+			else if is64
+				try
+					intValue = int.parse((value to int64).toString)
+				catch OverflowException
+					intValue = 999  # CC: omg. but probably doesn't affect anything. we're reading the DLL here, not creating one
+			else if isU32
+				try
+					intValue = int.parse((value to uint32).toString)
+				catch OverflowException
+					intValue = 2147483647
+			else if isU64
+				try
+					intValue = int.parse((value to uint64).toString)
+				catch OverflowException
+					intValue = 2147483647
+			else
+				intValue = value to int
+			member = EnumMember(name, intValue)
+			member.enumDecl = this
+			.addDecl(member)
+			i += 1
+#/		
+
+
+

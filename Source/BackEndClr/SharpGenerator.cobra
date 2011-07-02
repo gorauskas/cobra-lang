@@ -1499,6 +1499,14 @@ class BoxEvent
 		sw.write(';\n')
 
 
+class BoxField is partial
+
+	get _sharpBackEndName as String
+		name = .name
+		if not name.startsWith('_')
+			name = name.capitalized
+		return name
+
 class BoxConst is partial
 
 	def writeSharpDef(sw as CurlyWriter) is override
@@ -1507,7 +1515,7 @@ class BoxConst is partial
 		.writeSharpIsNames(sw)
 		sw.write('const ')
 		sw.write(_type.sharpRef)
-		sw.write(' [_backEndName] = ')
+		sw.write(' [_sharpBackEndName] = ')
 		_initExpr.writeSharpDef(sw)
 		sw.write(';\n')
 
@@ -1516,18 +1524,22 @@ class BoxVar
 	is partial
 
 	get sharpAssignmentNames as List<of String>
-		return [_backEndName]
+		return [_sharpBackEndName]
 		# return List<of String>(_useBackEndNameStack)
 
 	get sharpName as String is override
 		if _ifInheritsStack.count
 			if _type.isReference
-				return '(([_ifInheritsStack.peek.sharpRef])[_backEndName])'
+				return '(([_ifInheritsStack.peek.sharpRef])[_sharpBackEndName])'
 			else
 				# could it be a subclass? no. value types are structs and cannot be subclassed so this must be `if i` where `i` is nullable struct
-				return '[_backEndName].Value'  # Nullable<of T>.Value
+				return '[_sharpBackEndName].Value'  # Nullable<of T>.Value
 		else
-			return _backEndName
+			backEndName = .name
+			if not backEndName.startsWith('_')
+				backEndName = backEndName.capitalized
+			return backEndName
+			#return _backEndName
 		# return _useBackEndNameStack.peek to !
 
 	def writeSharpDef(sw as CurlyWriter) is override
@@ -1535,7 +1547,7 @@ class BoxVar
 		.writeSharpAttribs(sw)
 		.writeSharpIsNames(sw)
 		sw.write(_type.sharpRef)
-		sw.write(' [_backEndName]')
+		sw.write(' [_sharpBackEndName]')
 		if _initExpr
 			sw.write(' = ')
 			_initExpr.writeSharpDef(sw)
@@ -2417,7 +2429,7 @@ class ExpectStmt
 		sw.write('// exactly what is expected\n')
 		sw.write('[gotRightExceptionVarName] = true;\n')
 		sw.dedentAndWrite('}\n')
-		if _exceptionType inherits Box and not (_exceptionType to Box).isSystemExceptionClass
+		if _exceptionType inherits Box and not (_exceptionType to Box).isClrSystemExceptionClass
 			wrongExceptionVarName = '_lh_expect_[_varNumber]'
 			assert gotRightExceptionVarName <> wrongExceptionVarName
 			sw.writeAndIndent('catch (System.Exception [wrongExceptionVarName]) {\n')
@@ -4368,6 +4380,17 @@ class BinaryMathExpr is partial
 class CompareExpr
 	is partial
 
+	var _cobraToSharp = {
+		'EQ': '==',
+		'NE': '!=',
+		'GT': '>',
+		'LT': '<',
+		'GE': '>=',
+		'LE': '<=',
+		'IS': '==',
+		'ISNOT': '!=',
+	}
+	
 	def _writeSharpDef(sw as CurlyWriter) is override
 		left = _left
 		right = _right

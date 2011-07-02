@@ -29,24 +29,59 @@ class UnexpectedInvocationException
 
 	cue init(obj as Object)
 		base.init('Not expecting invocation.')
-
+		
+class LoadReferenceException inherits Exception
+	"""
+	Thrown when Loading a reference fails for some reason.
+		FileNotFoundException, FileLoadException
+	"""
+	var fileName =''
+	var tag=''
+	
+	cue init(tag as String, fileName as String, msg as String)
+		base.init(msg)
+		.tag = tag
+		.fileName = fileName
+		
+	def toString as String is override
+		return '[.tag] [.fileName] [.message]'	
 
 enum PlatformEnum
 	Microsoft
 	Novell
 
-
-class BackEnd is abstract
+	
+# Should this be in BackEndCommon ?
+class BackEnd is abstract 
 	"""
-	Subclasses will often inspect the compiler for various options such as .willWriteTestInvocation.
+	Holder for items specific to the backEnd implementation
 	"""
-
+	
+	var _tagToTypeName = Dictionary<of String, String>()
+		""" Map from Typename tags used in compiler to backend specific qualified Type name"""
+	
 	cue init(compiler as Compiler)
 		base.init
+		_name = ''
+		_rtlName = 'rtl'
 		__compiler = compiler
 
-	get compiler from __compiler as Compiler
+	get name from var as String
+	
+	get cobraRuntimeLibFile from _rtlName as String 
 
+	get compiler from __compiler as Compiler
+	
+	get tagToTypeName from var
+		""" Map from TypeName tags used in compiler to backend specific qualified TypeName"""
+	
+	def resolveTypeTag(qualifiedNameOrTag as String) as String
+		if qualifiedNameOrTag.contains('.')			
+			qualifiedName = qualifiedNameOrTag
+		else	
+			qualifiedName = .tagToTypeName[qualifiedNameOrTag]  # type tag to backend qualifiedName
+		return qualifiedName
+		
 	def makePhases(phases as IList<of Phase>) is abstract
 		"""
 		Given a list of core phases for compilation complete it with additions (or even removals and
@@ -57,8 +92,156 @@ class BackEnd is abstract
 		"""
 		Return binary output name for compilation of files for this backend.
 		"""
+		
+	def genNativeModule(filename as String, verbosity as int) as Module? is abstract	
+		"""
+		Check if a filename is a Native module and if so return the Native module type for it
+		otherwise return nil.
+		"""
+	
+	def setupRunProcess(baseExe as String, fullExe as String) as Process is abstract
+		"""
+		Create and initialise the process to run the compiled program post compilation
+		setup varies on the backend (.Clr/Jvm) and platform.
+		"""
+	
+	def setDefaultUseDirectives(ns as NameSpace) is abstract
+		"""
+		Set the default Use directives into the given Namespace (usually topNamespace) for this backend.
+		"""
+	
+	def fixLibExtension(libRef as String) as String is abstract
+		"""
+		Augment given lib reference string with backend extension if not already have one.
+		"""
+	
+	def loadLibReference(reference as String) as bool is abstract
+		"""
+		Load the given lib reference file  using the current backend paradigms. 
+		Return true if reference found and loaded correctly, false otherwise
+		"""
+	
+	def readSystemTypes is abstract
+		""" Read and Load System Types for backend for Compiler to make available"""
+			
+		
+	def fixNilableMemberSigs is abstract
+		"""			
+		Most backends dont natively support nilablility, this marks/fixes the common backend
+		class signatures that should be marked nilable.
+		"""
+	
+	def installNativeMethods(box as Box, nativeType as NativeType) is abstract
+		"""
+		Setup so that static methods (on Primitives and some others) get installed/treated as normal methods
+		on the instance.
+		"""
+			
+	# Native Types access
+	def cobraNameForNativeBoxName(name as String) as String is abstract
+		"""
+		Returns name from backend library entries converted to cobra naming form.
+		"""
+	
+	get objectTypeProxy as AbstractTypeProxy is abstract
+		"""BE TypeProxy for root of back end Object hierarchy."""
 
+	get typeTypeProxy as AbstractTypeProxy is abstract
+		"""BE TypeProxy for BE notion of a class describing a Type."""
 
+	def nativeTypeProxy(type as NativeType) as NativeTypeProxy  is abstract
+		"""
+		Return a Proxy placeHolder for a BackEnd Native Type.
+		"""
+		
+	def nativeType(type as dynamic) as NativeType is abstract
+		"""
+		Return a Native Type wrapped so we can use it without explicitly knowing what it is anywhere
+		else but the providing back end. Used by the backends to generate Types from Libraries.
+		"""
+	
+	def nativeTypeByName(qualifiedName as String) as NativeType is abstract
+		"""
+		Return a Native Type corresponding to the fully qualified name.
+		Abstract Type Literal tags used in the compiler directly can also be obtained through this
+		otherwise the qualified names are expected to conform to the platform back end naming. 
+		"""
+	
+	def addArrayInterfaces( interfaces as List<of ITypeProxy>) is abstract
+		"""Add any additional interfaces the backends support that an ArrayType may need to have."""
+			
+	
+class BasicBackEnd inherits BackEnd
+	""" Stub BackEnd for tests. """
+	
+	cue init(compiler as Compiler)
+		base.init(compiler)
+		_name = 'c#-clr(basic)'
+		_rtlName = 'cobraRTL.libext'
+		
+		_tagToTypeName = {
+			'Object': 'System.Object',
+			'Type'	: 'System.Type',
+		}
+		
+	def makePhases(phases as IList<of Phase>) is override
+		pass
+		
+	def computeOutName as String  is override
+		return 'BasicOut'
+		
+	def genNativeModule(filename as String, verbosity as int) as Module?  is override
+		return nil
+	
+	def setupRunProcess(baseExe as String, fullExe as String) as Process  is override
+		p = Process()
+		p.startInfo.fileName = 'echo' 
+		p.startInfo.arguments = 'basic BackEnd process - [baseExe]'
+		return p		
+	
+	def setDefaultUseDirectives(ns as NameSpace)  is override
+		pass
+	
+	def fixLibExtension(libRef as String) as String is override
+		if not libRef.endsWith('.libext')
+			libRef += '.libext'
+		return libRef	
+	
+	def loadLibReference(reference as String) as bool is override
+		return true
+	
+	def readSystemTypes is override
+		pass
+	
+	def fixNilableMemberSigs is override
+		pass
+	
+	def installNativeMethods(box as Box, nativeType as NativeType) is override
+		pass
+		
+	# Native Type access
+	def cobraNameForNativeBoxName(name as String) as String is override
+		return name + '_BBE'
+	
+	# Types
+	get objectTypeProxy as AbstractTypeProxy is override
+		return ClrTypeProxy(Object) # for testing
+			
+	get typeTypeProxy  as AbstractTypeProxy is override
+		return ClrTypeProxy(Type )# for testing
+
+	def nativeTypeProxy(type as NativeType) as NativeTypeProxy is override
+		return ClrTypeProxy(type) #TODO: fix this to something non BE specific Tmp
+		
+	def nativeType(type) as NativeType is override
+		return ClrNativeType(type) #TODO: fix this to something non BE specific Tmp
+	
+	def nativeTypeByName(qualifiedName as String) as NativeType is override
+		return ClrNativeType(System.Object) #TODO: fix this to something non BE specific Tmp
+	
+	def addArrayInterfaces( interfaces as List<of ITypeProxy>) is override
+		pass
+		
 class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, ICompilerForNodes is partial
 	"""
 	General notes:
@@ -70,7 +253,7 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 	"""
 
 	var _backEnd as BackEnd?
-
+	
 	var _nextSerialNum as int is shared
 	var _serialNum as int
 	var _verbosity as int
@@ -99,12 +282,10 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 	var _intermediateFileNames as List<of String>
 	var _loadedReferences as List<of String>
 
-	var _clrTypeCache as Dictionary<of String, System.Type>
-
 
 	# caches
-	var _clrPrimitiveToITypeCache as IDictionary<of System.Type, IType>?
-
+	#var _clrPrimitiveToITypeCache as IDictionary<of System.Type, IType>?
+	var _primitiveToITypeCache as IDictionary<of dynamic, IType>?
 
 	cue init
 		.init(0, nil)
@@ -134,7 +315,6 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		_warnings = List<of SourceException>()
 		_intermediateFileNames = List<of String>()
 		_loadedReferences = List<of String>()
-		_clrTypeCache = Dictionary<of String, System.Type>()
 		if initialModules
 			if false # TODO: not working yet
 				for mod in initialModules
@@ -157,11 +337,14 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 	get includeTests as bool
 		return .options.boolValue('include-tests')
 
-	get clrPrimitiveToITypeCache from var
+	get primitiveToITypeCache from var
 		"""
-		Returns a cache mapping CLR types to their corresponding ITypes.
-		Populated and used by ClrTypeProxy.
+		Returns a cache mapping BackEnd types to their corresponding ITypes.
+		Populated and used by the backend TypeProxy implementations ( {Clr,Jvm,...}TypeProxy)
 		"""
+	set primitiveCache as IDictionary<of dynamic, IType>
+		assert value.count <> 0
+		_primitiveToITypeCache = value
 
 	get globalNS from var
 
@@ -467,7 +650,7 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		if not opts.containsKey('reference')
 			opts['reference'] = List<of String>()
 		refs = opts['reference'] to List<of String>
-		libName = 'Cobra.Lang.dll'  # TODO: why is this hard coded? What is this method used for?
+		libName = .backEnd.cobraRuntimeLibFile
 		if libName not in refs
 			if .verbosity, print 'Adding reference to [libName]'
 			refs.add(libName)
@@ -480,22 +663,9 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		Returns a new Process with startInfo.fileName and p.startInfo.arguments set appropriately
 		for the produced executable and the current options and any provided argsList.
 		"""
-		p = Process()
 		baseExeFileName = exeName ? .baseExeFileName
 		fullExeFileName = exeName ? .fullExeFileName
-		branch .platform
-			on PlatformEnum.Microsoft
-				p.startInfo.fileName = baseExeFileName
-			on PlatformEnum.Novell
-				p.startInfo.fileName = 'mono'
-				args = ''
-				# mono also needs --debug when running
-				if .options.getDefault('debug', '') not in ['', '-']
-					args += '--debug '
-				args += '"[fullExeFileName]"'
-				p.startInfo.arguments = args + ' '
-			else
-				throw FallThroughException(.platform)
+		p = .backEnd.setupRunProcess(baseExeFileName, fullExeFileName)
 
 		if argList and argList.count
 			args = p.startInfo.arguments ? ''
@@ -637,9 +807,6 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 			_passThroughType = PassThroughType()
 		return _passThroughType to !
 
-	get typeType as IType
-		return _libraryType('System.Type')
-
 	get unspecifiedType as UnspecifiedType
 		if _unspecifiedType is nil
 			_unspecifiedType = UnspecifiedType()
@@ -677,24 +844,61 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		if _nilableDynamicType is nil
 			_nilableDynamicType = .nilableType(.dynamicType)
 		return _nilableDynamicType to !
+# -- end of ITypeProvider
 
+/#
+overrides replacing above for mixin of BasicTypeProvider
+	class Compiler ... includes BasicTypeProvider
+		
+	var _nilableDynamicType as NilableType?
+	
+	get numberType as AbstractNumberType is override
+		if _numberType is nil
+			branch .options['number'] to String
+				on 'decimal', _numberType = .decimalType
+				on 'float',   _numberType = .floatType
+				on 'float32', _numberType = .floatType(32)
+				on 'float64', _numberType = .floatType(64)
+				else, throw FallThroughException(.options['number'])
+		return _numberType to !
+
+
+	def nilableType(type as IType) as NilableType is override
+		if type inherits NilableType, return type
+		if _nilableTypes is nil
+			_nilableTypes = Dictionary<of INode, NilableType>()
+		if _nilableTypes.containsKey(type)
+			return _nilableTypes[type]
+		else
+			_nilableTypes[type] = nt = NilableType(type)
+			nt.bindInh
+			if not .isBindingInh, nt.bindInt
+			return nt
+
+	def defaultType as IType is override
+		return .nilableDynamicType
+
+	def nilableDynamicType as NilableType
+		if _nilableDynamicType is nil
+			_nilableDynamicType = .nilableType(.dynamicType)
+		return _nilableDynamicType to !
+#/		
+
+
+	get typeType as IType
+		#return _libraryType('System.Type')
+		#return _libraryType(.backEnd.tagToTypeName['Type'])
+		return .libraryType('Type')
 
 	## More type stuff
 
 	def readSystemTypes
-		# TODO: support targeting a specific CLR version, but not below 2.0
-		.readAssembly(Assembly.load('mscorlib.dll') to !)
-
-		# TODO: .readAssembly(Assembly.loadFrom('System.dll') to !)
-		#       gives: Unhandled Exception: System.IO.FileNotFoundException: Could not load file or assembly 'System.dll' or one of its dependencies. The system cannot find the file specified.
-
-		t = System.Diagnostics.Process.getType
-		.readAssembly(t.assembly) # System.dll
+		.backEnd.readSystemTypes
 
 	def fixLibExtensions(references as List<of String>)
 		i = 0
 		for reference in List<of String>(references)
-			references[i] = reference.fixLibExtension
+			references[i] = .backEnd.fixLibExtension(references[i])
 			i += 1
 			
 	def printRefs(references as List<of String>)
@@ -742,7 +946,7 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		# sharp'curDomain.ReflectionOnlyAssemblyResolve += _resolveEvent'
 
 		for reference in references
-			if not .loadReference(reference)
+			if not .loadReference(reference, false)
 				_addMessage(SourceException('Cannot locate assembly reference "[reference]".'))
 
 	def refsForPackage(pkgName as String) as List<of String>
@@ -798,13 +1002,15 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		# see .loadReference which sets up the indented writer
 		(CobraCore.printDestination to IndentedWriter).dedent
 
-	def loadReference(reference as String) as bool
+	def loadReference(reference as String, addExtn as bool) as bool
 		"""
 		Attempts to load the given library reference.
 		On success, adds reference to .loadedReferences and returns true.
 		On failure, returns false, but does not add any warnings or errors.
 		This method is used by Compiler and UseDirective.
 		"""
+		if addExtn
+			reference = .backEnd.fixLibExtension(reference)
 		v, rv = .verbosity, .referenceVerbosity
 		if v, print 'Loading reference:', reference
 		if rv
@@ -824,158 +1030,20 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 
 	def _loadReference(reference as String) as bool
 		try
-			return __loadReference(reference)
-		catch fnfe as System.IO.FileNotFoundException
-			# example: Could not load file or assembly 'NHibernate, Version=2.1.0.1001,
+			return .backEnd.loadLibReference(reference)
+		catch lre as LoadReferenceException
+			# example: 'FileNotFoundException fileName Could not load file or assembly 'NHibernate, Version=2.1.0.1001,
 			# Culture=neutral, PublcKeyToken=aa95f207798dfdb4' or one of its dependencies. The
 			# system cannot find the file specified.
-			if .referenceVerbosity, print '[fnfe] in _loadReference("[reference]")'
-			return false
-		catch fle as System.IO.FileLoadException
-			if .referenceVerbosity, print '[fle] in _loadReference("[reference]")'
+			if .referenceVerbosity, print '[lre] in _loadReference("[reference]")'
 			return false
 
-	def __loadReference(reference as String) as bool
-		require
-			reference.endsWith('.dll') or reference.endsWith('.exe')
-			reference not in ['.dll', '.exe']
-		ensure
-			result implies .loadedReferences[.loadedReferences.count-1] == reference
-			not result implies .loadedReferences.count == old .loadedReferences.count
-		body
-			rv = .referenceVerbosity
-			assert not (reference.startsWith('-r') and '-r' in reference[2:])
-			if false
-				# Does not work on Novell Mono. See notes above.
-				referredAss = Assembly.reflectionOnlyLoadFrom(reference)
-				# TODO: handle all the exceptions from Assembly.loadFrom
-			else
-				if File.exists(reference)
-					# try current directory
-					if rv, print '"[reference]" found as file. Will Assembly.loadFrom().'
-					referredAss = Assembly.loadFrom(reference)
-					if rv, print 'Assembly.loadFrom() returned: [CobraCore.toTechString(referredAss)]'
-				else
-					# TODO: the problem with -lib: in both Cobra and C# is that it has no effect on runtime,
-					# you must still register the DLLs in the GAC or copy them into the same dir as the .exe
-					# because the -lib: paths are not passed into executable.
-					# So should Cobra copy the .dll's into the target directory (if their paths are not in MONO_PATH)?
-					if rv, print 'File does not exist.'
-					searchPaths = .options.getDefault('library-directory', List<of String>()) to List<of String>
-					# TODO: ?: searchPaths.add(Path.getDirectoryName(Assembly.getExecutingAssembly.location))  # try Cobra's directory - also should be added to .options.'library-directory' not to a local var
-					found = false
-					for searchPath in searchPaths
-						if rv, print 'Checking lib path: "[searchPath]"'
-						combinedPath = Path.combine(searchPath, reference)
-						if File.exists(combinedPath)
-							if rv, print '"[reference]" found as file. Will Assembly.loadFrom().'
-							referredAss = Assembly.loadFrom(combinedPath)
-							if rv, print 'Assembly.loadFrom() returned: [CobraCore.toTechString(referredAss)]'
-							found = true
-							break
-					if rv
-						if searchPaths.count
-							if not found, print 'Did not find "[reference]" in lib paths'
-						else
-							print 'No lib paths to search.'
-					if not found
-						# try system wide (GAC)
-						if reference.endsWith('.dll'), reference = reference[:-4]
-						if rv, print 'Will load with partial name "[reference]"'
-						referredAss = Utils.loadWithPartialName(reference)
-						if rv, print 'Load with partial name returned: [CobraCore.toTechString(referredAss)]'
-						if referredAss is nil, return false
-						# 2009-08-03 CE: Removed this code:
-						# reference = referredAss.location
-						# To address this:
-						# http://cobra-language.com/forums/viewtopic.php?f=4&t=501
-						# See also: ../Tests/720-libraries/100-microsoft/110-winforms-native-compiler.cobra
-						#           Note the -native-compiler option in that test which triggers this.
-						# Also, it doesn't see right to have to use the full path of a GAC-based assembly anyway.
-						# But still have to end in .dll or .exe:
-						reference += if(referredAss.location.endsWith('.exe'), '.exe', '.dll')
-				# TODO: handle all the exceptions from Assembly.loadFrom
-			if referredAss
-				if _willReadDependencies
-					for dependency in referredAss.getReferencedAssemblies
-						if rv
-							print '>> Loading dependency: [dependency]'
-							.indentPrint
-							try
-								.loadAssembly(dependency)
-							finally
-								.outdentPrint
-								print '<< Loading dependency: [dependency]'
-						else
-							.loadAssembly(dependency)
-				if rv, print 'Will read assembly: [referredAss]'
-				try
-					.readAssembly(referredAss, reference <> 'Cobra.Lang.dll')
-				catch readExc as Exception
-					if rv, print 'Caught exception during read assembly: [readExc]'
-					throw
-				if rv, print 'Did read assembly: [referredAss]'
-				# reassert the preconditions. there have been bugs in the past
-				assert reference.endsWith('.dll') or reference.endsWith('.exe')
-				assert reference not in ['.dll', '.exe']
-				.loadedReferences.add(reference)
-				if rv, print 'Returning true for __loadReference("[reference]").'
-				return true
-			else
-				if rv, print 'Returning false for __loadReference("[reference]").'
-				return false
-
-	var _didLoadAssemblies = Set<of String>()
-
-	def loadAssembly(assName as AssemblyName)
-		if .referenceVerbosity
-			print '>> loadAssembly [assName]'
-			.indentPrint
-			try
-				_loadAssembly(assName)
-			finally
-				.outdentPrint
-				print '<< loadAssembly [assName]'
-		else
-			_loadAssembly(assName)
-
-	def _loadAssembly(assName as AssemblyName)
-		rv = .referenceVerbosity - 1
-		if rv < 0, rv = 0
-		if assName.toString in _didLoadAssemblies
-			if rv, print 'Already loaded.'
-			return
-		_didLoadAssemblies.add(assName.toString)
-		try
-			if rv, print 'Will Assembly.load([assName])'
-			ass = Assembly.load(assName)     # Will not pick up the assembly from the same directory.
-			if rv, print 'Did Assembly.load with result: [ass]'
-		catch fnfe as FileNotFoundException  # In fact, will get a FileNotFoundException!
-			if rv, print 'Did Assembly.load with exception: [fnfe]. Will try .loadReference'
-			.loadReference(assName.name + '.dll')
-			# TODO: compare the the name loaded to the name given with AssemblyName.referenceMatchesDefinition
-			return
-		catch exc as Exception
-			msg = 'Could not open assembly "[assName]" due to: [exc.getType.name]: [exc.message]'
-			if rv, print msg
-			throw SourceException(msg)
-		if _willReadDependencies
-			for dependency in ass.getReferencedAssemblies
-				if rv
-					print '>> Loading dependency: [dependency]'
-					.indentPrint
-					try
-						.loadAssembly(dependency)
-					finally
-						.outdentPrint
-						print '<< Loading dependency: [dependency]'
-		try
-			.readAssembly(ass)
-		catch readExc as Exception
-			if rv, print 'Caught exception during read assembly: [readExc]'
-			throw
-
-
+	def fixNilableMemberSigs
+		.backEnd.fixNilableMemberSigs
+	
+	def installNativeMethods(box as Box, nativeType as NativeType) 
+		.backEnd.installNativeMethods(box, nativeType)
+		
 	##
 	## Binding
 	##
@@ -1177,83 +1245,86 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 	##
 	## Important system library types
 	##
-
+	# ILibTypeProvider
+	
 	get objectType as IType
 		# for ITypeProvider
-		return _libraryClass('System.Object')
+		return _libraryClass('Object')
 
 	def objectClass as Class
 		# for stronger typing
-		return _libraryClass('System.Object')
+		return _libraryClass('Object')
 
 	def stringType as Class
-		return _libraryClass('System.String')
+		return _libraryClass('String')
 
 	def exceptionType as Class
-		return _libraryClass('System.Exception')
+		return _libraryClass('Exception')
 
 	def delegateType as Class
-		return _libraryClass('System.Delegate')
+		return _libraryClass('Delegate')
 
 	def attributeType as Box
-		return _libraryBox('System.Attribute')
+		return _libraryBox('Attribute')
 
 	def enumerableType as Box
-		return _libraryBox('System.Collections.IEnumerable')
+		return _libraryBox('IEnumerable')
 
 	def enumeratorType as Box
-		return _libraryBox('System.Collections.IEnumerator')
+		return _libraryBox('IEnumerator')
 
 	def enumerableOfType as Box
-		return _libraryBox('System.Collections.Generic.IEnumerable<of>')
+		return _libraryBox('IEnumerable<of>')
 
 	def enumeratorOfType as Box
-		return _libraryBox('System.Collections.Generic.IEnumerator<of>')
+		return _libraryBox('IEnumerator<of>')
 
 	def dictEnumeratorType as Box
-		return _libraryBox('System.Collections.IDictionaryEnumerator')
+		return _libraryBox('IDictionaryEnumerator')
 		
 	def collectionType as Box
-		return _libraryBox('System.Collections.ICollection')
+		return _libraryBox('ICollection')
 
 	def collectionOfType as Box
-		return _libraryBox('System.Collections.Generic.ICollection<of>')
+		return _libraryBox('ICollection<of>')
 
 	def ilistType as Box
-		return _libraryBox('System.Collections.IList')
+		return _libraryBox('IList')
 		
 	def ilistOfType as Box
-		return _libraryBox('System.Collections.Generic.IList<of>')
+		return _libraryBox('IList<of>')
 		
 	def listOfType as Class
-		return _libraryClass('System.Collections.Generic.List<of>')
+		return _libraryClass('List<of>')
 
 	def idictionaryType as Box
-		return _libraryBox('System.Collections.IDictionary')
+		return _libraryBox('IDictionary')
 		
 	def idictionaryOfType as Box
-		return _libraryBox('System.Collections.Generic.IDictionary<of,>')
+		return _libraryBox('IDictionary<of,>')
 
 	def dictionaryOfType as Class
-		return _libraryClass('System.Collections.Generic.Dictionary<of,>')
+		return _libraryClass('Dictionary<of,>')
 
 	def setOfType as Class
-		return _libraryClass('Cobra.Lang.Set<of>')
+		return _libraryClass('Set<of>')
 
-	def libraryType(qualifiedName as String) as IType
+	def libraryType(qualifiedNameOrTag as String) as IType
 		"""
 		Implemented for ITypeProvider, but use the more specific methods such as .stringType instead.
 		"""
-		return _libraryType(qualifiedName)
+		return _libraryType(.backEnd.resolveTypeTag(qualifiedNameOrTag))
 
 	var _libraryTypeCache = Dictionary<of String, IType>()
 
 	def _libraryType(qualifiedName as String) as IType
 		"""
+		find qualified Type name in (cache or) Library/namespace Decls structures. 
 		Used to retrieve types such as System.String.
 		Example:
 			_libraryType('System.String')
 		"""
+		assert qualifiedName.length
 		type as IType?
 		if _libraryTypeCache.tryGetValue(qualifiedName, out type)
 			return type to !
@@ -1263,9 +1334,11 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		return type to !
 
 	def _libraryType(names as vari String) as IType
+		#print names
 		ns as IContainer = _globalNS
 		thing as IContainer? = nil
 		for name in names
+			#print (thing ? ns)
 			possible = (thing ? ns).declForName(name)
 			assert possible, name
 			if possible inherits IContainer
@@ -1282,17 +1355,17 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		else
 			throw FallThroughException('found [name], but it is not an IType. it is [thing]')
 
-	def _libraryBox(qualifiedName as String) as Box
+	def _libraryBox(qualifiedNameOrTag as String) as Box
 		"""
 		Returns a box from the standard library such as 'System.Object' or 'System.Collections.Generic.IEnumerable<of>'.
 		"""
-		return _libraryType(qualifiedName) to Box
+		return _libraryType(.backEnd.resolveTypeTag(qualifiedNameOrTag)) to Box
 
-	def _libraryClass(qualifiedName as String) as Class
+	def _libraryClass(qualifiedNameOrTag as String) as Class
 		"""
 		Returns a class from the standard library such as 'System.Object' or 'System.Collections.Generic.Dictionary<of,>'.
 		"""
-		return _libraryType(qualifiedName) to Class
+		return _libraryType(.backEnd.resolveTypeTag(qualifiedNameOrTag)) to Class
 
 
 	##
@@ -1302,18 +1375,25 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 	def embedRunTimeSuffix as String
 		return .options.embedRunTimeSuffix
 
-	def nativeType(qualifiedName as String) as NativeType
-		return ClrNativeType(_clrType(qualifiedName))
+	#special type proxies for common Types -  Object and Type
+	def objectTypeProxy as AbstractTypeProxy 
+		"""
+		Type proxy for BE notion of a class for the root of Object hierarchy
+			e.g. Object in dotNet
+		"""
+		#return ClrTypeProxy(Object)
+		return .backEnd.objectTypeProxy
 
-	def _clrType(qualifiedName as String) as System.Type
-		# eventually this method will be key in targeting different versions of the CLR
-		# suppose you are on .NET 3.0 and want to target .NET 2.0
-		t as System.Type?
-		_clrTypeCache.tryGetValue(qualifiedName, out t)
-		if t is nil
-			t = sharp'System.Type.GetType(qualifiedName)' # to System.Type
-			_clrTypeCache[qualifiedName] = t to passthrough  # "to passthrough" instead of "to !" to avoid non-nil check
-		return t to passthrough
+	def typeTypeProxy as AbstractTypeProxy 
+		"""
+		Type proxy for BE notion of a class for a Type
+			e.g. System.Type in dotNet, java.lang.class in Java
+		"""
+		#return ClrTypeProxy(Type)
+		return .backEnd.typeTypeProxy
+		
+	def nativeType(qualifiedName as String) as NativeType
+		return .backEnd.nativeTypeByName(qualifiedName)
 
 	def suggestionFor(name as String) as String? is shared
 		require name.length
@@ -1452,7 +1532,7 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 			on 'jvm',  _backEnd = JvmBackEnd(this)
 			on 'objc', _backEnd = ObjcBackEnd(this)
 			else, throw FallThroughException(.options.get('back-end'))
-
+			
 
 class InternalError
 	inherits SourceException
@@ -1510,7 +1590,8 @@ class TestCompiler inherits Compiler
 
 	cue init
 		base.init(0)
-
+		_backEnd = BasicBackEnd(this)
+		
 	pro verbosity as int is override
 		get
 			return 0
@@ -1521,12 +1602,3 @@ class TestCompiler inherits Compiler
 		return lineNum
 
 
-extend String
-
-	def fixLibExtension as String
-		require .length
-		ensure result.endsWith('.dll') or result.endsWith('.exe')
-		if not .endsWith('.dll') and not .endsWith('.exe')
-			return this + '.dll'
-		else
-			return this

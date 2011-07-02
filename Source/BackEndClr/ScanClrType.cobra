@@ -1,11 +1,178 @@
 class Compiler is partial
 
+	var _didLoadAssemblies = Set<of String>()
+
 	var _didReadAssemblies = Set<of String>()
 	
-	def readAssembly(ass as Assembly)
-		.readAssembly(ass, false)
+	var _clrTypeToType = Dictionary<of System.Type, IType>()
+	
+	var _clrTypeCache = Dictionary<of String, System.Type>()
+	
+	
+	# .Net specific Reference loading
+	def dotNetLoadReference(reference as String) as bool
+		try 
+			return 	__dotNetLoadReference(reference)
+		catch fnfe as System.IO.FileNotFoundException
+			throw LoadReferenceException('FileNotFound', fnfe.fileName, fnfe.message)
+		catch fle as System.IO.FileLoadException
+			throw LoadReferenceException('FileLoadException', fle.fileName ? reference, fle.message)
 
-	def readAssembly(ass as Assembly, skipCobra as bool)
+	def __dotNetLoadReference(reference as String) as bool
+		# uses reference parameter
+		# compiler .referenceVerbosity, _willReadDependencies
+		# fills .loadedReferences
+		
+		require
+			reference.endsWith('.dll') or reference.endsWith('.exe')
+			reference not in ['.dll', '.exe']
+		ensure
+			result implies .loadedReferences[.loadedReferences.count-1] == reference
+			not result implies .loadedReferences.count == old .loadedReferences.count
+		body
+			rv = .referenceVerbosity
+			assert not (reference.startsWith('-r') and '-r' in reference[2:])
+			if false
+				# Does not work on Novell Mono. See notes above.
+				referredAss = Assembly.reflectionOnlyLoadFrom(reference)
+				# TODO: handle all the exceptions from Assembly.loadFrom
+			else
+				if File.exists(reference)
+					# try current directory
+					if rv, print '"[reference]" found as file. Will Assembly.loadFrom().'
+					referredAss = Assembly.loadFrom(reference)
+					if rv, print 'Assembly.loadFrom() returned: [CobraCore.toTechString(referredAss)]'
+				else
+					# TODO: the problem with -lib: in both Cobra and C# is that it has no effect on runtime,
+					# you must still register the DLLs in the GAC or copy them into the same dir as the .exe
+					# because the -lib: paths are not passed into executable.
+					# So should Cobra copy the .dll's into the target directory (if their paths are not in MONO_PATH)?
+					if rv, print 'File does not exist.'
+					searchPaths = .options.getDefault('library-directory', List<of String>()) to List<of String>
+					# TODO: ?: searchPaths.add(Path.getDirectoryName(Assembly.getExecutingAssembly.location))  # try Cobra's directory - also should be added to .options.'library-directory' not to a local var
+					found = false
+					for searchPath in searchPaths
+						if rv, print 'Checking lib path: "[searchPath]"'
+						combinedPath = Path.combine(searchPath, reference)
+						if File.exists(combinedPath)
+							if rv, print '"[reference]" found as file. Will Assembly.loadFrom().'
+							referredAss = Assembly.loadFrom(combinedPath)
+							if rv, print 'Assembly.loadFrom() returned: [CobraCore.toTechString(referredAss)]'
+							found = true
+							break
+					if rv
+						if searchPaths.count
+							if not found, print 'Did not find "[reference]" in lib paths'
+						else
+							print 'No lib paths to search.'
+					if not found
+						# try system wide (GAC)
+						if reference.endsWith('.dll'), reference = reference[:-4]
+						if rv, print 'Will load with partial name "[reference]"'
+						referredAss = Utils.loadWithPartialName(reference)
+						if rv, print 'Load with partial name returned: [CobraCore.toTechString(referredAss)]'
+						if referredAss is nil, return false
+						# 2009-08-03 CE: Removed this code:
+						# reference = referredAss.location
+						# To address this:
+						# http://cobra-language.com/forums/viewtopic.php?f=4&t=501
+						# See also: ../Tests/720-libraries/100-microsoft/110-winforms-native-compiler.cobra
+						#           Note the -native-compiler option in that test which triggers this.
+						# Also, it doesn't see right to have to use the full path of a GAC-based assembly anyway.
+						# But still have to end in .dll or .exe:
+						reference += if(referredAss.location.endsWith('.exe'), '.exe', '.dll')
+				# TODO: handle all the exceptions from Assembly.loadFrom
+			if referredAss
+				if _willReadDependencies # wired false in Compiler.cobra
+					for dependency in referredAss.getReferencedAssemblies
+						if rv
+							print '>> Loading dependency: [dependency]'
+							.indentPrint
+							try
+								_dotNetLoadAssembly(dependency)
+							finally
+								.outdentPrint
+								print '<< Loading dependency: [dependency]'
+						else
+							_dotNetLoadAssembly(dependency)
+				if rv, print 'Will read assembly: [referredAss]'
+				try
+					__dotNetReadAssembly(referredAss, reference <> 'Cobra.Lang.dll')
+				catch readExc as Exception
+					if rv, print 'Caught exception during read assembly: [readExc]'
+					throw
+				if rv, print 'Did read assembly: [referredAss]'
+				# reassert the preconditions. there have been bugs in the past
+				assert reference.endsWith('.dll') or reference.endsWith('.exe')
+				assert reference not in ['.dll', '.exe']
+				.loadedReferences.add(reference)
+				if rv, print 'Returning true for __loadReference("[reference]").'
+				return true
+			else
+				if rv, print 'Returning false for __loadReference("[reference]").'
+				return false
+
+	def _dotNetLoadAssembly(assName as AssemblyName)
+		if .referenceVerbosity
+			print '>> loadAssembly [assName]'
+			.indentPrint
+			try
+				_loadAssembly(assName)
+			finally
+				.outdentPrint
+				print '<< loadAssembly [assName]'
+		else
+			_loadAssembly(assName)
+
+	def _loadAssembly(assName as AssemblyName)
+		rv = .referenceVerbosity - 1
+		if rv < 0, rv = 0
+		if assName.toString in _didLoadAssemblies
+			if rv, print 'Already loaded.'
+			return
+		_didLoadAssemblies.add(assName.toString)
+		try
+			if rv, print 'Will Assembly.load([assName])'
+			ass = Assembly.load(assName)     # Will not pick up the assembly from the same directory.
+			if rv, print 'Did Assembly.load with result: [ass]'
+		catch fnfe as FileNotFoundException  # In fact, will get a FileNotFoundException!
+			if rv, print 'Did Assembly.load with exception: [fnfe]. Will try .loadReference'
+			.loadReference(assName.name to !, true) # .compiler.loadReference(assName.name to !, true)
+			# TODO: compare the the name loaded to the name given with AssemblyName.referenceMatchesDefinition
+			return
+		catch exc as Exception
+			msg = 'Could not open assembly "[assName]" due to: [exc.getType.name]: [exc.message]'
+			if rv, print msg
+			throw SourceException(msg)
+		if _willReadDependencies # wired false in Compiler.cobra
+			for dependency in ass.getReferencedAssemblies
+				if rv
+					print '>> Loading dependency: [dependency]'
+					.indentPrint
+					try
+						_dotNetLoadAssembly(dependency)
+					finally
+						.outdentPrint
+						print '<< Loading dependency: [dependency]'
+		try
+			.clrReadAssembly(ass to !) # compiler.readAssembly(ass)
+		catch readExc as Exception
+			if rv, print 'Caught exception during read assembly: [readExc]'
+			throw
+
+	# Called by ClrTypeProxy 
+	# dotNet specific  - readLibrary
+	def clrReadAssembly(ass as Assembly)
+		""" Reads the contents of an dotNet assembly (.DLL) so that they are accessible to the program."""
+		assert _backEnd.typeOf == ClrBackEnd # tmp guard
+		__dotNetReadAssembly(ass, false) # ScanClrType
+			
+			
+	#def dotNetReadAssembly(ass as Assembly)
+	#	""" Reads the contents of an dotNet assembly (.DLL). EntryPoint"""
+	#	__dotNetReadAssembly(ass, false)
+
+	def __dotNetReadAssembly(ass as Assembly, skipCobra as bool)
 		"""
 		Reads the contents of an assembly (.DLL) so that they are accessible to the program.
 		In other words, this method reads libraries.
@@ -17,7 +184,8 @@ class Compiler is partial
 			print 'Reading assembly:  [ass]'  # extra space lines up with 'Loading reference:'
 			print '              at:  [ass.location]'
 		namespaceQualNameToNameSpaceObject = Dictionary<of String, NameSpace>()
-		module = AssemblyModule(ass, .globalNS)
+		module = AssemblyModule(ass.location, .globalNS)
+		#module = AssemblyModule(ass, .globalNS)
 		saveModule, _curModule = _curModule, module
 		try
 			_modules.add(module)
@@ -54,24 +222,24 @@ class Compiler is partial
 				else
 					if type.isClass
 						if type.name.startsWith('Extend_') and type.name.count(c'_') >= 2
-							curNameSpace.addDecl(Extension(clrType))
+							curNameSpace.addDecl(Extension(clrType, .backEnd))
 						else
-							curNameSpace.addDecl(Class(clrType))
+							curNameSpace.addDecl(Class(clrType, .backEnd))
 					else if type.isInterface
-						curNameSpace.addDecl(Interface(clrType))
+						curNameSpace.addDecl(Interface(clrType, .backEnd))
 					else if type.isEnum
 						curNameSpace.addDecl(EnumDecl(curNameSpace, clrType, List<of String>(), ''))  # TODO: isNames; docString?
 					else if type.isValueType
-						curNameSpace.addDecl(Struct(clrType))
+						curNameSpace.addDecl(Struct(clrType, .backEnd))
 					else if type.isAnsiClass
 						# The Enum class is an example that returns false for .isClass but true for .isAnsiClass
-						curNameSpace.addDecl(Class(clrType))
+						curNameSpace.addDecl(Class(clrType, .backEnd))
 					else
 						throw FallThroughException(type)
 		finally
 			_curModule = saveModule
 
-	def fixNilableMemberSigs
+	def dotNetfixNilableMemberSigs
 		# TODO: this really needs to go in a separate file that the compiler reads each time
 
 		# TODO: look to see if what the Spec# team put together can be leveraged instead of recreating all this work!
@@ -124,12 +292,11 @@ class Compiler is partial
 			print 'WARNING: Cannot fix [className] which is not a class/struct/interface. (type=[type])'  # TODO: make a real warning
 
 
-	var _clrTypeToType = Dictionary<of System.Type, IType>()
 	
 	def typeForClrType(clrType as System.Type) as IType?
 		"""
 		Returns the Cobra type for a CLR type if the CLR type was previously scanned.
-		In other words, this is access to the cache.
+		In other words, this is access to the clr Type cache.
 		This not only eliminates unwanted duplication, but it is essential to the compiler when it
 		checks for certain things like "does this type implement IDictionary<of TKey, TValue>?"
 		"""
@@ -138,18 +305,145 @@ class Compiler is partial
 	def addTypeForClrType(type as IType, clrType as System.Type)
 		require .typeForClrType(clrType) in [nil, type]
 		_clrTypeToType[clrType] = type
+		
+	def clrTypeByName(qualifiedName as String) as System.Type
+		"""
+		Obtain the Clr type given by the fully qualified name.
+		"""
+		# eventually this method will be key in targeting different versions of the CLR
+		# suppose you are on .NET 3.0 and want to target .NET 2.0
+		t as System.Type?
+		_clrTypeCache.tryGetValue(qualifiedName, out t)
+		if t is nil
+			t = sharp'System.Type.GetType(qualifiedName)' # to System.Type
+			_clrTypeCache[qualifiedName] = t to passthrough  # "to passthrough" instead of "to !" to avoid non-nil check
+		return t to passthrough
+	
 
+		
+	def installClrNativeMethods(box as Box, nativeType as NativeType) 
+		meths = List<of Method>()
+		_installClrNativeMethodsFrom('System', nativeType, nativeType, box, meths)
+		_installClrNativeMethodsFrom('System', ClrNativeType(System.Math.getType), nativeType, box, meths)
+
+		# the next statement can be problematic in that you have to add new DecimalTools methods in Snapshot just so the compiler can see them
+		# ultimately, extensions of primitive types should be supported
+		_installClrNativeMethodsFrom('CobraLangInternal', ClrNativeType(Cobra.Lang.DecimalTools.getType), nativeType, box, meths)
+
+		# _printMethods(meths, box)
+	
+	def compareMethodNames(a as Method, b as Method) as int
+		return a.name.compareTo(b.name)
+		
+	def _printMethods(meths as IList<of Method>, box as Box)
+		# print out the methods, useful for documentation
+		print
+		print 'type', box.name
+		sharedMeths = for meth in meths where meth.isShared
+		if sharedMeths.count
+			sharedMeths.sort(ref .compareMethodNames)
+			print '    shared'
+			for meth in sharedMeths
+				print '        [meth.cobraSourceSignature(false)]'
+		objectMeths = for meth in meths where not meth.isShared
+		if objectMeths.count
+			objectMeths.sort(ref .compareMethodNames)
+			for meth in objectMeths
+				print '    [meth.cobraSourceSignature]'
+				
+	def _installClrNativeMethodsFrom(namespaceName as String, nativeType as NativeType, 
+					thisNativeType as NativeType, box as Box, meths as List<of Method>)
+		argClrType = (nativeType to ClrNativeType).backEndType
+		thisClrType = (thisNativeType to ClrNativeType).backEndType
+		# print
+		# print '** [.name], clrType'
+		isSameNativeType = argClrType == thisClrType
+		for methInfo in argClrType.getMethods(BindingFlags(DeclaredOnly, Static, Instance, Public))
+			if methInfo.isSpecialName, continue
+			# print
+			# print '--', methInfo, methInfo.isStatic
+			name = Utils.cobraNameForNativeMemberName(methInfo.name)
+			modifiers = List<of String>()
+			if methInfo.isStatic, modifiers.add('shared')
+			newParams = List<of Param>()
+			first = true
+			cancel = false
+			for nativeParam in methInfo.getParameters
+				if first
+					first = false
+					if methInfo.isStatic
+						if methInfo.getParameters[0].parameterType == thisClrType
+							# When the first arg of the shared method is the same type,
+							# then make an instance method that can be used directly on values of the type.
+							# print methInfo.getParameters
+							# print methInfo.getParameters[0].parameterType
+							modifiers.remove('shared')
+							continue
+						else if not isSameNativeType
+							# don't want, for example, Math.sign showing up in types char, bool, etc. as a shared method
+							cancel = true
+							continue
+				param = Param(Token.empty.copy('ID', nativeParam.name), ClrTypeProxy(nativeParam.parameterType))
+				if nativeParam.parameterType.isByRef and not nativeParam.isOut
+					param.direction = Direction.InOut
+				else if nativeParam.isOut
+					param.direction = Direction.Out
+				newParams.add(param)
+			if cancel, continue
+			meth = Method(Token.empty, Token.empty, box, name, newParams, ClrTypeProxy(methInfo.returnType), nil, modifiers, AttributeList(), '')
+			if methInfo.isStatic
+				meth.sharedMethodBacking = '[namespaceName].[argClrType.name].[methInfo.name]'
+				if 'shared' in modifiers, meth.sharedMethodBackingIsAlias = true
+
+			overload = nil to MemberOverload?
+			other = box.declForName(name)
+			if other
+				if other inherits MemberOverload
+					overload = other
+				else if other inherits AbstractMethod or other inherits ProperDexer
+					overload = MemberOverload(other to BoxMember)
+					box.registerOverload(overload to !)
+				else
+					throw FallThroughException([box, meth, other])
+			else
+				assert box.declForName(name) is nil
+			if overload
+				overload.addMember(meth)
+			else
+				box.addDecl(meth)
+				
+			meths.add(meth)
+		
+		
 
 class Box is partial
 
-	get clrType as Type
+	get _clrType as Type
 		"""
 		Returns the CLR System.Type boxed by the .nativeType.
 		Throws exception rather than return nil.
 		"""
 		return (.nativeType to ClrNativeType).clrType
 
-	def _scanNativeType
+	var _defaultMemberName as String?
+		"""
+		An Indexer in CLR is known by being a property with arguments whose name matches the .memberName of a box-level DefaultMemberAttribute.
+		"""
+		
+	def isClrSystemExceptionClass as bool
+		return .name == 'Exception' and .parentNameSpace and .parentNameSpace.fullName == 'System'
+				
+	def _prepSystemObjectClassClr
+		# Pretend .NET is a bit more OO, consistent and elegant.
+		# C#'s typeof(X) is X.getType in Cobra.
+		existing = .declForName('getType') to BoxMember
+		overload = MemberOverload(existing)
+		.registerOverload(overload)
+		meth = Method(TokenFix.empty, TokenFix.empty, this, 'getType', List<of Param>(), .compiler.typeTypeProxy, nil, ['shared'], AttributeList(), 'Returns the Type instance that defines this type.')
+		meth.sharedMethodBacking = 'typeof'
+		overload.addMember(meth)
+		
+	def _scanNativeTypeClr
 		"""
 		Subclasses should invoke base and then invoke the various _scanFoo methods that are appropriate for them.
 		"""
@@ -157,67 +451,68 @@ class Box is partial
 		_needScanNativeType = false
 		# print '<> _scanNativeType for [.name] in [_parentNameSpace.fullName], class is [.getType.name]'
 
-	def _scanIsNames
-		# TODO
-		_isNames.add('extern')  # to make the box like the ones that were in SystemInterfaces.cobra
 
-		# scan DefaultMemberAttribute for later use
-		for attr in .clrType.getCustomAttributes(true)
-			if attr inherits DefaultMemberAttribute
-				_defaultMemberName = attr.memberName  # this attribute names the indexer for the class
-				break
-
-	def _scanGenericArgs
-		if .clrType.isGenericType
-			for genArg in .clrType.getGenericArguments
+	def _scanGenericArgsClr
+		if _clrType.isGenericType
+			for genArg in _clrType.getGenericArguments
 				t = (.compiler to Compiler).typeForClrType(genArg)
 				if t is nil
 					t = GenericParam(ClrNativeType(genArg), parentDefinition=this)
 					(.compiler to Compiler).addTypeForClrType(t to !, genArg)
 				_genericParams.add(t)
 
-	def _scanImplements
-		for interf in .clrType.getInterfaces
-			if not _badRelatedType(interf)
+	def _scanClrIsNames
+		# TODO
+		_isNames.add('extern')  # to make the box like the ones that were in SystemInterfaces.cobra
+
+		# scan DefaultMemberAttribute for later use
+		for attr in _clrType.getCustomAttributes(true)
+			if attr inherits DefaultMemberAttribute
+				_defaultMemberName = attr.memberName  # this attribute names the indexer for the class
+				break
+
+	def _scanClrImplements
+		for interf in _clrType.getInterfaces
+			if not _badClrRelatedType(interf)
 				_baseInterfaceProxies.add(ClrTypeProxy(interf))
 
-	def _scanNestedTypes
+	def _scanClrNestedTypes
 		# TODO: enable and fix resulting bugs
 		# for type in .clrType.getNestedTypes(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
-		for type in .clrType.getNestedTypes
-			_scanNestedType(type)
-		for type in .clrType.getNestedTypes(BindingFlags(Static, DeclaredOnly, NonPublic))
+		for type in _clrType.getNestedTypes
+			_scanClrNestedType(type)
+		for type in _clrType.getNestedTypes(BindingFlags(Static, DeclaredOnly, NonPublic))
 			if type.isEnum and not type.isPublic and not type.isNestedAssembly
 				# "not type.isNestedAssembly" guards against a strange WPF enum on Windows called
 				# Control+ControlBoolFlags whose Enum.getValues() returns enums instead of ints
-				_scanNestedType(type)
+				_scanClrNestedType(type)
 
-	def _scanNestedType(type as System.Type)
+	def _scanClrNestedType(type as System.Type)
 		clrType = ClrNativeType(type)
 		if type.isClass
-			.addDecl(Class(clrType))
+			.addDecl(Class(clrType, .compiler.backEnd))
 		else if type.isInterface
-			.addDecl(Interface(clrType))
+			.addDecl(Interface(clrType, .compiler.backEnd))
 		else if type.isEnum
 			.addDecl(EnumDecl(this, clrType, List<of String>(), ''))  # TODO: isNames; docString?
 		else if type.isValueType
-			.addDecl(Struct(clrType))
+			.addDecl(Struct(clrType, .compiler.backEnd))
 		else if type.isAnsiClass
 			# The Enum class is an example that returns false for .isClass but true for .isAnsiClass
-			.addDecl(Class(clrType))
+			.addDecl(Class(clrType, .compiler.backEnd))
 		else
 			throw FallThroughException(type)
 		lastDecl = .declsInOrder[.declsInOrder.count-1] to dynamic
 		if (lastDecl to Object).getType.getProperty('ParentBox')  # CC: if lastDecl responds to (get parentBox as Box?)
 			lastDecl.parentBox = this
 			
-	def _scanFields
-		for fieldInfo in .clrType.getFields(BindingFlags(Instance, Static, DeclaredOnly, Public))
-			if fieldInfo.declaringType is not .clrType, continue
+	def _scanClrFields
+		for fieldInfo in _clrType.getFields(BindingFlags(Instance, Static, DeclaredOnly, Public))
+			if fieldInfo.declaringType is not _clrType, continue
 			if fieldInfo.isAssembly, continue
 			if fieldInfo.isPrivate, continue
-			name = Utils.cobraNameForSharpMemberName(fieldInfo.name)
-			type = _memberTypeResultProxy(fieldInfo, fieldInfo.fieldType)
+			name = Utils.cobraNameForNativeMemberName(fieldInfo.name)
+			type = _clrMemberTypeResultProxy(fieldInfo, fieldInfo.fieldType)
 			attrs = AttributeList()
 			isNames = [if(fieldInfo.isPublic, 'public', 'protected')]  # private was guarded against above
 			if fieldInfo.isStatic, isNames.add('shared')
@@ -234,17 +529,17 @@ class Box is partial
 				varr.binaryName = fieldInfo.name
 				.addDecl(varr)
 
-	def _scanInitializers
-		for conInfo in .clrType.getConstructors(BindingFlags(Instance, DeclaredOnly, Public, NonPublic))
+	def _scanClrInitializers
+		for conInfo in _clrType.getConstructors(BindingFlags(Instance, DeclaredOnly, Public, NonPublic))
 			if conInfo.isPrivate, continue
-			if conInfo.declaringType is not .clrType, continue
+			if conInfo.declaringType is not _clrType, continue
 			skip = false
 			for paramInfo in conInfo.getParameters
-				if _badRelatedType(paramInfo.parameterType)
+				if _badClrRelatedType(paramInfo.parameterType)
 					skip = true
 					break
 			if skip, continue
-			params = _scanParams(conInfo.getParameters)
+			params = _scanClrParams(conInfo.getParameters)
 			isNames = _isNamesForMethodInfo(conInfo)
 			attribs = _attribsForMethodInfo(conInfo)
 			docString = ''  # TODO: get doc string for class?
@@ -264,8 +559,8 @@ class Box is partial
 			else
 				.addDecl(initer)
 
-	def _scanProperties
-		for propInfo in .clrType.getProperties(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
+	def _scanClrProperties
+		for propInfo in _clrType.getProperties(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
 			getMethod = propInfo.getGetMethod(true) # true means include nonpublic
 			setMethod = propInfo.getSetMethod(true)
 			visible = false
@@ -278,17 +573,17 @@ class Box is partial
 					theMethod = setMethod to !
 					visible = true
 			if not visible, continue
-			if theMethod.declaringType is not .clrType, continue
+			if theMethod.declaringType is not _clrType, continue
 			if propInfo.name == _defaultMemberName and propInfo.getIndexParameters and propInfo.getIndexParameters.length
-				_scanIndexer(propInfo)
+				_scanClrIndexer(propInfo)
 				continue
-			if _badRelatedType(propInfo.propertyType)
+			if _badClrRelatedType(propInfo.propertyType)
 				continue
 			attribs = AttributeList()  # TODO:
 			docString = ''  # TODO: get doc string
 			# TODO: eventually the isNames need to be an the property part level (get or set) rather than the property level, like in C# and the CLR runtime
 			isNames = _isNamesForMethodInfo(theMethod)
-			prop = Property(TokenFix.empty, TokenFix.empty, this, Utils.cobraNameForSharpMemberName(propInfo.name), _memberTypeResultProxy(propInfo, propInfo.propertyType), isNames, attribs, docString)
+			prop = Property(TokenFix.empty, TokenFix.empty, this, Utils.cobraNameForNativeMemberName(propInfo.name), _clrMemberTypeResultProxy(propInfo, propInfo.propertyType), isNames, attribs, docString)
 			prop.binaryName = propInfo.name
 			if propInfo.canRead
 				prop.makeGetPart(TokenFix.empty)
@@ -296,11 +591,11 @@ class Box is partial
 				prop.makeSetPart(TokenFix.empty)
 			.addDecl(prop)
 
-	def _scanIndexer(propInfo as PropertyInfo)
+	def _scanClrIndexer(propInfo as PropertyInfo)
 		for paramInfo in propInfo.getIndexParameters
-			if _badRelatedType(paramInfo.parameterType)
+			if _badClrRelatedType(paramInfo.parameterType)
 				return
-		params = _scanParams(propInfo.getIndexParameters)
+		params = _scanClrParams(propInfo.getIndexParameters)
 		attribs = AttributeList()  # TODO:
 		docString = ''  # TODO: get doc string for class?
 		if propInfo.canRead
@@ -309,7 +604,7 @@ class Box is partial
 			isNames = _isNamesForMethodInfo(propInfo.getSetMethod(true) to !)
 		else
 			throw FallThroughException(propInfo)
-		indexer = Indexer(TokenFix.empty, TokenFix.empty, this, r'[]', params, _memberTypeResultProxy(propInfo, propInfo.propertyType), isNames, attribs, docString)
+		indexer = Indexer(TokenFix.empty, TokenFix.empty, this, r'[]', params, _clrMemberTypeResultProxy(propInfo, propInfo.propertyType), isNames, attribs, docString)
 		overload as MemberOverload? = nil
 		other = .declForName(r'[]')
 		if other
@@ -325,18 +620,18 @@ class Box is partial
 		else
 			.addDecl(indexer)
 
-	def _scanMethods
-		for methInfo in .clrType.getMethods(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
+	def _scanClrMethods
+		for methInfo in _clrType.getMethods(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
 			if methInfo.isSpecialName, continue
 			if methInfo.isAssembly, continue
 			if methInfo.isPrivate, continue
-			if methInfo.declaringType is not .clrType, continue
+			if methInfo.declaringType is not _clrType, continue
 			skip = false
-			if _badRelatedType(methInfo.returnType)
+			if _badClrRelatedType(methInfo.returnType)
 				skip = true
 			else
 				for paramInfo in methInfo.getParameters
-					if _badRelatedType(paramInfo.parameterType)
+					if _badClrRelatedType(paramInfo.parameterType)
 						skip = true
 						break
 			if skip, continue
@@ -348,16 +643,16 @@ class Box is partial
 				# TODO: these are mostly (maybe all) explicit implementations of interfaces
 				# print 'xxx dotted name: [methInfo]'
 				continue
-			name = Utils.cobraNameForSharpMemberName(methInfo.name)
+			name = Utils.cobraNameForNativeMemberName(methInfo.name)
 			genericParams = List<of IType>()
 			for genArg in methInfo.getGenericArguments
 				genericParams.add(GenericParam(ClrNativeType(genArg)))
-			params = _scanParams(methInfo.getParameters)
+			params = _scanClrParams(methInfo.getParameters)
 			isNames = _isNamesForMethodInfo(methInfo)
 			attribs = _attribsForMethodInfo(methInfo)
 			docString = ''  # TODO: get doc string for class?
 			implementsTypeNode as ITypeProxy?  # TODO: explicit interface implementation?
-			method = Method(TokenFix.empty, TokenFix.empty, this, name, genericParams, params, _memberTypeResultProxy(methInfo, methInfo.returnType), implementsTypeNode, isNames, attribs, docString)
+			method = Method(TokenFix.empty, TokenFix.empty, this, name, genericParams, params, _clrMemberTypeResultProxy(methInfo, methInfo.returnType), implementsTypeNode, isNames, attribs, docString)
 			method.binaryName = methInfo.name
 			overload as MemberOverload? = nil
 			other = .declForName(name)
@@ -374,7 +669,7 @@ class Box is partial
 			else
 				.addDecl(method)
 
-	def _scanParams(paramInfos as ParameterInfo[]?) as List<of Param>
+	def _scanClrParams(paramInfos as ParameterInfo[]?) as List<of Param>
 		"""
 		Returns a list of Cobra parameters given a list of CLR Reflection ParameterInfos.
 		"""
@@ -394,7 +689,7 @@ class Box is partial
 				isRef = paramInfo.parameterType.isByRef and not paramInfo.isOut
 				# Unpack "ByRef" types. Comes up with WinForm's .processCmdKey which has a ByRef struct argument (Message&)
 				parameterType = if(isRef, paramInfo.parameterType.getElementType, paramInfo.parameterType)
-				type = _memberTypeProxy(parameterType, isNotNull)
+				type = _clrMemberTypeProxy(parameterType, isNotNull)
 				if isVari, type = VariTypeProxy(type)
 				# In XNA 3.1 some types such as GraphicsDevice and Texture have a Dispose method
 				# with one argument with an empty name (''). Cobra doesn't dig that.
@@ -413,18 +708,18 @@ class Box is partial
 				params.add(param)
 		return params
 
-	def _scanEvents
-		for eventInfo in .clrType.getEvents(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
+	def _scanClrEvents
+		for eventInfo in _clrType.getEvents(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
 			if eventInfo.getAddMethod is nil, continue
 			if eventInfo.getAddMethod.isAssembly, continue
 			if eventInfo.getAddMethod.isPrivate, continue
 			if eventInfo.isSpecialName, continue
-			if eventInfo.declaringType is not .clrType, continue
+			if eventInfo.declaringType is not _clrType, continue
 			if '.' in eventInfo.name
 				# TODO: these are mostly (maybe all) explicit implementations of interfaces
 				# print 'xxx dotted name: [methInfo]'
 				continue
-			name = Utils.cobraNameForSharpMemberName(eventInfo.name)
+			name = Utils.cobraNameForNativeMemberName(eventInfo.name)
 			if eventInfo.getAddMethod  # Gtk.Object has such a beast (InternalDestroyed)
 				isNames = _isNamesForMethodInfo(eventInfo.getAddMethod to !)
 			else
@@ -454,7 +749,7 @@ class Box is partial
 	def _attribsForMethodInfo(mi as MethodBase) as AttributeList
 		return AttributeList()  # TODO:
 
-	def _badRelatedType(t as Type?) as bool
+	def _badClrRelatedType(t as Type?) as bool
 		"""
 		Returns true if the given type, which comes from a parameter or return value, is unsupported.
 		For example, it's not public or it's nested. Members with bad types are skipped when scanning DLLs.
@@ -468,18 +763,18 @@ class Box is partial
 
 		# FYI: MS .NET 2.0 (but not Mono 1.2.6) will return true for .isNotPublic for types are "by ref"
 		if t.isByRef # TODO: or t.isArray
-			return _badRelatedType(t.getElementType)
+			return _badClrRelatedType(t.getElementType)
 		if t.isNotPublic or t.isNestedAssembly  # .isNestedAssembly should imply .isNotPublic but at least in System.Windows.Forms, on Novell Mono 1.2.6, Control+LayoutType reports .isNestedAssembly but not .isNotPublic
 			return true
 
 		return false
 
-	def _memberTypeProxy(clrType as Type?) as ITypeProxy
-		return _memberTypeProxy(clrType, false)
+	def _clrMemberTypeProxy(clrType as Type?) as ITypeProxy
+		return _clrMemberTypeProxy(clrType, false)
 
-	def _memberTypeProxy(clrType as Type?, notNullAttr as bool) as ITypeProxy
+	def _clrMemberTypeProxy(clrType as Type?, notNullAttr as bool) as ITypeProxy
 		"""
-		Returns a type proxy for a member type such as a parameter type or method return type.
+		Returns a type proxy for a member type such as a parameter type
 		In CLR, reference types are nilable by default, but you can pass `true` for `notNullAttr` to indicate there was a NotNullAttribute in the DLL.
 		"""
 		if clrType is nil
@@ -493,9 +788,9 @@ class Box is partial
 				tp = NilableTypeProxy(tp)
 			return tp
 
-	def _memberTypeResultProxy(member as MemberInfo, clrType as Type?) as ITypeProxy
+	def _clrMemberTypeResultProxy(member as MemberInfo, clrType as Type?) as ITypeProxy
 		"""
-		Returns a type proxy for a member type such as a parameter type or method return type.
+		Returns a type proxy for a member result type such as a method return type, property or field.
 		In CLR, reference types are nilable by default.
 		"""
 		if clrType is nil
@@ -523,65 +818,121 @@ class Box is partial
 class Class
 	is partial
 
-	def _scanNativeType
-		base._scanNativeType
-		_scanIsNames
-		_scanImplements
-		_scanNestedTypes
-		_scanFields
-		_scanInitializers
-		_scanProperties
-		_scanMethods
-		_scanEvents
-		# TODO: _scanEnums
+	def _scanNativeTypeClr
+		base._scanNativeTypeClr
+		_scanClrIsNames
+		_scanClrImplements
+		_scanClrNestedTypes
+		_scanClrFields
+		_scanClrInitializers
+		_scanClrProperties
+		_scanClrMethods
+		_scanClrEvents
+		# TODO: _scanClrEnums
 		# TODO: scan all other nested types
 
 
 class Interface
 	is partial
 
-	def _scanNativeType
-		base._scanNativeType
-		_scanIsNames
-		_scanImplements
-		_scanNestedTypes
-		_scanFields
-		_scanProperties
-		_scanMethods
-		_scanEvents
+	def _scanNativeTypeClr
+		base._scanNativeTypeClr
+		_scanClrIsNames
+		_scanClrImplements
+		_scanClrNestedTypes
+		_scanClrFields
+		_scanClrProperties
+		_scanClrMethods
+		_scanClrEvents
 
 
 class Struct
 	is partial
 
-	def _scanNativeType
-		base._scanNativeType
-		_scanIsNames
-		_scanImplements
-		_scanNestedTypes
-		_scanFields
-		_scanInitializers
-		_scanProperties
-		_scanMethods
-		_scanEvents
+	def _scanNativeTypeClr
+		base._scanNativeTypeClr
+		_scanClrIsNames
+		_scanClrImplements
+		_scanClrNestedTypes
+		_scanClrFields
+		_scanClrInitializers
+		_scanClrProperties
+		_scanClrMethods
+		_scanClrEvents
 
 
 class Extension
 	is partial
 
-	def _scanNativeType
+	def _scanNativeTypeClr
 		# this only for Cobra specific extensions. Example: class Extend_String_1939
-		base._scanNativeType
-		_scanIsNames
-		#_scanImplements
-		#_scanNestedTypes
-		#_scanFields
-		#_scanInitializers
-		#_scanProperties
-		_scanMethods
+		base._scanNativeTypeClr
+		_scanClrIsNames
+		#_scanClrImplements
+		#_scanClrNestedTypes
+		#_scanClrFields
+		#_scanClrInitializers
+		#_scanClrProperties
+		_scanClrMethods
 		#_scanEvents
 
-	def _scanParams(paramInfos as ParameterInfo[]?) as List<of Param>
+	def _scanClrParams(paramInfos as ParameterInfo[]?) as List<of Param> is override
 		# the first argument is implicit in an Extension
-		results = base._scanParams(paramInfos)
+		results = base._scanClrParams(paramInfos)
 		return results[1:]
+		
+	def clrExtnNativeType(nativeType as NativeType) as NativeType
+		# the real extended type is the type of the first argument of any method
+		for methInfo in _clrType.getMethods 
+			nativeType = ClrNativeType(methInfo.getParameters[0].parameterType)
+			break
+		return nativeType
+
+		
+
+class EnumDecl
+	is partial
+
+	def _setUnderlyingTypeClr
+		_storageTypeNode = 	ClrTypeProxy(Enum.getUnderlyingType((_nativeType to ClrNativeType).backEndType))
+	
+	def _scanNativeTypeClr
+		# TODO: read attribs
+		_needScanNativeType = false
+		clrType = (_nativeType to ClrNativeType).clrType 
+		isByte  = Enum.getUnderlyingType(clrType).name == 'Byte'
+		is64    = Enum.getUnderlyingType(clrType).name == 'Int64'
+		isU32   = Enum.getUnderlyingType(clrType).name == 'UInt32'
+		isU64   = Enum.getUnderlyingType(clrType).name == 'UInt64'
+		values  = Enum.getValues(clrType)
+		i = 0
+		#print clrType
+		for name in Enum.getNames(clrType)
+			#print name
+			value = values.getValue(i)
+			# CC: lameness follows
+			if isByte
+				intValue = int.parse((value to uint8).toString)
+			else if is64
+				try
+					intValue = int.parse((value to int64).toString)
+				catch OverflowException
+					intValue = 999  # CC: omg. but probably doesn't affect anything. we're reading the DLL here, not creating one
+			else if isU32
+				try
+					intValue = int.parse((value to uint32).toString)
+				catch OverflowException
+					intValue = 2147483647
+			else if isU64
+				try
+					intValue = int.parse((value to uint64).toString)
+				catch OverflowException
+					intValue = 2147483647
+			else
+				intValue = value to int
+			member = EnumMember(name, intValue)
+			member.enumDecl = this
+			.addDecl(member)
+			i += 1
+
+		

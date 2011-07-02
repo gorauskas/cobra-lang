@@ -1,0 +1,267 @@
+# NativeType wrapper for Java Classes
+
+# Eventually will use/handle java native classes but pending that and while cross compiling
+# wrap a JavaClassType (declared in JvmJarSig.cobra)
+
+class JvmNativeType inherits NativeType
+
+	var _type as JavaClassType
+	#var _type as java.lang.Class
+	
+	#cue init(type as java.lang.Class)
+	cue init(type as JavaClassType)
+		base.init
+		_type = type
+
+	def equals(other as Object?) as bool is override
+		if other is this
+			return true
+		if other inherits JvmNativeType
+			return .backEndType == other.backEndType
+		else
+			return false
+
+	def getHashCode as int is override
+		return .backEndType.getHashCode
+
+	get backEndType as JavaClassType
+		return _type
+
+	get name as String is override
+		#return _type.getSimpleName
+		return _type.name
+
+	get fullName as String is override
+		return _type.canonicalName
+
+	get isValueType as bool is override
+		#return _type.isValueType # fix for char, int, bool, long  etc vs Boxed Classes
+		return false
+		
+	get baseType as NativeType? is override
+		super = _type.getSuperClass
+		if not  super, return nil
+		return JvmNativeType(super)  # cache?
+		#if(_type.superclass.length, JvmNativeType(_type.superclass), nil)
+
+	def customAttributes as IList<of dynamic> is override
+		return .backEndType.getAnnotations #to IList<of dynamic>
+		
+	get isSystemObjectClass as bool is override
+		return /#_type and #/ .fullName == 'java.lang.Object'
+		
+	get isSystemTypeClass as bool is override
+		return /# _type and #/ .fullName == 'java.lang.Class'
+		
+		
+class JvmTypeProxy inherits NativeTypeProxy
+	"""
+	Acts as an ITypeProxy where the Jvm type is known.
+	Typically used when scanning DLLs.
+	"""
+
+	shared
+		var _cobraNameForJvmGenericNameCache = Dictionary<of String, String>()
+
+		def cobraNameForJvmType(jvmType as JavaClassType) as String
+			"""
+			Returns 'Foo' for 'Foo' and 'Foo<of,>' for 'Foo<T,T1>'
+			Converts generic and non-generic classes and interfaces.
+			Does *not* work for arrays, etc.
+			"""
+			name = jvmType.name
+			if not jvmType.isGenericType or jvmType.isGenericParameter
+				return name
+			if _cobraNameForJvmGenericNameCache.containsKey(name)
+				return _cobraNameForJvmGenericNameCache[name]
+			else
+				count = jvmType.genericArgsCount
+				assert count >0
+				cobraName = name + '<of'
+				for i in count-1, cobraName += ','
+				cobraName += '>'
+				_cobraNameForJvmGenericNameCache[name] = cobraName
+				return cobraName
+				
+		def cobraNameForJvmBoxName(name as String) as String
+			"""
+			Assunmed we've mangled java generics typenames a la .Net ( i.e TypeName`<nGenericTypeParams>) 
+			Returns 'Foo' for 'Foo' and 'Foo<of,>' for 'Foo`2'
+			Works on generic and non-generic classes, structs and interfaces.
+			Does *not* work for arrays etc.
+			"""
+			if '`' not in name, return name
+			if _cobraNameForJvmGenericNameCache.containsKey(name)
+				return _cobraNameForJvmGenericNameCache[name]
+			else
+				parts = name.split(c'`')
+				count = int.parse(parts[1])
+				cobraName = parts[0] + '<of'
+				for i in count-1, cobraName += ','
+				cobraName += '>'
+				_cobraNameForJvmGenericNameCache[name] = cobraName
+				return cobraName
+			
+				
+	var _jvmType as JavaClassType
+
+	cue init(nativeType as NativeType)
+		.init((nativeType to JvmNativeType).backEndType)
+
+	cue init(jvmType as JavaClassType)
+		base.init
+		_jvmType = jvmType
+
+	def addMinFields
+		base.addMinFields
+		.addField('jvmType', _jvmType)
+
+	get realType as IType is override
+		return _realTypeWithCache(_jvmType)
+
+	def _realTypeWithCache(jvmType as JavaClassType) as IType
+		t = (.compiler to Compiler).typeForJvmType(jvmType)
+		if t is nil
+			t = _realTypeWithoutCache(jvmType, 0)
+			(.compiler to Compiler).addTypeForJvmType(t to !, jvmType)
+		return t to !
+
+	def _realTypeWithoutCache(jvmType as JavaClassType, level as int) as IType
+		assert .compiler.basicTypes.count > 9   # should have bool, char, all the ints, etc.
+		
+		# Must return the Cobra primitive types in place of System.Boolean, System.Char, System.Int16, etc.
+		# because it's the primitives that are used all over the compiler.
+		jvmPrimitiveToIType = .compiler.primitiveToITypeCache
+		if jvmPrimitiveToIType is nil or jvmPrimitiveToIType.count == 0
+			_initPrimToITypeCache
+			jvmPrimitiveToIType = .compiler.primitiveToITypeCache
+			assert jvmPrimitiveToIType is not nil and jvmPrimitiveToIType.count <> 0
+		basicType as IType?
+		if jvmPrimitiveToIType.tryGetValue(jvmType, out basicType)
+			return basicType to !
+		
+		# handle wrapped types, like arrays, with recursive calls
+		if jvmType.isArray
+			#assert jvmType.name.endsWith(r'[]') # could be [,] so TODO: handle multidim arrays
+			return .typeProvider.arrayType(_realTypeWithCache(jvmType.arrayComponentType to !))
+		else if jvmType.isNested and not jvmType.isGenericParameter
+			declaringType = _realTypeWithCache(jvmType.declaringType to !)
+			potential = declaringType.memberForName(jvmType.name)
+			if potential is nil
+				.throwError('Cannot locate nested Jvm type "[jvmType]" (simple name is "[jvmType.name]").')
+			else if potential inherits IType
+				return potential
+			else
+				.throwError('Located Jvm type spec "[jvmType]" but got a [potential.englishName] instead of a type.')
+
+		# generic parameters
+		if jvmType.isGenericParameter
+			return GenericParam(JvmNativeType(jvmType))
+
+		typeName = _computeCobraTypeName(jvmType)
+		missing = false
+		curNS = _computeNameSpace(jvmType, level, out missing)
+		if missing
+			.throwError('Cannot find Jvm type "[jvmType.canonicalName]"  in package "[jvmType.package]".')
+			# since the type exists, but cannot be located in our namespaces,
+			# it must be pulled from a dependent DLL that was not directly referenced
+			# but maybe it was already attempted
+			#if level > 0, .throwError('Cannot read Jvm type "[jvmType.fullName]" or its package "[jvmType.package]". Please report to the Cobra discussion forums (http://cobra-language.com/).')
+
+			#(.compiler to dynamic).jvmReadAssembly(clrType.assembly)
+			#return _realTypeWithoutCache(jvmType, level+1) # recurse. guard is just above.
+
+		# return namespace member
+		member as IMember? = curNS.declForName(typeName)
+		if member inherits IType
+			if member inherits Box
+				if jvmType.isGenericType and not jvmType.isGenericTypeDefinition
+					# So we have something like ICollection<of KeyValuePair<of TKey,TValue>> which is all Generic types.
+					# We need the Cobra types of those args so we can construct the Cobra type from the generic cobra type
+					# otherwise, we would just end up returning the generic definition.
+					print 'Dbg: JvmType.realTypeWithoutCache generic type [jvmType.canonicalName] [member.name].'
+					#.throwError('TODO support for Generic Types in JvmType _realTypeWithoutCache')
+					#member = _typeForArgsOfGeneric(jvmType, member)
+			return member
+		else
+			print '[typeName] not in [curNS.name] declsforName'
+			msg = 'Cannot locate jvm type "[jvmType]".'
+			if jvmType.package.length and jvmType.package.startsWith('java.lang')
+				if .compiler and .compiler.verbosity > 1, print msg
+				# TODO: .compiler.warning(msg)
+				return .compiler.objectType
+			else
+				.throwError(msg)
+		return .compiler.intType  # CC: to make C# code gen happy.
+	
+	def _initPrimToITypeCache
+		typeToIType = _makePrimitiveTypesDict
+		jvmPrimitiveToIType = Dictionary<of dynamic, IType>()
+		for key in typeToIType.keys
+			jvmPrimitiveToIType[key] = typeToIType[key]
+		(.compiler to Compiler).primitiveCache	= jvmPrimitiveToIType #to !
+
+	def _makePrimitiveTypesDict as IDictionary<of JavaClassType, IType>
+		primitiveToIType = Dictionary<of JavaClassType, IType>()
+		for bt in .compiler.basicTypes
+			if bt.systemAliasProxy
+				# lookup by qualified name (includes translation) and pull out (jvm) NativeType
+				key = (.compiler.nativeType((bt.systemAliasProxy to LibraryTypeProxy).qualifiedName) to JvmNativeType).backEndType
+				primitiveToIType[key] = bt
+		assert primitiveToIType.count == 0 or primitiveToIType.count >=8
+		return primitiveToIType
+	
+		
+	def _computeCobraTypeName(jvmType as JavaClassType) as String
+		typeName = jvmType.name
+		if jvmType.isGenericType 
+			# generic like IComparable`1
+			assert r'[' not in typeName
+			typeName = .cobraNameForJvmType(jvmType)
+		else if not typeName[typeName.length-1].isLetterOrDigit
+			.throwError('Cannot locate JVM type "[jvmType.canonicalName]".')
+		return typeName
+
+	def _computeNameSpace(jvmType as JavaClassType, level as int, missing as out bool) as NameSpace
+		missing = false
+		if not jvmType.package.length, return .compiler.globalNS
+		nameParts = jvmType.package.split(c'.')
+		member = .compiler.globalNS.symbolForName(nameParts[0])
+		if member inherits NameSpace, curNS = member
+		else, missing = true
+		if not missing
+			i = 1
+			while i < nameParts.length
+				namePart = nameParts[i]
+				possible = curNS.declForName(namePart)
+				if possible is nil
+					missing = true
+					break
+				else if possible inherits NameSpace
+					curNS = possible
+				else
+					.throwError('Found "[namePart]" at component [i+1] of JVM type "[jvmType.canonicalName]", but it is a [possible.englishName].')
+				i += 1
+		return curNS	
+
+/#
+	def _typeForArgsOfGeneric(jvmType as JavaClassType, member as IType) as IType
+		args = List<of IType>()
+		for genArg in jvmType.getGenericArguments
+			args.add(_realTypeWithCache(genArg))
+		boxMember = member to Box
+		if boxMember.qualifiedName == 'System.Nullable<of>'
+			assert args.count == 1
+			member = .typeProvider.nilableType(args[0])
+		else
+			member = boxMember.constructedTypeFor(args)
+		return member	
+#/
+	def _typeForArgsOfGeneric(jvmType as JavaClassType, member as IType) as IType
+		args = List<of IType>()
+		for genArg in jvmType.getGenericArguments
+			args.add(_realTypeWithCache(genArg))
+		boxMember = member to Box
+		member = boxMember.constructedTypeFor(args)
+		return member	
+		

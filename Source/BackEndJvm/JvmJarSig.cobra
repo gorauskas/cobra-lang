@@ -1,0 +1,927 @@
+# Java back end
+# Responsible for turning a jarfile name into an object holding a description/signature of
+# the jarfile contents suitable for reflecting on - this is roughly similar to a .Net Assembly.
+
+# Supporting this requires delving through java jar files and obtaining class info which we cant easily 
+# do in a .Net program
+# so until we have a java implementation of the cobra compiler we instead rely on a java helper program
+# (see pkgSig.java and pkgSig.class, pkgSig.jar in the cobra distribution)
+
+# This is expected to have been run and creates what we call a pkgSignature file (pkgSig File) that is 
+# named the same as a jarfile (or the same as a java package) with a '.sig' extension' and
+# contains an easily parseable text description of the classes and interfaces in the jarfile or package
+# this sigfile is expected to be in an obvious place, currently the cwd or same place as the cobra compiler executable....
+#
+# e.g. 'rt.jar' (java runtime classes) has a sigfile 'rt.jar.sig'
+# 	'java.lang' (java package) has a sigfile 'java.lang.sig'
+
+class JarSig
+	
+	var name = '' # jarfile or pkg
+	var location = '' # abs pathname of sigFile
+	var _javaTypes as List<of JavaClassType> # lists of classes, interfaces or Enums in this jarfile or pkg
+	
+	shared
+		var classByNameCache = Dictionary<of String, JavaClassType>()
+			"""All classes found in all jars keyed by canonical/full name."""
+				
+		def lookupClass(fullName as String) as JavaClassType
+			""" Lookup class by full/canonicalName."""
+			if not JarSig.classByNameCache.containsKey(fullName)
+				if fullName.startsWith(r'['),     .addArrayClass(fullName)
+				else if fullName.contains(r'<'),  .addGenericInstClass(fullName)
+				else if not fullName.contains('.'), .addGenericParamClass(fullName)
+				else
+					print 'Dbg:JarSig.lookupClass - unknown class:[fullName]'
+			#print 'Lookup class', fullName
+			return JarSig.classByNameCache[fullName]
+					
+		def addArrayClass(aName as String)
+			"""Array classes are synthesized on reference assuming element class already exists."""
+			print 'Dbg crt ArrayClass "[aName]"' 	
+			elName = aName.replace(r'[','')	
+			branch elName
+				on 'Z', elName = 'boolean'
+				on 'B', elName = 'byte'
+				on 'I', elName = 'int'
+				on 'S', elName = 'short'
+				on 'J', elName = 'long'
+				on 'C', elName = 'char'
+				on 'D', elName = 'double'
+				on 'F', elName = 'float'
+				else 
+					if elName.startsWith('L') and elName.endsWith(';')
+						elName = elName[1:-1] # e.g. Ljava.lang.Integer;
+					else 
+						print 'Unknown arrayName [elName]'	
+						assert false, 'arrayName [elName]'
+			if not JarSig.classByNameCache.containsKey(elName)
+				print 'Dbg: class "[elName]" not in classByNameCache "[aName]"' 	
+			#elType = JarSig.classByNameCache[elName]
+			elType = JarSig.lookupClass(elName)
+			arrayCls = JavaClassType(aName, elType) # ArrayType
+			JarSig.classByNameCache[aName] = arrayCls
+			print 'Dbg: added ArrayOf_[elName] "[aName]"' 	
+		
+		def addGenericInstClass(fullName as String)
+			"""
+			Generic class being instantiated.
+				e.g. com.x.MyClass<com.x.Inst, java.lang.String>
+			Synthesized (here) as a result of being referenced.
+			"""
+			print 'Dbg crt GenericInstClass "[fullName]"' 
+			assert fullName.contains('<') and fullName.endsWith('>')
+			canonName = fullName.beforeL('<')
+			assert canonName.contains('.')
+			idx = canonName.lastIndexOf('.')
+			gName = canonName[idx+1:]
+			pkg = canonName[0:idx]
+			paramTypes = fullName.afterL('<')[0:-1] # drop end '>'
+			print 'Dbg: GenericInstanceClass "[pkg]" "[gName]" "[paramTypes]' 	
+			giCls = JavaClassType(gName, pkg, paramTypes)
+			JarSig.classByNameCache[fullName] = giCls
+			# JarSig.registerClassType(pkg, giCls)	
+			print 'Dbg: added GenericInstanceClass "[fullName]"' 	
+				
+		def addGenericParamClass(name as String)
+			print 'Dbg crt Generic Param Class "[name]"' 
+			gparamCls = JavaClassType(name, JavaType.GenericParam, '')
+			JarSig.classByNameCache[name] = gparamCls
+			print 'Dbg: added Generic Parameter Class "[name]"' 	
+				
+	def sigFile(name as String) as String is shared
+		""" 
+		Check that a sig file exists for the given name (jarfile or pkgname).
+		Return the sig filename if found, InvalidOperationException if not
+		"""
+		assert not name.endsWith('.sig')	
+		sigFile =  name + '.sig'
+		if File.exists(sigFile)
+			fileName = sigFile
+			#if not Path.IsPathRooted(sigFile)
+			#	fileName = Path.getFullPath(sigFile)
+		else
+			ccPath = Path.getDirectoryName(CobraCore.exePath) to !
+			absName =  Path.combine(ccPath, sigFile)
+			if File.exists(absName)
+				fileName = absName
+			else
+				throw InvalidOperationException('Cannot find a PkgSig file for "[name]" ("[sigFile]") in cwd or [ccPath].')
+		return fileName
+					
+	cue init(jarName as String)
+		base.init
+		.name = jarName
+		_javaTypes = List<of JavaClassType>()
+		_genTypesList
+		_aliasPrimitives
+
+	def _genTypesList
+		jarName = if(.name.endsWith('.sig'), .name[:-4], .name)
+		fileName = JarSig.sigFile(jarName)
+		.location = fileName
+		desc = List<of String>()
+		for line in File.readAllLines(fileName)
+			if line.trim.startsWith('#'), continue
+			if line.length == 0 
+				if desc.count == 0, continue
+				jct = JavaClassType.makeFromDesc(desc)
+				_registerClassType(jct)
+				desc.clear
+				continue
+			desc.add(line)
+		
+		if desc.count >0
+			jct = JavaClassType.makeFromDesc(desc)
+			_registerClassType(jct)
+			
+	def _registerClassType(jct as JavaClassType)
+		_javaTypes.add(jct)
+		canonName = jct.canonicalName
+		if '`' in canonName # jct.isGeneric
+			canonName = canonName.beforeL('`')
+			#parts = canonName.split('`')
+			#canonName = parts[0]	
+		JarSig.classByNameCache[canonName] = jct
+			
+	def _aliasPrimitives
+		if JarSig.classByNameCache.containsKey('void')
+			return
+		# ['void', 'boolean','byte', 'short', 'int', 'long', 'float', 'double']
+		JarSig.classByNameCache['void']    = JarSig.classByNameCache['java.lang.Void'] 
+		JarSig.classByNameCache['boolean'] = JarSig.classByNameCache['java.lang.Boolean'] 
+		JarSig.classByNameCache['char']    = JarSig.classByNameCache['java.lang.Character'] 
+		JarSig.classByNameCache['byte']    = JarSig.classByNameCache['java.lang.Byte'] 
+		JarSig.classByNameCache['short']   = JarSig.classByNameCache['java.lang.Short'] 
+		JarSig.classByNameCache['int']     = JarSig.classByNameCache['java.lang.Integer'] 
+		JarSig.classByNameCache['long']    = JarSig.classByNameCache['java.lang.Long'] 
+		JarSig.classByNameCache['float']   = JarSig.classByNameCache['java.lang.Float'] 
+		JarSig.classByNameCache['double']  = JarSig.classByNameCache['java.lang.Double'] 
+
+		
+				
+	def getExportedTypes as JavaClassType*
+		return _javaTypes
+		
+	def toString as String is override
+		""" For testing dump rep of jarSig"""
+		sb = StringBuilder('[.name]: ')
+		sb.append(' [_javaTypes.count] types')
+		return sb.toString
+	
+#
+# Below are classes describing JavaTypes (class), JavaFields, Java Ctors and JavaMethods	
+# They are temporary placeholders until can get a native implementation and direct access to Java RTL equivalents.
+
+enum JavaType
+	NoType, JavaClass, JavaInterface, JavaEnum, GenericParam
+	
+
+class JavaClassType 	# Simplified System Type for java classes, interface, enum
+	"""	Descriptor for a java class - equivalent of java.lang.Class for cobra in .Net"""
+	shared 
+		var emptyClassList  = List<of JavaClassType>()
+		var _emptyFieldList = List<of JavaFieldInfo>()		
+		var _emptyCtorList  = List<of JavaCtorInfo>()	
+		var _emptyMethodList = List<of JavaMethodInfo>()		
+		var _emptyStringList = List<of String>()		
+	
+		def genClassTypeList(names as List<of String>)	as List<of JavaClassType>
+			""" Generate JavaClassType List for list of names."""
+			classList = List<of JavaClassType>()
+			for name in names
+				cls = JarSig.lookupClass(name)
+				classList.add(cls)
+			return classList
+	
+		
+	var name = ''
+	var package = ''
+	var type = JavaType.NoType #class,interface, enum
+	var superclass = ''
+	var modifiers as List<of String>
+	var interfaceNames as List<of String>
+	var _interfaces as List<of JavaClassType> = JavaClassType.emptyClassList
+
+	var _fields as List<of JavaFieldInfo> = JavaClassType._emptyFieldList 	# JavaFieldInfo*
+	var _props as List<of JavaFieldInfo>  =	JavaClassType._emptyFieldList	# JavaFieldInfo*
+	var _ctors as List<of JavaCtorInfo>	  = JavaClassType._emptyCtorList 	# JavaCtorInfo*
+	var _methods as List<of JavaMethodInfo> = JavaClassType._emptyMethodList # JavaMethodInfo*
+
+	# TODO split these out as subclass
+	var _isGenericDefn = false	
+	var _isGenericInst = false	
+	var _isGenericParam = false	
+	var _genParamNames as List<of String> = JavaClassType._emptyStringList
+	var _genParams as List<of JavaClassType> = JavaClassType.emptyClassList # generic params list
+	set genParamNames from var
+	
+	var _isArray  = false	
+	var _arrayDimension = 0	
+	var _arrayComponentType as JavaClassType? = nil
+
+	def makeFromDesc(descriptor as List<of String>) as JavaClassType is shared
+		"""
+		Generate a populated JavaClassType from a string descriptor.
+		
+		Descriptor entry for a Type (as per pkgSig output), single entry per line ( or '-' ),
+		entries nl terminated
+		
+			<Type> <absolute classname>
+				<Type> # Class, Interface or Enum
+				<Pkg>
+				<Name> #simple Name
+				<absolute superclass name>
+				<absolute interface names implemented>  #comma separated
+				<modifiers>  # spc separated 'static', 'default', 'public', 'protected'
+				var <name>  # 0 or more fields 
+					<modifiers>
+					<full TypeName>
+					<attributes>
+				...	
+				ctor <absClassName> # 0 or more constructors
+					<paramList> # comma sep list of typeNames
+				...	
+				method name # 0 or more methods
+					modifiers
+					returnType
+					paramList
+					throwsList
+					...					
+		Descriptor is parsed and info and various field, ctor, method and property lists populated.
+		"""
+		
+		fieldList = List<of JavaFieldInfo>()
+		propList = List<of JavaFieldInfo>()
+		props = Dictionary<of String, JavaFieldInfo>() # cache for inferred propertyNames
+		ctorList = List<of JavaCtorInfo>()
+		methodList = List<of JavaMethodInfo>()
+		
+		lines = descriptor
+		assert lines.count >= 7
+
+		# header - fixed length and format; absName, type, pkg, name, superclass, interfacesList, ModifiersList
+		absName  = _popTop(lines) 	# absolute class name
+		CobraCore.noOp(absName)
+		branch _popTop(lines).toLower
+			on 'class',     type = JavaType.JavaClass
+			on 'interface', type = JavaType.JavaInterface
+			on 'enum',      type = JavaType.JavaEnum
+			else, type = JavaType.NoType
+		pkg  = _popTop(lines)
+		name = _popTop(lines)
+		isGen = name.contains('`')
+		super = _popTop(lines)
+		if super == '-', super = ''
+		interfaces = _parseList(_popTop(lines), [c','])
+		modifiers  = _parseList(_popTop(lines), [c' '])
+		if isGen, gParamNames = _parseList(_popTop(lines), [c','])
+		while true
+			et = _popTop(lines)
+			if et.length == 0, break
+				
+			if et.startsWith('var ')
+				varName = et[3:].trim
+				field =	 JavaFieldInfo()
+				field.name = varName
+
+				assert lines.count >= 2		
+				# procField(et, subline, field, fieldList)
+				field.modifiers = _parseList(_popTop(lines), [c' '])
+				field.typeName = _popTop(lines)
+				if type == JavaType.JavaEnum 
+					field.value = _popTop(lines)	
+				#field.attributes = _parseList(_popTop(lines), [c','])
+				fieldList.add(field)
+
+			else if et.startsWith('ctor ')
+				ctorName = et[4:].trim
+				ctor = JavaCtorInfo()
+				ctor.name = ctorName
+				assert lines.count >= 1		
+				ctor.paramNames = _parseList(_popTop(lines), [c','])
+				# attributes ??
+				ctorList.add(ctor)
+				
+			else if et.startsWith('method ')
+				methodName = et[6:].trim
+				if methodName.endsWith(r'[V]') # hack encoding flags
+					methodName = methodName[:-3]
+					isVari = true
+				method = JavaMethodInfo()
+				method.name = methodName
+				method.modifiers = _parseList(_popTop(lines), [c' '])
+				method.returnTypeName = _popTop(lines)
+				assert method.returnTypeName <> '-'
+				method.paramNames = _parseList(_popTop(lines), [c',']) 
+				method.throwsList = _parseList(_popTop(lines), [c',']) 
+				# attributes ??
+				if isVari, 	method.attributes = ['IsVari']
+				methodList.add(method)
+
+				# map method getters and setters to property
+				propName = .chkForProp(methodName, method)
+				if propName
+					_genProp(method, propName, propList, props)
+			else 
+				print 'Unknown item in class: [et]'
+
+		jct = JavaClassType(name, pkg, type, super, interfaces, modifiers)
+		if isGen, jct.genParamNames = gParamNames
+		jct._fields = fieldList
+		jct._props  = propList
+		jct._ctors  = ctorList
+		jct._methods = methodList
+		return jct
+			
+	def _parseList(et as String, seps as List<of char> ) as List<of String> is shared
+		if et == '-'
+			l = List<of String>()
+		else
+			l = et.split(seps.toArray).toList	
+		return l
+	
+	def _popTop(content as List<of String>) as String is shared 
+		while true
+			if content.count == 0
+				return ''
+			e = content[0]
+			content.removeAt(0)
+		
+			if e.trim.startsWith('#')	# commentline
+				continue
+			idx = e.indexOf('#')	# trailing comment
+			if idx >= 0 
+				e = e[:idx]	
+				e = e.trimEnd to !
+				if not e.length, continue
+			break
+		return e.trim
+		
+	# property: get<Propname> and no paramList and returnType is Property Type or
+	#			is<PropName> and no paramList and returnType is bool
+	#		and  set<PropName> and 1 parameter (value to set) 
+	def chkForProp(methodName as String, method as JavaMethodInfo) as String? is shared
+		tag = methodName[:3] 
+		if  tag in [ 'get', 'set'] and methodName.length > 3 and method.modifiers.contains('public')
+			if tag == 'set' and method.paramNames.count <> 1		# setXXXX without a single param
+				return nil
+			return methodName[3:]
+		if methodName.startsWith('is') and method.paramNames.count == 0 and method.returnTypeName == 'boolean' and method.modifiers.contains('public')
+			return methodName[2:]
+		return nil	
+			
+	# indexer: get<Propname> and has params  -  first param in paramList is index  (retType is Property Type)
+	#	  or  set<PropName> and more than value in paramList, 1st parameter is index and second is value to set.
+	def isIndexer(methodName as String, method as JavaMethodInfo, isSetProp) as bool is shared
+		if methodName.startsWith('is')
+			return false
+		assert methodName.startsWith('get') or methodName.startsWith('set')
+		isGetProp = not isSetProp
+		return  (isGetProp and method.paramNames.count) or (isSetProp and method.paramNames.count > 1)
+
+	def _genProp(method as JavaMethodInfo, propName as String, propList as List<of JavaFieldInfo>, props as Dictionary<of String, JavaFieldInfo>) as JavaFieldInfo is shared
+		""" Create or update property fm getter/setter method and update given List and Dict. """
+		assert method.name.startsWith('get') or method.name.startsWith('set') or method.name.startsWith('is')	
+		isSetProp = method.name.startsWith('set')
+		isGetProp = not isSetProp
+		#print method.name, propName
+		if props.containsKey(propName)
+			prop = props[propName]
+		else # no existing property
+			prop = JavaFieldInfo() # JavaPropInfo
+			prop.name = propName
+			prop.isProp = true
+			prop.isIndexer = .isIndexer(method.name, method, isSetProp)
+			prop.isReadable = prop.isWritable = false
+			props[propName] = prop
+			propList.add(prop)	
+			method.prop = prop
+			#print '-- new Prop'
+		if isGetProp 
+			prop.isReadable = true
+			prop.getter = method
+			if not prop.typeName.length and method.returnTypeName.length, prop.typeName = method.returnTypeName
+			#prop.name0 = method.name
+			#print '-- isGetProp'
+		else #isSetProp 
+			prop.isWritable = true
+			prop.setter = method
+			#print '-- isSetProp'
+			if not prop.typeName.length and method.paramNames.count, prop.typeName = method.paramNames[0]
+		if not prop.modifiers.count or not prop.modifiers[0].length, prop.modifiers = method.modifiers
+		if not prop.attributes.count, 	 prop.attributes = method.attributes
+		assert prop.name.length
+		assert prop.typeName.length
+		return prop
+			
+	cue init(name as String, pkg as String, type as JavaType, super as String, ifcs as List<of String>, modifiers as List<of String> )
+		"""Create a normal Class or GenericClass Defn.   MyClass or MyClass<T>"""
+		base.init
+		assert not name.contains(".")
+		.name = name
+		.package = pkg
+		.type = type
+		.superclass = super
+		.interfaceNames = ifcs
+		.modifiers = modifiers
+	
+		_isGenericDefn = name.contains('`')  # Generic types have name suffix  `<nGenericArgs>
+		
+		#print '[type] [pkg].[name]'
+		assert .name.length
+		assert .type <> JavaType.NoType
+		if .type == JavaType.JavaClass and .canonicalName <> 'java.lang.Object' 
+			assert '.' in .superclass # canonical form
+		assert .package.length
+		
+	cue init(name as String, elementType as JavaClassType)
+		"""Create an ArrayType."""
+		base.init
+		.name = name
+		.package = elementType.package
+		.type = JavaType.JavaClass
+		.superclass = 'java.lang.Object' # not really - closest is javax.openmanagment.mbean.ArrayType
+			# maybe should fake up an Abstract ArrayBaseType providing methods, etc synthesized below
+		.modifiers = elementType.modifiers
+		.interfaceNames = JavaClassType._emptyStringList
+		
+		_isArray = true
+		_arrayComponentType = elementType
+		_arrayDimension = name.count(c'[')
+		
+		# has properties 'length' and method 'getLength' and indexer for get and set
+		methodList = List<of JavaMethodInfo>()
+		method = JavaMethodInfo()
+		method.name = 'getLength'
+		method.modifiers = ['public']
+		method.returnTypeName = 'int'
+		method.paramNames =  JavaClassType._emptyStringList
+		methodList.add(method)
+	
+		propList = List<of JavaFieldInfo>()
+		prop = JavaFieldInfo()
+		prop.name = 'length'
+		prop.typeName = 'int'
+		prop.modifiers = ['public']
+		prop.isProp = true
+		prop.isIndexer = false
+		prop.isReadable = true
+		method.prop = prop
+		prop.getter = method
+		prop.isWritable = false
+		propList.add(prop)	
+	
+		idxr = JavaFieldInfo()
+		idxr.name = r'[]'
+		idxr.typeName = name.replace(r'[', r'')
+		idxr.modifiers = ['public']
+		idxr.isProp = true
+		idxr.isIndexer = true
+		idxr.isReadable = true
+		idxr.isWritable = true
+		# TODO getter return type same as typeName
+		# TODO setter params List 'int' 
+		propList.add(idxr)	
+		
+		_props  = propList
+		_methods = methodList
+
+		assert .name.length
+		assert .type <> JavaType.NoType
+		if .type == JavaType.JavaClass and .canonicalName <> 'java.lang.Object' 
+			assert '.' in .superclass # canonical form
+		assert .package.length
+
+		assert _arrayDimension >0
+		assert _arrayComponentType
+		assert .name.contains(r'[')
+	
+	cue init(name as String, pkg as String, paramTypes as String)
+		"""Create a Generic Instantiation Type. Like MyClass<java.Lang.String>"""
+		base.init
+		print 'JavaClassType.init([name])'
+		assert not name.contains('.')
+		#assert pkg.contains('.')
+		gPart = '[pkg].[name]'
+		paramList = JavaClassType._parseList(paramTypes, [c','])
+		print 'Looking for Generic Class [gPart]'
+		genType = JarSig.lookupClass(gPart)
+		assert genType.isGenericTypeDefinition
+
+		.name = name
+		.package   = pkg # genType.package
+		.type      = genType.type
+		.superclass = genType.canonicalName  # not really but thats how we'll fake it
+		#.superclass = 'java.lang.Object' 
+		.modifiers = genType.modifiers
+		.package   = genType.package
+		_isGenericInst = true
+	
+		.interfaceNames = JavaClassType._emptyStringList
+		_genParamNames= paramList
+	
+		#print '[type] [pkg].[name]'
+		assert .name.length
+		assert .type <> JavaType.NoType
+		assert '`' in .superclass # fake parentage to the Generic Definition
+		assert .package.length
+	
+	cue init(name as String, jType as JavaType, pkg as String)
+		"""Create a Generic Parameter Type. Like the T of MyClass<T>"""
+		base.init
+		assert jType == JavaType.GenericParam 
+		assert not name.contains("<") and not name.contains(">")
+		assert not name.contains(".")
+		#assert name[0].isUpper # ??
+		
+		.name = name
+		.type      = jType
+		.superclass = 'java.lang.Object' # not really but thats how we'll fake it
+		.package   = pkg
+		if not .package.length, .package = 'java.lang'
+		.modifiers = ['public']
+			
+		_isGenericParam = true
+	
+		.interfaceNames = JavaClassType._emptyStringList
+	
+		#print '[type] [pkg].[name]'
+		assert .name.length
+		assert .type <> JavaType.NoType
+		assert 'Object' in .superclass 
+		assert .package.length
+		
+
+	#pro name from var 
+	#pro package from var
+	# ...
+
+	get canonicalName as String
+		"""package and name"""
+		assert .name.length
+		return if(.package.length, '[.package].[.name]', .name)
+
+	get isClass as bool
+		return .type == JavaType.JavaClass
+		
+	get isInterface as bool
+		return .type == JavaType.JavaInterface
+		
+	get isEnum as bool
+		return .type == JavaType.JavaEnum
+		
+	get isNested as bool
+		#return .flags.contains('N')
+		return .name.contains('$')	and not .name.startsWith('$') # temporary hack
+	
+	get declaringType as JavaClassType?
+		if .isNested
+			assert .name.contains('$')
+			declName = .name.beforeL('$')
+			#idx = .name.indexOf('$') 
+			#declName = .name[:idx] 
+			trace declName
+			# return JarSig.classByNameCache[declName]
+			return JarSig.lookupClass(declName)
+		return nil
+		
+	get isPublic
+		return .modifiers.contains('public')
+	get isProtected
+		return .modifiers.contains('protected')
+	get isPrivate
+		return .modifiers.contains('private')
+	get isDefault
+		return .modifiers.contains('default')	# = protected + package
+	get isStatic
+		return .modifiers.contains('static')
+	get isFinal # sealed 
+		return .modifiers.contains('final')
+	get isAbstract
+		return .modifiers.contains('abstract')
+
+	def getSuperClass as JavaClassType?
+		if not .superclass.length
+			return nil
+		#return  JvmNativeType(_type.getSuperClass)
+		if JarSig.classByNameCache.containsKey(.superclass)
+			return JarSig.lookupClass(.superclass)
+			#return JarSig.classByNameCache[.superclass]
+		else 
+			#return JarSig.classByNameCache['java.lang.Object']
+			return JarSig.lookupClass('java.lang.Object')
+			# e.g. Abstract base classes with default access - java.lang.AbstractStringBuilder	
+		#else 
+		#	synth = SyntheticObject(.superclass)
+		# 	JarSig.classByNameCache[.superclass] = synth
+		#	return synth
+				
+	get isValueType as bool
+		return false	# TODO true for unboxed primitives...
+
+	# TODO hops array handling
+	get isArray as bool
+		return _isArray 
+
+	get arrayComponentType as JavaClassType?
+		#if not .isArray, return nil
+		assert .isArray
+		print 'JavaClassType Array support NYI [.canonicalName]'
+		return _arrayComponentType
+
+	get arrayDimension as int
+		require .isArray
+		assert _arrayDimension > 0
+		return _arrayDimension
+	
+	# TODO hops Generics handling
+	# Two forms of Generic Types: Definition ( MyClass<T>) and Instantiation ( MyClass<java.lang.String>)
+	# In java with runtime generic Type instantiation all we see from the jarfile directly are definitions (:-(
+	# Walking the classes and getting the class(names) referenced (params, intefaces, returnTypes,...)
+	# gives us the names of the instantiations which we synthesize as Types or Params for our purposes...
+
+	get isGenericType as bool
+		return _isGenericDefn or _isGenericInst or _isGenericParam
+		
+	get genericArgsCount as int
+		assert .isGenericType
+		#return _genArgNames.count # number of Generic args associated with this Generic Type
+		# We use dotNet naming here where generic (defn) classes are named with trailing '`<nTypeParams>'
+		if _isGenericDefn
+			parts = .name.split(c'`')
+			return int.parse(parts[1])
+		else if _isGenericInst
+			return _genParamNames.count
+		else	
+			return 0
+			
+	get isGenericParameter as bool 
+		"""
+		assumes generic parameters are instantiated as Types.
+		Things like T,U,E,.. - basically simple names not package specified - probably 1 Upcase char 
+		"""
+		return _isGenericParam
+	
+	get isGenericTypeDefinition as bool
+		""" 
+		Can use this generic type to create new types if this type is a template form.
+		e.g myClass<T, U> defn allows creating new type like MyClass<String, int>
+		"""
+		assert 	.isGenericType
+		return _isGenericDefn
+			
+	def	getGenericArguments as JavaClassType* #List<of JavaClassType>
+		assert .genericArgsCount
+		if false # tmp pending jarSig gen and loading of generic args list
+			assert _genParamNames.count
+		if _genParamNames.count and not _genParams.count 
+			_genParams = JavaClassType.genClassTypeList(_genParamNames)	
+		return _genParams
+	
+		
+	def	getInterfaces as JavaClassType* #List<of JavaClassType>
+		if .interfaceNames.count and not _interfaces.count 
+			_interfaces = JavaClassType.genClassTypeList(.interfaceNames)	
+		return _interfaces
+		
+	def getFields as JavaFieldInfo*
+		return _fields
+
+	def getConstructors as JavaCtorInfo*
+		return _ctors
+		
+	def getMethods as JavaMethodInfo*
+		return _methods
+			
+	def getProperties as JavaFieldInfo*
+		return _props
+			
+	def getAnnotations as IList<of dynamic>
+		# TODO when store annotations in .sigfile - return as a list of classes
+		#return List<of JavaClassType>()
+		return @[] to IList<of dynamic>
+		
+		
+	get fields from var
+	get props  from var
+	get ctors  from var
+	get methods from var
+
+	#dbg
+	def toMinString as String
+		return '[.type] [.canonicalName]'
+		
+	def toString as String is override
+		sb = StringBuilder()
+		sb.append('[.type] [.canonicalName]')
+		if _genParamNames.count
+			sb.append('<')
+			sep = ''
+			for pName in _genParamNames
+				sb.append(sep)
+				sb.append(pName)
+				sep = ','
+			sb.append('>')
+		sb.append(' ')
+		if .modifiers.count		
+			sb.append('is ')
+			sb.append(.modifiers.join(','))
+			sb.append(' ')
+		if .superclass.length
+			sb.append('inherits [.superclass] ')
+		if .interfaceNames.count
+			sb.append('implements ')
+			sb.append(.interfaceNames.join(','))
+		#sb.append(String.format(' -- {0} fields {1} props {2} ctors {3} methods', _fields.count, _props.count, _ctors.count, _methods.count))
+		return sb.toString
+		
+	def dumpFields
+		for field in .getFields
+			print field
+		
+	def dumpCtors
+		for ctor in .getConstructors
+			print 'ctor ', ctor.toString
+
+	def dumpMethods
+		for mthd in .getMethods
+			print mthd
+			
+	def dumpProps
+		for prop in .getProperties
+			print prop
+		
+	def dumpIndexers
+		assert false, 'Indexers NYI'
+	
+class JavaMemberInfo
+	var name = ''	
+	var _attributes as List<of String>?
+	var modifiers = List<of String>() # public, default (=protected+pkg), protected, private
+
+	pro attributes
+		get 
+			if not _attributes 
+				_attributes = List<of String>()
+			return _attributes
+		set 
+			_attributes = value
+	
+	get isPublic
+		return .modifiers.contains('public')
+	get isProtected
+		return .modifiers.contains('protected')
+	get isPrivate
+		return .modifiers.contains('private')
+	get isDefault
+		return .modifiers.contains('default')	# = protected + package
+	get isStatic
+		return .modifiers.contains('static')
+	get isFinal
+		return .modifiers.contains('final')
+	get isAbstract
+		return .modifiers.contains('abstract')
+
+	get isOverride
+		# in java this is an annotation (at best), - via pkgSig treated as strings		
+		return .attributes.contains('Override')
+
+	get isNonNullable
+		return .attributes.contains('NotNull') or .attributes.contains('NonNull') or .attributes.contains('Nonnull')
+		#for name in .attributes # in java these are annotations, - via pkgSig treated as strings
+		#	if name.endsWith == 'NotNull' or name.endsWith == 'NonNull'  or name.endsWith == 'Nonnull' 
+		#		return true
+		#return false
+	
+	get isVari
+		"""
+		VarArgs arglist to a a method. 
+		Java sets this as a flag on the method but we convert it to a faked attribute on the methodInfo
+		"""
+		return .attributes.contains('IsVari') 
+	
+class JavaFieldInfo inherits JavaMemberInfo  
+	"""Info for fields and properties."""
+	var typeName = ''
+	var value = ''		# pkgsig set value if final and initted
+	var isProp = false
+	var isIndexer = false
+	var isReadable = true
+	var isWritable = true
+	var getter as JavaMethodInfo?
+	var setter as JavaMethodInfo?
+	#var name0 = ''	# original name before tweaked for propertyname
+	var _type as JavaClassType?
+	
+	get type as JavaClassType
+		assert .typeName.length
+		if .typeName.length and not _type
+			#_type = JarSig.classByNameCache[.typeName]
+			_type = JarSig.lookupClass(.typeName)
+		return _type to !	
+
+	def getValue as Object # ??
+		return .value
+	
+	def getIndexParameters as List<of JavaClassType>
+		""" List of Types for indexes for an indexer Property."""
+		if not .isIndexer
+			return JavaClassType.emptyClassList
+		assert .getter
+		return .getter.getParameters	
+		#if .setter
+		#	pars = 	List<of JavaClassType(.setter.getParameters)
+		# 	pars.removeAt(pars.count-1) # last is value to set
+		# 	return pars
+		
+	def toString as String is override
+		prefix = 'var'
+		if .isProp
+			if .isReadable and .isWritable, prefix = 'pro'
+			else if .isReadable, prefix = 'get'
+			else if .isWritable, prefix = 'set'
+
+		sb = StringBuilder('[prefix] [.name]')
+		if .typeName.length, sb.append(' as [.type]')
+		if .modifiers.count 
+			sb.append(' is ')
+			sep=''
+			for mod in .modifiers
+				sb.append(sep)
+				sep =','
+				sb.append(mod)
+		# TODO attributes
+		if .isProp
+			sb.append(' { ')
+			if .getter
+				sb.append('getter [.getter.name], ')
+			if .setter
+				sb.append('setter [.setter.name]')
+			sb.append(' }')
+		return sb.toString
+	
+class JavaCtorInfo inherits JavaMemberInfo
+	var paramNames = List<of String>() 
+	var _params = JavaClassType.emptyClassList
+	
+	def getParameters as List<of JavaClassType>
+		if .paramNames.count and not _params.count 
+			_params = JavaClassType.genClassTypeList(.paramNames)	
+		return _params
+			
+		
+	def toString as String is override
+		sb = StringBuilder(.name)
+		if .paramNames.count and .paramNames[0].length
+			sb.append('(')
+			sep=''
+			for p in .paramNames
+				sb.append(sep)
+				sep =', '
+				sb.append(p)
+			sb.append(')')
+		# TODO attributes
+		return sb.toString
+		
+class JavaMethodInfo inherits JavaCtorInfo
+	var returnTypeName = ''
+	var throwsList = List<of String>() # list of String
+	var prop as JavaFieldInfo? # if this is a get or set method for a prop refer to the property
+
+	def returnType as JavaClassType?
+		if not .returnTypeName.length
+			return nil
+		#return JarSig.classByNameCache[.returnTypeName]
+		return JarSig.lookupClass(.returnTypeName)
+
+	def getGenericArguments as List<of JavaClassType>
+		return JavaClassType.emptyClassList	# TODO: support generics
+				
+	def toString as String is override
+		nampar = base.toString
+		sb = StringBuilder('def [nampar] ')
+		if .returnTypeName.length
+			sb.append('as [.returnTypeName] ')
+		if .modifiers.count 
+			sb.append('is ')
+			sep=''
+			for mod in .modifiers
+				sb.append(sep)
+				sep =','
+				sb.append(mod)
+		if .prop
+			getset = .name[:3]			
+			sb.append(" {[getset]ter for prop '[.prop.name]'} ")
+		if .throwsList.count
+			sb.append(' #throws')
+			sep=''
+			for thrw in .throwsList
+				sb.append(sep)
+				sep =','
+				sb.append(thrw)
+				
+		# TODO attributes
+		return sb.toString
+	
+	

@@ -33,7 +33,7 @@ class ObjectLister
 					success
 						value = _toTechString(value)
 					name = pi.name
-					name = Utils.cobraNameForSharpMemberName(name)
+					name = Utils.cobraNameForNativeMemberName(name)
 					print '    [name] = [value]'
 			if obj inherits System.Collections.ICollection
 				i = 0
@@ -53,8 +53,34 @@ class ObjectLister
 
 extend String
 
-	## Language specific
+	# These should go in String Extensions
+	def beforeL(sep as String) as String
+		test
+			s = 'abc|de'
+			assert s.beforeL('|') == 'abc'
+			assert s.beforeL('=') == 'abc|de'
+			assert '|abcde'.beforeL('|') == ''
+			assert 'abcde|'.beforeL('|') == 'abcde'
+		body
+			idx = .indexOf(sep)
+			if idx < 0
+				return this
+			return this[0:idx]
 
+	def afterL(sep as String) as String
+		test
+			s = 'abc|de'
+			assert s.afterL('|') == 'de'
+			assert s.afterL('=') == ''
+			assert '|abcde'.afterL('|') == 'abcde'
+			assert 'abcde|'.afterL('|') == ''
+		body
+			idx = .indexOf(sep)
+			if idx < 0
+				return ''
+			return this[idx+sep.length:]
+								
+	## Language specific
 	def canBeUndottedMemberName as bool
 		"""
 		Returns true if this string is the kind of name that can reference a box member without
@@ -172,9 +198,9 @@ class Utils is partial
 				return defaultValue
 
 
-		## C#
+		## BackEnd C#
 		
-		def cobraNameForSharpMemberName(name as String) as String
+		def cobraNameForNativeMemberName(name as String) as String
 			require
 				name.length
 			ensure
@@ -197,7 +223,7 @@ class Utils is partial
 				]
 				for case in cases
 					parts = case.split
-					assert Utils.cobraNameForSharpMemberName(parts[0]) == parts[1]
+					assert Utils.cobraNameForNativeMemberName(parts[0]) == parts[1]
 			body
 				if name.length == 1
 					return name.toLower
@@ -321,7 +347,11 @@ class Utils is partial
 			# return Assembly.loadWithPartialName(name)
 			# with dynamic binding:
 			assemblyType = Assembly to dynamic
-			return assemblyType.loadWithPartialName(name)
+			try 
+				ass = assemblyType.loadWithPartialName(name)
+			catch System.Reflection.TargetInvocationException # or any Exception 
+				ass = nil
+			return ass
 
 
 class ShouldNotCallException inherits Exception

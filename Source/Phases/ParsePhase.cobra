@@ -25,8 +25,14 @@ class ParsePhase inherits Phase
 		extraSource = .options.getDefault('extra-source', '').trim to String
 		if extraSource <> ''
 			# CC: parser = CobraParser(verbosity=.verbosity, typeProvider=this, warningRecorder=this, errorRecorder=this, globalNS=compiler.globalNS, parseCommandLineArgs=ref .parseCommandLineArgsCallBack)
-			parser = CobraParser(verbosity=.verbosity, typeProvider=compiler, warningRecorder=compiler, errorRecorder=compiler, globalNS=compiler.globalNS)
+			parser = CobraParser()
+			parser.verbosity=.verbosity
+			parser.typeProvider = compiler # compiler.typeProvider
+			parser.warningRecorder = compiler
+			parser.errorRecorder = compiler
+			parser.globalNS=compiler.globalNS
 			parser.parseCommandLineArgs = ref .parseCommandLineArgsCallBack
+			parser.backEnd = compiler.backEnd
 			errorsCount = compiler.errors.count
 			try
 				module = parser.parseSource('_ch_cobra-extra-source.cobra', extraSource)  # ch = compiler helper
@@ -35,14 +41,14 @@ class ParsePhase inherits Phase
 				throw
 			if compiler.errors.count > errorsCount
 				_printExtraSource(extraSource)
-			for r in parser.references, compiler.loadReference(r.fixLibExtension)
+			for r in parser.references, compiler.loadReference(.compiler.backEnd.fixLibExtension(r), false)
 			modules.add(module)
 
 		didError = false
 		for filename in .compiler.pathsToCompile
-			if filename.endsWith('.cs')
-				if .verbosity, print 'Noting  [filename]'  # extra space to line up with 'Parsing [filename]'
-				modules.add(SharpModule(filename, .verbosity))
+			nativeModule = .compiler.backEnd.genNativeModule(filename, .verbosity)
+			if nativeModule
+				modules.add(nativeModule) # SharpModule or JavaModule or ...
 			else
 				parser = CobraParser()
 				parser.verbosity = .verbosity
@@ -52,12 +58,13 @@ class ParsePhase inherits Phase
 				parser.parseCommandLineArgs = ref .parseCommandLineArgsCallBack
 				parser.globalNS = compiler.globalNS
 				# @@ TODO: assert _globalNS is parser.nameSpaceStack[0]
+				parser.backEnd = compiler.backEnd
 				try
 					module = parser.parseFileNamed(filename)
 				catch SourceException
 					didError = true
 				success
-					for r in parser.references, compiler.loadReference(r.fixLibExtension)
+					for r in parser.references, compiler.loadReference(.compiler.backEnd.fixLibExtension(r), false)
 					# There could still be parse errors that were recorded, but not thrown.
 					# But that's okay because _errors.count is checked further below.
 					modules.add(module)

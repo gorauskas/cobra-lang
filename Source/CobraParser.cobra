@@ -62,9 +62,11 @@ class CobraParser inherits Parser
 		"""
 
 	test
+		c = Compiler()
 		p = CobraParser()
 		p.globalNS = NameSpace(Token.empty, '(global)')
 		p.typeProvider = BasicTypeProvider()
+		p.backEnd = BasicBackEnd(c)
 		module = p.parseSource('test1', 'class Test\n\tpass\n')
 		decls = (module to dynamic).topNameSpace.declsInOrder
 		decl = decls[decls.count-1]
@@ -76,14 +78,15 @@ class CobraParser inherits Parser
 		p = CobraParser()
 		p.globalNS = NameSpace(Token.empty, '(global)')
 		p.typeProvider = BasicTypeProvider()
+		p.backEnd = BasicBackEnd(c)
 		p.parseSource('test2', 'class Test\n\tdef main is shared\n\t\treturn\n')
 		
-		c = Compiler()
-		p = CobraParser(typeProvider=c, warningRecorder=c, errorRecorder=c, globalNS=c.globalNS)
+		c = TestCompiler() # to default backend to something on init
+		p = CobraParser(typeProvider=c, warningRecorder=c, errorRecorder=c, globalNS=c.globalNS, backEnd=c.backEnd)
 		p.parseSource('test3', '')
 		
-		c = Compiler()
-		p = CobraParser(typeProvider=c, warningRecorder=c, errorRecorder=c, globalNS=c.globalNS)
+		c = TestCompiler()
+		p = CobraParser(typeProvider=c, warningRecorder=c, errorRecorder=c, globalNS=c.globalNS, backEnd=c.backEnd)
 		p.parseSource('test4', '    ')
 
 	shared
@@ -125,6 +128,8 @@ class CobraParser inherits Parser
 	var _expectAnonymousMethodExprStack as Stack<of AnonymousMethodExpr>
 
 	var _typeProvider as ITypeProvider?
+	var _backEnd as BackEnd?
+	# compiler is available from _backEnd.compiler
 
 	var _parseCommandLineArgs as ParseCommandLineArgsSig?
 	
@@ -142,6 +147,7 @@ class CobraParser inherits Parser
 		_curLoopBlockDepth = 0
 
 	pro typeProvider from var
+	pro backEnd from var
 
 	pro parseCommandLineArgs from var
 		"""
@@ -178,14 +184,14 @@ class CobraParser inherits Parser
 			return _nameSpaceStack.peek
 
 	def parseFileNamed(fileName as String) as CobraModule
-		require .typeProvider
+		require .typeProvider and .backEnd
 		if .verbosity >= 2, print 'Parsing [fileName]'
 		_fileName = fileName
 		source = File.readAllText(_fileName to !)
 		return .parseSource(fileName, source)
 
 	def parseSource(source as String) as CobraModule
-		require .typeProvider
+		require .typeProvider and .backEnd
 		return .parseSource('(no file name)', source)
 
 	def parseSource(fileName as String, source as String) as CobraModule
@@ -246,12 +252,10 @@ class CobraParser inherits Parser
 			.recordError(te.token, te.message)
 			return false
 
-		# TODO: fold all occcurrences of this lookup to a helper
-		compiler = .typeProvider to? Compiler
-		if compiler
-			compiler.noWarningLines.addRange(tokenizer.noWarningLines)
-			compiler.linesCompiled += tokenizer.linesCompiled
-			compiler.tokensCompiled += tokens.count
+		compiler = .backEnd.compiler
+		compiler.noWarningLines.addRange(tokenizer.noWarningLines)
+		compiler.linesCompiled += tokenizer.linesCompiled
+		compiler.tokensCompiled += tokens.count
 
 		if tokenizer.errors.count
 			for error in tokenizer.errors
@@ -356,14 +360,7 @@ class CobraParser inherits Parser
 		try
 			topNS = _module.topNameSpace
 			if not _fileName.endsWith('SystemInterfaces.cobra')
-				# TODO: make an "implicit" token
-				useToken = Token(_fileName, 1, 1, 1, 'USE', 'use', nil)
-				# default use directives
-				topNS.addUseDirective(UseDirective(useToken, ['System']))
-				topNS.addUseDirective(UseDirective(useToken, ['System', 'Collections', 'Generic']))
-				topNS.addUseDirective(UseDirective(useToken, ['System', 'IO']))
-				topNS.addUseDirective(UseDirective(useToken, ['System', 'Text']))
-				topNS.addUseDirective(UseDirective(useToken, ['Cobra', 'Lang']))
+				.backEnd.setDefaultUseDirectives(topNS)
 			while .peek, .parseTopLevel
 		finally
 			_nameSpaceStack.pop
@@ -455,8 +452,7 @@ class CobraParser inherits Parser
 				if not typeName.text.isOneOf('decimal.float.float32.float64.')
 					.throwError('Compiler directive "number": unrecognized type "[typeName.text]". Must be one of "decimal", "float", "float32" or "float64".')
 				.expect('EOL')
-				comp = .typeProvider to? Compiler
-				if comp, comp.numberTypeName = typeName.text
+				.backEnd.compiler.numberTypeName = typeName.text
 			on 'ref'
 				pathToken = .grab
 				if not pathToken.which.isOneOf('ID.STRING_SINGLE.STRING_DOUBLE.')

@@ -1,0 +1,139 @@
+# standalone test for jvmJarSig class
+
+# compile with  	cobra -d JvmJarSigTest.cobra JvmJarSig.cobra
+#
+class JvmJarSigTest
+	
+	def main
+		expect InvalidOperationException
+			failPkgFile = JarSig('doWhakkaDay')
+			CobraCore.noOp(failPkgFile)
+		.simple1
+		.simple2
+
+		.pkgFile
+		.cmdline
+
+	def cmdline
+		if CobraCore.commandLineArgs.count > 1
+			pkgFile = CobraCore.commandLineArgs[1]
+			js = JarSig(pkgFile)
+			print js.toString
+			#print 'JarSig name:', js.name
+			for jc in js.getExportedTypes
+				print jc.toMinString
+				#print jc.toString
+			
+	def simple1
+		#Empty class
+		# how about supporting a multiline string???
+		simple = 'com.hops.Mpt\n    Class\n    com.hops\n    Mpt\n    com.hops.AlsoMpT\n    -\npublic static\n\n'
+		jc = JavaClassType.makeFromDesc(simple.split(c'\n').toList)
+		.chkType(jc, 'com.hops.Mpt', 'Mpt', 'com.hops', 'com.hops.AlsoMpT', JavaType.JavaClass, [ 'public', 'static'], List<of String>())
+		
+		assert jc.isClass
+		assert not jc.isInterface
+		assert not jc.isEnum
+		assert jc.fields.count == 0
+		assert jc.ctors.count == 0
+		assert jc.methods.count == 0
+		assert jc.props.count == 0
+		
+	def chkType(jc as JavaClassType, canonicalName as String, name as String, pkg as String, superclass as String, type as JavaType, modifiers as List<of String>, interfaces as List<of String>)
+		assert jc.canonicalName == canonicalName
+		assert jc.name == name
+		assert jc.package == pkg
+		assert jc.superclass == superclass
+		assert jc.type == type
+		assert jc.interfaces.count == interfaces.count
+		for ifc in jc.interfaces
+			assert interfaces.contains(ifc)
+		assert jc.modifiers.count == modifiers.count
+		for m in jc.modifiers
+			assert modifiers.contains(m)
+
+	def simple2
+		# how about supporting a multiline string???
+		desc = [
+			'com.hops.Simple',
+			'	Class',
+			'	com.hops',
+			'	Simple',
+			'	com.hops.SimpleBase',
+			'    -				# no interfaces',
+			'	public',
+			'	ctor com.hops.Simple',
+			'		java.lang.String',
+			'	var count',
+			'		default',
+			'		int',
+			'	method toString',
+			'		public                         # modifiers',
+			'		java.lang.String               # returnType',
+			'		-                              # no parameters',
+			'		-                              # no exceptions',
+			'	method getNameStr',
+			'		public                         # modifiers',
+			'		java.lang.String               # returnType',
+			'		-                              # no parameters',
+			'		-                              # no exceptions',
+			'	method setNameStr',
+			'		public                         # modifiers',
+			'		void               			   # returnType',
+			'		java.lang.String               # parameters',
+			'		-                              # no exceptions',
+			'	method setFoo',
+			'		public                         # modifiers',
+			'		void               			   # returnType',
+			'		java.lang.String               # parameters',
+			'		-                              # no exceptions',
+		]
+		jc = JavaClassType.makeFromDesc(desc)
+		.chkType(jc, 'com.hops.Simple', 'Simple', 'com.hops', 'com.hops.SimpleBase', JavaType.JavaClass, [ 'public'], List<of String>())
+		
+		assert jc.isClass
+		assert not jc.isInterface
+		assert not jc.isEnum
+		
+		assert jc.fields.count == 1
+		assert jc.fields[0].name == 'count'	
+		assert jc.fields[0].type == 'int'	
+		assert jc.fields[0].modifiers.count == 1
+		assert jc.fields[0].modifiers[0] in ['default']
+		#jc.dumpFields
+
+		assert jc.ctors.count == 1
+		assert jc.ctors[0].paramList.count == 1
+		assert jc.ctors[0].paramList[0] == 'java.lang.String'
+		#jc.dumpCtors
+		
+		assert jc.methods.count == 4
+		assert jc.methods[0].name == 'toString'	
+		assert jc.methods[0].returnType == 'java.lang.String'	
+		assert jc.methods[0].modifiers[0] == 'public'	
+		assert jc.methods[1].name == 'getNameStr'	
+		assert jc.methods[2].name == 'setNameStr'	
+		assert jc.methods[3].name == 'setFoo'	
+		#jc.dumpMethods
+		
+		assert jc.props.count == 2
+		assert jc.props[0].name =='NameStr'
+		assert jc.props[1].name =='Foo'
+		#jc.dumpProps
+		
+	def pkgFile
+		expect InvalidOperationException
+			js = JarSig('noJarSigFile')
+			
+		# requires file 'jarSigTestFile1.sig' 
+		pkgFile = 'jarSigTestFile1'
+		js = JarSig(pkgFile)
+		assert js.name == 'jarSigTestFile1'
+		assert JarSig.sigFile(js.name) == 'jarSigTestFile1.sig'
+		
+		expTypes = for jct in js.getExportedTypes get jct
+		assert expTypes.count == 3
+	
+		for jct in expTypes
+			assert jct.name in ['AbstractMethodError','Appendable','Thread$State']
+	

@@ -1,7 +1,15 @@
+use System.Diagnostics
+
 class ObjcBackEnd inherits BackEnd
 
 	cue init(compiler as Compiler)
 		base.init(compiler)
+		_name = 'objc'	
+		_rtlName = 'Cobra.Lang.dll'
+		_tagToTypeName = { 	# TODO
+			'Object': '',
+			'Type'	: '',
+			}
 
 	def makePhases(phases as IList<of Phase>) is override
 		phases.add(GenerateObjcCodePhase(.compiler))
@@ -9,8 +17,80 @@ class ObjcBackEnd inherits BackEnd
 
 	def computeOutName as String is override
 		return .compiler.computeOutNameObjc
+		
+	def genNativeModule(filename as String, verbosity as int) as Module? is override
+		m as Module?
+		if filename.endsWith('.objc') # ??
+			if verbosity, print 'Noting  [filename] as ObjCModule'  # extra space to line up with 'Parsing [filename]'
+			assert false, 'Need code for an ObjCModule'	
+			#m = ObjCModule(filename, verbosity)
+		return m
 
+	def setupRunProcess(baseExe as String, fullExe as String) as Process is override
+		p = Process()
+		p.startInfo.fileName = baseExe
+		return p
+		
+	def setDefaultUseDirectives(ns as NameSpace) is override
+		useToken = Token('(implicit)', 1, 1, 1, 'USE', 'use', nil)
+		# these arent correct for ObjC but are here as a placeholder/reminder
+		ns.addUseDirective(UseDirective(useToken, ['System']))
+		ns.addUseDirective(UseDirective(useToken, ['System', 'Collections', 'Generic']))
+		ns.addUseDirective(UseDirective(useToken, ['System', 'IO']))
+		ns.addUseDirective(UseDirective(useToken, ['System', 'Text']))
+		ns.addUseDirective(UseDirective(useToken, ['Cobra', 'Lang']))
+	
+	def fixLibExtension(libRef as String) as String is override
+		"""
+		Augment given lib reference string with .dll backend extension if not already have one
+		"""
+		or require libRef.length
+		and ensure result.endsWith('.dll')
+		if not libRef.endsWith('.dll')
+			libRef += '.dll'
+		return libRef
+	
+	def loadLibReference(reference as String) as bool is override
+		return false	# TODO
+	
+	def readSystemTypes is override
+		pass
+	
+	def fixNilableMemberSigs is override
+		pass
 
+	def installNativeMethods(box as Box, nativeType as NativeType) is override
+		pass
+
+	def cobraNameForNativeBoxName(nativeBoxName as String) as String is override
+		return nativeBoxName # TODO
+		
+	# Types
+	get objectTypeProxy as AbstractTypeProxy  is override
+		"""Type proxy for BE root of Object hierarchy."""
+		return ClrTypeProxy(Object)  # Tmp pending ObjcTypeProxy
+			
+	get typeTypeProxy  as AbstractTypeProxy  is override
+		"""Type proxy for BE notion of a class describing a Type."""
+		return ClrTypeProxy(Type)  # Tmp pending ObjcTypeProxy
+		
+	def nativeTypeProxy(type as NativeType) as NativeTypeProxy  is override
+		assert false, 'ObjcBackEnd ObjcNativeTypeProxy NYI'
+		return ClrTypeProxy(type)  # Tmp pending ObjcTypeProxy
+	
+	def nativeType(type as dynamic) as NativeType  is override
+		assert false, 'ObjcBackEnd ObjcNativeType NYI'
+		return ClrNativeType(type) # Tmp pending ObjcNativeType
+	
+	def nativeTypeByName(qualifiedName as String) as NativeType is override
+		assert false, 'ObjcBackEnd ObjcNativeType and objcTypeByName NYI'
+		return ClrNativeType(.compiler.clrTypeByName(qualifiedName))
+	
+	def addArrayInterfaces( interfaces as List<of ITypeProxy>) is override
+		assert false, 'ObjcBackEnd addArrayInterfaces NYI'
+		
+	
+		
 class GenerateObjcCodePhase inherits Phase
 
 	cue init(c as Compiler)

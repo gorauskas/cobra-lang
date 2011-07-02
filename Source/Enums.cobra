@@ -1,3 +1,4 @@
+
 class EnumDecl
 	is partial
 	inherits Container<of EnumMember>
@@ -25,46 +26,39 @@ class EnumDecl
 		_idToken = Token.empty
 		_attribs = AttributeList()
 		_nativeType = nativeType
-		_storageTypeNode = ClrTypeProxy(Enum.getUnderlyingType((_nativeType to ClrNativeType).clrType))  # TODO: fix native
+		#_storageTypeNode = ClrTypeProxy(Enum.getUnderlyingType((_nativeType to ClrNativeType).backEndType))  # TODO: fix native
+		_callNativeScanMethod('UnderlyingType')
 		_needScanNativeType = true
-
-	def _scanClrType
-		# TODO: read attribs
-		_needScanNativeType = false
-		clrType = (_nativeType to ClrNativeType).clrType # TODO: fix native
-		isByte  = Enum.getUnderlyingType(clrType).name == 'Byte'
-		is64    = Enum.getUnderlyingType(clrType).name == 'Int64'
-		isU32   = Enum.getUnderlyingType(clrType).name == 'UInt32'
-		isU64   = Enum.getUnderlyingType(clrType).name == 'UInt64'
-		values  = Enum.getValues(clrType)
-		i = 0
-		for name in Enum.getNames(clrType)
-			value = values.getValue(i)
-			# CC: lameness follows
-			if isByte
-				intValue = int.parse((value to uint8).toString)
-			else if is64
-				try
-					intValue = int.parse((value to int64).toString)
-				catch OverflowException
-					intValue = 999  # CC: omg. but probably doesn't affect anything. we're reading the DLL here, not creating one
-			else if isU32
-				try
-					intValue = int.parse((value to uint32).toString)
-				catch OverflowException
-					intValue = 2147483647
-			else if isU64
-				try
-					intValue = int.parse((value to uint64).toString)
-				catch OverflowException
-					intValue = 2147483647
-			else
-				intValue = value to int
-			member = EnumMember(name, intValue)
-			member.enumDecl = this
-			.addDecl(member)
-			i += 1
-
+		
+	def _callNativeScanMethod(tag as String)
+		"""
+		Call a backend scan method for native type scan operation desired and backend in use.
+		"""
+		_needScanNativeType = true
+		# This is icky too - method to call needs to be set directly via backend somehow rather than this check and call code	
+		# TODO: change to use strategy object set when init backend.
+		assert .compiler
+		assert tag in ['ScanNativeType', 'UnderlyingType']
+		backEnd = .compiler.backEnd
+		branch backEnd.name
+			on 'c#-clr'
+				branch tag
+					on 'UnderlyingType',  _setUnderlyingTypeClr # sets _storageTypeNode
+					on 'ScanNativeType',  _scanNativeTypeClr
+			on 'java-jvm'
+				branch tag
+					on 'UnderlyingType',  _setUnderlyingTypeJvm # sets _storageTypeNode
+					on 'ScanNativeType',  _scanNativeTypeJvm
+			on 'objc'
+				print 'objc back end need method for [tag]'
+				assert false, 'Missing backEnd infrastructure for [backEnd.getType.name]'
+				#branch on tag
+				#	on 'UnderlyingType',  _setUnderlyingTypeObjc
+				#	on 'ScanNativeType',  _scancNativeTypeObjc
+			else 
+				throw FallThroughException('No nativeScanMethod code for backend [backEnd.name] [backEnd.getType.name]')
+		#TODO: remove all direct uses of ClrNativeType, ClrTypeProxy
+		
 	get attributes as AttributeList is override
 		return _attribs
 
@@ -99,8 +93,7 @@ class EnumDecl
 			return base.isUsed
 		set
 			base.isUsed = value
-			if _needScanNativeType
-				_scanClrType
+			if _needScanNativeType, _callNativeScanMethod('ScanNativeType')
 
 	get nativeType from var
 	
@@ -117,8 +110,7 @@ class EnumDecl
 			_storageType = _storageTypeNode.realType
 			if not _storageType.isDescendantOf(.compiler.anyIntType)
 				.throwError('The enumeration storage type must be a primitive integer type such as int8, uint8, int16, uint16, int, uint, int64 or uint64.')
-		if _needScanNativeType
-			_scanClrType
+		if _needScanNativeType, _callNativeScanMethod('ScanNativeType')
 
 	def _bindImp is override
 		base._bindImp
@@ -132,8 +124,7 @@ class EnumDecl
 		return name
 
 	def memberForName(name as String) as IMember?
-		if _needScanNativeType
-			_scanClrType
+		if _needScanNativeType,	_callNativeScanMethod('ScanNativeType')
 		m = base.memberForName(name)
 		if m is nil
 			objClass = .compiler.objectType

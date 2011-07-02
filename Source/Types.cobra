@@ -1,6 +1,5 @@
 use System.Reflection
 
-
 class NativeType is abstract
 	"""
 	The abstract base class for a boxed native type of the platform being compiled to.
@@ -42,6 +41,18 @@ class NativeType is abstract
 		TODO: Add contract to enforce above statement
 		"""
 
+	get isSystemObjectClass as bool is abstract
+		"""
+		Return true if this is the Native Type Object for the root Object of the class hierarchy.
+			e.g. like System.Object in .Net, java.lang.Object in java
+		"""
+
+	get isSystemTypeClass as bool is abstract
+		"""
+		Return true if this is the Native Type Object for a System Type.
+			e.g. like System.Type in .Net, java.lang.class in java
+		"""
+				
 	def customAttributes as IList<of dynamic> is abstract
 		"""
 		Return a list of custom attributes attached to this type.
@@ -52,16 +63,55 @@ class NativeType is abstract
 
 	def getHashCode as int is override
 		throw Exception('Subclasses must override .getHashCode')
+			
+class NullNativeType inherits NativeType
+	"""
+	Valid but empty nativeType for Tests
+	"""
+	var _full = ''
+	var _name = ''
+	
+	cue init(qualName as String)
+		base.init
+		_full = qualName
+		l = qualName.split('.')
+		_name = l[l.length-1]	# l.last or l[-1:][0]
+		
+	get name as String is override
+		return _name
+	
+	get fullName as String is override
+		return _full
 
+	get isValueType as bool is override
+		return false
+		
+	get baseType as NativeType? is override
+		return this	# wrong either way - cant get ObjectType and isnt Object root so cant return nil
+	
+	def customAttributes as IList<of dynamic> is override
+		return List<of dynamic>() 
+
+	def equals(other as Object?) as bool is override
+		return false
+
+	def getHashCode as int is override
+		return 999666
+	
+	get isSystemObjectClass as bool is override 
+		return false	
+		
+	get isSystemTypeClass as bool is override
+		return false	
 
 interface ITypeProvider
 	"""
-	A type provider can provide essential types and serve as a place
-	they are "uniqued" in order to avoid type duplication.
+	A type provider can provide essential types and serve as a place to centralise the provision of these
+	types. They are "uniqued" in order to avoid type duplication.
 
 	The Cobra types themselves rely on having a type provider available to implement some of their methods.
 
-	The main type provider is Compiler.
+	The main type provider is in the Compiler.
 	There is also a BasicTypeProvider that is useful in setting up tests.
 	"""
 
@@ -114,11 +164,12 @@ interface ITypeProvider
 
 	def defaultType as IType
 
-
+		
+# 	TODO: rename to TypeProvider, change to a "mix-in" and have the Compiler class inherit it
 class BasicTypeProvider
 	implements ITypeProvider
 	"""
-	TODO: rename to TypeProvider, change to a "mix-in" and have the Compiler class inherit it
+	This is the base and also can be used as a test TypeProvider
 	"""
 
 	var _anyFloatType		as AnyFloatType?
@@ -264,17 +315,18 @@ class BasicTypeProvider
 		_variTypes[type] = vt = VariType(type)
 		return vt
 
-	def libraryType(qualifiedName as String) as IType
-		return BasicLibraryType(.nativeType(qualifiedName))
-
-	def nativeType(qualifiedName as String) as NativeType
-		return ClrNativeType(sharp'System.Type.GetType(qualifiedName)' to System.Type)
-
 	def defaultType as IType
 		if _defaultType is nil
 			_defaultType = .nilableType(.dynamicType)
 		return _defaultType to !
 
+	def libraryType(qualifiedName as String) as IType
+		return BasicLibraryType(.nativeType(qualifiedName))
+
+	def nativeType(qualifiedName as String) as NativeType
+		return NullNativeType(qualifiedName) 
+		#return ClrNativeType(sharp'System.Type.GetType(qualifiedName)' to System.Type)
+		
 
 class BasicLibraryType
 	is partial
@@ -288,7 +340,9 @@ class BasicLibraryType
 	shared
 		
 		def systemObjectType as BasicLibraryType
-			return BasicLibraryType(ClrNativeType(sharp'typeof(System.Object)'))
+			#nativeType = .compiler.ObjectNativeType
+			nativeType = ClrNativeType(sharp'typeof(System.Object)')
+			return BasicLibraryType(nativeType)
 
 	var _nativeType as NativeType
 
@@ -513,6 +567,7 @@ class BasicLibraryType
 	def unNilReturnType
 		pass
 
+		
 
 interface IType
 	is partial
@@ -843,7 +898,7 @@ class PrimitiveType
 
 	var _systemAliasProxy as ITypeProxy?
 		"""
-		Subclasses set this to a LibraryTypeProxy instead of ClrTypeProxy because, for example, the
+		Subclasses set this to a LibraryTypeProxy instead of a backendTypeProxy because, for example, the
 		ClrTypeProxy for the clr type System.Boolean would return a Cobra BoolType instance! Then
 		the primitive type would have a self reference when what it really wanted was the Struct
 		instance for System.Boolean.
@@ -876,7 +931,8 @@ class PrimitiveType
 			_systemAliasType = _systemAliasProxy.realType
 			_systemAliasType.bindInh
 		if .compiler  # will be nil during unit tests
-			_box = Class(Token.empty, Token.empty, '[.getType.name]_[.serialNum]', List<of IType>(), List<of String>(), AttributeList(), ClrTypeProxy(Object), List<of ITypeProxy>(), List<of ITypeProxy>(), nil)
+			baseNode = .compiler.objectTypeProxy 
+			_box = Class(Token.empty, Token.empty, '[.getType.name]_[.serialNum]', List<of IType>(), List<of String>(), AttributeList(), baseNode, List<of ITypeProxy>(), List<of ITypeProxy>(), nil)
 			if _systemAliasType inherits Box
 				for bip in _systemAliasType.baseInterfaceProxies
 					_box.baseInterfaceProxies.add(bip)
@@ -884,104 +940,10 @@ class PrimitiveType
 
 	def _bindInt
 		base._bindInt
-
 		if _systemAliasType, _systemAliasType.bindInt
-
 		if .compiler and _nativeType
-			meths = List<of Method>()
-			_installNativeMethodsFrom('System', _nativeType to !, meths)
-			_installNativeMethodsFrom('System', ClrNativeType(System.Math.getType), meths)
-
-			# the next statement can be problematic in that you have to add new DecimalTools methods in Snapshot just so the compiler can see them
-			# ultimately, extensions of primitive types should be supported
-			_installNativeMethodsFrom('CobraLangInternal', ClrNativeType(Cobra.Lang.DecimalTools.getType), meths)
-
-			# _printMethods(meths)
-
+			.compiler.installNativeMethods(_box to !, _nativeType to !) # BackEnd
 		_box.bindInt
-
-	def _printMethods(meths as IList<of Method>)
-		# print out the methods
-		# useful for documentation
-		print
-		print 'type', .name
-		sharedMeths = for meth in meths where meth.isShared
-		if sharedMeths.count
-			sharedMeths.sort(ref .compareMethodNames)
-			print '    shared'
-			for meth in sharedMeths
-				print '        [meth.cobraSourceSignature(false)]'
-		objectMeths = for meth in meths where not meth.isShared
-		if objectMeths.count
-			objectMeths.sort(ref .compareMethodNames)
-			for meth in objectMeths
-				print '    [meth.cobraSourceSignature]'
-
-	def _installNativeMethodsFrom(namespaceName as String, nativeType as NativeType, meths as List<of Method>)
-		argClrType = (nativeType to ClrNativeType).clrType
-		thisClrType = (_nativeType to ClrNativeType).clrType
-		box = _box
-		# print
-		# print '** [.name], clrType'
-		isSameNativeType = argClrType == thisClrType
-		for methInfo in argClrType.getMethods(BindingFlags(DeclaredOnly, Static, Instance, Public))
-			if methInfo.isSpecialName, continue
-			# print
-			# print '--', methInfo, methInfo.isStatic
-			name = Utils.cobraNameForSharpMemberName(methInfo.name)
-			modifiers = List<of String>()
-			if methInfo.isStatic, modifiers.add('shared')
-			newParams = List<of Param>()
-			first = true
-			cancel = false
-			for nativeParam in methInfo.getParameters
-				if first
-					first = false
-					if methInfo.isStatic
-						if methInfo.getParameters[0].parameterType == thisClrType
-							# When the first arg of the shared method is the same type,
-							# then make an instance method that can be used directly on values of the type.
-							# print methInfo.getParameters
-							# print methInfo.getParameters[0].parameterType
-							modifiers.remove('shared')
-							continue
-						else if not isSameNativeType
-							# don't want, for example, Math.sign showing up in types char, bool, etc. as a shared method
-							cancel = true
-							continue
-				param = Param(Token.empty.copy('ID', nativeParam.name), ClrTypeProxy(nativeParam.parameterType))
-				if nativeParam.parameterType.isByRef and not nativeParam.isOut
-					param.direction = Direction.InOut
-				else if nativeParam.isOut
-					param.direction = Direction.Out
-				newParams.add(param)
-			if cancel, continue
-			meth = Method(Token.empty, Token.empty, box, name, newParams, ClrTypeProxy(methInfo.returnType), nil, modifiers, AttributeList(), '')
-			if methInfo.isStatic
-				meth.sharedMethodBacking = '[namespaceName].[argClrType.name].[methInfo.name]'
-				if 'shared' in modifiers, meth.sharedMethodBackingIsAlias = true
-
-			overload = nil to MemberOverload?
-			other = box.declForName(name)
-			if other
-				if other inherits MemberOverload
-					overload = other
-				else if other inherits AbstractMethod or other inherits ProperDexer
-					overload = MemberOverload(other to BoxMember)
-					box.registerOverload(overload to !)
-				else
-					throw FallThroughException([box, meth, other])
-			else
-				assert box.declForName(name) is nil
-			if overload
-				overload.addMember(meth)
-			else
-				box.addDecl(meth)
-				
-			meths.add(meth)
-
-	def compareMethodNames(a as Method, b as Method) as int
-		return a.name.compareTo(b.name)
 
 	def memberForName(name as String) as IMember?
 		member = base.memberForName(name)
@@ -1010,8 +972,8 @@ class BoolType
 
 	cue init
 		base.init
-		_nativeType = .typeProvider.nativeType('System.Boolean')
-		_systemAliasProxy = LibraryTypeProxy('System.Boolean')
+		_nativeType = .typeProvider.nativeType('bool')
+		_systemAliasProxy = LibraryTypeProxy('bool')
 
 	get name as String is override
 		return 'bool'
@@ -1021,8 +983,8 @@ class CharType inherits PrimitiveType is partial
 
 	cue init
 		base.init
-		_nativeType = .typeProvider.nativeType('System.Char')
-		_systemAliasProxy = LibraryTypeProxy('System.Char')
+		_nativeType = .typeProvider.nativeType('char')
+		_systemAliasProxy = LibraryTypeProxy('char')
 
 	get name as String is override
 		return 'char'
@@ -1038,8 +1000,8 @@ class DecimalType inherits AbstractNumberType
 
 	cue init
 		base.init
-		_nativeType = .typeProvider.nativeType('System.Decimal')
-		_systemAliasProxy = LibraryTypeProxy('System.Decimal')
+		_nativeType = .typeProvider.nativeType('decimal')
+		_systemAliasProxy = LibraryTypeProxy('decimal')
 
 	get name as String is override
 		return 'decimal'
@@ -1133,8 +1095,8 @@ class FloatType
 			base.init(superType)
 			_size = size
 			branch size
-				on 32, _nativeType = .typeProvider.nativeType('System.Single')
-				on 64, _nativeType = .typeProvider.nativeType('System.Double')
+				on 32, _nativeType = .typeProvider.nativeType('single')
+				on 64, _nativeType = .typeProvider.nativeType('double')
 				else, throw FallThroughException(size)
 			_systemAliasProxy = LibraryTypeProxy(_nativeType.fullName)
 
@@ -1240,17 +1202,17 @@ class IntType
 			_size = size
 			if signed
 				branch size
-					on  8, _nativeType = .typeProvider.nativeType('System.SByte')
-					on 16, _nativeType = .typeProvider.nativeType('System.Int16')
-					on 32, _nativeType = .typeProvider.nativeType('System.Int32')
-					on 64, _nativeType = .typeProvider.nativeType('System.Int64')
+					on  8, _nativeType = .typeProvider.nativeType('sbyte')
+					on 16, _nativeType = .typeProvider.nativeType('int16')
+					on 32, _nativeType = .typeProvider.nativeType('int32')
+					on 64, _nativeType = .typeProvider.nativeType('int64')
 					else, throw FallThroughException(size)
 			else
 				branch size
-					on  8, _nativeType = .typeProvider.nativeType('System.Byte')
-					on 16, _nativeType = .typeProvider.nativeType('System.UInt16')
-					on 32, _nativeType = .typeProvider.nativeType('System.UInt32')
-					on 64, _nativeType = .typeProvider.nativeType('System.UInt64')
+					on  8, _nativeType = .typeProvider.nativeType('byte')
+					on 16, _nativeType = .typeProvider.nativeType('uint16')
+					on 32, _nativeType = .typeProvider.nativeType('uint32')
+					on 64, _nativeType = .typeProvider.nativeType('uint64')
 					else, throw FallThroughException(size)
 			_systemAliasProxy = LibraryTypeProxy(_nativeType.fullName)
 
@@ -1761,11 +1723,15 @@ class ArrayType inherits WrappedType is partial
 	def _bindInh
 		base._bindInh
 		if .compiler  # will be nil during unit tests
-			iclone = .compiler.libraryType('System.ICloneable')
-			icoll = (.compiler.libraryType('System.Collections.Generic.ICollection<of>') to Box).constructedTypeFor([.theWrappedType])
+			#iclone = .compiler.libraryType('ICloneable')
+
+			#icoll = (.compiler.libraryType('System.Collections.Generic.ICollection<of>') to Box).constructedTypeFor([.theWrappedType])
+			#icoll = (.compiler.libraryType('ICollection<of>') to Box).constructedTypeFor([.theWrappedType])
+			icoll = .compiler.collectionOfType.constructedTypeFor([.theWrappedType])
 			ienum = .compiler.enumerableOfType.constructedTypeFor([.theWrappedType])
 			_ilistOf = .compiler.ilistOfType.constructedTypeFor([.theWrappedType]) to Interface
-			interfaces = [iclone to ITypeProxy, icoll, ienum]  # TODO:, _ilistOf]  -- problems with cobra -ert:yes hello and extension method String.split
+			interfaces = [icoll to ITypeProxy, ienum]  # TODO:, _ilistOf]  -- problems with cobra -ert:yes hello and extension method String.split
+			.compiler.backEnd.addArrayInterfaces(interfaces)
 			_box = Class(Token.empty, Token.empty, '[.getType.name]_[.serialNum]', List<of IType>(), List<of String>(), AttributeList(), nil, interfaces, List<of ITypeProxy>(), nil)
 			# TODO: make members based on System.Array
 			indexer = Indexer(Token.empty, Token.empty, _box, r'[]', [Param(Token('', 1, 1, 1, 'ID', 'index', nil), .compiler.intType)], _wrappedType, List<of String>(), AttributeList(), '')

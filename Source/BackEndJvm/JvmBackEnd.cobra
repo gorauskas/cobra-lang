@@ -1,16 +1,199 @@
+# Backend for generating Java code to run on a JVM - Currently this is cross-compile only fm .net/mono.
+use System.Diagnostics
+
 class JvmBackEnd inherits BackEnd
+
+	var _objectTypeProxy as AbstractTypeProxy?
+	var _typeTypeProxy   as AbstractTypeProxy?
 
 	cue init(compiler as Compiler)
 		base.init(compiler)
+		_name = 'java-jvm'
+		_rtlName = 'CobraLang.jar'
+		
+		_tagToTypeName = { 
+			'Object': 'java.lang.Object',
+			'Type'	: 'java.lang.Class<of>',	# java.lang.Type is a marker interface
+			'String'	: 		'java.lang.String',
+			'Exception' : 		'java.lang.RuntimeException',
 
+			'Delegate'  : 		'System.Delegate', #cobra.lang.Delegate
+			'Attribute' : 		'java.lang.annotation.Annotation',
+			#'ICloneable': 		'System.ICloneable', #cobra.lang.ICloneable
+			'IEnumerable': 		'java.lang.Iterable',
+			'IEnumerator': 		'java.lang.Iterator',
+			'IEnumerable<of>' : 'java.lang.Iterable<of>',
+			'IEnumerator<of>' : 'java.lang.Iterator<of>',
+			'IDictionaryEnumerator' : 'System.Collections.IDictionaryEnumerator',
+			'ICollection': 		'java.util.Collection<of Object>',	# non generic collection interface
+			'ICollection<of>': 	'java.util.Collection<of>',
+			'IList'	:  			'java.util.List<of Object>',	# non generic List interface
+			'IList<of>'	:  		'java.util.List<of>',
+			'List<of>':   		'java.util.ArrayList<of>',
+			'IDictionary':   	'java.util.Map<of Object,Object>', # Non Generic Map/Dict interface
+			'IDictionary<of,>': 'java.util.Map<of,>',
+			'Dictionary<of,>' : 'java.util.HashMap<of,>',
+			'Set<of>': 			'java.lang.HashSet<of>',
+
+			'bool'	:  'java.lang.Boolean',  # boolean
+			'char'  :  'java.lang.Character',# char
+			'decimal': 'java.lang.Double',	# ??
+			'single': 'java.lang.Float',	# float	
+			'double': 'java.lang.Double',	# double	
+			'sbyte'	: 'java.lang.Byte',		# byte
+			'int16'	: 'java.lang.Short',	# short	
+			'int32'	: 'java.lang.Integer',	# int		
+			'int64'	: 'java.lang.Long',		# long
+			'byte'	: 'java.lang.Short',	# short   # rest are unsigned - use next widest
+			'uint16': 'java.lang.Integer',	# int	
+			'uint32': 'java.lang.Long',		# long
+			'uint64': 'java.lang.Long',		# long
+			
+			}
+		
 	def makePhases(phases as IList<of Phase>) is override
+		# TODO
+		#phases.add(ApplyExtendedClasses(.compiler) # ?? done here or earlier
+		#phases.add(AggregatePartialClassesCodePhase(.compiler)
 		phases.add(GenerateJavaCodePhase(.compiler))
 		phases.add(CompileJavaCodePhase(.compiler))
 		
 	def computeOutName as String is override
 		return .compiler.computeOutNameJava 
 		
+	def genNativeModule(filename as String, verbosity as int) as Module? is override
+		m as Module?
+		if filename.endsWith('.java')
+			if verbosity, print 'Noting  [filename] as JavaModule'  # extra space to line up with 'Parsing [filename]'
+			m = JavaModule(filename, verbosity)
+		return m
+		
+	def setupRunProcess(baseExe as String, fullExe as String) as Process is override
+		p = Process()
+		p.startInfo.fileName = 'java'
+		clPath = Path.getDirectoryName(CobraCore.exePath) to !
+		clPath = Path.combine(clPath, 'CobraLang.jar')
+		classpath = Environment.getEnvironmentVariable('CLASSPATH')
+		cpSep = if(CobraCore.isRunningOnUnix, ':', ';')
+		classpath = '.[cpSep][clPath][cpSep][classpath]'
+		# TODO: additional classpaths for  references 
+		args = '-ea -cp "[classpath]"'
+		args += ' [baseExe]'
+	
+		p.startInfo.arguments = args + ' '
+		#print p.startInfo.fileName, p.startInfo.arguments
+		return p		
+	
+	def setDefaultUseDirectives(ns as NameSpace) is override
+		# java packages available by default
+		useToken = Token('(implicit)', 1, 1, 1, 'USE', 'use', nil)
+		# java uses lowercase for package names - Should Cobra stay capitalised and we remap it ??
+		ns.addUseDirective(UseDirective(useToken, ['java', 'lang']))
+		#ns.addUseDirective(UseDirective(useToken, ['System', 'Collections', 'Generic'])) # generics built in
+		ns.addUseDirective(UseDirective(useToken, ['java', 'io']))
+		ns.addUseDirective(UseDirective(useToken, ['java', 'util']))
+		ns.addUseDirective(UseDirective(useToken, ['java', 'text']))
+		ns.addUseDirective(UseDirective(useToken, ['cobra', 'lang']))
+		
+	def fixLibExtension(libRef as String) as String is override
+		"""
+		Augment given lib reference string with .jar backend extension if not already have one
+		"""
+		or require libRef.length
+		and ensure result.endsWith('.jar')
+		if not libRef.endsWith('.jar')
+			libRef += '.jar'
+		return libRef
+	
+	def loadLibReference(reference as String) as bool is override
+		"""
+		Load referenced library (jar file)
+		"""
+		# Currently with cross compile fm .Net cant do this (easily) as not in a java environ
+		# (can we use Ikvm for this to bootstrap?)
+		# so what we will do is test for the existance of the jarfile in some sensible places
+		# (cwd, classpath, default install rt and extensions dir) and if it is found return true
+		#
+		#return .compiler.javaLoadReference(reference)
+		# -> reference -> jarFile -> JarSig(jarFile) -> javaReadJar
+		assert reference.endsWith('.jar')
+		return .compiler.jvmLoadReference(reference)   # in ScanJvmType
+	
+	def readSystemTypes is override
+		#pass	# TODO
+		# Initially we will rely on a external java tool to have been run to produce a precis
+		# file in a known place (same as cobra compiler perhaps) containing exported types for
+		# items in a jar file.
+		
+		# JarSig is a holder for jarfile extended with info on contained classes.
+		# javaReadJar loads info on contained classes into Cobra
+		# rt.jar is only one we need
+		.compiler.javaReadJar(JarSig('rt.jar'))
+	
+	def fixNilableMemberSigs is override
+		#.compiler.javafixNilableMemberSigs
+		print '++ TODO jvmBackEnd.fixNilableMemberSigs'
+		pass # TODO
+		
+	def installNativeMethods(box as Box, nativeType as NativeType) is override
+		#.compiler.installJvmNativeMethods(box, nativeType)
+		print '++ TODO jvmBackEnd.installNativeMethods'
+		pass # TODO
 
+	def cobraNameForNativeBoxName(nativeBoxName as String) as String is override
+		return JvmTypeProxy.cobraNameForJvmBoxName(nativeBoxName)
+	
+	# Types
+	get objectTypeProxy as AbstractTypeProxy  is override
+		"""Type proxy for BE root of Object hierarchy."""
+		if  not _objectTypeProxy
+			_objectTypeProxy = JvmTypeProxy(JarSig.classByNameCache['java.lang.Object'])
+		return _objectTypeProxy	to !
+			
+	get typeTypeProxy  as AbstractTypeProxy  is override
+		"""Type proxy for BE notion of a class describing a Type."""
+		if  not _typeTypeProxy
+			_typeTypeProxy = JvmTypeProxy(JarSig.classByNameCache['java.lang.Class'])
+		return _typeTypeProxy to !	
+		
+	def nativeTypeProxy(type as NativeType) as NativeTypeProxy  is override
+		return JvmTypeProxy(type)
+	
+	def nativeType(type as dynamic) as NativeType  is override
+		return JvmNativeType(type)
+	
+	def nativeTypeByName(qualifiedNameOrTag as String) as NativeType is override
+		#map qualified name of .net aliased types  to java equivalents
+		# bool, char, decimal, single, double, sbyte, int{16,32,64}, byte, uint{16,32,64}, 
+		qualifiedName = .resolveTypeTag(qualifiedNameOrTag)
+		return JvmNativeType(.compiler.jvmTypeByName(qualifiedName))
+		/#
+		These are the type tags used directly by the compiler code.
+			
+		  	bool 		'Java.lang.Boolean'
+			char  		'java.lang.Char'
+			decimal 	'??System.Decimal'	
+			decimal 	'java.lang.Float'	
+			single 		'java.lang.Float'		
+			double		'java.lang.Double'		
+			sbyte		'java.lang.Byte'		
+			int16		'java.lang.Short'		
+			int32		'java.lang.Int'		
+			int64		'java.lang.Long'	
+			# java not have unsigned types (:-( use next largest signed Type
+			byte		'java.lang.Short' #& 0x7f 		
+			uint16		'java.lang.Int'		
+			uint32		'java.lang.Long'		
+			uint64		'java.lang.Long'		
+		#/
+		
+	def addArrayInterfaces(interfaces as List<of ITypeProxy>) is override
+		pass
+		#iclone = .compiler.libraryType('ICloneable') # ICloneable not supported
+		#interfaces.insert(0, iclone to ITypeProxy)
+		
+		
+		
 class GenerateJavaCodePhase inherits Phase
 
 	cue init(c as Compiler)

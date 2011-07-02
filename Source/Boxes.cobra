@@ -35,10 +35,6 @@ class Box
 	var _nativeType as NativeType?
 	var _needScanNativeType as bool
 	var _membersToUnNil as String?
-	var _defaultMemberName as String?
-		"""
-		An Indexer in CLR is known by being a property with arguments whose name matches the .memberName of a box-level DefaultMemberAttribute.
-		"""
 
 	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as String*, attribs as AttributeList, baseInterfaceNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, name, isNames, docString)
@@ -60,8 +56,40 @@ class Box
 		ensure .needScanNativeType
 		_nativeType = t
 		_needScanNativeType = true
-		_scanGenericArgs
+		_callNativeScanMethod('ScanGenericArgs') 	
 
+	def _callNativeScanMethod(tag as String)
+		"""
+		Call a backend scan method for native type scan operation desired and backend in use.
+		"""
+		# This is icky - method to call needs to be set directly via backend somehow rather than this check and call code	
+		# TODO: change to use strategy object set when init backend.
+		assert .compiler
+		assert tag in ['ScanNativeType', 'ScanGenericArgs', 'prepSysObjClass'] # turn these into an Enum
+		backEnd = .compiler.backEnd
+		branch backEnd.name
+			on 'c#-clr'
+				branch tag
+					on 'ScanNativeType',  _scanNativeTypeClr
+					on 'ScanGenericArgs', _scanGenericArgsClr
+					on 'prepSysObjClass', _prepSystemObjectClassClr
+		
+			on 'java-jvm'
+				branch tag
+					on 'ScanNativeType',  _scanNativeTypeJvm
+					on 'ScanGenericArgs', _scanGenericArgsJvm
+					on 'prepSysObjClass', _prepSystemObjectClassJvm
+			on 'objc'
+				print 'objc back end need method for [tag]'
+				assert false, 'Missing backEnd infrastructure for [backEnd.getType.name]'
+					#branch on tag
+					#	on 'ScanNativeType',  _scanObjcNativeType
+					#	on 'ScanGenericArgs', _scanObjcGenericArgs
+					#	on 'prepSysObjClass', _prepSystemObjectClassObjc
+			else 
+				throw FallThroughException('No nativeScanMethod code for backend [backEnd.name] [backEnd.getType.name]')
+				
+		
 	def addMinFields
 		base.addMinFields
 		.addField('didBindInh', .didBindInh)
@@ -194,16 +222,12 @@ class Box
 
 	# TODO: cache
 	get isSystemObjectClass as bool is override
-		# TODO-BACKEND
-		return _baseClass is nil and .name == 'Object' and .parentNameSpace and .parentNameSpace.fullName == 'System'
+		#return _baseClass is nil and .name == 'Object' and .parentNameSpace and .parentNameSpace.fullName == 'System'
+		return _nativeType and _nativeType.isSystemObjectClass
 
 	get isSystemTypeClass as bool is override
-		# TODO-BACKEND
-		return .name == 'Type' and .parentNameSpace and .parentNameSpace.fullName == 'System'
-
-	get isSystemExceptionClass as bool
-		# TODO-BACKEND
-		return .name == 'Exception' and .parentNameSpace and .parentNameSpace.fullName == 'System'
+		#return .name == 'Type' and .parentNameSpace and .parentNameSpace.fullName == 'System'
+		return _nativeType and _nativeType.isSystemTypeClass
 
 	pro membersToUnNil from var
 
@@ -568,7 +592,10 @@ class Box
 		return r
 
 	## Binding
-
+	def _scanNativeType
+		#print '_scanNativeType ', .name
+		_callNativeScanMethod('ScanNativeType') 	
+		
 	def _stackPush
 		base._stackPush
 		if .compiler, .compiler.boxStack.push(this)
@@ -647,10 +674,9 @@ class Box
 		# Therefore, everthing below has already happened for a constructed box's generic def.
 		base._bindInt
 		if .isSystemObjectClass
-			.prepSystemObjectClass
+			_callNativeScanMethod('prepSysObjClass')
 		errorCount = .compiler.errors.count
-		if _needScanNativeType
-			_scanNativeType
+		if _needScanNativeType, _scanNativeType
 		if _baseClass
 			_baseClass.bindInt
 		for interf in _baseInterfaces
@@ -693,17 +719,6 @@ class Box
 						assert ct is not this
 						ct.completeMemberConstructionIfNeeded
 						ct.bindInt
-
-	def prepSystemObjectClass
-		# TODO: fix native
-		# Pretend .NET is a bit more OO, consistent and elegant.
-		# C#'s typeof(X) is X.getType in Cobra.
-		existing = .declForName('getType') to BoxMember
-		overload = MemberOverload(existing)
-		.registerOverload(overload)
-		meth = Method(TokenFix.empty, TokenFix.empty, this, 'getType', List<of Param>(), ClrTypeProxy(Type), nil, ['shared'], AttributeList(), 'Returns the Type instance that defines this type.')
-		meth.sharedMethodBacking = 'typeof'
-		overload.addMember(meth)
 
 	def _bindBase
 		# invoked by _bindInt
@@ -1180,13 +1195,13 @@ class Class
 		base.init(token, idToken, name, paramList, isNames, attribs, implementsNodes, addsProxies, docString)
 		_baseNode = baseNode
 
-	cue init(nativeType as NativeType)
+	cue init(nativeType as NativeType, backend as BackEnd)
 		# TODO: fix native
-		base.init(TokenFix.empty, TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), List<of ITypeProxy>(), nil)
+		base.init(TokenFix.empty, TokenFix.empty, backend.cobraNameForNativeBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), List<of ITypeProxy>(), nil)
 		if nativeType.baseType
-			_baseNode = ClrTypeProxy(nativeType.baseType to ClrNativeType)  # TODO: fix native. Change to NativeTypeProxy
+			_baseNode = backend.nativeTypeProxy(nativeType.baseType to !)
 		_initNativeType(nativeType)
-
+		
 	def addRefFields
 		base.addRefFields
 		.addField('baseNode', _baseNode)
@@ -1336,6 +1351,12 @@ class Class
 							init.changeToPublic
 							break
 
+	get isSystemObjectClass as bool is override
+		return _nativeType and _nativeType.isSystemObjectClass
+
+	get isSystemTypeClass as bool is override
+		return _nativeType and _nativeType.isSystemTypeClass
+
 	def _finishOverloads
 		# deal with inheritance and overloads
 		assert _baseClass or .isSystemObjectClass
@@ -1428,8 +1449,8 @@ class Interface
 	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as String*, attribs as AttributeList, baseNodes as List<of ITypeProxy>, docString as String?)
 		base.init(token, idToken, name, paramList, isNames, attribs, baseNodes, docString)
 		
-	cue init(nativeType as NativeType)
-		base.init(TokenFix.empty, TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
+	cue init(nativeType as NativeType, backend as BackEnd)
+		base.init(TokenFix.empty, TokenFix.empty, backend.cobraNameForNativeBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
 		_initNativeType(nativeType)
 
 	get canHaveStatements as bool is override
@@ -1467,8 +1488,8 @@ class Struct
 	cue init(token as IToken, idToken as IToken, name as String, paramList as List<of IType>, isNames as String*, attribs as AttributeList, baseName as String?, interfaceNodes as List<of ITypeProxy>, addsProxies as List<of ITypeProxy>, docString as String?)
 		base.init(token, idToken, name, paramList, isNames, attribs, interfaceNodes, addsProxies, docString)
 
-	cue init(nativeType as NativeType)
-		base.init(TokenFix.empty, TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), List<of ITypeProxy>(), nil)
+	cue init(nativeType as NativeType,  backend as BackEnd)
+		base.init(TokenFix.empty, TokenFix.empty, backend.cobraNameForNativeBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), List<of ITypeProxy>(), nil)
 		_initNativeType(nativeType)
 
 	get englishName as String is override
@@ -1805,15 +1826,21 @@ class Extension
 		_name = '(unnamed extension [.serialNum])'
 		_extendedBoxProxy = extendedBoxProxy
 
-	cue init(nativeType as NativeType)
+	cue init(nativeType as NativeType,  backend as BackEnd)
 		# this only for Cobra specific extensions. Example: class Extend_String_FileName
-		base.init(TokenFix.empty, TokenFix.empty, ClrTypeProxy.cobraNameForSharpBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
+		base.init(TokenFix.empty, TokenFix.empty, backend.cobraNameForNativeBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
 		_initNativeType(nativeType)
 		# the real extended type is not this type, but the type of the first argument of any method
-		for methInfo in .clrType.getMethods  # TODO: fix native. break this out to a method
-			nativeType = ClrNativeType(methInfo.getParameters[0].parameterType)
-			break
-		_extendedBoxProxy = ClrTypeProxy(nativeType)
+		branch backend.name
+			on 'c#-clr', 	nativeType = .clrExtnNativeType(nativeType) 	# ScanClrType
+			on 'java-jvm', 	nativeType = .jvmExtnNativeType(nativeType) 	# ScanJvmType
+			on 'objc'
+				print 'objc back end need method objcExtnNativeType'
+				assert false, 'Missing backEnd infrastructure for [backend.getType.name]'
+			else 
+				throw FallThroughException('No extnNativeType code for backend [backend.name] [backend.getType.name]')
+		#nativeType = backEnd.determineExtnNativeType(nativeType)
+		_extendedBoxProxy = backend.nativeTypeProxy(nativeType)
 		(.compiler.curModule to AssemblyModule).addMustBindInh(this)
 
 	get extendedBox from var
