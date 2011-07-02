@@ -1,0 +1,30 @@
+#!bash
+# Build script for java sources for cobra (on MSWindows (XP))
+# Compile java source classes for java cobra RTL
+# copy them and std sig files to Source dir 
+
+echo 'making RTL from java sources'
+[ -d classes ] || mkdir classes
+javac -d classes CobraImp.java CobraCore.java
+[ $? == 0 ] || exit
+jar cvf CobraLang.jar -C classes .
+[ $? == 0 ] || exit
+cp CobraLang.jar ../..
+
+if [ ! -e PkgSig.class ]; then 
+    echo 'building PkgSig app'
+    javac -cp . PkgSig.java
+fi
+
+echo 'Gen pkgSig file for CobraLang.jar'
+java -cp '.;CobraLang.jar'  PkgSig -j CobraLang.jar > CobraLang.jar.sig
+
+echo 'Gen pkgSig file for rt.jar'
+java -cp .  PkgSig -j rt.jar > rt.jar.sig
+echo 'Gen pkgSig file for java.lang'
+java -cp .  PkgSig  java.lang > java.lang.sig
+echo 'Gen pkgSig file for java.util'
+java -cp .  PkgSig  java.util > java.util.sig
+
+echo 'copy .sig files to compiler directory'
+cp CobraLang.jar.sig rt.jar.sig java.util.sig java.lang.sig ../..
