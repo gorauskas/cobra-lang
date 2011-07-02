@@ -83,11 +83,11 @@ var getClientWidth = function() {
 }
 
 var getOuterHeight = function(elem) {
-	return parseFloat(css(elem, 'height') + parseFloat(css(elem, 'padding-top')) + parseFloat(css(elem, 'padding-bottom')));
+	return parseFloat(css(elem, 'height')) + parseFloat(css(elem, 'padding-top')) + parseFloat(css(elem, 'padding-bottom'));
 }
 
 var getOuterWidth = function(elem) {
-	return parseFloat(css(elem, 'width') + parseFloat(css(elem, 'padding-left')) + parseFloat(css(elem, 'padding-right')));
+	return parseFloat(css(elem, 'width')) + parseFloat(css(elem, 'padding-left')) + parseFloat(css(elem, 'padding-right'));
 }
 
 var resetMenu = function() {
@@ -183,27 +183,30 @@ var initPopups = function() {
 			// Highlight link style for active popup
 			link.style.color = '#f00';
 
-			var rect = link.getBoundingClientRect();
+			var rect = link.getBoundingClientRect(); // .left and .top are with reference to the client area (disregarding scrolls)
 			getElem(relatedPopup).onclick = popupClickHandler;
 			
 			var scroll = getScroll();
-			var leftDistance = scroll.x + rect.left + rect.width + config.popupDistance;
+			var clientWidth = getClientWidth();
+			var clientHeight = getClientHeight();
+			var popupHeight = getOuterHeight(popup);
+			var popupWidth = getOuterWidth(popup);
+			var leftDistance = (rect.left + rect.width / 2) - popupWidth / 2;
 			var topDistance = scroll.y + rect.top + rect.height + config.popupDistance;
+
+			if (leftDistance + popupWidth > clientWidth)
+				leftDistance = clientWidth - popupWidth - config.popupDistance;
+
+			if (leftDistance < 0)
+				leftDistance = config.popupDistance;
+			
+			if (rect.top + popupHeight > clientHeight && rect.top > popupHeight + config.popupDistance)
+				topDistance = scroll.y + rect.top - popupHeight - config.popupDistance;
+				
 			var popupPosition = {
 				left: leftDistance,
 				top: topDistance
-			};
-
-			var popupHeight = parseFloat(css(popup, 'height'));
-			var popupWidth = parseFloat(css(popup, 'width'));
-
-			// If the popup is outside of the regular viewport then adjust its position in the vertical and/or 
-			// horizontal planes.
-			if (topDistance + popupHeight > scroll.y + getClientHeight())
-				popupPosition.top = scroll.y + getClientHeight() - getOuterHeight(popup) - (2 * config.popupDistance);
-			
-			if (leftDistance + popupWidth > scroll.x + getClientWidth())
-				popupPosition.left = scroll.x + rect.left - popupWidth - (2 * config.popupDistance);
+			};		
 				
 			showPopup(relatedPopup, popupPosition);
 		}
@@ -215,7 +218,6 @@ window.onload = function() {
 	initMenu();
 	initPopups();
 }
-
 
 /* ]]> */	
 </script>
