@@ -141,7 +141,7 @@ var closePopups = function(skipId) {
 			continue;
 		var popup = openPopups[key];
 		popup.style.display = 'none';
-		getElem('link-' + key).style.color = null; // remove highlighting
+		getElem('link-' + key).style.color = ''; // remove highlighting
 		delete openPopups[key];
 	}
 }
