@@ -489,8 +489,11 @@ class AsExpr
 			else
 				_definition = definition
 
-	def bindImp as dynamic
-		base.bindImp
+	def postBindImp is override
+		_computeIsUsed
+		.help
+
+	def _computeIsUsed
 		# don't want to say isUsed=true if the AsExpr is the left hand side like in:
 		#		x as int = 5
 		# but if it is the right hand side like so:
@@ -504,7 +507,6 @@ class AsExpr
 				# case: x = y as int = 5
 				# recall that assign is right-to-left associative
 				_definition.isUsed = true
-		return .bindImpResult
 
 	def afterStatementBindImp is override
 		base.afterStatementBindImp
@@ -1190,11 +1192,10 @@ class IdentifierExpr
 				definition = .compiler.symbolForName(_name, false, true)  # 3rd party DLLs have lowercase class names like iConnection
 		return definition		
 
-	def bindImp as dynamic
-		base.bindImp
+	def postBindImp is override
 		if _definition and not (.superNode inherits AbstractAssignExpr and .binarySuperNode.left is this)
 			_definition.isUsed = true
-		return .bindImpResult
+		.help
 
 	def throwUnknownIdError
 		require .name.length
