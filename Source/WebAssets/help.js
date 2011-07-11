@@ -2,6 +2,8 @@
 /* <![CDATA[ */
 
 var config = {
+	centerPopup: false,
+	popupHorzOffset: 50,
 	popupDistance: 20,
 	clickForPopup: false // Set to true to open popups with a click
 };
@@ -191,7 +193,9 @@ var initPopups = function() {
 			var clientHeight = getClientHeight();
 			var popupHeight = getOuterHeight(popup);
 			var popupWidth = getOuterWidth(popup);
-			var leftDistance = (rect.left + rect.width / 2) - popupWidth / 2;
+			var leftDistance = config.centerPopup
+				? (rect.left + rect.width / 2) - popupWidth / 2
+				: rect.left + config.popupHorzOffset;
 			var topDistance = scroll.y + rect.top + rect.height + config.popupDistance;
 
 			if (leftDistance + popupWidth > clientWidth)

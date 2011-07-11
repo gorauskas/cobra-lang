@@ -17,14 +17,16 @@ class HelpGenerator
 	"""
 	
 	var settings = [
-		['open',
-			'Can be set to a boolean value (true, 1, false or 0) or set to the path of a program to execute on the help file.'],
+		['member separator',
+			'The HTML to put between type members. Defaults to <br />.'],
 		['directory',
 			'The directory to put the HTML files in. Defaults to the current directory.'],
 		['file name',
 			'The template for the file name for the HTML files. Defaults to "Help_for_TOPIC.html".'],
 		['max file name length',
 			'The maximum file name length in case TOPIC gets too long. Defaults to 64.'],
+		['open',
+			'Can be set to a boolean value (true, 1, false or 0) or set to the path of a program to execute on the help file.'],
 		['show nodes',
 			'If true, show the compiler nodes and their properties.'],
 		['max node depth',
@@ -60,6 +62,8 @@ class HelpGenerator
 
 	var _settingNames as Cobra.Lang.ISet<of String>
 
+	var _nextSerialNum = 1
+
 	cue init(topic as String, node as ISyntaxNode, parentMember as IBoxMember?, parentType as IType?)
 		base.init
 		_topic, _node = topic, node
@@ -80,6 +84,10 @@ class HelpGenerator
 	pro topic from var = ''
 	
 	pro path from var = ''
+
+	get nextSerialNum as int
+		_nextSerialNum += 1
+		return _nextSerialNum - 1
 
 	def generate
 		.reduceSearchTerms
@@ -394,6 +402,7 @@ class HelpGenerator
 		print _boxMemberName(m)
 		print '</a>'
 		print '</span>'
+		print .setting('member separator', '<br />')
 		print '<div id="[matchId]" class="popup text">'
 		try
 			signature = (m to dynamic).cobraSourceSignature to String
@@ -406,7 +415,7 @@ class HelpGenerator
 		print '</div>'
 
 	def _boxMemberId(member as IBoxMember) as String
-		return 'member-'+member.serialNum.toString
+		return 'member-'+.nextSerialNum.toString
 
 	def _boxMemberName(member as IBoxMember) as String
 		if member inherits BoxMember
@@ -520,7 +529,6 @@ class HelpGenerator
 		return value
 
 	def setting(name as String, defaultValue as int) as int
-		# to-do: is this needed?
 		return int.parse(.setting(name, defaultValue.toString))
 
 	def envVarName(settingName as String) as String
