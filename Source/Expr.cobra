@@ -162,6 +162,9 @@ class Expr inherits Stmt implements IExpr is abstract, partial
 		body
 			return .isKindOf(.compiler.collectionType) or .isKindOf(.compiler.collectionOfType)
 
+	get isObjectLiteral as bool
+		return false
+
 	pro isParened from var
 		"""
 		Set by the parser if this expression was wrapped in parenthesis.
@@ -2695,9 +2698,7 @@ class NilLiteral
 		_type = .compiler.nilType
 
 
-class StringLit
-	is partial
-	inherits AtomicLiteral
+class StringLit inherits AtomicLiteral is partial
 
 	var _string as String  # String contents (with no surrounding quotes or escaping)
 
@@ -2705,6 +2706,9 @@ class StringLit
 		require token.which.startsWith('STRING')
 		base.init(token as IToken)
 		_string = token.value to String
+
+	get isObjectLiteral as bool is override
+		return true
 
 	get string from var
 
@@ -2891,11 +2895,13 @@ class VarLit
 		base._bindImp
 
 
-class CompositeLiteral
-	inherits Literal
+class CompositeLiteral inherits Literal
 
 	cue init(token as IToken)
 		base.init(token)
+
+	get isObjectLiteral as bool is override
+		return true
 
 
 class SequenceLit
@@ -3264,6 +3270,8 @@ class ChainedCompareExpr inherits Expr is partial
 						.compiler.warning(this, 'The left side of "[opName]" is a value type ("[leftType.name]") while the right side is an incompatible reference type ("[rightType.name]").')
 					else if not rightType.isReference and not leftType.isNilableAndDescendantOf(rightType)
 						.compiler.warning(this, 'The right side of "[opName]" is a value type ("[rightType.name]") while the left side is an incompatible reference type ("[leftType.name]").')						
+					else if left.isObjectLiteral or right.isObjectLiteral
+						.compiler.warning(this, 'Do not use the identity operator "[opName]" with an object literal. Use an equality operator such as "==" or "<>".')
 		else
 			if not leftType.isComparableTo(rightType)
 				innerMsg = 'cannot be compared'

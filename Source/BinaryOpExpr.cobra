@@ -532,12 +532,11 @@ class CompareExpr
 	is partial
 	inherits BinaryOpExpr
 
-	# TODO: handle the real equals and does not equal
-
 	var _items as List<of Expr>
 	var _operations as List<of String>
 
 	cue init(opToken as IToken, op as String, left as Expr, right as Expr)
+		require op in ['IS', 'ISNOT', 'EQ', 'NE', 'LT', 'GT', 'LE', 'GE']
 		base.init(opToken, op, left, right)
 		_items = [left, right]
 		_operations = [op]
@@ -547,7 +546,7 @@ class CompareExpr
 	def addComparison(op as String, right as Expr)
 		_operations.add(op)
 		_items.add(right)
-	
+
 	def _bindImp
 		base._bindImp
 		_type = .compiler.boolType
@@ -583,6 +582,8 @@ class CompareExpr
 						.compiler.warning(this, 'The left side of "[opName]" is a value type ("[leftType.name]") while the right side is an incompatible reference type ("[rightType.name]").')
 					else if not rightType.isReference and not leftType.isNilableAndDescendantOf(rightType)
 						.compiler.warning(this, 'The right side of "[opName]" is a value type ("[rightType.name]") while the left side is an incompatible reference type ("[leftType.name]").')						
+					else if .left.isObjectLiteral or .right.isObjectLiteral
+						.compiler.warning(this, 'Do not use the identity operator "[opName]" with an object literal. Use an equality operator such as "==" or "<>".')
 		else
 			if not leftType.isComparableTo(rightType)
 				innerMsg = 'cannot be compared'
@@ -593,6 +594,10 @@ class CompareExpr
 				msg += ' Maybe you should try "inherits" instead of "is".'
 			.throwError(msg)
 
+	def _isObjectLiteral(expr as Expr) as bool
+		if expr inherits StringLit, return true
+		if expr inherits CompositeLiteral, return true
+		return false
 
 interface IDotRightExpr
 	inherits IExpr

@@ -18,4 +18,7 @@ namespace lcase {
         return "lc";
       }
    }
+	public enum EnumType {
+		lowerUPPER
+	};
 }
