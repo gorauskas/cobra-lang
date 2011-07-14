@@ -133,6 +133,7 @@ class InstallFromWorkspace
 	var _cobraCommandPath as String?  # ex: 'C:\Cobra\bin\cobra.bat', '/usr/local/cobra/bin/cobra'
 	var _args = List<of String>()
 	var _skipStdLib = false
+	var _isNet4 = false
 
 	def run
 		print
@@ -145,6 +146,7 @@ class InstallFromWorkspace
 		.verifyElevatedPermissions
 		.verifyInstallDirectory
 		.verifyInWorkspace
+		.askNet4
 		.verifyVirtualMachineVersion
 		.locateSnapshotCompiler
 		# .locateGacUtil
@@ -199,7 +201,7 @@ class InstallFromWorkspace
 		if i == -1, i = args.indexOf('-dotnet4')
 		if i > -1
 			args.removeAt(i)
-			.setUpCLR4(args)
+			_isNet4 = true
 
 		return args
 
@@ -436,10 +438,28 @@ class InstallFromWorkspace
 		print 'Verified.'
 		print
 
+	def askNet4
+		.startStage('.NET 4.0 Prompt')
+		if _isNet4
+			print '-net4 was passed on the command line'
+			answer = 'y'
+		else
+			print 'Cobra can be installed for .NET 2.0/3.0/3.5 or .NET 4.0.'
+			while true
+				print 'Do you want to install for .NET 4.0? \[no] ' stop
+				answer = Console.readLine.trim
+				if answer == '', answer = 'n'
+				answer = answer[0].toString
+				if answer in 'yn', break
+		print
+		if answer == 'y'
+			_isNet4 = true
+			.setUpCLR4(_args)
+
 	def verifyVirtualMachineVersion
 		if CobraCore.isRunningOnMono
 			.startStage('Verify Novell Mono version')
-			minMonoVersion = '2.4'
+			minMonoVersion = if(_isNet4, '2.10', '2.4')
 			vers = CobraCore.monoVersionString
 			if vers is nil or vers.trim == ''
 				.error('Cannot determine Mono version. Please install Mono [minMonoVersion] or higher.')
