@@ -164,15 +164,27 @@ class Box
 	def _allExtensionMembers(ns as NameSpace, imembers as IList<of IBoxMember>, members as IList<of BoxMember>)
 		for decl in ns.declsInOrder
 			if decl inherits Extension
-				decl.prepIfNeeded
-				if decl.extendedBox == this
-					for imember in decl.declsInOrder
+				ext = decl
+				ext.prepIfNeeded
+				if ext.extendedBox == this
+					for imember in ext.declsInOrder
 						if imember inherits BoxMember
 							if not any for m in members get m.matchesSignature(imember)
 								imembers.add(imember)
 								members.add(imember)
 						else
 							imembers.add(imember)
+				else if .isGeneric and ext.isGeneric
+					# see Extension.extensionMemberFor
+					cto = .constructedTypeOf(ext.extendedBox.genericDef to !)
+					if cto and .isDescendantOf(cto to !)
+						for imember in ext.constructedTypeFor(cto.genericParams).declsInOrder
+							if imember inherits BoxMember
+								if not any for m in members get m.matchesSignature(imember)
+									imembers.add(imember)
+									members.add(imember)
+							else
+								imembers.add(imember)								
 
 	get baseClass from var
 
