@@ -135,7 +135,9 @@ class Box
 		
 	def allMembers as IList<of IBoxMember>
 		imembers = List<of IBoxMember>()
-		_allMembers(imembers, List<of BoxMember>())
+		members = List<of BoxMember>()
+		_allMembers(imembers, members)
+		_allExtensionMembers(imembers, members)
 		return imembers
 
 	def _allMembers(imembers as IList<of IBoxMember>, members as IList<of BoxMember>)
@@ -148,6 +150,29 @@ class Box
 				imembers.add(imember)
 		for box in .allBaseTypes
 			box._allMembers(imembers, members)
+
+	def _allExtensionMembers(imembers as IList<of IBoxMember>, members as IList<of BoxMember>)
+		if .compiler and .compiler.nameSpaceStack.count
+			.prepIfNeeded
+			for ns in .compiler.nameSpaceStack
+				_allExtensionMembers(ns, imembers, members)
+			for box in .allBaseTypes
+				box._allExtensionMembers(imembers, members)
+			for ud in .compiler.nameSpaceStack.peek.useDirectives
+				_allExtensionMembers(ud.boundNameSpace, imembers, members)
+
+	def _allExtensionMembers(ns as NameSpace, imembers as IList<of IBoxMember>, members as IList<of BoxMember>)
+		for decl in ns.declsInOrder
+			if decl inherits Extension
+				decl.prepIfNeeded
+				if decl.extendedBox == this
+					for imember in decl.declsInOrder
+						if imember inherits BoxMember
+							if not any for m in members get m.matchesSignature(imember)
+								imembers.add(imember)
+								members.add(imember)
+						else
+							imembers.add(imember)
 
 	get baseClass from var
 
@@ -1827,9 +1852,7 @@ class GenericTypeConstraint
 			.throwError('A generic type constraint must be a class or an interface. "[_representedType.name]" is not.')
 
 
-class Extension
-	is partial
-	inherits Box
+class Extension inherits Box is partial
 	"""
 	Example:
 		extend String		
