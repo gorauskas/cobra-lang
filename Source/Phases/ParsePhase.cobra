@@ -18,6 +18,7 @@ class ParsePhase inherits Phase
 		"""
 		compiler = .compiler
 		assert compiler.pathsToCompile.count or .options.buildStandardLibrary
+		backEnd = .compiler.backEnd
 
 		_parsedModules = modules = List<of Module>()
 
@@ -41,12 +42,12 @@ class ParsePhase inherits Phase
 				throw
 			if compiler.errors.count > errorsCount
 				_printExtraSource(extraSource)
-			for r in parser.references, compiler.loadReference(.compiler.backEnd.fixLibExtension(r), false)
+			for r in parser.references, compiler.loadReference(backEnd.fixLibExtension(r), false)
 			modules.add(module)
 
 		didError = false
-		for filename in .compiler.pathsToCompile
-			nativeModule = .compiler.backEnd.genNativeModule(filename, .verbosity)
+		for filename in compiler.pathsToCompile
+			nativeModule = backEnd.genNativeModule(filename, .verbosity)
 			if nativeModule
 				modules.add(nativeModule) # SharpModule or JavaModule or ...
 			else
@@ -64,7 +65,7 @@ class ParsePhase inherits Phase
 				catch SourceException
 					didError = true
 				success
-					for r in parser.references, compiler.loadReference(.compiler.backEnd.fixLibExtension(r), false)
+					for r in parser.references, compiler.loadReference(backEnd.fixLibExtension(r), false)
 					# There could still be parse errors that were recorded, but not thrown.
 					# But that's okay because _errors.count is checked further below.
 					modules.add(module)
