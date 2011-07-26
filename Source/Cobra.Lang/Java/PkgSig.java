@@ -15,7 +15,7 @@
  *  
  * 
  * TODO 
- *  add cmdline flag generating pkgSig file w/o redirection:  
+ *  add cmdline flag generating pkgSig file w/o redirection:
  *      java -cp . PkgSig -cobra <pkgname>
  *  Cleanup and javadoc this file.
  * Put a PkgSig version and timestamp in the pkgSigFile
@@ -331,11 +331,13 @@ public abstract class PkgSig {
     public static void usage() {
         System.out.println("Unknown usage");
         System.out.printf("usage: pkgSig [-p] <pkgName>\n");
-        System.out.printf("usage: pkgSig -j <jarfile>\n ");
-        System.out.printf("  Display class signatures for a package or contents of a jarfile.\n\n ");
+        System.out.printf("usage: pkgSig -j <jarfile>\n");
+        System.out.printf("usage: pkgSig -jrt\n ");
+        System.out.printf("  Display class signatures for a package or contents of a jarfile.\n\n");
         System.out.printf("A class signature is the class name, its superclass and signatures for fields and methods of the class.\n");
         System.out.printf("Packages are searched for in files and jars in classpath.\n");
         System.out.printf("Jarfiles are specified as relative or absolute pathnames. Relative pathname Jarfiles not found are searched for in the classpath\n");
+        System.out.printf("The -jrt invocation displays class Signatures for the java runtime jarfile(s)\n");
         System.out.printf("Output format is suitable for parsing and use by the cobra java backend (cross) compiler.\n");
         System.exit(2);
     }
@@ -369,14 +371,32 @@ public abstract class PkgSig {
         return jarFile;
     }
     
+    public static void sigForJarFile(String fileName, Set<String> suppressFilter) throws ClassNotFoundException
+    {
+        ClassLoader loader = Thread.currentThread().getContextClassLoader();
+        assert loader != null;
+        File jarFile = PkgSig.lookForJarFile(fileName, loader);
+        if ( !jarFile.exists()) {
+            System.out.printf("File '%s' does not exist.\n", jarFile.getAbsolutePath());
+            System.exit(1);
+        }
+            
+        //System.out.printf( "DBG: jarfile=%s\n", jarFile.getAbsolutePath());
+        Set<Class> clsSet = new java.util.concurrent.ConcurrentSkipListSet<Class>(new PkgSig.ClassComparator());
+
+        System.out.printf("# PkgSig file for jarfile '%s'\n", jarFile.getAbsolutePath());
+        processJarFile(jarFile.getAbsolutePath(), loader, null, suppressFilter, clsSet);
+        
+        for ( Class cls : clsSet) {
+            new ClassSig(cls).emit();
+        }
+    }
     
     public static void main( String[] args) throws Exception {
         if (args.length ==0 )
               usage();
 
-        if (args.length == 1 ) {  // default -p pkgname [...]
-            if ( args[0].startsWith("-")) usage();
-
+        if (args.length == 1 && !args[0].startsWith("-") ) {  // default -p pkgname [...]
             String pkg = args[0];
             Set<Class> clsSet = PkgSig.findClassesForPkg(pkg);
             if (clsSet.size() == 0 )
@@ -386,8 +406,6 @@ public abstract class PkgSig {
             }
 
             for ( Class cls : clsSet) {
-                    //Class cls = (Class)o;
-                    //System.out.println(cls.getName());
                 ClassSig classSig = new ClassSig(cls);
                 classSig.emit();    
             }
@@ -396,42 +414,29 @@ public abstract class PkgSig {
             String pkg = args[1];
             Set<Class> clsSet = PkgSig.findClassesForPkg(pkg);
             for ( Class cls : clsSet) {
-                //ClassSig classSig = new ClassSig(cls);
-                //classSig.emit();    
                 new ClassSig(cls).emit();
             }
         }
         else if (args[0].equals("-j")) {
-            ClassLoader loader = Thread.currentThread().getContextClassLoader();
-            assert loader != null;
-            String fileName = args[1];
-            File jarFile = PkgSig.lookForJarFile(fileName, loader);
-            if ( !jarFile.exists()) {
-                System.out.printf("File '%s' does not exist.\n", jarFile.getAbsolutePath());
-                System.exit(1);
-            }
-            
-            //System.out.printf( "DBG: jarfile=%s\n", jarFile.getAbsolutePath());
-	    Set<Class> clsSet = new java.util.concurrent.ConcurrentSkipListSet<Class>(new PkgSig.ClassComparator());
+            PkgSig.sigForJarFile(args[1], null);
+        }
+        else if (args[0].equals("-jrt")) {  // java runtime 
             Set<String> suppressFilter = new HashSet<String>();
+            
             // Theres upwards of 8000 classes in rt.jar most of which we dont care about
             // suppress internal implementation classes which shouldnt be using anyway
             suppressFilter.add("com.sun");
             suppressFilter.add("com.sunw");
             suppressFilter.add("sun");
             suppressFilter.add("sunw");
+            
             // suppress some biggies we 'probably' wont ever use - may want to revisit these
-            suppressFilter.add("org.omg");
-            suppressFilter.add("javax.swing.plaf");
+            suppressFilter.add("org.omg"); // Corba Sh*t - cos *everybody* needs this in the base RTL
+            suppressFilter.add("javax.swing.plaf"); // swing platform GUI implementations - ditto
             suppressFilter.add("javax.print.attribute.standard");
-            suppressFilter.add("org.jcp.xml.dsig");
+            suppressFilter.add("org.jcp.xml.dsig"); // bloat in the RTL - why should we worry about that?
 
-            System.out.printf("# PkgSig file for jarfile '%s'\n", jarFile.getAbsolutePath());
-            processJarFile(jarFile.getAbsolutePath(), loader, null, suppressFilter, clsSet);
-        
-            for ( Class cls : clsSet) {
-                new ClassSig(cls).emit();
-            }
+            PkgSig.sigForJarFile("rt.jar", suppressFilter);
         }
         else {
             usage();
@@ -448,7 +453,8 @@ class ClassSig {
     Class cls;
     TypeVariable<?>[] genericParams = {};
     int indent= 0;
-    
+    static String TYPE_SEP = ",";
+          
     public ClassSig(Class cls) {
         this.cls = cls;
     }    
@@ -486,15 +492,13 @@ class ClassSig {
         System.out.printf( "%-30s %s\n", t, "# JavaType");
         
         printIndent();
-        System.out.printf("%-30s %s\n", this.cls.getPackage().getName(), "# package");
+        String pkgName = this.cls.getPackage().getName();
+        System.out.printf("%-30s %s\n", pkgName, "# package");
         
-        // Name of the class, dotNet form for Generic class
-        String clsName = this.cls.getSimpleName();
-        Class enclClass = this.cls.getEnclosingClass();
-        if ( enclClass != null) {
-            clsName = enclClass.getSimpleName() + "$" + this.cls.getSimpleName();
-            flags += "N";
-        }
+        // Name of the class(without pkgname), dotNet form for Generic class
+        String clsName = this.cls.getName();
+        if (clsName.startsWith(pkgName+"."))
+              clsName = clsName.substring(pkgName.length()+1);
         String gName = this.dotNetGenericsName(this.cls, clsName);
         if (! gName.isEmpty()) {
             clsName = gName;
@@ -524,9 +528,11 @@ class ClassSig {
         //  Interfaces
         //System.out.printf("%-30s %s\n", '-', " # interfaces");
         //Class[] interfaces = this.cls.getInterfaces();
-        //emitClassList(interfaces, "interfaces");
-        Type[] gInterfaces = this.cls.getGenericInterfaces();
+        //emitClassList(interfaces, "nonG interfaces");
+        Type[] gInterfaces = getAllGenericInterfaces(this.cls);
+        //Type[] gInterfaces = this.cls.getGenericInterfaces();
         emitTypesList(gInterfaces, " Interfaces");
+        //System.out.printf("### nIfcs %d, ngIfcs %d\n", interfaces.length, gInterfaces.length);
 
         // Modifiers
         //System.out.printf("%-30s %s\n", '-', " # modifiers");
@@ -709,7 +715,7 @@ class ClassSig {
         for (Class c : clsList) {
             sb.append(sep);
             sb.append(c.getName());
-            sep = ",";
+            sep = TYPE_SEP;            
         }
         if (clsList.length == 0 ) 
             sb.append("-");
@@ -732,7 +738,8 @@ class ClassSig {
         for (TypeVariable<?> p : this.genericParams) { // 
             sb.append(sep);
             sb.append(p.getName());
-            sep = ",";
+            sep = TYPE_SEP;            
+            
         }
         //if (this.genericParams.length == 0 ) 
         //    return; //sb.append("-");
@@ -751,7 +758,8 @@ class ClassSig {
             sb.append(sep);
             String tStr = this.makeTypeStr(t);
             sb.append(tStr);
-            sep = ",";
+            sep = TYPE_SEP;            
+            
         }
         if (typList.length == 0 ) {
             //if (isOptional)
@@ -774,9 +782,15 @@ class ClassSig {
     
     /*
      * Cleanup a (Generic) Type name to be 'consistant' with class naming.
+     * 
+     * @param t   Type to do name cleanup on
+     * @return     String representation of 'cleaned' Type 
      */
     public String makeTypeStr(Type t) {
         String tStr = t.toString();
+        //System.out.printf("### %-50s \n", tStr);
+        tStr = tStr.replace("java.util.Map.java.util.Map", "java.util.Map");  // EntrySets screwed for some reason
+        
         tStr = tStr.replace("class ", "");  // sometimes puts on leading 'type '
         tStr = tStr.replace("interface ", "");  
         // possibly others - enum ?
@@ -793,5 +807,27 @@ class ClassSig {
             tStr = sfx.toString();
         }
         return tStr;
+    }
+    
+    /* Walk class inheritance hierachy from a class up,  accumulate and return all the 
+     * interfaces (generic and not) supported.
+     * Uses getGenericInterfaces to lookup interfaces for each class.
+     * 
+     * @param cls   Class to obtain all interfaces for.
+     * @return      Array of Types containing all generic interfaces found
+     */
+    public Type[] getAllGenericInterfaces(Class cls) {
+        List<Type> ifcs = new ArrayList<Type>();
+        while ( cls != null ) {
+            for ( Type t : cls.getGenericInterfaces() )
+	        ifcs.add(0, t); // insert at front so list is in superclass downwards order
+            cls = cls.getSuperclass();
+        }
+
+        // remove any dups using a Set
+        Set<Type> ifcSet = new LinkedHashSet<Type>();
+        for ( Type t : ifcs )
+	        ifcSet.add(t);
+        return ifcSet.toArray(new Type[0]);
     }
 }

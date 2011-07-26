@@ -239,11 +239,10 @@ class Compiler is partial
 		finally
 			_curModule = saveModule
 
-	def dotNetfixNilableMemberSigs
+	def dotNetFixNilableMemberSigs
+		# Fix the listed members to be non Nilable
 		# TODO: this really needs to go in a separate file that the compiler reads each time
-
 		# TODO: look to see if what the Spec# team put together can be leveraged instead of recreating all this work!
-		# fix up member sigs regarding nilable
 		# hard coded below. TODO: read from a Cobra config file
 		_fix('System.Object', 'toString getType memberwiseClone')
 			# ^ regarding .toString, not technically true, but common enough and life is too painful when the return type is nilable
@@ -433,7 +432,7 @@ class Box is partial
 	def isClrSystemExceptionClass as bool
 		return .name == 'Exception' and .parentNameSpace and .parentNameSpace.fullName == 'System'
 				
-	def _prepSystemObjectClassClr
+	def prepSystemObjectClassClr
 		# Pretend .NET is a bit more OO, consistent and elegant.
 		# C#'s typeof(X) is X.getType in Cobra.
 		existing = .declForName('getType') to BoxMember
@@ -443,7 +442,7 @@ class Box is partial
 		meth.sharedMethodBacking = 'typeof'
 		overload.addMember(meth)
 		
-	def _scanNativeTypeClr
+	def scanNativeTypeClr
 		"""
 		Subclasses should invoke base and then invoke the various _scanFoo methods that are appropriate for them.
 		"""
@@ -452,7 +451,7 @@ class Box is partial
 		# print '<> _scanNativeType for [.name] in [_parentNameSpace.fullName], class is [.getType.name]'
 
 
-	def _scanGenericArgsClr
+	def scanGenericArgsClr
 		if _clrType.isGenericType
 			for genArg in _clrType.getGenericArguments
 				t = (.compiler to Compiler).typeForClrType(genArg)
@@ -818,8 +817,8 @@ class Box is partial
 class Class
 	is partial
 
-	def _scanNativeTypeClr
-		base._scanNativeTypeClr
+	def scanNativeTypeClr
+		base.scanNativeTypeClr
 		_scanClrIsNames
 		_scanClrImplements
 		_scanClrNestedTypes
@@ -835,8 +834,8 @@ class Class
 class Interface
 	is partial
 
-	def _scanNativeTypeClr
-		base._scanNativeTypeClr
+	def scanNativeTypeClr
+		base.scanNativeTypeClr
 		_scanClrIsNames
 		_scanClrImplements
 		_scanClrNestedTypes
@@ -849,8 +848,8 @@ class Interface
 class Struct
 	is partial
 
-	def _scanNativeTypeClr
-		base._scanNativeTypeClr
+	def scanNativeTypeClr
+		base.scanNativeTypeClr
 		_scanClrIsNames
 		_scanClrImplements
 		_scanClrNestedTypes
@@ -863,9 +862,9 @@ class Struct
 
 class Extension is partial
 
-	def _scanNativeTypeClr
+	def scanNativeTypeClr
 		# this only for Cobra specific extensions. Example: class Extend_String_1939
-		base._scanNativeTypeClr
+		base.scanNativeTypeClr
 		_scanClrIsNames
 		#_scanClrImplements
 		#_scanClrNestedTypes
@@ -894,10 +893,13 @@ class Extension is partial
 
 class EnumDecl is partial
 
-	def _setUnderlyingTypeClr
+	cue init(parent as IParentSpace?, nativeType as NativeType)
+		.init(parent, nativeType, List<of String>(), '')
+		
+	def setUnderlyingTypeClr
 		_storageTypeNode = 	ClrTypeProxy(Enum.getUnderlyingType((_nativeType to ClrNativeType).backEndType))
 	
-	def _scanNativeTypeClr
+	def scanNativeTypeClr
 		# TODO: read attribs
 		_needScanNativeType = false
 		clrType = (_nativeType to ClrNativeType).clrType 

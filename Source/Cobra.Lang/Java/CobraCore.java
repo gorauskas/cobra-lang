@@ -17,6 +17,9 @@ public class CobraCore {
     public static Boolean _willCheckAssert = true;
     public static Boolean _willCheckNil = true;
 
+    //public static String getRuntimePlatform() { return "jvm"; } // prop
+    public static final String runtimePlatform =  "jvm"; 
+    
     public static int noOp(/* allowNull */ Object... args) { 
         /* """
 	No operation. Primarily used in Cobra's own test suite to consume a local variable to avoid undesired warnings.

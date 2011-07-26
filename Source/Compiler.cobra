@@ -64,11 +64,16 @@ class BackEnd is abstract
 		base.init
 		_name = ''
 		_rtlName = 'rtl'
+		_rtlSrcFile = 'rtlSrc.ext'
 		__compiler = compiler
 
 	get name from var as String
 	
 	get cobraRuntimeLibFile from _rtlName as String 
+		"""Name of the Cobra RunTime Library file for this backend."""
+
+	get rtlSrcFile from _rtlSrcFile as String
+		"""Name of the backEnd source file containing any native code support for Cobra.Lang."""
 
 	get compiler from __compiler as Compiler
 	
@@ -88,14 +93,20 @@ class BackEnd is abstract
 		rearrangements if necessary) for this given backend.
 		"""
 		
+	def getRecommendedBuiltInType(parentNameSpace as NameSpace?, name as String) as String? is abstract
+		"""
+		If parentNameSpace is the main system namespace and name is a backEnd builtin type 
+		return the Cobra equivalent language type name (or nil). 
+		"""
+		
 	def computeOutName as String is abstract
 		"""
-		Return binary output name for compilation of files for this backend.
+		Return the binary file output name for compilation of files for this backend.
 		"""
 		
 	def genNativeModule(filename as String, verbosity as int) as Module? is abstract	
 		"""
-		Check if a filename is a Native module and if so return the Native module type for it
+		Check if a filename is a Native module and if so generate and return the Native module type for it
 		otherwise return nil.
 		"""
 	
@@ -117,13 +128,12 @@ class BackEnd is abstract
 	
 	def loadLibReference(reference as String) as bool is abstract
 		"""
-		Load the given lib reference file  using the current backend paradigms. 
+		Load the given library reference file  using the current backend paradigms. 
 		Return true if reference found and loaded correctly, false otherwise
 		"""
 	
 	def readSystemTypes is abstract
 		""" Read and Load System Types for backend for Compiler to make available"""
-			
 		
 	def fixNilableMemberSigs is abstract
 		"""			
@@ -167,9 +177,36 @@ class BackEnd is abstract
 		otherwise the qualified names are expected to conform to the platform back end naming. 
 		"""
 	
-	def addArrayInterfaces( interfaces as List<of ITypeProxy>) is abstract
-		"""Add any additional interfaces the backends support that an ArrayType may need to have."""
-			
+	def prepSystemObjectClass(box as Box) is abstract
+		"""Setup additional or convenience members on the System Object class. """
+		
+	def scanGenericArgs(box as Box) is abstract
+		"""Scan a loaded Dll (generic) type and translate from native any generic Args."""
+		
+	def scanNativeType(box as Box) is abstract
+		"""Scan a loaded Dll type and convert its native Type info to Cobras form """
+		
+	def scanNativeType(edcl as EnumDecl) is abstract
+		"""Scan a loaded Dll Enum type and convert its native info to Cobras form """
+		
+	def setUnderlyingType(edcl as EnumDecl)	 is abstract
+		"""Set underlying Storage Type of the value of an Enum."""
+		
+	def determineExtnNativeType(extn as Extension, nativeType as NativeType) as NativeType
+		"""
+		The real extended type is the type of the first argument of any method.
+		Find and make that type from the param list.
+		"""
+		throw Exception('Need implementation of determineExtnNativeType for backend to determine type for an extension')
+
+	def handleNameSpaceNameCollision(ns as NameSpace, token as IToken, name as String) as NameSpace
+		"""	
+			What to do if a namespace name collides with an existing symbol.
+			Some backends disallow this situation so its an error.
+			Others keep namespace and symbol tables separate so its perfectly
+			allowable.
+		"""
+		throw Exception('In [ns.name] there is a already non-namespace declaration named "[name]".')
 	
 class BasicBackEnd inherits BackEnd
 	""" Stub BackEnd for tests. """
@@ -178,6 +215,7 @@ class BasicBackEnd inherits BackEnd
 		base.init(compiler)
 		_name = 'c#-clr(basic)'
 		_rtlName = 'cobraRTL.libext'
+		_rtlSrcFile = 'cobraRTL.ext'
 		
 		_tagToTypeName = {
 			'Object': 'System.Object',
@@ -187,6 +225,9 @@ class BasicBackEnd inherits BackEnd
 	def makePhases(phases as IList<of Phase>) is override
 		pass
 		
+	def getRecommendedBuiltInType(parentNameSpace as NameSpace?, name as String) as String? is override
+		return nil
+
 	def computeOutName as String  is override
 		return 'BasicOut'
 		
@@ -223,6 +264,21 @@ class BasicBackEnd inherits BackEnd
 	def cobraNameForNativeBoxName(name as String) as String is override
 		return name + '_BBE'
 	
+	def prepSystemObjectClass(box as Box) is override
+		pass
+		
+	def scanGenericArgs(box as Box) is override
+		pass
+		
+	def scanNativeType(box as Box) is override
+		pass
+		
+	def scanNativeType(edcl as EnumDecl) is override
+		pass
+		
+	def setUnderlyingType(edcl as EnumDecl)	 is override
+		pass
+
 	# Types
 	get objectTypeProxy as AbstractTypeProxy is override
 		return ClrTypeProxy(Object) # for testing
@@ -239,9 +295,6 @@ class BasicBackEnd inherits BackEnd
 	def nativeTypeByName(qualifiedName as String) as NativeType is override
 		return ClrNativeType(System.Object) #TODO: fix this to something non BE specific Tmp
 	
-	def addArrayInterfaces( interfaces as List<of ITypeProxy>) is override
-		pass
-		
 class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, ICompilerForNodes is partial
 	"""
 	General notes:
@@ -284,8 +337,7 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 
 
 	# caches
-	#var _clrPrimitiveToITypeCache as IDictionary<of System.Type, IType>?
-	var _primitiveToITypeCache as IDictionary<of dynamic, IType>?
+	var _primitiveToITypeCache as IDictionary<of dynamic, IType>? # Key is backend type for a Type ( e.g System.Type)
 
 	cue init
 		.init(0, nil)
@@ -347,6 +399,9 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		_primitiveToITypeCache = value
 
 	get globalNS from var
+		"""
+		Holds all topLevel decls including refs to Namespaces used and referenced.
+		"""
 
 	pro mainMethodTypeName from var as String = ''
 
@@ -846,48 +901,9 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		return _nilableDynamicType to !
 # -- end of ITypeProvider
 
-/#
-overrides replacing above for mixin of BasicTypeProvider
-	class Compiler ... includes BasicTypeProvider
-		
-	var _nilableDynamicType as NilableType?
-	
-	get numberType as AbstractNumberType is override
-		if _numberType is nil
-			branch .options['number'] to String
-				on 'decimal', _numberType = .decimalType
-				on 'float',   _numberType = .floatType
-				on 'float32', _numberType = .floatType(32)
-				on 'float64', _numberType = .floatType(64)
-				else, throw FallThroughException(.options['number'])
-		return _numberType to !
-
-
-	def nilableType(type as IType) as NilableType is override
-		if type inherits NilableType, return type
-		if _nilableTypes is nil
-			_nilableTypes = Dictionary<of INode, NilableType>()
-		if _nilableTypes.containsKey(type)
-			return _nilableTypes[type]
-		else
-			_nilableTypes[type] = nt = NilableType(type)
-			nt.bindInh
-			if not .isBindingInh, nt.bindInt
-			return nt
-
-	def defaultType as IType is override
-		return .nilableDynamicType
-
-	def nilableDynamicType as NilableType
-		if _nilableDynamicType is nil
-			_nilableDynamicType = .nilableType(.dynamicType)
-		return _nilableDynamicType to !
-#/		
 
 
 	get typeType as IType
-		#return _libraryType('System.Type')
-		#return _libraryType(.backEnd.tagToTypeName['Type'])
 		return .libraryType('Type')
 
 	## More type stuff
@@ -1338,7 +1354,6 @@ overrides replacing above for mixin of BasicTypeProvider
 		ns as IContainer = _globalNS
 		thing as IContainer? = nil
 		for name in names
-			#print (thing ? ns)
 			possible = (thing ? ns).declForName(name)
 			assert possible, name
 			if possible inherits IContainer

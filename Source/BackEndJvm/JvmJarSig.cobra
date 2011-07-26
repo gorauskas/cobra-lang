@@ -25,20 +25,42 @@ class JarSig
 		var classByNameCache = Dictionary<of String, JavaClassType>()
 			"""All classes found in all jars keyed by canonical/full name."""
 				
+		def lookupClassByCobraName(fullCobraName as String) as JavaClassType
+			"""
+			This is the only way to access the JarSig classCache contents from outside this file.
+			"""
+			assert fullCobraName[0].isUpper
+			parts = fullCobraName.split('.')
+			for i in 0: parts.length-1
+				parts[i] = parts[i][0].toLower.toString + parts[i][1:]
+			fullName = parts.join('.')
+			#print 'Lookup "[fullCobraName]" as "[fullName]"'
+			return JarSig.classByNameCache[fullName]
+				
 		def lookupClass(fullName as String) as JavaClassType
 			""" Lookup class by full/canonicalName."""
 			if not JarSig.classByNameCache.containsKey(fullName)
-				if fullName.startsWith(r'['),     .addArrayClass(fullName)
-				else if fullName.contains(r'<'),  .addGenericInstClass(fullName)
-				else if not fullName.contains('.'), .addGenericParamClass(fullName)
+				if fullName.startsWith(r'[')	# [a.b.c; 
+					.addArrayClass(fullName)
+				else if fullName.contains(r'<')  #	Generic a.b.c<a.b.c,..> or a.b.c<T> or a.b.c<?...>
+					paramList = fullName.after('<')
+					if _hasBoundParam(paramList), 	.addGenericInstClass(fullName) # shld this be a genericDefn ?
+					else if paramList.contains('.'), .addGenericInstClass(fullName)
+					else, return .findAliasGenericDefnClass(fullName)
+				else if fullName.startsWith('?') or _hasBoundParam(fullName) or not fullName.contains('.')
+					.addGenericParamClass(fullName)					
 				else
-					print 'Dbg:JarSig.lookupClass - unknown class:[fullName]'
+					print 'Dbg:JarSig.lookupClass - unknown class:"[fullName]".'
 			#print 'Lookup class', fullName
 			return JarSig.classByNameCache[fullName]
 					
+		# java bounded generic param '<? extends TYPE>' or '<? super TYPE>'
+		def _hasBoundParam(name as String) as bool
+			return name.contains(' extends ') or name.contains(' super ') or name.contains('?')			
+		
 		def addArrayClass(aName as String)
 			"""Array classes are synthesized on reference assuming element class already exists."""
-			print 'Dbg crt ArrayClass "[aName]"' 	
+			#print 'Dbg crt ArrayClass "[aName]"' 	
 			elName = aName.replace(r'[','')	
 			branch elName
 				on 'Z', elName = 'boolean'
@@ -61,7 +83,7 @@ class JarSig
 			elType = JarSig.lookupClass(elName)
 			arrayCls = JavaClassType(aName, elType) # ArrayType
 			JarSig.classByNameCache[aName] = arrayCls
-			print 'Dbg: added ArrayOf_[elName] "[aName]"' 	
+			#print 'Dbg: added ArrayOf_[elName] "[aName]"' 	
 		
 		def addGenericInstClass(fullName as String)
 			"""
@@ -69,25 +91,49 @@ class JarSig
 				e.g. com.x.MyClass<com.x.Inst, java.lang.String>
 			Synthesized (here) as a result of being referenced.
 			"""
-			print 'Dbg crt GenericInstClass "[fullName]"' 
+			#print 'Dbg crt GenericInstClass "[fullName]"' 
 			assert fullName.contains('<') and fullName.endsWith('>')
-			canonName = fullName.beforeL('<')
+			canonName = fullName.before('<')
 			assert canonName.contains('.')
 			idx = canonName.lastIndexOf('.')
 			gName = canonName[idx+1:]
 			pkg = canonName[0:idx]
-			paramTypes = fullName.afterL('<')[0:-1] # drop end '>'
-			print 'Dbg: GenericInstanceClass "[pkg]" "[gName]" "[paramTypes]' 	
+			paramTypes = fullName.after('<')[0:-1] # drop end '>'
+			#print 'Dbg: GenericInstanceClass "[pkg]" "[gName]" "[paramTypes]' 	
 			giCls = JavaClassType(gName, pkg, paramTypes)
 			JarSig.classByNameCache[fullName] = giCls
-			# JarSig.registerClassType(pkg, giCls)	
-			print 'Dbg: added GenericInstanceClass "[fullName]"' 	
+			#JarSig.registerClassType(fullName, giCls)	
+			#print 'Dbg: added GenericInstanceClass "[fullName]"' 	
 				
+		def findAliasGenericDefnClass(fullName as String) as JavaClassType
+			"""
+			Generic class being used as a param where declared with different param list
+			Generic class defn redeclared with a specific bound paramList
+				e.g. com.x.MyClass<? extends a.b.c>, com.x.MyClass<? super d.e>
+					 com.x.myClass<V>, vs dcl as com.x.myClass<TValue>
+			Synthesized (here) as a result of being referenced.
+			"""
+			assert fullName.contains('<') and fullName.endsWith('>')
+			canonName = fullName.before('<')
+			#params = fullName.after('<')[0:-1] # drop end '>'
+			#nParams = 1 + params.count(c',') # params.countOf(c',')  
+			#assert canonName.contains('.')
+			#idx = canonName.lastIndexOf('.')
+			#gDefName = canonName[idx+1:] + '`[nParams]'
+			#pkg = canonName[0:idx]
+			#print 'Dbg: GenericDefnClass "[canonName]" "[params]"' 	
+			return JarSig.lookupClass(canonName)
+			# Shld already exist but prob with different paramNames in paramList
+			#gDefCls = JavaClassType(gDefName, pkg, params)
+			#JarSig.classByNameCache[fullName] = gDefCls
+			#JarSig._registerClassType(fullName, giCls)	
+			#print 'Dbg: added GenericDefinitionClass "[fullName]"' 	
+
 		def addGenericParamClass(name as String)
-			print 'Dbg crt Generic Param Class "[name]"' 
+			#print 'Dbg crt Generic Param Class "[name]"' 
 			gparamCls = JavaClassType(name, JavaType.GenericParam, '')
 			JarSig.classByNameCache[name] = gparamCls
-			print 'Dbg: added Generic Parameter Class "[name]"' 	
+			#print 'Dbg: added Generic Parameter Class "[name]"' 	
 				
 	def sigFile(name as String) as String is shared
 		""" 
@@ -136,14 +182,16 @@ class JarSig
 			_registerClassType(jct)
 			
 	def _registerClassType(jct as JavaClassType)
-		_javaTypes.add(jct)
 		canonName = jct.canonicalName
 		if '`' in canonName # jct.isGeneric
-			canonName = canonName.beforeL('`')
-			#parts = canonName.split('`')
-			#canonName = parts[0]	
+			canonName = canonName.before('`')	# canonName = canonName.split('`')[0]
+		_registerClassType(canonName, jct)
+	
+	def _registerClassType(canonName as String, jct as JavaClassType)
+		_javaTypes.add(jct)
 		JarSig.classByNameCache[canonName] = jct
-			
+		#print 'Dbg: register [canonName]'
+		
 	def _aliasPrimitives
 		if JarSig.classByNameCache.containsKey('void')
 			return
@@ -155,6 +203,10 @@ class JarSig
 		JarSig.classByNameCache['short']   = JarSig.classByNameCache['java.lang.Short'] 
 		JarSig.classByNameCache['int']     = JarSig.classByNameCache['java.lang.Integer'] 
 		JarSig.classByNameCache['long']    = JarSig.classByNameCache['java.lang.Long'] 
+		#l = JarSig.classByNameCache['java.lang.Long'] 
+		#l = l.copy('long','')
+		#JarSig.classByNameCache['long']    = l
+		#_javaTypes.add(l)
 		JarSig.classByNameCache['float']   = JarSig.classByNameCache['java.lang.Float'] 
 		JarSig.classByNameCache['double']  = JarSig.classByNameCache['java.lang.Double'] 
 
@@ -196,12 +248,13 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 	
 		
 	var name = ''
-	var package = ''
+	var package = '' # ->? FlyWeight this - save some string space?
 	var type = JavaType.NoType #class,interface, enum
 	var superclass = ''
 	var modifiers as List<of String>
 	var interfaceNames as List<of String>
 	var _interfaces as List<of JavaClassType> = JavaClassType.emptyClassList
+	var _nestedTypes as List<of JavaClassType> = JavaClassType.emptyClassList
 
 	var _fields as List<of JavaFieldInfo> = JavaClassType._emptyFieldList 	# JavaFieldInfo*
 	var _props as List<of JavaFieldInfo>  =	JavaClassType._emptyFieldList	# JavaFieldInfo*
@@ -262,7 +315,7 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 
 		# header - fixed length and format; absName, type, pkg, name, superclass, interfacesList, ModifiersList
 		absName  = _popTop(lines) 	# absolute class name
-		CobraCore.noOp(absName)
+		#CobraCore.noOp(absName)
 		branch _popTop(lines).toLower
 			on 'class',     type = JavaType.JavaClass
 			on 'interface', type = JavaType.JavaInterface
@@ -273,9 +326,9 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 		isGen = name.contains('`')
 		super = _popTop(lines)
 		if super == '-', super = ''
-		interfaces = _parseList(_popTop(lines), [c','])
+		interfaces = _parseList(_popTop(lines))
 		modifiers  = _parseList(_popTop(lines), [c' '])
-		if isGen, gParamNames = _parseList(_popTop(lines), [c','])
+		if isGen, gParamNames = _parseList(_popTop(lines))
 		while true
 			et = _popTop(lines)
 			if et.length == 0, break
@@ -289,9 +342,9 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 				# procField(et, subline, field, fieldList)
 				field.modifiers = _parseList(_popTop(lines), [c' '])
 				field.typeName = _popTop(lines)
-				if type == JavaType.JavaEnum 
+				if type == JavaType.JavaEnum  and field.typeName == absName #'[pkg].[name]'
 					field.value = _popTop(lines)	
-				#field.attributes = _parseList(_popTop(lines), [c','])
+				#field.attributes = _parseList(_popTop(lines))
 				fieldList.add(field)
 
 			else if et.startsWith('ctor ')
@@ -299,7 +352,7 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 				ctor = JavaCtorInfo()
 				ctor.name = ctorName
 				assert lines.count >= 1		
-				ctor.paramNames = _parseList(_popTop(lines), [c','])
+				ctor.paramNames = _parseList(_popTop(lines))
 				# attributes ??
 				ctorList.add(ctor)
 				
@@ -313,8 +366,8 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 				method.modifiers = _parseList(_popTop(lines), [c' '])
 				method.returnTypeName = _popTop(lines)
 				assert method.returnTypeName <> '-'
-				method.paramNames = _parseList(_popTop(lines), [c',']) 
-				method.throwsList = _parseList(_popTop(lines), [c',']) 
+				method.paramNames = _parseList(_popTop(lines)) 
+				method.throwsList = _parseList(_popTop(lines)) 
 				# attributes ??
 				if isVari, 	method.attributes = ['IsVari']
 				methodList.add(method)
@@ -334,11 +387,26 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 		jct._methods = methodList
 		return jct
 			
+	def _parseList(et as String) as List<of String> is shared
+		return _parseList(et, [c','])
+		
 	def _parseList(et as String, seps as List<of char> ) as List<of String> is shared
-		if et == '-'
-			l = List<of String>()
-		else
-			l = et.split(seps.toArray).toList	
+		l = List<of String>()
+		if et == '-' 
+			return l
+		if et.contains('<')
+			start = gCnt = 0
+			for i in 0 : et.length
+				c = et[i]
+				if c == c'<', gCnt += 1
+				if c == c'>', gCnt -= 1
+				if gCnt == 0 and c in seps 
+					l.add(et[start:i].trim)
+					start = i+1
+			if start < et.length, l.add(et[start:].trim)
+		else	
+			a = et.split(seps.toArray)
+			for s in a, l.add(s.trim)
 		return l
 	
 	def _popTop(content as List<of String>) as String is shared 
@@ -373,6 +441,8 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 			
 	# indexer: get<Propname> and has params  -  first param in paramList is index  (retType is Property Type)
 	#	  or  set<PropName> and more than value in paramList, 1st parameter is index and second is value to set.
+	# hops: this isnt goanna work - too many false positives
+	# may work to hard case Collections, Lists and special case Maps... recognise annotation for user written code
 	def isIndexer(methodName as String, method as JavaMethodInfo, isSetProp) as bool is shared
 		if methodName.startsWith('is')
 			return false
@@ -392,7 +462,8 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 			prop = JavaFieldInfo() # JavaPropInfo
 			prop.name = propName
 			prop.isProp = true
-			prop.isIndexer = .isIndexer(method.name, method, isSetProp)
+			#prop.isIndexer = .isIndexer(method.name, method, isSetProp)
+			prop.isIndexer = false  # TODO support indexers
 			prop.isReadable = prop.isWritable = false
 			props[propName] = prop
 			propList.add(prop)	
@@ -426,7 +497,7 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 		.interfaceNames = ifcs
 		.modifiers = modifiers
 	
-		_isGenericDefn = name.contains('`')  # Generic types have name suffix  `<nGenericArgs>
+		_isGenericDefn = name.contains('`')  # Defn Generic types have name suffix  `<nGenericArgs>
 		
 		#print '[type] [pkg].[name]'
 		assert .name.length
@@ -498,14 +569,17 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 		assert .name.contains(r'[')
 	
 	cue init(name as String, pkg as String, paramTypes as String)
-		"""Create a Generic Instantiation Type. Like MyClass<java.Lang.String>"""
+		"""
+		Create a Generic Instantiation Type. Assumes Generic Defn Type already exists
+		Like MyClass<java.Lang.String> for MyClass<T>.
+		"""
 		base.init
-		print 'JavaClassType.init([name])'
+		#print 'JavaClassType.init([name])'
 		assert not name.contains('.')
 		#assert pkg.contains('.')
 		gPart = '[pkg].[name]'
-		paramList = JavaClassType._parseList(paramTypes, [c','])
-		print 'Looking for Generic Class [gPart]'
+		paramList = JavaClassType._parseList(paramTypes)
+		#print 'Looking for Generic Class [gPart]'
 		genType = JarSig.lookupClass(gPart)
 		assert genType.isGenericTypeDefinition
 
@@ -522,18 +596,19 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 		_genParamNames= paramList
 	
 		#print '[type] [pkg].[name]'
+		# print paramList
 		assert .name.length
 		assert .type <> JavaType.NoType
 		assert '`' in .superclass # fake parentage to the Generic Definition
 		assert .package.length
+		assert genType.genericArgsCount == _genParamNames.count
 	
+
 	cue init(name as String, jType as JavaType, pkg as String)
 		"""Create a Generic Parameter Type. Like the T of MyClass<T>"""
 		base.init
 		assert jType == JavaType.GenericParam 
 		assert not name.contains("<") and not name.contains(">")
-		assert not name.contains(".")
-		#assert name[0].isUpper # ??
 		
 		.name = name
 		.type      = jType
@@ -551,7 +626,12 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 		assert .type <> JavaType.NoType
 		assert 'Object' in .superclass 
 		assert .package.length
-		
+	
+	def copy( name as String, package as String) as JavaClassType
+		c = .memberwiseClone to JavaClassType
+		c.name = name
+		c.package = package
+		return c
 
 	#pro name from var 
 	#pro package from var
@@ -561,7 +641,16 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 		"""package and name"""
 		assert .name.length
 		return if(.package.length, '[.package].[.name]', .name)
-
+		
+	get packageAsCobra as String
+		""" package name in Cobra Form - i.e each element Capitalized"""
+		# cache this map in a class var rather than recalc each time
+		parts = .package.split(c'.')
+		cobraParts = List<of String>()
+		for p in parts
+			cobraParts.add(p.capitalized)
+		return cobraParts.join('.')
+	
 	get isClass as bool
 		return .type == JavaType.JavaClass
 		
@@ -575,16 +664,31 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 		#return .flags.contains('N')
 		return .name.contains('$')	and not .name.startsWith('$') # temporary hack
 	
+	def addNestedType(type as JavaClassType)
+		if _nestedTypes == JavaClassType.emptyClassList
+			_nestedTypes = List<of JavaClassType>()
+		_nestedTypes.add(type)	
+			
+	def getNestedTypes as JavaClassType* #List<of JavaClassType>
+		return _nestedTypes
+		
 	get declaringType as JavaClassType?
 		if .isNested
 			assert .name.contains('$')
-			declName = .name.beforeL('$')
-			#idx = .name.indexOf('$') 
-			#declName = .name[:idx] 
-			trace declName
-			# return JarSig.classByNameCache[declName]
-			return JarSig.lookupClass(declName)
+			lidx = .canonicalName.lastIndexOf('$')
+			declName = .canonicalName[:lidx]
+			#trace .canonicalName, declName
+			if  JarSig.classByNameCache.containsKey(declName)
+				return JarSig.lookupClass(declName)
 		return nil
+		
+	get nestedName as String
+		require .isNested
+		assert .name.contains('$')
+		lidx = .canonicalName.lastIndexOf('$')
+		nestName = .canonicalName[lidx+1:]
+		#trace .canonicalName, declName
+		return nestName
 		
 	get isPublic
 		return .modifiers.contains('public')
@@ -607,9 +711,7 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 		#return  JvmNativeType(_type.getSuperClass)
 		if JarSig.classByNameCache.containsKey(.superclass)
 			return JarSig.lookupClass(.superclass)
-			#return JarSig.classByNameCache[.superclass]
 		else 
-			#return JarSig.classByNameCache['java.lang.Object']
 			return JarSig.lookupClass('java.lang.Object')
 			# e.g. Abstract base classes with default access - java.lang.AbstractStringBuilder	
 		#else 
@@ -620,14 +722,12 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 	get isValueType as bool
 		return false	# TODO true for unboxed primitives...
 
-	# TODO hops array handling
 	get isArray as bool
 		return _isArray 
 
 	get arrayComponentType as JavaClassType?
 		#if not .isArray, return nil
 		assert .isArray
-		print 'JavaClassType Array support NYI [.canonicalName]'
 		return _arrayComponentType
 
 	get arrayDimension as int
@@ -635,14 +735,13 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 		assert _arrayDimension > 0
 		return _arrayDimension
 	
-	# TODO hops Generics handling
-	# Two forms of Generic Types: Definition ( MyClass<T>) and Instantiation ( MyClass<java.lang.String>)
+	# Three forms of Generic Types: Definition ( MyClass<T>) and Instantiation ( MyClass<java.lang.String>) and Param ( T, java.lang.String)
 	# In java with runtime generic Type instantiation all we see from the jarfile directly are definitions (:-(
 	# Walking the classes and getting the class(names) referenced (params, intefaces, returnTypes,...)
 	# gives us the names of the instantiations which we synthesize as Types or Params for our purposes...
-
+	# or at least thats the plan
 	get isGenericType as bool
-		return _isGenericDefn or _isGenericInst or _isGenericParam
+		return _isGenericDefn or _isGenericInst #or _isGenericParam
 		
 	get genericArgsCount as int
 		assert .isGenericType
@@ -659,22 +758,26 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 	get isGenericParameter as bool 
 		"""
 		assumes generic parameters are instantiated as Types.
-		Things like T,U,E,.. - basically simple names not package specified - probably 1 Upcase char 
+		Things like T,U,E,.. - basically simple names  
+		or qualified name 		java.lang.String
+		or bounded (possibly wildcard) type  - ? extends Type, T super Type , T extends Type
 		"""
 		return _isGenericParam
 	
 	get isGenericTypeDefinition as bool
 		""" 
-		Can use this generic type to create new types if this type is a template form.
+		Can use this generic type to create new types if this type is a template/Defn form.
 		e.g myClass<T, U> defn allows creating new type like MyClass<String, int>
+		myClass<T, U> is a generic definition
+		new type like MyClass<String, int> is a generic instance
+		T,U and String, int  are their respective generic params
 		"""
 		assert 	.isGenericType
 		return _isGenericDefn
 			
 	def	getGenericArguments as JavaClassType* #List<of JavaClassType>
 		assert .genericArgsCount
-		if false # tmp pending jarSig gen and loading of generic args list
-			assert _genParamNames.count
+		assert _genParamNames.count
 		if _genParamNames.count and not _genParams.count 
 			_genParams = JavaClassType.genClassTypeList(_genParamNames)	
 		return _genParams
@@ -753,7 +856,7 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 			print prop
 		
 	def dumpIndexers
-		assert false, 'Indexers NYI'
+		assert false, 'dump Indexers NYI'
 	
 class JavaMemberInfo
 	var name = ''	
@@ -817,7 +920,6 @@ class JavaFieldInfo inherits JavaMemberInfo
 	get type as JavaClassType
 		assert .typeName.length
 		if .typeName.length and not _type
-			#_type = JarSig.classByNameCache[.typeName]
 			_type = JarSig.lookupClass(.typeName)
 		return _type to !	
 
@@ -892,11 +994,11 @@ class JavaMethodInfo inherits JavaCtorInfo
 	def returnType as JavaClassType?
 		if not .returnTypeName.length
 			return nil
-		#return JarSig.classByNameCache[.returnTypeName]
 		return JarSig.lookupClass(.returnTypeName)
 
 	def getGenericArguments as List<of JavaClassType>
-		return JavaClassType.emptyClassList	# TODO: support generics
+		#print 'TODO getGenArgs on method [.name]'
+		return JavaClassType.emptyClassList	# TODO: support generics on Method
 				
 	def toString as String is override
 		nampar = base.toString

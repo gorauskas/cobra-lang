@@ -6,6 +6,8 @@ class ObjcBackEnd inherits BackEnd
 		base.init(compiler)
 		_name = 'objc'	
 		_rtlName = 'Cobra.Lang.dll'
+		_rtlSrcFile = 'native.objc' # backEnd source file containing native code support for Cobra.Lang
+
 		_tagToTypeName = { 	# TODO
 			'Object': '',
 			'Type'	: '',
@@ -14,6 +16,25 @@ class ObjcBackEnd inherits BackEnd
 	def makePhases(phases as IList<of Phase>) is override
 		phases.add(GenerateObjcCodePhase(.compiler))
 		phases.add(CompileObjcCodePhase(.compiler))
+
+	def getRecommendedBuiltInType(parentNameSpace as NameSpace?, name as String) as String? is override
+		n = nil to String?
+		if parentNameSpace and parentNameSpace.fullName == '???'
+			branch name
+				on '???', n = 'bool'
+				on '?? SByte',   n = 'int8'
+				on '?? Byte',    n = 'uint8'
+				on '?? Int16',   n = 'int16'
+				on '?? UInt16',  n = 'uint16'
+				on '?? Int32',   n = 'int32'
+				on '?? UInt32',  n = 'uint32'
+				on '?? Int64',   n = 'int64'
+				on '?? UInt64',  n = 'uint64'
+				on '?? Char',    n = 'char'
+				on '?? Single',  n = 'float32'
+				on '?? Double',  n = 'float'
+				on '?? Decimal', n = 'decimal'
+		return n
 
 	def computeOutName as String is override
 		return .compiler.computeOutNameObjc
@@ -86,10 +107,27 @@ class ObjcBackEnd inherits BackEnd
 		assert false, 'ObjcBackEnd ObjcNativeType and objcTypeByName NYI'
 		return ClrNativeType(.compiler.clrTypeByName(qualifiedName))
 	
-	def addArrayInterfaces( interfaces as List<of ITypeProxy>) is override
-		assert false, 'ObjcBackEnd addArrayInterfaces NYI'
+	def prepSystemObjectClass(box as Box)  is override
+		pass 	#box.prepSystemObjectClassObjc
 		
-	
+	def scanGenericArgs(box as Box)	 is override
+		pass 	# box.scanGenericArgsObjc
+		
+	def scanNativeType(box as Box)	 is override
+		pass 	# box.scanNativeTypeObjc
+
+	def scanNativeType(edcl as EnumDecl)	 is override
+		pass 	# edcl.scanNativeTypeObjc
+		
+	def setUnderlyingType(edcl as EnumDecl)	 is override
+		pass # edecl.setUnderlyingTypeObjc
+
+	# implement these if need override
+	#def determineExtnNativeType(extn as Extension, nativeType as NativeType) as NativeType
+	#	return extn.objcExtnNativeType(nativeType)
+
+	#def handleNameSpaceNameCollision(ns as NameSpace, token as IToken, name as String) as NameSpace is override
+
 		
 class GenerateObjcCodePhase inherits Phase
 

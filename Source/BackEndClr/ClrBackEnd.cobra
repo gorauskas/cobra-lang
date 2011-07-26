@@ -13,6 +13,7 @@ class ClrBackEnd inherits BackEnd
 		_typeTypeProxy = ClrTypeProxy(Type)
 		_name = 'c#-clr'
 		_rtlName = 'Cobra.Lang.dll'
+		_rtlSrcFile = 'Native.cs' # backEnd source file containing native code support for Cobra.Lang
 	
 		_tagToTypeName = { 
 			'Object'	: 		'System.Object',
@@ -51,10 +52,29 @@ class ClrBackEnd inherits BackEnd
 			'uint32': 'System.UInt32',		
 			'uint64': 'System.UInt64',		
 			}
-		
+
 	def makePhases(phases as IList<of Phase>) is override
 		phases.add(GenerateSharpCodePhase(.compiler))
 		phases.add(CompileSharpCodePhase(.compiler))
+
+	def getRecommendedBuiltInType(parentNameSpace as NameSpace?, name as String) as String? is override
+		n = nil to String?
+		if parentNameSpace and parentNameSpace.fullName == 'System'
+			branch name
+				on 'Boolean', n = 'bool'
+				on 'SByte',   n = 'int8'
+				on 'Byte',    n = 'uint8'
+				on 'Int16',   n = 'int16'
+				on 'UInt16',  n = 'uint16'
+				on 'Int32',   n = 'int32'
+				on 'UInt32',  n = 'uint32'
+				on 'Int64',   n = 'int64'
+				on 'UInt64',  n = 'uint64'
+				on 'Char',    n = 'char'
+				on 'Single',  n = 'float32'
+				on 'Double',  n = 'float'
+				on 'Decimal', n = 'decimal'
+		return n
 
 	def computeOutName as String is override
 		return .compiler.computeOutNameSharp
@@ -119,7 +139,7 @@ class ClrBackEnd inherits BackEnd
 		.compiler.clrReadAssembly(t.assembly) # System.dll
 		
 	def fixNilableMemberSigs is override
-		.compiler.dotNetfixNilableMemberSigs # in ScanClrType
+		.compiler.dotNetFixNilableMemberSigs # in ScanClrType
 		
 	# Types
 	get objectTypeProxy from var  is override
@@ -160,11 +180,31 @@ class ClrBackEnd inherits BackEnd
 	def installNativeMethods(box as Box, nativeType as NativeType) is override
 		.compiler.installClrNativeMethods(box, nativeType) # in ScanClrType
 		
-	def addArrayInterfaces( interfaces as List<of ITypeProxy>) is override
-		iclone = .compiler.libraryType('ICloneable')
-		interfaces.insert(0, iclone to ITypeProxy)
+
+	def prepSystemObjectClass(box as Box) is override
+		box.prepSystemObjectClassClr
+		
+	def scanGenericArgs(box as Box) is override
+		box.scanGenericArgsClr
+		
+	def scanNativeType(box as Box) is override
+		""" Do scan/Load of Types from a dll """
+		box.scanNativeTypeClr
+		
+	def scanNativeType(edcl as EnumDecl) is override
+		edcl.scanNativeTypeClr
+		
+	def setUnderlyingType(edcl as EnumDecl)	 is override
+		edcl.setUnderlyingTypeClr
 	
-	
+	def determineExtnNativeType(extn as Extension, nativeType as NativeType) as NativeType is override
+		return extn.clrExtnNativeType(nativeType) 	# ScanClrType
+
+	def handleNameSpaceNameCollision(ns as NameSpace, token as IToken, name as String) as NameSpace  is override
+		"""Clr doesnt allow colliding names."""
+		throw Exception('In [ns.name] there is a already non-namespace declaration named "[name]".')
+		
+		
 		
 class GenerateSharpCodePhase inherits Phase
 

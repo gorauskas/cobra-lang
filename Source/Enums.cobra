@@ -26,39 +26,15 @@ class EnumDecl
 		_idToken = Token.empty
 		_attribs = AttributeList()
 		_nativeType = nativeType
-		#_storageTypeNode = ClrTypeProxy(Enum.getUnderlyingType((_nativeType to ClrNativeType).backEndType))  # TODO: fix native
-		_callNativeScanMethod('UnderlyingType')
-		_needScanNativeType = true
-		
-	def _callNativeScanMethod(tag as String)
-		"""
-		Call a backend scan method for native type scan operation desired and backend in use.
-		"""
-		_needScanNativeType = true
-		# This is icky too - method to call needs to be set directly via backend somehow rather than this check and call code	
-		# TODO: change to use strategy object set when init backend.
 		assert .compiler
-		assert tag in ['ScanNativeType', 'UnderlyingType']
-		backEnd = .compiler.backEnd
-		branch backEnd.name
-			on 'c#-clr'
-				branch tag
-					on 'UnderlyingType',  _setUnderlyingTypeClr # sets _storageTypeNode
-					on 'ScanNativeType',  _scanNativeTypeClr
-			on 'java-jvm'
-				branch tag
-					on 'UnderlyingType',  _setUnderlyingTypeJvm # sets _storageTypeNode
-					on 'ScanNativeType',  _scanNativeTypeJvm
-			on 'objc'
-				print 'objc back end need method for [tag]'
-				assert false, 'Missing backEnd infrastructure for [backEnd.getType.name]'
-				#branch on tag
-				#	on 'UnderlyingType',  _setUnderlyingTypeObjc
-				#	on 'ScanNativeType',  _scancNativeTypeObjc
-			else 
-				throw FallThroughException('No nativeScanMethod code for backend [backEnd.name] [backEnd.getType.name]')
-		#TODO: remove all direct uses of ClrNativeType, ClrTypeProxy
+		.compiler.backEnd.setUnderlyingType(this) # sets _storageTypeNode
+		#_storageTypeNode = ClrTypeProxy(Enum.getUnderlyingType((_nativeType to ClrNativeType).backEndType))  # TODO: fix native
+		_needScanNativeType = true
 		
+	def _scanNativeType
+		assert .compiler
+		.compiler.backEnd.scanNativeType(this)
+
 	get attributes as AttributeList is override
 		return _attribs
 
@@ -96,7 +72,7 @@ class EnumDecl
 			return base.isUsed
 		set
 			base.isUsed = value
-			if _needScanNativeType, _callNativeScanMethod('ScanNativeType')
+			if _needScanNativeType, _scanNativeType
 
 	get nativeType from var
 	
@@ -113,7 +89,7 @@ class EnumDecl
 			_storageType = _storageTypeNode.realType
 			if not _storageType.isDescendantOf(.compiler.anyIntType)
 				.throwError('The enumeration storage type must be a primitive integer type such as int8, uint8, int16, uint16, int, uint, int64 or uint64.')
-		if _needScanNativeType, _callNativeScanMethod('ScanNativeType')
+				if _needScanNativeType, _scanNativeType 
 
 	def _bindImp is override
 		base._bindImp
@@ -127,7 +103,7 @@ class EnumDecl
 		return name
 
 	def memberForName(name as String) as IMember?
-		if _needScanNativeType,	_callNativeScanMethod('ScanNativeType')
+		if _needScanNativeType, _scanNativeType	
 		m = base.memberForName(name)
 		if m is nil
 			objClass = .compiler.objectType

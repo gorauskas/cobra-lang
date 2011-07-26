@@ -11,8 +11,8 @@ class JavaCompilationMessage inherits SourceException
 		assert msg.lineNum == 30
 
 	def willSkipMessage(msg as String) as bool is shared
-		#return not '.java:' in msg
-		return false 
+		return not '.java:' in msg
+		#return false 
 		
 	var _fileName as String?
 	var _lineNum as int?
@@ -30,15 +30,28 @@ class JavaCompilationMessage inherits SourceException
 			i += '.java:'.length
 			j = line.indexOf(':', i)
 			lineStr = line[i:j]
-			try
-				_lineNum = int.parse(lineStr)
-			catch
-				pass
-			success	
-				_lineNum = compiler.cobraLineNumForCurly(.fileName, _lineNum to !)
-				if compiler.verbosity or Utils.isDevMachine, line += ' (javac)'
+			_storeLineNum(lineStr, compiler)
+			if compiler.verbosity or Utils.isDevMachine, line += ' (javac)'
 		_message = _cleanUp(line)
 
+	def append(line as String, compiler as Compiler)
+		line = line.trim
+		_message += '\n >: ' + line
+		if System.Text.RegularExpressions.Regex.isMatch(line, r'// \d+\s*$')
+			lidx = line.lastIndexOf('//')
+			if lidx > 0
+				lidx += 3  # after '// '
+				lineStr = line[lidx:]
+				_storeLineNum(lineStr, compiler)
+
+	def _storeLineNum(lineStr as String, compiler as Compiler)
+		try
+			_lineNum = int.parse(lineStr)
+		catch
+			pass
+		success	
+			_lineNum = compiler.cobraLineNumForCurly(.fileName, _lineNum to !)
+					
 	def _cleanUp(line as String) as String
 		line = line.replace("`double'", "`float'")
 		line = line.replace("null", "nil")

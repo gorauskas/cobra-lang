@@ -2,11 +2,9 @@
 
 class Compiler is partial
 
-	#var _didLoadJars = Set<of String>()
-
 	var _didReadJars = Set<of String>()
 	
-	var _jvmTypeToType = Dictionary<of JavaClassType, IType>()
+	var _jvmTypeToIType = Dictionary<of JavaClassType, IType>()
 	
 	var _jvmTypeCache = Dictionary<of String, JavaClassType>()
 	
@@ -111,14 +109,14 @@ class Compiler is partial
 		namespaceQualNameToNameSpaceObject = Dictionary<of String, NameSpace>()
 		module = AssemblyModule(jSig.location, .globalNS)
 		saveModule, _curModule = _curModule, module
+		nestedTypes = List<of JavaClassType>()
 		try
 			_modules.add(module)
-			for type in jSig.getExportedTypes
-				if type.isNested #or type.declaringType
-					# these will be scanned by Box._scanNestedTypes
-					# print '### skipping [type.name] in [type.namespace]. isNested=[type.isNested], declaringType=[type.declaringType]'
+			for jvmType in jSig.getExportedTypes
+				if jvmType.isNested #or jvmType.declaringType
+					nestedTypes.add(jvmType)
 					continue
-				typeNamespace = type.package
+				typeNamespace = jvmType.packageAsCobra  #Capitalized
 				if typeNamespace.length == 0
 					# happens for classes etc. that are not declared in a namespace
 					curNameSpace = module.topNameSpace
@@ -133,97 +131,119 @@ class Compiler is partial
 							assert not curNameSpace.isUnified
 						namespaceQualNameToNameSpaceObject[namespaceName] = curNameSpace
 				if verbosity >= 4
-					print '  Reading type [type.name] in namespace "[namespaceName]"'
-				jvmType = JvmNativeType(type)
-				if curNameSpace.unifiedNameSpace.declForName(jvmType.name)
-					.warning(CobraWarning('Already have declaration "[jvmType.name]" in namespace "[curNameSpace.fullName]".'))
+					print '  Reading type [jvmType.name] in namespace "[namespaceName]"'
+				jvmNative = JvmNativeType(jvmType)
+				if curNameSpace.unifiedNameSpace.declForName(jvmNative.name)
+					.warning(CobraWarning('Already have declaration "[jvmNative.name]" in namespace "[curNameSpace.fullName]".'))
 				else
-					if type.isClass
-						if type.name.startsWith('Extend_') and type.name.count(c'_') >= 2
+					if jvmType.isClass
+						if jvmType.name.startsWith('Extend_') and jvmType.name.count(c'_') >= 2
 							# e.g.Extend_String - TODO 
-							curNameSpace.addDecl(Extension(jvmType, .backEnd))
+							curNameSpace.addDecl(Extension(jvmNative, .backEnd))
 						else
-							curNameSpace.addDecl(Class(jvmType, .backEnd))
-					else if type.isInterface
-						curNameSpace.addDecl(Interface(jvmType, .backEnd))
-					else if type.isEnum
-						#print jvmType.name
-						curNameSpace.addDecl(EnumDecl(curNameSpace, jvmType, type.modifiers, ''))  # TODO: isNames; docString?
-					else if type.isValueType
-						curNameSpace.addDecl(Struct(jvmType, .backEnd))
+							curNameSpace.addDecl(Class(jvmNative, .backEnd))
+					else if jvmType.isInterface
+						curNameSpace.addDecl(Interface(jvmNative, .backEnd))
+					else if jvmType.isEnum
+						curNameSpace.addDecl(EnumDecl(curNameSpace, jvmNative, jvmType.modifiers, ''))  # TODO: isNames; docString?
+					else if jvmType.isValueType
+						curNameSpace.addDecl(Struct(jvmNative, .backEnd))
 					else
-						throw FallThroughException(type)
+						throw FallThroughException(jvmType)
 		finally
+			if nestedTypes.count
+				_setNestedTypes(nestedTypes)# store nestedTypes in parenting type.
 			_curModule = saveModule
-
+			
+	def _setNestedTypes(nestedTypes as List<of JavaClassType>)
+		for nt in nestedTypes
+			enclType = 	nt.declaringType
+			if enclType 
+				# Hack below suppressing adding nested classes in java.lang Character. (or any Primitive)
+				# boxes.baseBind on primitives with nested classes dies due call fm bindh
+				# and memberName lookup needs .didBindInt - doesnt happen in CLR. (FIXME)
+				if enclType.canonicalName <> 'java.lang.Character' 
+					enclType.addNestedType(nt)
+					#if enclType.isInterface, print 'EnclINTERFACE [enclType.canonicalName] [nt.name]'
+			else
+				if .verbosity >= 3, print 'NO class found for enclosing class of nested class [nt.canonicalName]'
+				# just ignore/drop any nested class cant find parent for
+					
+						
 	def jvmFixNilableMemberSigs
+		# fix the listed members below to be non Nilable
+		# called from bindInterface phase so this can only refer to top level Classes in a package.
 		# TODO: this really needs to go in a separate file that the compiler reads each time
 
 		# fix up member sigs regarding methods returning nilable values
 		# hard coded below. TODO: read from a Cobra config file
 		# _fix is defined in ScanClrType
 	
-		# These are just reflected over from the .Net ones since I dont know what the basis for inclusion is/was
+		# Included by comparison from .Net ones and examination of javaDoc - INCOMPLETE
 		
-		_fix('java.lang.Object', 'toString getClass clone')
+		_fix('Java.Lang.Object', 'toString getClass clone')
 			# ^ regarding .toString, not technically true, but common enough and life is too painful when the return type is nilable
 		#_fix('java.lang.System', 'out') #stdout
-		_fix('java.lang.String', 'padLeft padRight remove replace substring toLower toUpper trim')
+		_fix('Java.Lang.String', 'concat remove replace replaceAll replaceFirst substring toLowerCase toUpperCase trim format')
 		#_fix('System.Type', 'assembly name toString')
 			# namespace can return nil if the Type is a generic parameter
 		#_fix('System.Environment', 'commandLine currentDirectory newLine version')
-		_fix('java.lang.Exception', 'message')
-		#_fix('System.Collections.Generic.IEnumerable<of>', r'getEnumerator')
+		_fix('Java.Lang.Exception', 'message')
 		#_fix('java.util.Enumeration<of>', r'getNext')
-		_fix('java.util.Iterator<of>', r'next')
-		_fix('java.util.ListIterator<of>', r'next previous')
-		_fix('java.util.Collection<of>', r'toArray')
-		
+		_fix('Java.Lang.Iterable<of>', r'iterator')
+		_fix('Java.Util.Iterator<of>', r'next')
+		_fix('Java.Util.ListIterator<of>', r'next previous')
+		_fix('Java.Util.Collection<of>', r'toArray')
+		#_fix('System.Collections.Generic.IEnumerable<of>', r'getEnumerator')
+	
+		# work out what doing with indexor and apply to []
 		#_fix('System.Collections.Generic.List<of>', r'[]')
-		_fix('java.util.List<of>', r'[] get set remove')
-		_fix('java.util.AbstractList<of>', r'[] get set remove')
-		_fix('java.util.AbstractSequentialList<of>', r'[] get set remove')
-		_fix('java.util.ArrayList<of>', r'[] get set remove')
-		#_fix('java.util.CopyOnWriteArrayList<of>', r'[] get set remove')
-		#_fix('java.util.LinkedList<of>', r'[] get set remove element getFirst getLast peek peekFirst peekLast poll pollFirst pollLast pop removeFirst removeLast')
-		#_fix('java.util.Vector<of>', r'[] get set elementAt firstElement lastElement remove')
-		#_fix('java.util.Stack<of>', r'[] peek pop push')
+		_fix('Java.Util.List<of>', r'[] get set remove')
+		_fix('Java.Util.AbstractList<of>', r'[] get set remove')
+		_fix('Java.Util.AbstractSequentialList<of>', r'[] get set remove')
+		_fix('Java.Util.ArrayList<of>', r'[] get set remove')
+		#_fix('Java.Util.CopyOnWriteArrayList<of>', r'[] get set remove')
+		#_fix('Java.Util.LinkedList<of>', r'[] get set remove element getFirst getLast peek peekFirst peekLast poll pollFirst pollLast pop removeFirst removeLast')
+		#_fix('Java.Util.Vector<of>', r'[] get set elementAt firstElement lastElement remove')
+		#_fix('Java.Util.Stack<of>', r'[] peek pop push')
 		
 		#_fix('System.Collections.Generic.IDictionary<of,>', r'[] keys values')
-		_fix('java.util.Map<of,>', r'[] get')
+		_fix('Java.Util.Map<of,>', r'[] get')
 		#    _fix('System.Collections.Generic.Dictionary<of,>', r'[]')
-		_fix('java.util.AbstractMap<of,>', r'[] get')
-		_fix('java.util.HashMap<of,>', r'[] get')
-		#_fix('java.util.ConcurrentHashMap<of,>', r'[] get')
-		#_fix('java.util.ConcurrentSkipListHashMap<of,>', r'[] get')
-		#_fix('java.util.EnumMap<of,>', r'[] get')
-		#_fix('java.util.IdentityHash<of,>', r'[] get')
-		#_fix('java.util.TreeMap<of,>', r'[] get')
-		#_fix('java.util.WeakHashMap<of,>', r'[] get')
-		_fix('java.util.Map.Entry<of,>', r'getKey getValue')
-		#_fix('java.util.AbstractMap.SimpleEntry<of,>', r'getKey getValue')
-		#_fix('java.util.AbstractMap.SimpleImmutableEntry<of,>', r'getKey getValue')
+		_fix('Java.Util.AbstractMap<of,>', r'[] get')
+		_fix('Java.Util.HashMap<of,>', r'[] get')
+		#_fix('Java.Util.ConcurrentHashMap<of,>', r'[] get')
+		#_fix('Java.Util.ConcurrentSkipListHashMap<of,>', r'[] get')
+		#_fix('Java.Util.EnumMap<of,>', r'[] get')
+		#_fix('Java.Util.IdentityHash<of,>', r'[] get')
+		#_fix('Java.Util.TreeMap<of,>', r'[] get')
+		#_fix('Java.Util.WeakHashMap<of,>', r'[] get')
+		_fix('Java.Util.Map.Entry<of,>', r'getKey getValue')
+		#_fix('Java.Util.AbstractMap.SimpleEntry<of,>', r'getKey getValue')
+		#_fix('Java.Util.AbstractMap.SimpleImmutableEntry<of,>', r'getKey getValue')
+		#_fix('Java.Util.Properties', r'getProperty')
 		
 		#_fix('System.IO.File', 'create createText open openRead openText openWrite readAllBytes readAllLines readAllText')
-		#_fix('java.io.File', 'create createText open openRead openText openWrite readAllBytes readAllLines readAllText')
+		_fix('Java.Io.File', 'create createText open openRead openText openWrite readAllBytes readAllLines readAllText getPath getAbsolutePath')
+		##_fixFields('Java.Io.File', 'pathSeparator separator pathSeparatorChar seperatorChar') # TODO
 		#_fix('System.IO.FileSystemInfo', 'name fullName')
 		#_fix('System.IO.TextWriter', 'newLine')
 		#_fix('System.IO.Path', 'combine getFullPath')
 		# 	combine = File(strA, strB).getPath(), getFullPath = File().getAbsolutePath()
 		#_fix('java.lang.StringBuilder', 'toString') # ??
-		_fix('java.lang.Text.RegularExpressions.Regex', 'match replace')
-		_fix('System.Diagnostics.Process', 'processName')
+		#_fix('java.lang.Text.RegularExpressions.Regex', 'match replace')
+		#_fix('System.Diagnostics.Process', 'processName')
+		_fix('java.util.regex.Pattern', 'matches matcher pattern split compile')
+		_fix('java.util.regex.Matcher', 'group pattern replaceAll replaceFirst')
+		_fix('java.lang.ProcessBuilder', 'command start directory')
+		#_fix('java.lang.Process', 'getInputStream getOutputStream getErrorStream')
 		
-		_fix('System.Reflection.Assembly', 'getEntryAssembly getExecutingAssembly location')
-		_fix('System.Reflection.MemberInfo', 'name')
-		_fix('System.Reflection.FieldInfo', 'fieldType')
-		_fix('System.Reflection.ParameterInfo', 'parameterType')
-		_fix('System.Reflection.PropertyInfo', 'propertyType')
+		#_fix('System.Reflection.Assembly', 'getEntryAssembly getExecutingAssembly location')
+		#_fix('System.Reflection.MemberInfo', 'name')
+		#_fix('System.Reflection.FieldInfo', 'fieldType')
+		#_fix('System.Reflection.ParameterInfo', 'parameterType')
+		#_fix('System.Reflection.PropertyInfo', 'propertyType')
 
-		# TODO: shouldn't need the following. see comment in _fixSubs
-		#_fix('System.IO.StringWriter', 'toString')
-
-	
 		
 	#
 	# Jvm Type Cache
@@ -233,27 +253,29 @@ class Compiler is partial
 		Returns the Cobra type for a Java type if the Java type was previously scanned.
 		i.e this is access to the Java Type/Class cache.
 		"""
-		return if(_jvmTypeToType.containsKey(jvmType), _jvmTypeToType[jvmType], nil)
+		return if(_jvmTypeToIType.containsKey(jvmType), _jvmTypeToIType[jvmType], nil)
 
 	def addTypeForJvmType(type as IType, jvmType as JavaClassType)
 		require .typeForJvmType(jvmType) in [nil, type]
-		_jvmTypeToType[jvmType] = type
+		_jvmTypeToIType[jvmType] = type
 		
 	def jvmTypeByName(qualifiedName as String) as JavaClassType
 		"""
-		Obtain the Jvm Type given by the fully qualified (cobra) name.
+		Obtain the Jvm Type (JavaClassType) given by the fully qualified (cobra) name.
 		"""
 		t as JavaClassType?
 		_jvmTypeCache.tryGetValue(qualifiedName, out t)
 		if t is nil
-			# TODO - lookup the JavaClassType by name.
-			t = JarSig.classByNameCache[qualifiedName]
+			# lookup the JavaClassType by name.
+			t = JarSig.lookupClassByCobraName(qualifiedName)
 			_jvmTypeCache[qualifiedName] = t to passthrough  # "to passthrough" instead of "to !" to avoid non-nil check
 		return t to passthrough
 	
 	
 	def installJvmNativeMethods(box as Box, nativeType as NativeType) 
-		print '++ TODO scanJvmType.installJvmNativeMethods'
+		"""Install entries for native static methods on box instances."""
+		pass
+		#print '++ TODO scanJvmType.installJvmNativeMethods'
 /#
 		meths = List<of Method>()
 		_installClrNativeMethodsFrom('System', nativeType, nativeType, box, meths)
@@ -297,26 +319,10 @@ class Box is partial
 		return (.nativeType to JvmNativeType).backEndType
 
 	def isJvmSystemExceptionClass as bool
-		return .name == 'Exception' and .parentNameSpace and .parentNameSpace.fullName == 'java.lang'
+		return .name == 'Exception' and .parentNameSpace and .parentNameSpace.fullName == 'Java.Lang'
 
-	def _scanNativeTypeJvm
-		"""
-		Subclasses should invoke base and then invoke the various _scanXXX methods that are appropriate for them.
-		"""
-		ensure not .needScanNativeType
-		_needScanNativeType = false
-		# print '<> _scanNativeType for [.name] in [_parentNameSpace.fullName], class is [.getType.name]'
-		
-	def _scanGenericArgsJvm
-		if _jvmType.isGenericType
-			for genArg in _jvmType.getGenericArguments
-				t = (.compiler to Compiler).typeForJvmType(genArg)
-				if t is nil
-					t = GenericParam(JvmNativeType(genArg), parentDefinition=this)
-					(.compiler to Compiler).addTypeForJvmType(t to !, genArg)
-				_genericParams.add(t)
-				
-	def _prepSystemObjectClassJvm
+	def prepSystemObjectClassJvm
+		# TODO chk thats this has desired result.
 		# map method getType to java getClass
 		# C#'s typeof(X) is X.getType in Cobra.
 		#existing = .declForName('getClass') to BoxMember
@@ -328,6 +334,25 @@ class Box is partial
 		#overload.addMember(meth)
 		.addDecl(meth)
 				
+	def scanNativeTypeJvm
+		"""
+		Subclasses should invoke base and then invoke the various _scanXXX methods that are appropriate for them.
+		"""
+		ensure not .needScanNativeType
+		_needScanNativeType = false
+		# print '<> _scanNativeType for [.name] in [_parentNameSpace.fullName], class is [.getType.name]'
+		
+	def scanGenericArgsJvm
+		#print 'scanGenericArgsJvm [.name] [_jvmType.isGenericType]'
+		if _jvmType.isGenericType
+			for genArg in _jvmType.getGenericArguments
+				t = (.compiler to Compiler).typeForJvmType(genArg)
+				if t is nil
+					t = GenericParam(JvmNativeType(genArg), parentDefinition=this)
+					(.compiler to Compiler).addTypeForJvmType(t to !, genArg)
+				_genericParams.add(t)
+			#print 'scanGenericArgsJvm', .nameWithGenericParams # _genericParams
+				
 	def _scanJvmIsNames
 		# TODO
 		_isNames.add('extern')  # to make the box like the ones that were in SystemInterfaces.cobra
@@ -337,39 +362,24 @@ class Box is partial
 			if not _badJvmRelatedType(interf)
 				_baseInterfaceProxies.add(JvmTypeProxy(interf))
 
-/#
 	def _scanJvmNestedTypes
-		# TODO: enable and fix resulting bugs
-		# for type in .clrType.getNestedTypes(BindingFlags(Instance, Static, DeclaredOnly, Public, NonPublic))
 		for type in _jvmType.getNestedTypes
-			_scanJvmNestedType(type)
-		#for type in _clrType.getNestedTypes(BindingFlags(Static, DeclaredOnly, NonPublic))
-		for type in _jvmType.getNestedTypes
-			if type.isEnum and not type.isPublic
-				_scanJvmNestedType(type)
+			assert type.isNested
+			nativeType = JvmNativeType(type)
+			nativeType.nestedName = nativeType.name.after('$')
+			if type.isClass
+				.addDecl(Class(nativeType, .compiler.backEnd))
+			else if type.isInterface
+				.addDecl(Interface(nativeType, .compiler.backEnd))
+			else if type.isEnum
+				.addDecl(EnumDecl(this, nativeType)) 
+			else
+				throw FallThroughException(type)
+		if .declsInOrder.count
+			lastDecl = .declsInOrder[.declsInOrder.count-1] to dynamic
+			if (lastDecl to Object).getType.getProperty('ParentBox')  # CC: if lastDecl responds to (get parentBox as Box?)
+				lastDecl.parentBox = this
 
-	def _scanJvmNestedType(type as JavaClassType)
-		nativeType = JvmNativeType(type)
-		if type.isClass
-			.addDecl(Class(nativeType, .compiler.backEnd))
-		else if type.isInterface
-			.addDecl(Interface(nativeType, .compiler.backEnd))
-		else if type.isEnum
-			isNames = List<of String>()
-			docString =''
-			.addDecl(EnumDecl(this, nativeType, isNames, docString))  # TODO: isNames; docString?
-		#else if type.isValueType
-		#	.addDecl(Struct(clrType, .compiler.backEnd))
-		#else if type.isAnsiClass
-		#	# The Enum class is an example that returns false for .isClass but true for .isAnsiClass
-		#	.addDecl(Class(clrType, .compiler.backEnd))
-		else
-			throw FallThroughException(type)
-		lastDecl = .declsInOrder[.declsInOrder.count-1] to dynamic
-		if (lastDecl to Object).getType.getProperty('ParentBox')  # CC: if lastDecl responds to (get parentBox as Box?)
-			lastDecl.parentBox = this
-			
-#/
 
 	def _scanJvmFields
 		for fieldInfo in _jvmType.getFields
@@ -462,8 +472,8 @@ class Box is partial
 			if propInfo.isWritable
 				prop.makeSetPart(TokenFix.empty)
 			if _declsByName.containsKey(prop.name) # for 			# Double.naN
-				print 'DUP name already exists already for property [prop.name]', _declsByName[prop.name], prop
-				return # just drop the property, field or  method still available
+				print 'DUP name exists already for property "[prop.name]" on', /#_declsByName[prop.name],#/ .name
+				return # just drop the property; field or method still available
 			.addDecl(prop)
 
 
@@ -493,6 +503,7 @@ class Box is partial
 				.registerOverload(overload to !)
 			else
 				throw FallThroughException([this, indexer, other])
+		#print 'Dbg: add IDXR [_jvmType.name][indexer.name] [propInfo.name]'
 		if overload
 			overload.addMember(indexer)
 		else
@@ -601,15 +612,11 @@ class Box is partial
 		"""
 		if t is nil 
 			return false
-
 		if t.isNested and not (t.isPublic or t.isProtected)and not t.isGenericParameter  # TODO: need the generic param check?
 			print 'Type t.name is nested and not public,protected'
 			return true
-
-		# FYI: MS .NET 2.0 (but not Mono 1.2.6) will return true for .isNotPublic for types are "by ref"
 		#if t.isByRef # TODO: or t.isArray
 		#	return _badJvmRelatedType(t.getElementType)
-
 		return false
 
 	def _jvmMemberTypeProxy(jvmType as JavaClassType?) as ITypeProxy
@@ -646,17 +653,26 @@ class Box is partial
 			notNull = member.isNonNullable
 			t = JvmTypeProxy(jvmType) to ITypeProxy
 			return if(notNull, t, NilableTypeProxy(t))
-
+			
+	# Can only do these after bindImplementation phase. Nested classes 
+	#_fix('java.util.Map<of,>.Entry<of,>', r'getKey getValue')
+	#_fix('java.util.AbstractMap.SimpleEntry<of,>', r'getKey getValue')
+	#_fix('java.util.AbstractMap.SimpleImmutableEntry<of,>', r'getKey getValue')
+		
+	def _fixNestedNilables
+		if .parentBox  # nested
+			print 'fixNest', .parentBox.name, .name
+				
 
 class Class
 	is partial
 
-	def _scanNativeTypeJvm
-		base._scanNativeTypeJvm
-		print 'scanJvmNativeType ', .name
+	def scanNativeTypeJvm
+		base.scanNativeTypeJvm
+		#print 'scanJvmNativeType ', .name
 		_scanJvmIsNames
 		_scanJvmImplements
-		#_scanJvmNestedTypes
+		_scanJvmNestedTypes
 		_scanJvmFields
 		_scanJvmInitializers
 		_scanJvmMethods
@@ -664,30 +680,33 @@ class Class
 		##_scanJvmEvents TODO 
 		# TODO: _scanJvmEnums
 		# TODO: scan all other nested types
+		_fixNestedNilables
+		
 		
 	
 class Interface
 	is partial
 
-	def _scanNativeTypeJvm
-		base._scanNativeTypeJvm
+	def scanNativeTypeJvm
+		base.scanNativeTypeJvm
 		_scanJvmIsNames
 		_scanJvmImplements
-		#_scanJvmNestedTypes
+		_scanJvmNestedTypes
 		_scanJvmFields
 		_scanJvmMethods
 		_scanJvmProperties
 		#_scanJvmEvents #TODO
+		_fixNestedNilables
 
 
 class Struct
 	is partial
 
-	def _scanNativeTypeJvm
-		base._scanNativeTypeJvm
+	def scanNativeTypeJvm
+		base.scanNativeTypeJvm
 		_scanJvmIsNames
 		_scanJvmImplements
-		#_scanJvmNestedTypes
+		_scanJvmNestedTypes
 		_scanJvmFields
 		_scanJvmInitializers
 		_scanJvmMethods
@@ -698,9 +717,9 @@ class Struct
 class Extension
 	is partial
 
-	def _scanNativeTypeJvm
+	def scanNativeTypeJvm
 		# this only for Cobra specific extensions. Example: class Extend_String_1939
-		base._scanNativeTypeJvm
+		base.scanNativeTypeJvm
 		_scanJvmIsNames
 		#_scanJvmImplements
 		#_scanJvmNestedTypes
@@ -727,10 +746,10 @@ class Extension
 class EnumDecl
 	is partial
 
-	def _setUnderlyingTypeJvm
+	def setUnderlyingTypeJvm
 		pass
 
-	def _scanNativeTypeJvm
+	def scanNativeTypeJvm
 		# TODO: read attribs
 		_needScanNativeType = false
 		_storageType = .compiler.anyIntType # tmp ??

@@ -1095,10 +1095,11 @@ class FloatType
 			base.init(superType)
 			_size = size
 			branch size
-				on 32, _nativeType = .typeProvider.nativeType('single')
-				on 64, _nativeType = .typeProvider.nativeType('double')
+				on 32, tag = 'single'
+				on 64, tag = 'double'
 				else, throw FallThroughException(size)
-			_systemAliasProxy = LibraryTypeProxy(_nativeType.fullName)
+			_nativeType = .typeProvider.nativeType(tag)
+			_systemAliasProxy = LibraryTypeProxy(tag)
 
 	def addMinFields
 		base.addMinFields
@@ -1202,19 +1203,20 @@ class IntType
 			_size = size
 			if signed
 				branch size
-					on  8, _nativeType = .typeProvider.nativeType('sbyte')
-					on 16, _nativeType = .typeProvider.nativeType('int16')
-					on 32, _nativeType = .typeProvider.nativeType('int32')
-					on 64, _nativeType = .typeProvider.nativeType('int64')
+					on  8, tag = 'sbyte'
+					on 16, tag = 'int16'
+					on 32, tag = 'int32'
+					on 64, tag = 'int64'
 					else, throw FallThroughException(size)
 			else
 				branch size
-					on  8, _nativeType = .typeProvider.nativeType('byte')
-					on 16, _nativeType = .typeProvider.nativeType('uint16')
-					on 32, _nativeType = .typeProvider.nativeType('uint32')
-					on 64, _nativeType = .typeProvider.nativeType('uint64')
+					on  8, tag = 'byte'
+					on 16, tag = 'uint16'
+					on 32, tag = 'uint32'
+					on 64, tag = 'uint64'
 					else, throw FallThroughException(size)
-			_systemAliasProxy = LibraryTypeProxy(_nativeType.fullName)
+			_nativeType = .typeProvider.nativeType(tag)
+			_systemAliasProxy = LibraryTypeProxy(tag)
 
 	def addMinFields
 		base.addMinFields
@@ -1731,7 +1733,8 @@ class ArrayType inherits WrappedType is partial
 			ienum = .compiler.enumerableOfType.constructedTypeFor([.theWrappedType])
 			_ilistOf = .compiler.ilistOfType.constructedTypeFor([.theWrappedType]) to Interface
 			interfaces = [icoll to ITypeProxy, ienum]  # TODO:, _ilistOf]  -- problems with cobra -ert:yes hello and extension method String.split
-			.compiler.backEnd.addArrayInterfaces(interfaces)
+			iclone = .compiler.libraryType('ICloneable')
+			interfaces.insert(0, iclone to ITypeProxy)
 			_box = Class(Token.empty, Token.empty, '[.getType.name]_[.serialNum]', List<of IType>(), List<of String>(), AttributeList(), nil, interfaces, List<of ITypeProxy>(), nil)
 			# TODO: make members based on System.Array
 			indexer = Indexer(Token.empty, Token.empty, _box, r'[]', [Param(Token('', 1, 1, 1, 'ID', 'index', nil), .compiler.intType)], _wrappedType, List<of String>(), AttributeList(), '')

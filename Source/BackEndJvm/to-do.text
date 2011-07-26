@@ -3,6 +3,9 @@
 include-tests:no - remove Test invocation call
 
 
+_fixNativeMethods - static method entries on box instance
+
+
 fixup Object namespace for X-compile so items like System.Object are rooted off
 java.lang namespace ( rather than .Net system)
     DONE  June-2011
@@ -19,11 +22,14 @@ than permutation of input name
 cobra namespaces capitalized (as .Net) Java all lowercase
     - convert namespaces in java code to lowcase
     DONE 31-Jan-2011
+    Unworkable  Jul-2011 - cobra assumptions in code
+    Change to cobra casing  8-Jul-2011
     
 
 java names lowcase 
     method Names  - DONE 31-Jan-2011
     var names - DONE 31-Jan-2011, corrected 10-Feb-2011 BoxField._backendName -> BoxField.{sharp,java}BackEndName
+    properties
     params
     events
     local variables
@@ -42,7 +48,15 @@ properties - pro/get/set
             <indexedT> getIndexer<T, indexedT>(T) and 
                        setIndexer<T, indexedT>(T, indexedT)
       DONE 
-                       
+       
+     codegen for props: 'propName' -> getPropName  and setPropName
+
+    AutoMap map indexers '[]' to methods X.get(idx) v = X[idx] , X.set(idx,val) and X.put(idx,val) -> X[idx] = val
+        - unworkable - too many false positives
+            
+Handling of indexing '[]' on Maps and Lists
+                x[i]=v :  map: x.put(i,v)     list: x.set(i,v) 
+                v = x[i]: map: v = map.get(i) list: v = list.get(i)
 Events
     - auto add boiler plate for listener (de)registration
         - event firing
@@ -63,7 +77,7 @@ printing  that in any java error mesages so to relate the java error back
 to the generating cobra code line.
   - start with just spew the javac lines to output
     - assemble into ErrorMessage Line and 'supporting lines associated with it - keeps error line count in sync
-    
+    DONE
 
 
 single file:
@@ -78,12 +92,8 @@ If specify multiple files
     Leave jar file at root of hierarchy
     
 
-ensure support ( as builtin alternative) for jikes compiler.
-        https://sourceforge.net/projects/jikes/files/Jikes/    
-
-
 add synonym for sharp''/sharp"" -> java''/java""
-    or general be''/be"" (for backend)
+    or general be''/be""/backend'' (for backend)
 
 
 see http://www.25hoursaday.com/CsharpVsJava.html
@@ -95,7 +105,7 @@ varargs
     In Java, the same effect is achieved by appending the string "..." to the typename of the last argument to the method.
     
 Attributes
-    C# extend Atttribute - metainfo also ([AttributeUsage(AttributeTargets.Class)])
+    C# extend Attribute - metainfo also ([AttributeUsage(AttributeTargets.Class)])
     java specify with @interface and Metainfo 
         e.g @Documented //we want the annotation to show up in the Javadocs 
             @Retention(RetentionPolicy.RUNTIME))
@@ -116,10 +126,20 @@ out and inout (ref)
         x = xRef
         // use x here
 
+    Or
+        in call wrap arg in a SoftRef (or make own version HardRef subclass j.l.ref.Reference)
+        Chg param to be a SoftRef to the arg passed (e.g. 'arg_Ref')
+        In the method pull it out from the softref as a local name ('arg')
+    
 
-Cobra backend targetting stab language (explicitly) ??
-    backend 'stab-jvm'
-
+Add new compiler directive
+ @platform portable|jvm|clr|objc
+ 
+ Where down the road, portable would be the default and would have its
+ own libs (which would need impls for each of the other supported
+ platforms). For now the default will be clr, obviously.
+ 
+ And then possibly rename -back-end to -platform.
 
 Decimal Type
     Initially wrap it as new type thats is a Double with an associated DecimalFormatter
@@ -127,6 +147,7 @@ Decimal Type
     Calcs are all as doubles, toString uses formatter...
      still get rounding error etc...
      Decimal Type internally and emit as BigDecimal, trap math ops and map
+    -> try and use BigDecimal and convert all calls (:-(
 
     Maybe easier to just default to Integer and ignore Decimal (initially)
 
@@ -150,8 +171,116 @@ Add convenience methods to
         static String[] readAllLines(String path)
         static IEnumerable<of String> readLines(String path)
 
+    Instead use google collections/Guava
+        - support for List, Set and Map literals
+        - Simple file reading API
+
+ensure support ( as builtin alternative) for jikes compiler.
+        https://sourceforge.net/projects/jikes/files/Jikes/    
+
+Cobra backend targetting stab language (explicitly) ??
+    backend 'stab-jvm'
+
+
+-----------------------------------------------------------------
+
+= Decisions =
+
+Look for and use java and javax in path.
+    - verify version >= 1.6
+    
+Loading external jars
+    Rely on jar or Package PkgSig files for description of Class publicly accessible contents
+        Structure so can revisit later (IKVM) if need be 
+    PkgSig tool for generating pkgSig files
+  
+    start: explicitly load rtl jar up front (rt.jar.sig cf mscorlib.dll) 
+        - but vv big, contents mostly unused
+    ->  chg to load packages separately (separate pkgsig files)
+            initial default
+                java.lang
+                java.io
+                java.util
+                java.text
+                cobra.lang      
+        smaller + faster ??
+ 
+Java Source
+   Turn Cobra source file into Java Source file named per first class in file.
+        - possible issues with multiple public classes ( javac warn-and-quit)
+   -> Cobra Source file into Java Source files one for each class
+        -> place all generated java source in own (sub) dir ( ./java)
+
+Running Generated/compiled classfiles
+    Assume compiled classfiles in same cwd as cobra source, 
+        - run java specifying -cp . so java can find rest of classfiles (if >1)
+             ( java -cp '.;<otherRefs...>' AppMainClass args....)    
+    -> roll all generated source into own jar file ( cf .Net exe) with autogen manifest describing main class
+        - run with classpath specifying name of jarfile
+             ( java -cp '<otherRefs...>' -jar App.jar args....)    
+       
+
+Namespaces:
+    0: namespaces low cased in cobra-jvm as per java.
+        Unworkable with Cobra assumptions 
+    Change to CapCase as per cobra-clr
+        translate case on jar load (in) and JavaGeneration (out)
+
+Testing
+    Implement Test support i/fstructure
+    Add new 'require' forms so can wire tests clr or jvm
+    
+Passthrough to BackEnd
+    ensure java Native modules compile
+    -> support determination of main class/method on pure java modules
+
+    Syntax - support sharp'' as currently
+    add additional:
+         be'' or backEnd'' for any others/more, deprecate sharp''
+
+Indexes '[]'
+    0:autodetect from method sig
+        - Unworkable, too many false positives
+    -> Wire Maps/Lists/... - is that sufficient?
+        
+    -> For default packages generate fm internal description as per fixNilable
+        may need to expose this data structure for augmentation?
+            - allow faked/added attrib placed in pkgsig file.
+
+
+Vari params
+    Use java vari args
+
+In and Inout parameters
+    Inline wrap and post call unwrap - Invent java RefType class
+    Use java SoftRef as Param, pack and unpack in call/callee
+        
+Decimal support
+    0: Treat default as Integer, map explicit decimal to float
+    
+
+Delegates 
+
+Events
+    wot to do
+
+
+Exception Adaption
+    ? See if can get any clever hack working as detailed below
+    ? JavaGenerater auto wrap with try/catch exception block at place of use
+        probably unworkable for deeply embedded expressions
+    ->? make call to individual adaptor that does wrapping, 
+        autogenerate the adaptor on demand
+        ( see if can cobble a genera adaptor that does wrapping and pass ref
+            to method and args to it ... Dynamic Delegate??)
+
+-------------------------------------------------------------------------
 
 = Issues =
+
+
+RTL name mangling
+
 
 How support yield and conversion to enumerator/iterator?
 -------------------------------------------------------------------------

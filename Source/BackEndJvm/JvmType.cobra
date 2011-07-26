@@ -5,10 +5,9 @@
 
 class JvmNativeType inherits NativeType
 
-	var _type as JavaClassType
-	#var _type as java.lang.Class
+	var _type as JavaClassType # java.lang.Class eventually
+	var nestedName as String?
 	
-	#cue init(type as java.lang.Class)
 	cue init(type as JavaClassType)
 		base.init
 		_type = type
@@ -28,8 +27,7 @@ class JvmNativeType inherits NativeType
 		return _type
 
 	get name as String is override
-		#return _type.getSimpleName
-		return _type.name
+		return .nestedName ? _type.name
 
 	get fullName as String is override
 		return _type.canonicalName
@@ -146,13 +144,15 @@ class JvmTypeProxy inherits NativeTypeProxy
 			return .typeProvider.arrayType(_realTypeWithCache(jvmType.arrayComponentType to !))
 		else if jvmType.isNested and not jvmType.isGenericParameter
 			declaringType = _realTypeWithCache(jvmType.declaringType to !)
-			potential = declaringType.memberForName(jvmType.name)
+			cobraTypeName = .cobraNameForJvmBoxName(jvmType.nestedName)
+			potential = declaringType.memberForName(cobraTypeName)   #(jvmType.name)
 			if potential is nil
-				.throwError('Cannot locate nested Jvm type "[jvmType]" (simple name is "[jvmType.name]").')
+				(declaringType to dynamic).dumpDeclNames
+				.throwError('JvmType: Cannot locate nested Jvm type "[jvmType]" (simple name is "[jvmType.name], cobraName is [cobraTypeName]").')
 			else if potential inherits IType
 				return potential
 			else
-				.throwError('Located Jvm type spec "[jvmType]" but got a [potential.englishName] instead of a type.')
+				.throwError('JvmType:Located Jvm type spec "[jvmType]" but got a [potential.englishName] instead of a type.')
 
 		# generic parameters
 		if jvmType.isGenericParameter
@@ -162,7 +162,7 @@ class JvmTypeProxy inherits NativeTypeProxy
 		missing = false
 		curNS = _computeNameSpace(jvmType, level, out missing)
 		if missing
-			.throwError('Cannot find Jvm type "[jvmType.canonicalName]"  in package "[jvmType.package]".')
+			.throwError('JvmType: Cannot find Jvm type "[jvmType.canonicalName]"  in package "[jvmType.package]".')
 			# since the type exists, but cannot be located in our namespaces,
 			# it must be pulled from a dependent DLL that was not directly referenced
 			# but maybe it was already attempted
@@ -179,13 +179,13 @@ class JvmTypeProxy inherits NativeTypeProxy
 					# So we have something like ICollection<of KeyValuePair<of TKey,TValue>> which is all Generic types.
 					# We need the Cobra types of those args so we can construct the Cobra type from the generic cobra type
 					# otherwise, we would just end up returning the generic definition.
-					print 'Dbg: JvmType.realTypeWithoutCache generic type [jvmType.canonicalName] [member.name].'
-					#.throwError('TODO support for Generic Types in JvmType _realTypeWithoutCache')
-					#member = _typeForArgsOfGeneric(jvmType, member)
+					#print 'Dbg: JvmType.realTypeWithoutCache generic type [jvmType.canonicalName] [member.name].'
+					member = _typeForJvmArgsOfGeneric(jvmType, member)
 			return member
 		else
 			print '[typeName] not in [curNS.name] declsforName'
-			msg = 'Cannot locate jvm type "[jvmType]".'
+			#curNS.dumpDeclNames
+			msg = 'JvmType: Cannot locate jvm type "[jvmType]".'
 			if jvmType.package.length and jvmType.package.startsWith('java.lang')
 				if .compiler and .compiler.verbosity > 1, print msg
 				# TODO: .compiler.warning(msg)
@@ -219,13 +219,13 @@ class JvmTypeProxy inherits NativeTypeProxy
 			assert r'[' not in typeName
 			typeName = .cobraNameForJvmType(jvmType)
 		else if not typeName[typeName.length-1].isLetterOrDigit
-			.throwError('Cannot locate JVM type "[jvmType.canonicalName]".')
+			.throwError('JvmType: Cannot locate JVM type "[jvmType.canonicalName]".')
 		return typeName
 
 	def _computeNameSpace(jvmType as JavaClassType, level as int, missing as out bool) as NameSpace
 		missing = false
 		if not jvmType.package.length, return .compiler.globalNS
-		nameParts = jvmType.package.split(c'.')
+		nameParts = jvmType.packageAsCobra.split(c'.')
 		member = .compiler.globalNS.symbolForName(nameParts[0])
 		if member inherits NameSpace, curNS = member
 		else, missing = true
@@ -240,7 +240,7 @@ class JvmTypeProxy inherits NativeTypeProxy
 				else if possible inherits NameSpace
 					curNS = possible
 				else
-					.throwError('Found "[namePart]" at component [i+1] of JVM type "[jvmType.canonicalName]", but it is a [possible.englishName].')
+					.throwError('JvmType: Found "[namePart]" at component [i+1] of JVM type "[jvmType.canonicalName]", but it is a [possible.englishName].')
 				i += 1
 		return curNS	
 
@@ -257,11 +257,12 @@ class JvmTypeProxy inherits NativeTypeProxy
 			member = boxMember.constructedTypeFor(args)
 		return member	
 #/
-	def _typeForArgsOfGeneric(jvmType as JavaClassType, member as IType) as IType
+	def _typeForJvmArgsOfGeneric(jvmType as JavaClassType, member as IType) as IType
 		args = List<of IType>()
 		for genArg in jvmType.getGenericArguments
 			args.add(_realTypeWithCache(genArg))
 		boxMember = member to Box
+		#trace jvmType, boxMember, args
 		member = boxMember.constructedTypeFor(args)
 		return member	
 		

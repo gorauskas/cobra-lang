@@ -56,40 +56,9 @@ class Box
 		ensure .needScanNativeType
 		_nativeType = t
 		_needScanNativeType = true
-		_callNativeScanMethod('ScanGenericArgs') 	
-
-	def _callNativeScanMethod(tag as String)
-		"""
-		Call a backend scan method for native type scan operation desired and backend in use.
-		"""
-		# This is icky - method to call needs to be set directly via backend somehow rather than this check and call code	
-		# TODO: change to use strategy object set when init backend.
 		assert .compiler
-		assert tag in ['ScanNativeType', 'ScanGenericArgs', 'prepSysObjClass'] # turn these into an Enum
-		backEnd = .compiler.backEnd
-		branch backEnd.name
-			on 'c#-clr'
-				branch tag
-					on 'ScanNativeType',  _scanNativeTypeClr
-					on 'ScanGenericArgs', _scanGenericArgsClr
-					on 'prepSysObjClass', _prepSystemObjectClassClr
-		
-			on 'java-jvm'
-				branch tag
-					on 'ScanNativeType',  _scanNativeTypeJvm
-					on 'ScanGenericArgs', _scanGenericArgsJvm
-					on 'prepSysObjClass', _prepSystemObjectClassJvm
-			on 'objc'
-				print 'objc back end need method for [tag]'
-				assert false, 'Missing backEnd infrastructure for [backEnd.getType.name]'
-					#branch on tag
-					#	on 'ScanNativeType',  _scanObjcNativeType
-					#	on 'ScanGenericArgs', _scanObjcGenericArgs
-					#	on 'prepSysObjClass', _prepSystemObjectClassObjc
-			else 
-				throw FallThroughException('No nativeScanMethod code for backend [backEnd.name] [backEnd.getType.name]')
+		.compiler.backEnd.scanGenericArgs(this) # Convert any Generic args fm backend form to Cobra data structures
 				
-		
 	def addMinFields
 		base.addMinFields
 		.addField('didBindInh', .didBindInh)
@@ -650,7 +619,8 @@ class Box
 	## Binding
 	def _scanNativeType
 		#print '_scanNativeType ', .name
-		_callNativeScanMethod('ScanNativeType') 	
+		assert .compiler
+		.compiler.backEnd.scanNativeType(this) # Convert library (native) info to Cobra data structures
 		
 	def _stackPush
 		base._stackPush
@@ -730,7 +700,8 @@ class Box
 		# Therefore, everthing below has already happened for a constructed box's generic def.
 		base._bindInt
 		if .isSystemObjectClass
-			_callNativeScanMethod('prepSysObjClass')
+			assert .compiler
+			.compiler.backEnd.prepSystemObjectClass(this) # add any improvements to root Object
 		errorCount = .compiler.errors.count
 		if _needScanNativeType, _scanNativeType
 		if _baseClass
@@ -1104,6 +1075,9 @@ class Box
 					newDecls.add(nd)
 			for decl in _declsInOrder
 				if decl inherits BoxMember
+					#if not decl.didBindInt # hops: fix for crash with generics and java before changeset 2576
+					#	print 'dbg: ', decl.name
+					#	decl.bindInt
 					nd = decl.constructedFor(this, gpToType)
 					assert nd <> decl
 					newDecls.add(nd)
@@ -1886,15 +1860,7 @@ class Extension inherits Box is partial
 		base.init(TokenFix.empty, TokenFix.empty, backend.cobraNameForNativeBoxName(nativeType.name), List<of IType>(), List<of String>(), AttributeList(), List<of ITypeProxy>(), nil)
 		_initNativeType(nativeType)
 		# the real extended type is not this type, but the type of the first argument of any method
-		branch backend.name
-			on 'c#-clr', 	nativeType = .clrExtnNativeType(nativeType) 	# ScanClrType
-			on 'java-jvm', 	nativeType = .jvmExtnNativeType(nativeType) 	# ScanJvmType
-			on 'objc'
-				print 'objc back end need method objcExtnNativeType'
-				assert false, 'Missing backEnd infrastructure for [backend.getType.name]'
-			else 
-				throw FallThroughException('No extnNativeType code for backend [backend.name] [backend.getType.name]')
-		#nativeType = backEnd.determineExtnNativeType(nativeType)
+		nativeType = backend.determineExtnNativeType(this, nativeType)
 		_extendedBoxProxy = backend.nativeTypeProxy(nativeType)
 		(.compiler.curModule to AssemblyModule).addMustBindInh(this)
 
