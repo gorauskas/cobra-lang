@@ -115,7 +115,7 @@ class InstallFromWorkspace
 		},
 		{
 			'name': 'Cobra.Lang.Compiler',
-			'flags': '-c -t:lib -ert:yes -namespace:Cobra.Lang.Compiler -files:files-to-compile.text',
+			'flags': '-c -t:lib -namespace:Cobra.Lang.Compiler -files:files-to-compile.text',
 			'files': 'cobra.cobra',
 		},
 	]
@@ -161,7 +161,7 @@ class InstallFromWorkspace
 		.verifyNewlyBuiltCobra
 		.copyFilesToInstallDirectory
 		.verifyNewlyInstalledCobra
-#		.cleanUpWorkspace  # this is probably not worthwhile
+		.cleanUpWorkspace
 		.installInPath
 		print
 		print 'Visit http://cobra-language.com/ for discussion, wiki, samples, irc and more.'
@@ -549,7 +549,6 @@ class InstallFromWorkspace
 
 	def buildCobraCompiler
 		.startStage('Build new Cobra compiler')
-		# to-do: should not need -ert:yes below
 		.runSnapshotCobra('-compile [.compileFlags] -ert:yes cobra.cobra -files:files-to-compile.text')
 
 	def getBaseVersion
@@ -751,8 +750,15 @@ class InstallFromWorkspace
 
 	def cleanUpWorkspace
 		.startStage('Clean up workspace')
-		.runSnapshotCobra('-compile -debug -ert:yes cobra.cobra -files:files-to-compile.text')
-		.runSourceCobra('-bsl -debug')
+		# By removing cobra.exe and friends from the workspace,
+		# we minimize the chances that the user runs the local Cobra compiler
+		# instead of the installed one.
+		fileNames = ['cobra.exe']
+		for lib in .libs, fileNames.add(lib['name'] + '.dll')
+		for fileName in fileNames
+			for ext in ['', '.mdb', '.pdb']
+				try, File.delete(fileName+ext)
+				catch Exception, pass
 
 	def installInPath
 		.startStage('Install "cobra" into a system path directory')
