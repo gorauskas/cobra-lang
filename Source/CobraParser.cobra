@@ -1848,9 +1848,15 @@ class CobraParser inherits Parser
 		token = .expect('ID')
 		identifier = token.value to String
 		.checkStartsLowercase(identifier, 'Parameter')
-		dir = Direction.In
+		dir, declaredAsUnused = Direction.In, false
 		type as ITypeProxy?
 		if .optional('AS')
+
+			# unused (virtual keyword)
+			if .peek and .peek.which == 'ID' and .peek.text == 'unused'
+				.grab
+				declaredAsUnused = true
+					
 			# code below expresses an undocumented dependency and ordering
 			# allows only    VARI <type>  or  {OUT,INOUT} <type>
 			# i.e cant have VARI and {OUT,INOUT}, if have VARI or OUT,INOUT must specify type
@@ -1879,7 +1885,7 @@ class CobraParser inherits Parser
 			attribs.add(AttributeDecl(.attribExpr(0)))
 		# note: isMissingType is currently used to generate a warning in .paramDecls above
 		# and may be used for anonymous method parameter type inference at some point
-		return Param(token, type, isMissingType=isMissingType, direction=dir, attributes=attribs)
+		return Param(token, type, isMissingType=isMissingType, direction=dir, isDeclaredAsUnused=declaredAsUnused, attributes=attribs)
 
 
 	##
