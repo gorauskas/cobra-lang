@@ -81,7 +81,8 @@ class Compiler is partial
 			outName = .computeOutNameJava
 			
 			# compute backEndOptions
-			backEndOptions = '-d .'		# Put namespaced classfiles in own hierarchy
+			backEndOptions = '-d . '			# Put namespaced classfiles in own hierarchy
+			backEndOptions += ' -Xlint:all '	# warn about everything (non std option)
 
 			# -optimize isn't supported by JVM, but it could potentially be used by Cobra itself
 			
@@ -648,7 +649,7 @@ class NilableType is partial
 		return 'null'
 
 	get javaRef as String is override
-		return _wrappedType.javaRef + if(not _wrappedType.isReference, '?', '')
+		return _wrappedType.javaRef + if(not _wrappedType.isReference, ' /*?*/ ', '')
 
 
 class NilType is partial
@@ -1399,8 +1400,13 @@ class AbstractMethod is partial
 				if not local.isImplicit
 					sw.write('[local.type.javaRef] [local.javaName]')
 					init = local.type.javaInit
-					if init.length, sw.write(' = [init]')
+					if init.length
+						if not local.type.isReference and init == 'null'
+							pass
+						else
+							sw.write(' = [init]')
 					sw.write(';\n')
+			sw.write('// end locals\n\n')
 
 	def writeJavaRequireParamDecls(sw as CurlyWriter)
 		sep = ''
@@ -1632,11 +1638,12 @@ class Method is partial
 		return .name #./capitalized
 
 # Java, for its sins, does not have support for properties built into the language...
-# efforts to correct this stupidity seem to be mired in language navel gazing plus associated 
-# belly button lint picking followed by mastubatory dick waving to find the most obscure and difficult 
+# efforts to correct this stupidity seem to be mired in language navel gazing associated 
+# with efforts to find the most obscure and difficult 
 # corner cases which then leads to it being then dropped in the 'too hard' basket
-# Historically and currently it instead uses a convention which leads to a whole lot of obfuscating boilerplate code
-# 	Its obviously too difficult to just copy C# (turnabout is fair play), accept and then evolve any edge misses 
+# Historically and currently it instead uses a convention on paired methodNames which leads to a
+# whole lot of obfuscating boilerplate code. Its obviously too difficult to just copy C# (turnabout
+# is fair play), accept and then evolve any edge misses 
 
 class ProperDexer is partial
 	# AbstractBaseClass for Property and Indexer
@@ -1879,15 +1886,17 @@ class AssertStmt is partial
 		_expr.writeJavaDef(sw)
 		#_expr.writeJavaBreakdown(sw)
 		#sw.write('[.javaThis]')
+		sw.write(' : ')
 		if _info
-			sw.write(' : ')
+			sw.write('"')
 			_info.writeJavaDef(sw)
-		else		# Tmp till get java asserts
-			sw.write(' : ')
-			sw.write('" assert ')
-			_expr.writeJavaDef(sw)
+			sw.write('"')
+		else
+			sw.write('"assertion ')
+			tmpsw = CurlyWriter(StringWriter(), sw.curlyLineNumberTreatment)
+			_expr.writeJavaDef(tmpsw)
+			sw.write(tmpsw.toString.replace('"', r'\"'))
 			sw.write(' FAILED"')
-			
 		sw.write(';\n')
 		sw.dedent
 
@@ -2972,7 +2981,9 @@ class AbstractAssignExpr is partial
 
 
 class AssignExpr is partial
-
+	
+	var isJavaSetProperty = false
+	
 	def _writeJavaDef(sw as CurlyWriter) is override
 		# TODO:
 		# if trackLocal:
@@ -3019,8 +3030,13 @@ class AssignExpr is partial
 			# for something like "p.total = 0", cannot generate "(p.Total)=0" because then C# sees
 			# the left hand side as an r-value instead an l-value/target. hence the false below.
 			_left.writeJavaDef(sw, false)
-		sw.write('=')
-		_right.writeJavaDefInContext(sw)
+		if .isJavaSetProperty # set in MemberExpr.writeJavaDef
+			sw.write('(')
+			_right.writeJavaDefInContext(sw)
+			sw.write(')')
+		else
+			sw.write('=')
+			_right.writeJavaDefInContext(sw)
 		# handle the case where a type got backed up because of assignment inside of an if-inherits
 		if _backUpIfInheritsStack
 			assert _left.definition inherits IVar
@@ -3313,38 +3329,184 @@ class MemberExpr
 
 	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
 		assert .superNode inherits DotExpr
-		if _definition inherits BoxMember
-			name = _definition.binaryName
-		#if name is nil
-		#	name = _name.capitalized
-		if name is nil
-			name = _name
+		if _definition inherits BoxMember, name = _definition.binaryName
+		if name is nil, name = _name
 		#print 'Dbg: MemberExpr::', name
 		if _definition inherits Property
-			xet='get'
-			if _isLValue, xet = 'set'
-			sw.write(xet+name)
-			sw.write('()')
+			lValue = _setPropInAssignExpr
+			if lValue
+				# TODO chk for use of 'is' prefixed props
+				xet = 'set'
+				sw.write(xet+name)
+				lValue.isJavaSetProperty = true # flag assignExpr for remainder of setProp handling
+			else
+				xet = 'get'
+				sw.write(xet+name)
+				sw.write('()')
 		else
 			sw.write(name)
-			if _definition and (_definition.isMethod or _name=='toString') and not _isReference  # TODO: axe the 'toString' check
+			if _definition and (_definition.isMethod or _name=='toString') and not _isReference 
 				sw.write('()')
 
-	def _isLValue as bool
+	def _setPropInAssignExpr as AssignExpr?
+		""" Return ancestor assignExpr if member is the lvalue in an AssignExpr, nil otherwise."""
 		if not (.superNode and .superNode inherits BinaryOpExpr)
-			return false
+			return nil
 		bsn0 = this to INode
 		bsn  = .binarySuperNode
 		while true
 			if bsn inherits AssignExpr and bsn0 is bsn.left
-				return true
+				return bsn to AssignExpr
 			if not (bsn.superNode and bsn.superNode inherits BinaryOpExpr)
-				return false
+				return nil
 			bsn0 = bsn
 			bsn = bsn.binarySuperNode
 			
 	def writeJavaBreakdownItems(sw as CurlyWriter) is override
 		pass
+
+
+class OldExpr
+	is partial
+
+	var _javaVarName as String?
+	pro javaVarName from var
+
+	def writeJavaAssignment(sw as CurlyWriter)
+		require
+			.didBindImp
+			.javaVarName
+			.type
+		body
+			sw.write('[.type.javaRef] [_javaVarName] = ')
+			_expr.writeJavaDef(sw)
+			sw.write(';\n')
+
+	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
+		assert _javaVarName
+		# this gets called when generating the `ensure` code
+		sw.write(_javaVarName)
+		
+
+class PostCallExpr
+	is partial
+
+	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
+		if _helperMethod
+			sw.write(_helperMethod.name + '(')
+			sep = ''
+			for arg in _args
+				sw.write(sep)
+				if arg inherits AssignExpr
+					arg = arg.right
+				arg.writeJavaDefInContext(sw, false)
+				sep = ','
+			sw.write(')')
+		else
+			if parens, sw.write('(')
+			expr = _expr
+			isMethodSig = false
+			isDynamic = false
+			if expr inherits TypeExpr
+				if expr.containedType inherits ArrayType
+					# arrays
+					sw.write('new ')
+					sw.write((expr.containedType to ArrayType).theWrappedType.javaRef)
+					sw.write(r'[')
+					.writeJavaArgs(sw)
+					sw.write(r']')
+				else
+					sw.write('new ')
+					expr.writeJavaDef(sw)
+					sw.write('(')
+					.writeJavaArgs(sw)
+					sw.write(')')
+			else if expr inherits IdentifierExpr
+				if expr.isTypeReference
+					sw.write('new ')
+					expr.writeJavaDef(sw)
+					sw.write('(')
+					.writeJavaArgs(sw)
+					sw.write(')')
+				else if expr.receiverType inherits GenericParam # TODO: shouldn't expr.isTypeReference above have caught this?
+					sw.write('new [expr.receiverType.javaRef](')
+					.writeJavaArgs(sw)
+					sw.write(')')
+				else if expr.type.nonNil.isDescendantOf(.compiler.delegateType)
+					isMethodSig = true
+				else if expr.type.isSystemTypeClass or _type.isDynamic
+					isDynamic = true
+				else
+					assert false, expr
+			else if expr inherits IndexExpr
+				if expr.type.nonNil.isDescendantOf(.compiler.delegateType)
+					isMethodSig = true
+				else if expr.type.isSystemTypeClass or _type.isDynamic
+					isDynamic = true
+				else
+					assert false, expr
+			else
+				assert false, expr
+			if isMethodSig
+				expr.writeJavaDef(sw, false)
+				sw.write('.invoke(')
+				.writeJavaArgs(sw)
+				sw.write(')')
+			else if isDynamic
+				defi = expr.definition
+				assert not defi inherits Box, expr  # TODO: just curious
+				what = if(defi inherits IType, '([defi.javaName].class)', defi.javaName to String)
+				whatType  = defi.javaName to String
+				if defi inherits IVar
+					if defi.type.isDynamic
+						what = '(java.lang.Class)' + what
+				#sw.write('System.Activator.CreateInstance([what]')
+
+				if _args.count	# maybe
+					sw.write('(<Constructor([whatType]>[what].getConstructor(')
+					.writeJavaArgs(sw, ', ')
+					sw.write(')).newInstance(')
+					.writeJavaArgs(sw, ', ')
+					sw.write(')')
+				else	
+					sw.write('[what].newInstance()')
+				# maybe better do this
+				#sw.write('cobra.lang.CobraImp.newInstance<[whatType]>([what],')
+				#.writeJavaArgs(sw, ', ')
+				#sw.write(')')
+			if parens, sw.write(')')
+
+	def writeJavaArgs(sw as CurlyWriter)
+		.writeJavaArgs(sw, '')
+
+	def writeJavaArgs(sw as CurlyWriter, sep as String)
+		for arg in _args
+			sw.write(sep)
+			arg.writeJavaDefInContext(sw, false)
+			sep = ','
+		
+	def writeJavaBreakdownItems(sw as CurlyWriter)
+		base.writeJavaBreakdownItems(sw)
+		sw.write(', +1')
+		_expr.writeJavaBreakdownItems(sw)
+		for expr in _args
+			expr.writeJavaBreakdownItems(sw)
+		sw.write(', -1')
+
+
+class RefExpr
+	is partial
+
+	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
+		if parens
+			sw.write('(')
+		_expr.writeJavaDef(sw, false)
+		if parens
+			sw.write(')')
+
+	def writeJavaBreakdownItems(sw as CurlyWriter)
+		base.writeJavaBreakdownItems(sw)
+		# TODO
 
 class SharpExpr
 	is partial
@@ -3381,14 +3543,6 @@ class Extension is partial
 	get javaInvariantVisibility as String is override
 		return ''
 
-class OldExpr is partial
-
-	def writeJavaAssignment(args as vari dynamic)
-		pass
-
-	get javaVarName as String
-		return ''
-		
 class Utils is partial
 
 	shared
