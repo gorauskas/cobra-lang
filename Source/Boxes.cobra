@@ -1282,6 +1282,8 @@ class Class
 				# TODO: ? else, throw FallThroughException(...)
 		return m
 
+	var _hackCheck = false
+
 	def memberForName(name as String) as IMember?
 		# the next assertion fails for Tests\600-misc\404-implement-IEnumerable
 		# could not fix. I'm confused. Something to do with generics. So bail on generics:
@@ -1289,6 +1291,14 @@ class Class
 		# if not .isGeneric
 		# 	assert .didBindInt  # TODO: is this legit? if so, push up to Container
 		# TODO: assert .didBindInh
+
+		if not _hackCheck
+			_hackCheck = true
+			if _nativeType and .name == 'String' and .parentNameSpace and .parentNameSpace.name == 'System' and name <> 'repeat'
+				# Address the problem where `s.split(sep, 2)` binds to the wrong .split and therefore generates the wrong code.
+				# The real fix is deeper and won't be done just now. to-do
+				.memberForName('repeat')
+
 		m = base.memberForName(name)
 		if m is nil and _baseClass, m = _baseClass.memberForName(name)
 		if m is nil, m = .interfaceMemberForName(name)
