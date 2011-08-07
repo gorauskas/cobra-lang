@@ -2947,7 +2947,7 @@ class CobraParser inherits Parser
 					return .identifierExpr
 				else
 					try
-						return .typeExpr
+						return TypeExpr(.nonqualifiedTypeId)
 					catch pe as ParserException
 						if .allowKeywordAssignment and peekToken.isKeyword and .peek is not nil and .peek.which == 'ASSIGN'
 							# example: f = Foo(where=3)  # note that 'where' is a keyword
@@ -2986,6 +2986,7 @@ class CobraParser inherits Parser
 		"""
 		Syntax:
 			foo(args)
+			foo<of T>(args)
 		"""
 		token = .expect('OPEN_CALL', 'OPEN_GENERIC')
 		callName = token.value to String
@@ -3421,9 +3422,10 @@ class CobraParser inherits Parser
 		while true
 			t = .nonqualifiedTypeId
 			types.add(t)
-			if .peek.which=='DOT'
-				if .peek(1).which=='OPEN_CALL'
-					# See Tests\150-basics-two\510-number-parse.cobra
+			if .peek.which == 'DOT'
+				if .peek(1).which == 'OPEN_CALL'
+					# ex: Test<of int>.check(5)
+					# See Tests/240-generics/300-declare-generic-classes/102-generic-class-shared.cobra
 					break
 				else
 					.grab

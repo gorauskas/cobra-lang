@@ -317,11 +317,10 @@ class Compiler is partial
 			t = sharp'System.Type.GetType(qualifiedName)' # to System.Type
 			_clrTypeCache[qualifiedName] = t to passthrough  # "to passthrough" instead of "to !" to avoid non-nil check
 		return t to passthrough
-	
-
 		
-	def installClrNativeMethods(box as Box, nativeType as NativeType) 
+	def installClrNativeMethods(box as Box, nativeType as ClrNativeType) 
 		meths = List<of Method>()
+		_installClrNativeConstantsFrom(nativeType, box)
 		_installClrNativeMethodsFrom('System', nativeType, nativeType, box, meths)
 		_installClrNativeMethodsFrom('System', ClrNativeType(System.Math.getType), nativeType, box, meths)
 
@@ -349,9 +348,28 @@ class Compiler is partial
 			objectMeths.sort(ref .compareMethodNames)
 			for meth in objectMeths
 				print '    [meth.cobraSourceSignature]'
-				
+	
+	def _installClrNativeConstantsFrom(nativeType as ClrNativeType, box as Box)
+		for fieldInfo in nativeType.backEndType.getFields(BindingFlags(DeclaredOnly, Static, Public))
+			if fieldInfo.isSpecialName, continue
+			if fieldInfo.isAssembly, continue
+			if fieldInfo.isPrivate, continue
+			name = Utils.cobraNameForNativeMemberName(fieldInfo.name)
+			type = ClrTypeProxy(fieldInfo.fieldType)
+			attrs = AttributeList()
+			isNames = [if(fieldInfo.isPublic, 'public', 'protected')]  # private was guarded against above
+			modifiers = List<of String>()
+			if fieldInfo.isStatic, modifiers.add('shared')
+			if fieldInfo.isInitOnly or fieldInfo.isLiteral
+				modifiers.add('nonvirtual')
+				value = fieldInfo.getValue(nil)
+				initExpr = SharpExpr(TokenFix.empty, if(value, .toString, 'nil'))  # DocGenerator.cobra uses this
+				boxConst = BoxConst(TokenFix.empty, TokenFix.empty, box, name, type, isNames, initExpr, attrs, '')
+				boxConst.binaryName = fieldInfo.name
+				box.addDecl(boxConst)
+
 	def _installClrNativeMethodsFrom(namespaceName as String, nativeType as NativeType, 
-					thisNativeType as NativeType, box as Box, meths as List<of Method>)
+					thisNativeType as NativeType, box as Box, meths as IList<of Method>)
 		argClrType = (nativeType to ClrNativeType).backEndType
 		thisClrType = (thisNativeType to ClrNativeType).backEndType
 		# print
@@ -449,7 +467,6 @@ class Box is partial
 		ensure not .needScanNativeType
 		_needScanNativeType = false
 		# print '<> _scanNativeType for [.name] in [_parentNameSpace.fullName], class is [.getType.name]'
-
 
 	def scanGenericArgsClr
 		if _clrType.isGenericType
