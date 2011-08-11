@@ -1305,9 +1305,7 @@ class IfExpr
 		return 'if([.cond.toCobraSource], [.tpart.toCobraSource], [.fpart.toCobraSource])'
 
 
-class IndexExpr
-	is partial
-	inherits Expr
+class IndexExpr inherits Expr is partial
 	"""
 	May transform to a TypeExpr for cases like "int[]".
 	"""
@@ -1318,8 +1316,7 @@ class IndexExpr
 
 	cue init(token as IToken, target as Expr, args as List<of Expr>)
 		base.init(token)
-		_target = target
-		_args = args
+		_target, _args = target, args
 
 	def addSubFields is override
 		base.addSubFields
@@ -1370,7 +1367,7 @@ class IndexExpr
 		if hasArgError or target.hasError
 			_type = .compiler.passThroughType
 		else if _type is nil
-			_definition = target.memberForName(r'[]')  # TODO: will this need to be 'Index' to match DLLs/C#/VB?
+			_definition = target.memberForName(r'[]')
 			if _definition is nil
 				if target.receiverType is .compiler.passThroughType
 					_type = .compiler.passThroughType
@@ -1381,7 +1378,7 @@ class IndexExpr
 				.throwError('Cannot find an indexer in "[target.toCobraSource]" whose type is "[target.receiverType.name]".')
 			assert _definition
 			if _definition inherits MemberOverload
-				# TODO
+				# to-do
 				pass
 			else if _definition inherits Indexer
 				_bindImpIndexer(args, _definition)
@@ -1391,10 +1388,14 @@ class IndexExpr
 			assert _type
 			
 	def _bindImpIndexer(args as List<of Expr>, indexer as Indexer)
-		#indexer = _definition
 		params = indexer.params
-		if args.count <> params.count
-			.throwError('The method "[_definition.name]" is expecting [params.count] argument[Utils.plural(params)], but [args.count] are being supplied in this call.')
+		hasVari = any for p in params get p.type inherits VariType
+		if hasVari
+			# to-do
+			return
+			
+		if not hasVari and args.count <> params.count
+			.throwError('The indexer is expecting [params.count] argument[Utils.plural(params)], but [args.count] are being supplied in this call.')
 		for i in 0 : args.count
 			arg = args[i]
 			param = params[i]
