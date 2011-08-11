@@ -606,7 +606,7 @@ class BoolType is partial
 class CharType is partial
 
 	get javaInit as String is override
-		return '(character)0'
+		return '(char)0'
 
 
 class DynamicType is partial
@@ -620,15 +620,26 @@ class DynamicType is partial
 
 class FloatType is partial
 
+	#get javaInit as String is override # where not implemeneted as a primitive
+	#	return 'null'  # 'new Float(0)'
+
 	get javaName as String is override
-		#return _nativeType.fullName
-		return 'float'
+		#return _nativeType.fullName # java.lang.{Double,Float}
+		# should name to primitives but not prob with JvmJarSig._aliasPrimitives
+		# TODO fix primitives float, double... vs classes java.lang.Float, java.lang.Double
+		t =  _nativeType.fullName
+		branch t 
+			on 'java.lang.Double',    primName = 'double'
+			on 'java.lang.Float',     primName = 'float' 
+			else 
+				throw FallThroughException()
+		return primName
 
 
 class IntType is partial
 
 	get javaName as String is override
-		# should name to primitives but not prob fm JvmJarSig._aliasPrimitives
+		# should name to primitives but not prob with JvmJarSig._aliasPrimitives
 		# TODO fix primitives int, long,... vs classes java.lang.Integer, java.lang.Long 
 		#return _nativeType.fullName
 		t =  _nativeType.fullName
@@ -1018,8 +1029,7 @@ class MethodSig is partial
 class GenericParam is partial
 
 	get javaInit as String is override
-		# TODO: ack. does Java have anything like this?
-		return 'default([_name])'
+		return 'null /*default([_name])*/' # not poss in java
 
 	def writeJavaDef(sw as CurlyWriter)
 		base.writeJavaDef(sw)
@@ -1121,7 +1131,7 @@ class Param is partial
 class LocalVar is partial
 
 	def writeJavaDef(sw as CurlyWriter)
-		base.writeSharpDef(sw)
+		base.writeJavaDef(sw)
 		sw.write('[.type.javaRef] [.javaName]')
 		init = .type.javaInit
 		if init.length, sw.write(' = [init]')
@@ -1587,7 +1597,7 @@ class Method is partial
 			name = _implementsType.javaRef + '.' + name
 		.writeJavaIsNames(sw)
 		sw.write('[returnType.javaRef] [name][.javaGenericParams]')
-		if .isMain	
+		if .hasMainParams	# insert args for main method for this backend
 			sw.write(r'(String[] args)')
 		else
 			.writeJavaParams(sw)
@@ -1887,16 +1897,17 @@ class AssertStmt is partial
 		#_expr.writeJavaBreakdown(sw)
 		#sw.write('[.javaThis]')
 		sw.write(' : ')
+		sw.write('String.format("assertion %s FAILED", ')
+		#sw.write('"assertion " + ')
+		tmpsw = CurlyWriter(StringWriter(), sw.curlyLineNumberTreatment)
+		_expr.writeJavaDef(tmpsw)
+		#sw.write(tmpsw.toString.replace('"', r'\"'))
+		sw.write(Utils.javaStringLiteralFor(tmpsw.toString))
+		#sw.write('" + " FAILED "')
+		sw.write(')')
 		if _info
-			sw.write('"')
+			sw.write(' + "info="+')
 			_info.writeJavaDef(sw)
-			sw.write('"')
-		else
-			sw.write('"assertion ')
-			tmpsw = CurlyWriter(StringWriter(), sw.curlyLineNumberTreatment)
-			_expr.writeJavaDef(tmpsw)
-			sw.write(tmpsw.toString.replace('"', r'\"'))
-			sw.write(' FAILED"')
 		sw.write(';\n')
 		sw.dedent
 
@@ -2453,6 +2464,8 @@ class CallExpr is partial
 			sw.write(sep)
 			arg.writeJavaDefInContext(sw)
 			sep = ', '
+		if .hasMainArgs			# for MainWrapper - pass through args fm main method
+			sw.write('args')	# same name(s) as inserted args on main method 
 		sw.write(')')
 
 	def writeJavaBreakdownItems(sw as CurlyWriter) is override
@@ -2678,19 +2691,19 @@ class TruthExpr
 			on Treatment.AsIs
 				_expr.writeJavaDef(sw, parens)
 			on Treatment.InvokeRuntime
-				sw.write('CobraLangInternal.CobraImp.IsTrue(')
+				sw.write('cobra.lang./*CobraLangInternal.*/CobraImp.isTrue(')
 				_expr.writeJavaDef(sw, false)
 				sw.write(')')				
 			on Treatment.CompareToZero
-				sw.write('[lparen]0!=')
+				sw.write('[lparen]0 != ')
 				_expr.writeJavaDef(sw, true)
 				sw.write(rparen)
 			on Treatment.CompareToZeroChar
-				sw.write("[lparen]'\\0'!=")
+				sw.write("[lparen]'\\0' != ")
 				_expr.writeJavaDef(sw, true)
 				sw.write(rparen)
 			on Treatment.CompareToNull
-				sw.write('[lparen]null!=')
+				sw.write('[lparen] null!= ')
 				_expr.writeJavaDef(sw, true)
 				sw.write(rparen)
 
@@ -2790,7 +2803,7 @@ class UnaryOpExpr
 class Literal
 	is partial
 
-	def asJava as String
+	get asJava as String
 		return '/* TODO_Literal */'
 
 	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
@@ -2803,9 +2816,57 @@ class AtomicLiteral
 	get willWriteJavaBreakdownItems as bool is override
 		return false
 
+
+		
+class BoolLit
+	is partial
+
+	get asJava as String is override
+		return if(_value, 'true', 'false')
+
+
+class CharLit
+	is partial
+
+	get asJava as String is override
+		if _value[0] to int == 39, return "'\\''"  # single quote
+		else, return "'" + _value.toString + "'"
+			
+		
+class DecimalLit
+	is partial
+
+	get asJava as String is override
+		return _value.toString(Utils.cultureInfoForNumbers) + '/*decimal*/'
+
+
+class FractionalLit
+	is partial
+
+	get asJava as String is override
+		if _type == .compiler.floatType(32), suffix = 'f'
+		else if _type == .compiler.floatType(64), suffix = ''
+		else if _type == .compiler.decimalType, suffix = '/*decimal*/'
+		else, throw FallThroughException(_type)
+		return _value.toString(Utils.cultureInfoForNumbers) + suffix
+
+
+class FloatLit
+	is partial
+
+	get asJava as String is override
+		# suppose you have the literal: 0.00001
+		# using 'F' format for 'fixed point' gives '0.00' which loses the original value
+		# using 'R' format for 'round trip' gives '1E-05'
+		s = _value.toString('R', Utils.cultureInfoForNumbers)
+		if s.indexOf('.') == -1 and 'E' not in s, s += '.0'
+		if (.type to FloatType).size == 32,	s += 'f' 
+		else, s += 'd'
+		return s
+
 class IntegerLit is partial
 
-	def asJava as String is override
+	get asJava as String is override
 		s = ''
 		if (info = .token.info) inherits int
 			branch info
@@ -2822,31 +2883,16 @@ class IntegerLit is partial
 			return _value.toString + s
 		else
 			return '([s])[_value.toString]'
-		
-class BoolLit
-	is partial
 
-	def asJava as String is override
-		return if(_value, 'true', 'false')
-
-
-class CharLit
-	is partial
-
-	def asJava as String is override
-		if _value[0] to int == 39, return "'\\''"  # single quote
-		else, return "'" + _value.toString + "'"
-			
-		
 class NilLiteral
 	is partial
 
-	def asJava as String is override
+	get asJava as String is override
 		return 'null'
 
 class StringLit	is partial
 
-	def asJava as String is override
+	get asJava as String is override
 		return Utils.javaStringLiteralFor(_string)
 	
 class StringSubstLit is partial
@@ -2875,19 +2921,19 @@ class StringSubstLit is partial
 
 class BaseLit is partial
 
-	def asJava as String is override
+	get asJava as String is override
 		return 'super'
 
 
 class ThisLit is partial
 
-	def asJava as String is override
+	get asJava as String is override
 		return .compiler.curBox.javaThis
 
 
 class VarLit is partial
 
-	def asJava as String is override
+	get asJava as String is override
 		return _name
 
 class ToNilableOrNotExpr
@@ -3041,6 +3087,256 @@ class AssignExpr is partial
 		if _backUpIfInheritsStack
 			assert _left.definition inherits IVar
 			_left.definition.ifInheritsStack = Stack<of IType>(_backUpIfInheritsStack)
+
+
+class NumericPromoExpr is partial
+
+	def _writeJavaDefDynamic(sw as CurlyWriter)
+		specs = OperatorSpecs.binaryOpSpecsByCobraText
+		assert specs.containsKey(.token.text)
+		spec = specs[.token.text]
+		opText = Utils.javaStringLiteralFor(spec.opMethodName)
+		sw.write('cobra.lang./*CobraLangInternal.*/CobraImp.DynamicOp([opText], ')
+		_left.writeJavaDef(sw)
+		sw.write(', ')
+		_right.writeJavaDef(sw)
+		sw.write(')')
+
+
+class AugAssignMathExpr is partial
+
+	def _writeJavaDef(sw as CurlyWriter) is override
+		if .isConcated
+			_writeJavaDefConcated(sw)
+		else if _type.isDynamic
+			_writeJavaDefDynamic(sw)
+		else
+			_writeJavaDefOperation(sw)
+
+	def _writeJavaDefConcated(sw as CurlyWriter)
+		_left.writeJavaDef(sw, false)
+		sw.write(' = ')
+		sw.write('(' + _left.type.javaRef + ')')
+		sw.write('CobraLangInternal.CobraImp.Concated(')
+		_left.writeJavaDef(sw, false)
+		sw.write(', ')
+		_right.writeJavaDef(sw, false)
+		sw.write(')')
+
+	def _writeJavaDefDynamic(sw as CurlyWriter) is override
+		_left.writeJavaDef(sw)
+		sw.write(' = ')
+		specs = OperatorSpecs.binaryOpSpecsByCobraText
+		assert specs.containsKey(.token.text)
+		spec = specs[.token.text]
+		opText = Utils.javaStringLiteralFor(spec.opMethodName)
+		sw.write('CobraLangInternal.CobraImp.DynamicOp([opText], ')
+		_left.writeJavaDef(sw)  # TODO: add , false
+		sw.write(', ')
+		_right.writeJavaDef(sw)  # TODO: add , false
+		sw.write(')')
+
+	def _writeJavaDefOperation(sw as CurlyWriter)
+		op = ''
+		sep = ','  # for the method call case
+		branch _op
+			on 'PLUS_EQUALS'
+				op = '+='
+			on 'MINUS_EQUALS'
+				op = '-='
+			on 'STAR_EQUALS'
+				op = '*='
+			on 'STARSTAR_EQUALS'
+				#op = 'CobraLangInternal.CobraImp.PowerToEquals('
+				op = 'java.lang.Math.pow('
+			on 'SLASH_EQUALS'
+				op = '/='  # TODO: finish this
+			on 'SLASHSLASH_EQUALS'
+				op = '/='  # TODO: finish this
+			on 'PERCENT_EQUALS'
+				op = '%='
+			else
+				throw FallThroughException(_op)
+		assert op.length
+		if op.length==2
+			_left.writeJavaDef(sw)
+			sw.write(op)
+			_right.writeJavaDef(sw)
+		else
+			sw.write(op)  # ex: 'CobraLangInternal.CobraImp.Foo('
+			_left.writeJavaDef(sw)
+			sw.write(sep)
+			_right.writeJavaDef(sw)
+			sw.write(')')
+
+
+class AugAssignBitwiseExpr
+	is partial
+
+	def _writeJavaDef(sw as CurlyWriter) is override
+		if _left.type.isDynamic
+			_left.writeJavaDef(sw)
+			sw.write(' = ')
+			specs = OperatorSpecs.binaryOpSpecsByCobraText
+			assert specs.containsKey(.token.text)
+			spec = specs[.token.text]
+			opText = Utils.javaStringLiteralFor(spec.opMethodName)
+			sw.write('CobraLangInternal.CobraImp.DynamicOp([opText], ')
+			_left.writeJavaDef(sw)  # TODO: add , false
+			sw.write(', ')
+			_right.writeJavaDef(sw)  # TODO: add , false
+			sw.write(')')
+			return
+		op = ''
+		branch _op
+			on 'AMPERSAND_EQUALS'
+				op = '&='
+			on 'VERTICAL_BAR_EQUALS'
+				op = '|='
+			on 'CARET_EQUALS'
+				op = '^='
+			on 'DOUBLE_LT_EQUALS'
+				op = '<<='
+			on 'DOUBLE_GT_EQUALS'
+				op = '>>='
+			else
+				throw FallThroughException(_op)
+		assert op.length
+		_left.writeJavaDef(sw)
+		sw.write(op)
+		_right.writeJavaDef(sw)
+
+
+class BinaryBoolExpr
+	is partial
+
+	def _writeJavaDef(sw as CurlyWriter) is override
+		if _op=='IMPLIES'
+			sw.write('!')
+		_left.writeJavaDef(sw)
+		branch _op
+			on 'AND'
+				sw.write('&&')
+			on 'OR' or 'IMPLIES'
+				sw.write('||')
+		_right.writeJavaDef(sw)
+
+	def _writeJavaBreakdownItemsRight(sw as CurlyWriter) is override
+		# have to respect the short circuit otherwise something like "s and s.length" will give
+		# NullReference exception for "s.length"
+		# solution is: given L and R,
+		# write:   "R", (!(L) ? "short-circuted" : (R).ToString())
+		# that's for 'AND'. for, 'OR', remove the !, for 'IMPLIES' it's like AND
+
+		# so rather than:
+		# _right.writeJavaBreakdownItems(sw)
+		# do this:
+		src = Utils.javaStringLiteralFor(_right.toCobraSource)
+		javaNot = if(_op=='OR', '', '!')
+		sw.write(', [src], new CobraLangInternal.CobraDirectString([javaNot]')
+		_left.writeJavaDefForBreakdown(sw)
+		sw.write(' ? "(short-circuited)" : CobraLangInternal.CobraCore.ToTechString(')
+		_right.writeJavaDefForBreakdown(sw)
+		sw.write('))')
+
+		
+
+class BinaryBitwiseExpr
+	is partial
+
+	def _writeJavaDef(sw as CurlyWriter) is override
+		if _type.isDynamic
+			_writeJavaDefDynamic(sw)
+			return
+		op = ''
+		branch _op
+			on 'AMPERSAND'
+				op = '&'
+			on 'VERTICAL_BAR'
+				op = '|'
+			on 'CARET'
+				op = '^'
+			on 'DOUBLE_LT'
+				op = '<<'
+			on 'DOUBLE_GT'
+				op = '>>'
+			else
+				throw FallThroughException(_op)
+		assert op.length
+		_left.writeJavaDef(sw)
+		sw.write(op)
+		_right.writeJavaDef(sw)
+
+
+class BinaryMathExpr is partial
+
+	def _writeJavaDef(sw as CurlyWriter) is override
+		if .isConcated
+			_writeJavaDefConcated(sw)
+		else if _type.isDynamic
+			_writeJavaDefDynamic(sw)
+		else
+			_writeJavaDefOperation(sw)
+
+	def _writeJavaDefConcated(sw as CurlyWriter)
+		sw.write('(' + _left.type.javaRef + ')')
+		sw.write('CobraLangInternal.CobraImp.Concated(')
+		_left.writeJavaDef(sw, false)
+		sw.write(', ')
+		_right.writeJavaDef(sw, false)
+		sw.write(')')
+
+	def _writeJavaDefOperation(sw as CurlyWriter)
+		intType = .compiler.anyIntType
+		left = _left
+		right = _right
+		op = ''
+		pre = ''
+		sep = ','  # for the method call case
+		branch _op
+			on 'PLUS'
+				op = '+'
+			on 'MINUS'
+				op = '-'
+			on 'STAR'
+				op = '*'
+			on 'STARSTAR'
+				#op = 'CobraLangInternal.CobraImp.PowerTo('
+				op = 'System.Math.Pow('
+				if _left.isKindOf(intType) and _right.isKindOf(intType)
+					pre = '(' + .compiler.intType.javaRef + ')'
+			on 'SLASH'
+				op = '/'
+				if _left.isKindOf(intType) and _right.isKindOf(intType)
+					pre = '(' + .compiler.numberType.javaRef + ')'
+			on 'SLASHSLASH'
+				if left.isKindOf(intType) and right.isKindOf(intType)
+					op = '/'
+				else if left.isKindOf(.compiler.decimalType) or right.isKindOf(.compiler.decimalType)
+					#op = 'System.Decimal.Floor('
+					op = 'java.lang.Math.floor('
+					sep = '/'
+				else if left.isKindOf(.compiler.anyFloatType) or right.isKindOf(.compiler.anyFloatType)
+					op = 'java.lang.Math.floor('
+					sep = '/'
+				else
+					throw FallThroughException([left.type, right.type])
+			on 'PERCENT'
+				op = '%'
+			else
+				throw FallThroughException(_op)
+		assert op.length
+		sw.write(pre)
+		if op.length==1
+			_left.writeJavaDef(sw)
+			sw.write(op)
+			_right.writeJavaDef(sw)
+		else
+			sw.write(op)  # ex: 'CobraLangInternal.CobraImp.Foo('
+			_left.writeJavaDef(sw)
+			sw.write(sep)
+			_right.writeJavaDef(sw)
+			sw.write(')')
 
 class CompareExpr
 	is partial
@@ -3244,7 +3540,7 @@ class InheritsExpr
 	def _writeJavaDef(sw as CurlyWriter) is override
 		_left.writeJavaDef(sw)
 		sw.write(' instanceof ')
-		_right.writeSharpDef(sw, false)
+		_right.writeJavaDef(sw, false)
 
 
 class ToExpr is partial
@@ -3508,7 +3804,7 @@ class RefExpr
 		base.writeJavaBreakdownItems(sw)
 		# TODO
 
-class SharpExpr
+class SharpExpr  # should become JavaExpr or BackEndExpr
 	is partial
 
 	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
@@ -3555,7 +3851,7 @@ class Utils is partial
 
 class ThisOrBaseLit is partial
 
-	def asJava as String is override
+	get asJava as String is override
 		return 'this'
 		
 class ContractPart is partial

@@ -9,6 +9,11 @@
  */
 package cobra.lang;
 
+//interface IHasSourceSite {
+//    public SourceSite getSourceSite();
+//}
+
+
 public class CobraCore {
     
     public static Boolean _willCheckInvariant = true;
@@ -19,6 +24,16 @@ public class CobraCore {
 
     //public static String getRuntimePlatform() { return "jvm"; } // prop
     public static final String runtimePlatform =  "jvm"; 
+    
+    public static boolean getWillCheckAssert() { return _willCheckAssert; }
+    public static void    setWillCheckAssert(boolean b) { _willCheckAssert = b; }
+    
+    // Property StringMaker techStringMaker
+    /*
+     * 	Used by `assert` failures, `trace` statements and .toTechString methods.
+     */
+    static public CobraImp.SimpleStringMaker getTechStringMaker() { return CobraImp._techStringMaker; }
+    static public void setTechStringMaker(CobraImp.SimpleStringMaker value) { CobraImp._techStringMaker = value; }
     
     public static int noOp(/* allowNull */ Object... args) { 
         /* """

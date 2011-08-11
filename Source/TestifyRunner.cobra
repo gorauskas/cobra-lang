@@ -407,24 +407,25 @@ class TestifyRunner
 		options['willRunExe'] = _willRunExes # internal, specific to testify
 
 		firstLine = ''
+		count0 = lines.count
 		rc = _processFirstlineDirectives(baseName, fileNames, inout lines, inout options, out firstLine)
 		if rc == 0, return 0
 		firstLineInsensitive = firstLine.trim.replace(' ', '')
-		
+		nRemovedLines = count0 - lines.count
 		# Check for inline warning and error messages that are expected.
 		# (Starting in 2007-12 this is now the preferred way to specify these messages--
 		#  with the actual line of code that generates them.
 		#  The old method of specifying at the top will still be needed for errors
 		#  and warnings that have no associated line number.)
 		expectingError = false
-		inLineMessages = _getInlineMessages(lines, out expectingError)
+		inLineMessages = _getInlineMessages(lines, nRemovedLines, out expectingError)
 		if inLineMessages.count > 0 #  hasInlineMessages
 			return _testifyInlineMessages(inLineMessages, expectingError, 
 											compilerVerbosity, [baseName], options, verbose )
 
 		if firstLineInsensitive.startsWith('#.error.')
 			# deprecated: put errors on the lines where they occur. the "hasInlineMessages" code above will detect them.
-			# note that errors that are only detected by the backend C# compiler are not detectable by testify
+			# Note that errors that are only detected by the backend C# compiler are not detectable by testify
 			# CC: support split with a String extension method
 			# error = firstLine.split('.error.',1)[1].trim.toLower
 			index = firstLine.indexOf('.error.')
@@ -548,13 +549,14 @@ class TestifyRunner
 
 		return 1 # continue processing in caller
 		
-	def _getInlineMessages(lines as List<of String>, expectingError as out bool) as Dictionary<of int, String>
+	def _getInlineMessages(lines as List<of String>, offset as int, expectingError as out bool) as Dictionary<of int, String>
 		""" Walk lines and accumulate inline warnings and error messages. """
 		inLineMessages = Dictionary<of int, String>()
-		lineNum = 1
+		firstLine = 1 + offset
+		lineNum = firstLine
 		expectingError = false
 		for line in lines
-			if lineNum > 1 and ('.warning.' in line or '.error.' in line)
+			if lineNum > firstLine and ('.warning.' in line or '.error.' in line)
 				if '.warning.' in line
 					message = line[line.indexOf('.warning.') + '.warning.'.length:]
 					messageType = 'w'
