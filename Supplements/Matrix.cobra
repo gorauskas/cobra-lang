@@ -5,41 +5,24 @@ Run with -turbo for max speed (no run-time checks).
 
 class Matrix<of T>
 	"""
-	This class provides an n-dimensional matrix.
-	The dimension sizes and even the number of dimensions may be not be known until run-time.
+	This class provides an n-dimensional matrix containing any other type.
+	
+	The class provides initialization for any number of dimensions, access to the data via indexing
+	(`m[a, b, c]`) and equality comparisons between matrices.
+	
+	The dimension sizes and even the number of dimensions may be hard-coded or delayed until
+	run-time.
+
+	There are, of course, many other conveniences that a developer may want from this class, but
+	they vary from developer to developer or even project to project. This class focuses on
+	providing the basics with correct implementation of n-dimensions. Feel free to subclass this or
+	even copy it into your project for customization.	
 	"""
 
 	const minDimRank = 1
 	const maxDimRank = 1_000_000
 	const maxCount = 1_000_000_000
 	
-	test
-		m = Matrix<of int>(1)
-		assert m.count == 1
-		assert m[0] == 0
-		m[0] = 42
-		assert m[0] == 42
-		expect Exception, print m[1]  # to-do: IndexOutOfRangeException
-		
-		m = Matrix<of int>(3, 7)
-		assert m.count == 21
-		for x in 3, for y in 7, m[x, y] = x*y
-		for x in 3, for y in 7, assert m[x, y] == x*y
-		
-		d1, d2, d3 = 10, 5, 3
-		m = Matrix<of int>(d1, d2, d3)
-		assert m.count == d1 * d2 * d3
-		for x in d1, for y in d2, for z in d3, m[x, y, z] = x*y*z
-		for x in d1, for y in d2, for z in d3, assert m[x, y, z] == x*y*z
-		
-		dims = [d1, d2, d3]
-		m2 = Matrix<of int>(dims)
-		for x in d1, for y in d2, for z in d3, m2[x, y, z] = x*y*z
-		for x in d1, for y in d2, for z in d3, assert m2[x, y, z] == x*y*z
-		assert m2 == m
-		m2[0, 0, 0] += 1
-		assert m2 <> m
-
 	var _dims as IList<of int>
 	var _count = 1
 	var _data as T[]
@@ -74,14 +57,17 @@ class Matrix<of T>
 		assert indexes.length == _dims.count
 		# The below calcs are "row-major order", if it matters.
 		# See http://en.wikipedia.org/wiki/Row-major_order#Generalization_to_higher_dimensions
-		index = 0
+		address = 0
 		len = indexes.length
 		for i in len
+			index = indexes[i]
+			if index < 0 or index >= _dims[i]
+				throw IndexOutOfRangeException('Array index [index] is out of range 0 - [_dims[i]] for dimension [i].')
 			x = 1
 			for j in i+1 : len, x *= _dims[j]
-			x *= indexes[i]
-			index += x
-		return index
+			x *= index
+			address += x
+		return address
 
 	def equals(obj as Object?) as bool is override
 		if obj inherits Matrix<of T>, return .equals(obj)
@@ -98,6 +84,37 @@ class Matrix<of T>
 
 
 class TestMatrix
+
+	test
+		m = Matrix<of int>(1)
+		assert m.count == 1
+		assert m[0] == 0
+		m[0] = 42
+		assert m[0] == 42
+		expect IndexOutOfRangeException, print m[1]
+		
+		m = Matrix<of int>(3, 7)
+		assert m.count == 21
+		for x in 3, for y in 7, m[x, y] = x*y
+		for x in 3, for y in 7, assert m[x, y] == x*y
+		expect IndexOutOfRangeException, print m[3, 7]
+		expect IndexOutOfRangeException, print m[3, 0]
+		expect IndexOutOfRangeException, print m[0, 7]
+		expect IndexOutOfRangeException, print m[4, 8]
+		
+		d1, d2, d3 = 10, 5, 3
+		m = Matrix<of int>(d1, d2, d3)
+		assert m.count == d1 * d2 * d3
+		for x in d1, for y in d2, for z in d3, m[x, y, z] = x*y*z
+		for x in d1, for y in d2, for z in d3, assert m[x, y, z] == x*y*z
+		
+		dims = [d1, d2, d3]
+		m2 = Matrix<of int>(dims)
+		for x in d1, for y in d2, for z in d3, m2[x, y, z] = x*y*z
+		for x in d1, for y in d2, for z in d3, assert m2[x, y, z] == x*y*z
+		assert m2 == m
+		m2[0, 0, 0] += 1
+		assert m2 <> m
 
 	def main
 		print 'done.'
