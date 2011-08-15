@@ -3,13 +3,10 @@ Run with -turbo for max speed (no run-time checks).
 """
 
 
-class Matrix
+class Matrix<of T>
 	"""
 	This class provides an n-dimensional matrix.
 	The dimension sizes and even the number of dimensions may be not be known until run-time.
-	
-	to-do: make a generic class
-	to-do: equality operator
 	"""
 
 	const minDimRank = 1
@@ -17,26 +14,26 @@ class Matrix
 	const maxCount = 1_000_000_000
 	
 	test
-		m = Matrix(1)
+		m = Matrix<of int>(1)
 		assert m.count == 1
 		assert m[0] == 0
 		m[0] = 42
 		assert m[0] == 42
 		expect Exception, print m[1]  # to-do: IndexOutOfRangeException
 		
-		m = Matrix(3, 7)
+		m = Matrix<of int>(3, 7)
 		assert m.count == 21
 		for x in 3, for y in 7, m[x, y] = x*y
 		for x in 3, for y in 7, assert m[x, y] == x*y
 		
 		d1, d2, d3 = 10, 5, 3
-		m = Matrix(d1, d2, d3)
+		m = Matrix<of int>(d1, d2, d3)
 		assert m.count == d1 * d2 * d3
 		for x in d1, for y in d2, for z in d3, m[x, y, z] = x*y*z
 		for x in d1, for y in d2, for z in d3, assert m[x, y, z] == x*y*z
 		
 		dims = [d1, d2, d3]
-		m2 = Matrix(dims)
+		m2 = Matrix<of int>(dims)
 		for x in d1, for y in d2, for z in d3, m2[x, y, z] = x*y*z
 		for x in d1, for y in d2, for z in d3, assert m2[x, y, z] == x*y*z
 		assert m2 == m
@@ -45,7 +42,7 @@ class Matrix
 
 	var _dims as IList<of int>
 	var _count = 1
-	var _data as int[]
+	var _data as T[]
 
 	cue init(dims as vari int)
 		require dims.length > 0 and all for dim in dims get dim >= .minDimRank and dim <= .maxDimRank
@@ -57,7 +54,7 @@ class Matrix
 		_dims = dims.clone
 		for dim in dims, _count *= dim
 		assert _count < .maxCount
-		_data = int[](_count)
+		_data = T[](_count)
 		assert _data.length == _count
 	
 	get count from var
@@ -65,9 +62,7 @@ class Matrix
 	get dims as IList<of int>
 		return _dims.clone
 
-	# woops. accessing the following indexer gives:
-	# error: Argument 1 of indexer expects type vari int, but the call is supplying type int.
-	pro [indexes as vari int] as int
+	pro [indexes as vari int] as T
 		get
 			require indexes.length == .dims.count
 			return _data[_address(indexes)]
@@ -89,15 +84,15 @@ class Matrix
 		return index
 
 	def equals(obj as Object?) as bool is override
-		if obj inherits Matrix, return .equals(obj)
+		if obj inherits Matrix<of T>, return .equals(obj)
 		return false
 
 	def getHashCode as int is override
 		throw InvalidOperationException()
 
-	def equals(m as Matrix) as bool
+	def equals(m as Matrix<of T>) as bool
 		if m.count <> .count, return false
-		if m.dims <> .dims, return false
+		if m._dims <> _dims, return false
 		for i in _count, if m._data[i] <> _data[i], return false
 		return true
 
