@@ -57,6 +57,9 @@ class IdentifyMainPhase inherits Phase
 		if not main.resultType.isDescendantOf(.compiler.voidType)
 			main.recordError('The "main" method cannot have a return type. Use "CobraCore.exit(code)" instead.')
 			didError = true
+		if  main.isProtected or main.isPrivate
+			access = if(main.isProtected, 'protected', 'private')
+			main.recordError('The "main" method cannot be "[access]" .')
 		if not main.isShared
 			init = main.parentBox.memberForName('cue.init')
 			if init inherits MemberOverload
@@ -77,35 +80,14 @@ class IdentifyMainPhase inherits Phase
 		name = 'MainWrapper'
 		while c.symbolForName(name, false, false), name += 'X'
 
-		if false
-			# can't use cobra source because the other
-			# phases like parsing have already taken place
-			src = 'class [name]\n\t\def main is static\n\t\t[mainMethod.parentBox.qualifiedName]().[mainMethod.name]\n'
-			.options.addExtraSource(src)
-
-		implements_ = List<of ITypeProxy>()
-		adds_ = List<of ITypeProxy>()
-		theClass = Class(Token.empty, Token.empty, name, List<of IType>(), ['public'], AttributeList(), nil, implements_, adds_, '')
-
-		instantiate = PostCallExpr(Token.empty, TypeExpr(mainMethod.parentBox), List<of Expr>())
-		mainCall = CallExpr(Token.empty, 'main', List<of Expr>(), false)
-		mainCall.hasMainArgs = true # backend insert args passed to main
-		dot = DotExpr(Token.empty, 'DOT', instantiate, mainCall)
-
-		method = Method(Token.empty, Token.empty, theClass, 'main', List<of Param>(), .compiler.voidType, nil, ['shared'], mainMethod.attributes, '')
-		method.hasMainParams = true  # backend insert params on main method
-		method.addStmt(dot)
-
-		theClass.addDecl(method)
-
 		mainModule = CobraModule(name+'.cobra', 0, '', .compiler.globalNS, isImplicit=true)
-		mainModule.topNameSpace.addDecl(theClass)
-
-		mainModule.bindUse
-		mainModule.bindInh
-		mainModule.bindInt
-		mainModule.bindImp
+		mainModule.isMainWrapper = true	# mark us as special
 		
+		# placeholder class provided only to store user method referenced
+		theClass = Class(name, List<of IType>())
+		theClass.addDecl(mainMethod) # store the  method to harvest contents later
+		mainModule.topNameSpace.addDecl(theClass) # data source for later harvest, not to generate a class+method
+
 		c.modules.add(mainModule)
 		c.mainMethodTypeName = name
 

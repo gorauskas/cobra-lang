@@ -465,9 +465,11 @@ class CobraModule is partial
 			# TODO: list op sys
 			sw.write('\n')
 
-			sw.write('using CobraLangInternal = Cobra.Lang[.compiler.embedRunTimeSuffix];\n')
-			
-			.topNameSpace.writeSharpDef(sw)
+			if .isMainWrapper 
+				.synthesizeSharpMainWrapper(sw)
+			else
+				sw.write('using CobraLangInternal = Cobra.Lang[.compiler.embedRunTimeSuffix];\n')
+				.topNameSpace.writeSharpDef(sw)
 			d = sw.curlyToCobraLineNum
 		if false
 			bar = '----------------------------------------------'
@@ -479,7 +481,40 @@ class CobraModule is partial
 	def writeSharpTestInvocation(sw as CurlyWriter) is override
 		.topNameSpace.writeSharpTestInvocation(sw)
 
+		
+	def synthesizeSharpMainWrapper(sw as CurlyWriter)
+		"""
+		Generate a wrapper class with a valid main method for C#/Clr
+			The wrapper will instantiate and call the provided user main method.
+		"""
+			
+		# Module top namespace is expected to have a first entry which is a dummy class holding
+		#  the method (+ class ref) for the mainwrapper to instantiate and invoke.
+		assert .topNameSpace.declsInOrder.count
+		assert .topNameSpace.declsInOrder[0] inherits Class
+		placeHolderClass = .topNameSpace.declsInOrder[0] to Class
+		assert placeHolderClass.declsInOrder.count
+		assert placeHolderClass.declsInOrder[0] inherits AbstractMethod	
+		mainMethod = placeHolderClass.declsInOrder[0] to AbstractMethod  # method data
 
+		sw.write('// Cobra synthesized program entrypoint wrapping call to user supplied main method\n\n')
+		sw.writeAndIndent('class MainWrapper : System.Object {\n')
+		sw.bumpLineNum
+		for attr in mainMethod.attributes 
+			attr.writeSharpDef(sw, '', false)
+		if 	mainMethod.attributes.count, sw.writeLine
+		sw.writeAndIndent('public static void Main() {\n')	
+		sw.bumpLineNum
+		sw.writeLine('(new [mainMethod.parentBox.qualifiedName]()).Main();')
+		sw.bumpLineNum
+		sw.dedentAndWrite('} // end Main\n\n')
+		sw.bumpLineNum
+		sw.writeLine('public  MainWrapper()')
+		sw.indentAndWrite(': base() {\n')
+        sw.dedentAndWrite('}')
+		sw.write('\n')
+		sw.writeLine('} // class MainWrapper')
+		
 ##
 ## Container and friends
 ##

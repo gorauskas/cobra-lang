@@ -336,14 +336,52 @@ class CobraModule is partial
 			# TODO: list op sys
 			sw.write('\n')
 
-			.topNameSpace.writeJavaDef(sw)
+			if .isMainWrapper 	
+				.synthesizeJavaMainWrapper(sw)
+			else
+				.topNameSpace.writeJavaDef(sw)
 			d = sw.curlyToCobraLineNum
 		return d
 
 	def writeJavaTestInvocation(sw as CurlyWriter) is override
 		# TODO: .topNameSpace.writeJavaTestInvocation(sw)
 		pass
+		
+	def synthesizeJavaMainWrapper(sw as CurlyWriter)
+		"""
+		Generate a wrapper class with a valid main method for java.
+			The wrapper will instantiate and call the provided user main method.
+		"""
+		# Module top namespace is expected to have a single entry which is a dummy class holding
+		#  the method (+ class) for the mainwrapper to instantiate and invoke.
+		assert .topNameSpace.declsInOrder.count
+		assert .topNameSpace.declsInOrder[0] inherits Class
+		placeHolderClass = .topNameSpace.declsInOrder[0] to Class
+		assert placeHolderClass.declsInOrder.count
+		assert placeHolderClass.declsInOrder[0] inherits AbstractMethod	
+		mainMethod = placeHolderClass.declsInOrder[0] to AbstractMethod  # method data
 
+		sw.write('// Cobra synthesized program entrypoint wrapping call to user supplied main method\n\n')
+		sw.writeAndIndent('class MainWrapper extends java.lang.Object {\n')
+		sw.bumpLineNum
+		for attr in mainMethod.attributes 
+			attr.writeSharpDef(sw, '', false)
+		if 	mainMethod.attributes.count, sw.writeLine
+		sw.writeAndIndent(r'static public void main(String[] args) {')
+		sw.writeLine
+		sw.bumpLineNum
+		sw.writeLine('//cobra.lang.CobraCore.setCommandLineArgs(args); ')
+		sw.writeLine('(new [mainMethod.parentBox.javaRef]()).main(args);')
+		sw.bumpLineNum
+		sw.dedentAndWrite('} // end MainWrapper.main\n\n')
+		sw.bumpLineNum
+		sw.writeLine('public  MainWrapper() {')
+		sw.indentAndWrite('//super(); \n')
+        sw.dedentAndWrite('}')
+		sw.writeLine
+		sw.dedentAndWrite('} // class MainWrapper')
+		sw.writeLine
+		
 
 ##
 ## Container and friends
@@ -1598,7 +1636,7 @@ class Method is partial
 		.writeJavaIsNames(sw)
 		sw.write('[returnType.javaRef] [name][.javaGenericParams]')
 		if .hasMainParams	# insert args for main method for this backend
-			sw.write(r'(String[] args)')
+			sw.write(r'(String[] args)') # match to CobraModule.synthesizeJavaMainWrapper
 		else
 			.writeJavaParams(sw)
 		if .genericParams.count
@@ -2464,8 +2502,6 @@ class CallExpr is partial
 			sw.write(sep)
 			arg.writeJavaDefInContext(sw)
 			sep = ', '
-		if .hasMainArgs			# for MainWrapper - pass through args fm main method
-			sw.write('args')	# same name(s) as inserted args on main method 
 		sw.write(')')
 
 	def writeJavaBreakdownItems(sw as CurlyWriter) is override
