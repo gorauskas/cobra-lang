@@ -1,4 +1,5 @@
 class Indexer inherits ProperDexer is partial
+	implements IOverloadable
 
 	var _params as List<of Param>
 
@@ -41,6 +42,28 @@ class Indexer inherits ProperDexer is partial
 		newMember = base.constructedFor(box, gpToType) to Indexer  # CC: this = base. ...
 		newMember._params = for p in _params get p.constructedFor(box, gpToType)
 		return newMember
+
+	def cobraSourceSignature as String is override
+		return .cobraSourceSignature(true)
+
+	def cobraSourceSignature(includeShared as bool) as String
+		keyword = if(.getPart and .setPart, 'pro', if(.getPart, 'get', 'set'))
+		sb = StringBuilder('[keyword] \[')
+		if .params.count > 0
+			sep = ''
+			for param in .params
+				sb.append('[sep][param.name] as ')
+				branch param.direction
+					on Direction.In, pass
+					on Direction.InOut, sb.append('inout ')
+					on Direction.Out, sb.append('out ')
+				sb.append('[param.type.name]')
+				sep = ', '
+		sb.append('] as [.resultType.name]')
+		if includeShared and .isShared
+			# TODO: other is names
+			sb.append(' is shared')
+		return sb.toString
 
 
 class IndexerGetter inherits ProperDexerXetter

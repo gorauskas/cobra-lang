@@ -8,16 +8,38 @@ interface IBoxMember inherits IMember is partial
 	This includes methods, properties, enums and more.
 	It even includes Box as nested boxes are an anticipated feature.
 	"""
-	def cobraSourceSignature as String
 	get docString as String?
 	get idToken as IToken
+	get isNames as String*
 	get parentBox as Box
+	get token as IToken
+
+	def cobraSourceSignature as String
 	def mangleName(name as String) as String
 		# TODO require .compiler.curBoxMember is this
 	def mergedIntoPartialBox(newBox as Box)
 		require
 			newBox is not .parentBox
 			newBox.name == .parentBox.name
+
+
+interface IBoxCodeMember inherits IBoxMember
+
+	get hasParams as bool
+	get isExtensionMember as bool
+	get params as IList<of Param>
+	pro testMethod as TestMethod?
+
+	def matchesSignature(member as IBoxCodeMember) as bool
+	
+
+interface IOverloadable inherits IBoxCodeMember
+	"""
+	Implemented by AbstractMethod and Indexer.
+	"""
+
+	pro overloadGroup as MemberOverload?
+	def cobraSourceSignature(includeShared as bool) as String
 
 
 class BoxMember
@@ -38,7 +60,7 @@ class BoxMember
 	var _attribs as AttributeList
 	var _overloadGroup as MemberOverload?
 	var _testMethod as TestMethod?
-	var _matchingBaseMember as BoxMember?
+	var _matchingBaseMember as IBoxCodeMember?
 	var _sharedMethodBacking as String?
 	var _sharedMethodBackingIsAlias as bool
 	var _binaryName as String?
@@ -164,9 +186,8 @@ class BoxMember
 	get isExtensionMember as bool
 		return _parentBox inherits Extension
 
-	pro matchingBaseMember as BoxMember?
+	pro matchingBaseMember as IBoxCodeMember?
 		get
-			ensure result is not this
 			return _matchingBaseMember
 		set
 			_matchingBaseMember = value 
@@ -280,26 +301,26 @@ class BoxMember
 			assert parentBox.baseClass
 			# Why not use .matchingBaseMember? Because currently that's only method-to-method. Does not work for properties.
 			baseMember = parentBox.baseClass.memberForName(_name)
-			if baseMember inherits BoxMember
+			if baseMember
 				if baseMember inherits MemberOverload
 					for member in baseMember.members
 						if .matchesSignature(member)
 							baseMember = member
 							break
-				if .matchesSignature(baseMember)
-					if 'nonvirtual' in baseMember.isNames
-						_isNames.add('new')
-					else
-						_isNames.add('override')
-					_isNames.remove('virtual')  # virtual is the default for properties and methods
+				if baseMember inherits IBoxCodeMember
+					if .matchesSignature(baseMember)
+						if 'nonvirtual' in (baseMember).isNames
+							_isNames.add('new')
+						else
+							_isNames.add('override')
+						_isNames.remove('virtual')  # virtual is the default for properties and methods
+				else
+					throw FallThroughException(baseMember)
 
-	def matchesSignature(member as BoxMember) as bool
-		if .name <> member.name
-			return false
-		params = .params
-		otherParams = member.params
-		if params.count <> otherParams.count
-			return false
+	def matchesSignature(member as IBoxCodeMember) as bool
+		if .name <> member.name, return false
+		params, otherParams = .params, member.params
+		if params.count <> otherParams.count, return false
 		for i in params.count
 			if not _matchesForOverride(params[i].type, otherParams[i].type)
 				return false
@@ -639,7 +660,7 @@ class AnonymousMethod
 class AbstractMethod
 	is abstract, partial
 	inherits BoxMember
-	implements HasAddStmt
+	implements HasAddStmt, IOverloadable
 	"""
 	The abstract ancestor class for
 		Initializer
@@ -1415,17 +1436,14 @@ class ProperDexerXetter
 		_parent.usesBase
 
 
-class MemberOverload
-	is partial
-	inherits BoxMember
+class MemberOverload inherits BoxMember is partial
 	"""
 	Methods and indexers can be overloaded.
 	"""
-	# TODO: Should take a new IOverloadable instead of BoxMember. Only Method and Indexer would implement that interface.
 	
-	var _members as List<of BoxMember>
+	var _members as List<of IOverloadable>
 
-	cue init(member as BoxMember)
+	cue init(member as IOverloadable)
 		require
 			member.name.length
 		ensure
@@ -1458,10 +1476,8 @@ class MemberOverload
 	get isMethod as bool is override
 		return _members[0].isMethod
 
-	def addMember(member as BoxMember)
+	def addMember(member as IOverloadable)
 		require
-			member is not this
-			not member inherits MemberOverload
 			member.overloadGroup is nil
 			member.name==.name
 			member not in .members
@@ -1471,10 +1487,8 @@ class MemberOverload
 			_members.add(member)
 			.parentBox.addDeclFromOverload(member, this)
 
-	def addInheritedMember(member as BoxMember)
+	def addInheritedMember(member as IOverloadable)
 		require
-			member is not this
-			not member inherits MemberOverload
 			member.name==.name
 			member.parentBox is not .parentBox
 			member not in .members
@@ -1482,25 +1496,22 @@ class MemberOverload
 		body
 			_members.add(member)
 
-	def addInheritedMemberIfNoMatch(member as BoxMember)
+	def addInheritedMemberIfNoMatch(member as IOverloadable)
 		"""
 		Utility method for _finishOverloads to avoid the mistake of putting an ancestor method in an overload that was an override or new.
 		"""
-		for existing in _members
-			if member.matchesSignature(existing)
-				return
+		for existing in _members, if member.matchesSignature(existing), return
 		.addInheritedMember(member)
 			
 	get resultType as IType? is override
 		assert .didBindInt
-		assert _members[0] is not this
 		return _members[0].resultType
 
 	def unNilReturnType is override
 		for member in _members
 			member.unNilReturnType
 
-	def computeBestOverload(args as List<of Expr>, genericArgTypes as List<of IType>?, strictBindChecking as bool) as BoxMember
+	def computeBestOverload(args as List<of Expr>, genericArgTypes as List<of IType>?, strictBindChecking as bool) as IOverloadable
 		# References:
 		# http://blogs.msdn.com/ericlippert/archive/2007/11/05/c-3-0-return-type-inference-does-not-work-on-member-groups.aspx
 
@@ -1510,8 +1521,8 @@ class MemberOverload
 		candidates = []
 		# handle generic arguments to the method		
 		if genericArgTypes and genericArgTypes.count
-			members = List<of BoxMember>()
-			for member as BoxMember? in .members
+			members = List<of IOverloadable>()
+			for member as IOverloadable? in .members
 				if member inherits Method
 					if member.containsGenericParameters
 						if member.genericParams.count == genericArgTypes.count
@@ -1525,12 +1536,12 @@ class MemberOverload
 		_calcMembersScore(members, args, strictBindChecking, candidates)
 			
 		maxScore = -10_000
-		winner = nil to BoxMember?
+		winner = nil to IOverloadable?
 		for pair in candidates
-			if false, print pair[0], (pair[1] to BoxMember).idString
+			if false, print pair[0], (pair[1] to IOverloadable).idString
 			if pair[0] to int > maxScore
 				maxScore = pair[0] to int
-				winner = pair[1] to BoxMember
+				winner = pair[1] to IOverloadable
 
 		if false
 			# detect overload invocation ambiguity
@@ -1545,7 +1556,7 @@ class MemberOverload
 				sep = ''
 				for pair in candidates
 					if pair[0] to int == maxScore
-						msg += sep + (pair[1] to AbstractMethod).cobraSourceSignature(false)
+						msg += sep + (pair[1] to IOverloadable).cobraSourceSignature(false)
 						sep = ', '
 				.throwError(msg)
 
@@ -1556,19 +1567,16 @@ class MemberOverload
 			trace .token.toTechString
 			trace winner
 			print 'args:'
-			for arg in args
-				print '   [arg]'
+			for arg in args, print '   [arg]'
 			print 'params:'
-			for param in winner.params
-				print '   [param]'
+			for param in winner.params, print '   [param]'
 			print 'overloads:'
-			for member in .members
-				print '   [member]'
+			for member in .members, print '   [member]'
 		# print 'winner:', score, winner
 		assert winner
 		return winner to !
 	
-	def _calcMembersScore(members as IList<of BoxMember>, args as List<of Expr>, strictBindChecking as bool, candidates)
+	def _calcMembersScore(members as IList<of IOverloadable>, args as List<of Expr>, strictBindChecking as bool, candidates)
 		for member in members
 			score = -1000
 			if member.params.count == args.count
@@ -1605,8 +1613,7 @@ class MemberOverload
 		base._bindInt
 		# sanity check that members all have the right name
 		name = .name
-		for member in _members
-			assert member.name == name
+		for member in _members, assert member.name == name
 		# sanity check that members don't have the same signature
 		#if name <> 'getType'  # TODO: HACK: See Box.prepSystemObjectClass
 		# TODO: having problems with explicit interface implementation. I think these probably should have their name changed from "foo" to "Type.foo"
@@ -1615,12 +1622,10 @@ class MemberOverload
 		#			assert not _members[i].matchesSignature(_members[j])
 		# rename the test members of the overload by suffixing them with '_o1' '_o2' etc.
 
-		i = 1
-		for member in _members # CC: for i, member in _members.numbered
+		for i, member in _members.numbered
 			if member.testMethod
-				member.testMethod.overloadId = i
-			i += 1
-		# TODO: error if the returnType is different among any members
+				member.testMethod.overloadId = i+1
+
 		# TODO: error if the two members have the same arguments
 
 	def _computeMatchingBaseMembers

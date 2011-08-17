@@ -104,14 +104,14 @@ class Box
 		
 	def allMembers as IList<of IBoxMember>
 		imembers = List<of IBoxMember>()
-		members = List<of BoxMember>()
+		members = List<of IBoxCodeMember>()
 		_allMembers(imembers, members)
 		_allExtensionMembers(imembers, members)
 		return imembers
 
-	def _allMembers(imembers as IList<of IBoxMember>, members as IList<of BoxMember>)
+	def _allMembers(imembers as IList<of IBoxMember>, members as IList<of IBoxCodeMember>)
 		for imember in .declsInOrder
-			if imember inherits BoxMember
+			if imember inherits IBoxCodeMember
 				if not any for m in members get m.matchesSignature(imember)
 					imembers.add(imember)
 					members.add(imember)
@@ -120,7 +120,7 @@ class Box
 		for box in .allBaseTypes
 			box._allMembers(imembers, members)
 
-	def _allExtensionMembers(imembers as IList<of IBoxMember>, members as IList<of BoxMember>)
+	def _allExtensionMembers(imembers as IList<of IBoxMember>, members as IList<of IBoxCodeMember>)
 		if .compiler and .compiler.nameSpaceStack.count
 			.prepIfNeeded
 			for ns in .compiler.nameSpaceStack
@@ -130,14 +130,14 @@ class Box
 			for ud in .compiler.nameSpaceStack.peek.useDirectives
 				_allExtensionMembers(ud.boundNameSpace, imembers, members)
 
-	def _allExtensionMembers(ns as NameSpace, imembers as IList<of IBoxMember>, members as IList<of BoxMember>)
+	def _allExtensionMembers(ns as NameSpace, imembers as IList<of IBoxMember>, members as IList<of IBoxCodeMember>)
 		for decl in ns.declsInOrder
 			if decl inherits Extension
 				ext = decl
 				ext.prepIfNeeded
 				if ext.extendedBox == this
 					for imember in ext.declsInOrder
-						if imember inherits BoxMember
+						if imember inherits IBoxCodeMember
 							if not any for m in members get m.matchesSignature(imember)
 								imembers.add(imember)
 								members.add(imember)
@@ -148,7 +148,7 @@ class Box
 					cto = .constructedTypeOf(ext.extendedBox.genericDef to !)
 					if cto and .isDescendantOf(cto to !)
 						for imember in ext.constructedTypeFor(cto.genericParams).declsInOrder
-							if imember inherits BoxMember
+							if imember inherits IBoxCodeMember
 								if not any for m in members get m.matchesSignature(imember)
 									imembers.add(imember)
 									members.add(imember)
@@ -1092,12 +1092,12 @@ class Box
 					other = _declsByName[decl.name]
 					if other inherits MemberOverload
 						overload = other
-					else if other inherits AbstractMethod
+					else if other implements IOverloadable
 						overload = MemberOverload(other)
 						.registerOverload(overload to !)
 					else
 						throw FallThroughException(other)
-					overload.addMember(decl to BoxMember)
+					overload.addMember(decl to IOverloadable)
 				else
 					_declsInOrder.add(decl)
 					_declsByName[decl.name] = decl
@@ -1413,19 +1413,18 @@ class Class
 					if other
 						if decl inherits MemberOverload
 							overload = decl
-						else if decl inherits BoxMember
+						else if decl implements IOverloadable
 							overload = MemberOverload(decl)
 							.registerOverload(overload)
 						else
 							throw FallThroughException(decl)
 						if other inherits MemberOverload
 							for member in other.members
-								assert not member inherits MemberOverload
 								overload.addInheritedMemberIfNoMatch(member)
-						else if other inherits BoxMember
+						else if other inherits IOverloadable
 							overload.addInheritedMemberIfNoMatch(other)
 						else
-							throw FallThroughException(other)
+							decl.recordError('Cannot declare a [decl.englishName] named "[decl.name]" because the base member "[decl.name]" is a [other.englishName].')
 		base._finishOverloads
 
 	get englishName as String is override
@@ -1585,7 +1584,7 @@ class Struct
 		if other inherits MemberOverload
 			overload = other
 		else if other
-			overload = MemberOverload(other to BoxMember)
+			overload = MemberOverload(other to IOverloadable)
 			.registerOverload(overload to !)
 		else
 			.addDecl(init)
