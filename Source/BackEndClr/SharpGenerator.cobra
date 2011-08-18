@@ -3017,12 +3017,47 @@ class YieldReturnStmt
 			sw.write('yield return;\n')
 
 
-class MultiTargetAssignStatement
-	is partial
+class MultiTargetAssignStatement is partial
 
 	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
-		_block.writeSharpDef(sw)
+		if _rightValues
+			# to-do: could make the nodes back in the main class, so that no back-ends would have to gen the code
+			#        on the other hand, this allows each back-end to use whatever technique it likes to
+			assert _rightValues.count > 0
+
+			type = StringBuilder('CobraLangInternal.RightValues<')
+			count, sep = 9, ''
+			for value in _rightValues
+				type.append('[sep][value.type.sharpRef]')
+				sep = ','
+				count -= 1
+			assert count >= 0
+			while count > 0
+				type.append(',int')
+				count -= 1
+			type.append('>')
+			
+			serialNum = .compiler.curBox.makeNextPrivateSerialNumber
+			local = 'lh_mt_[serialNum]'
+			sw.write('{ [type] [local] = new [type]')
+
+			sw.write('(')
+			sep = ''
+			for rightValue in _rightValues
+				sw.write(sep)
+				rightValue.writeSharpDef(sw, false)
+				sep = ','
+			sw.write(');\n')
+			
+			for i in _rightValues.count
+				assign = _block.stmts[i] to AssignExpr
+				assign.writeSharpDefWithRight(sw, false)  # false = do not write right side
+				sw.write('[local].Value[i+1];\n')
+			
+			sw.write('}\n')
+		else
+			_block.writeSharpDef(sw)
 
 ##
 ## Expressions
@@ -4109,6 +4144,9 @@ class AbstractAssignExpr is partial
 class AssignExpr is partial
 
 	def _writeSharpDef(sw as CurlyWriter) is override
+		.writeSharpDefWithRight(sw, true)
+
+	def writeSharpDefWithRight(sw as CurlyWriter, right as bool)
 		# TODO:
 		# if trackLocal:
 		#	out.write('CobraLangInternal.CobraImp.SetLocal("%s", ' % .left.name)
@@ -4155,7 +4193,7 @@ class AssignExpr is partial
 			# the left hand side as an r-value instead an l-value/target. hence the false below.
 			_left.writeSharpDef(sw, false)
 		sw.write('=')
-		_right.writeSharpDefInContext(sw)
+		if right, _right.writeSharpDefInContext(sw)
 		# handle the case where a type got backed up because of assignment inside of an if-inherits
 		if _backUpIfInheritsStack
 			assert _left.definition inherits IVar

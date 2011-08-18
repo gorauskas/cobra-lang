@@ -1495,14 +1495,12 @@ class YieldReturnStmt
 			pass
 		curCodeMember.hasYieldStmt = true
 		
-class MultiTargetAssignStatement
-	is partial
-	inherits Stmt
+class MultiTargetAssignStatement inherits Stmt is partial
 	"""
 	Handle statements of form 
-		a, [b, ...] = <list-generating-expr>
+		a, b, ... = <list-generating-expr>
 	or
-		a, [b, ...] = <expr>, [<expr>,...]
+		a, b, ... = <expr>, <expr>, ...
 
 	Gets turned into various sequences of assignExpr.
 		tmp = <List-Generating-Expr>
@@ -1516,19 +1514,22 @@ class MultiTargetAssignStatement
 	TODO: support a, b[,...] = <KeyValuePair|DictionaryEntry>
 	"""
 
-	var _targets as List<of Expr> # Lvalues
-	var _source as Expr?          # evaluate to IList/Array/String or otherwise indexable by int
-	var _rvals as List<of Expr>?  # list of source expressions
-	var _block as BlockStmt?      # the rewritten/expanded code
+	var _targets as List<of Expr>       # Lvalues
+	# exactly one of the following three should be non-nil
+	var _rightValues as List<of Expr>?  # list of source expressions
+	var _source as Expr?                # evaluate to IList/Array/String or otherwise indexable by int
+	var _rvals as List<of Expr>?        # list of source expressions
 	
-	cue init(opToken as IToken, args as List<of Expr>, rhs as Expr?, rhsList as List<of Expr>?)
+	var _block as BlockStmt?            # the rewritten/expanded code
+
+	cue init(opToken as IToken, args as List<of Expr>, source as Expr?, rvals as List<of Expr>?)
 		base.init(opToken)
 		assert opToken.which == 'ASSIGN'
-		assert (rhs or rhsList) and not (rhs and rhsList) # either but not both
+		assert (source or rvals) and not (source and rvals) # either but not both
 		_targets = args
-		_source = rhs
-		_rvals = rhsList
-		
+		_source = source
+		_rvals = rvals
+
 	def addSubFields
 		base.addSubFields
 		.addField('targets', _targets)
@@ -1558,16 +1559,19 @@ class MultiTargetAssignStatement
 			# If not, we need to turn the rvals list into a literal list, pinning the current values,
 			# and do the expansion on the list as a single item  i.e  a,b = b,a -> a,b = [b,a] 
 			if _isSafeToSimpleAssign()
-				_writeBlockForList
+				_makeBlockForSimpleAssign
 			else
-				_source = ListLit(.lastToken.copy('LBRACKET', r'['), _rvals)
+				_makeBlockForSimpleAssign  # to get assignment exprs for error checking and code gen
+				# to signal to back-end to use RightValues approach:
+				_rightValues = _rvals
+				_rvals = nil			
 		if _source
 			#TODO: chk _source supports an int indexer  somehow...
 			#if not .can_be_indexed_by_int_indexer(_source) 
 			#	.throwError(r"rhs expression [_source.toCobraSource] must support being indexed by an integer offset (e.g rhs[0]")
-			_writeBlockForItem
-				
-		_block.bindImp
+			_makeBlockForSource
+
+		if _block, _block.bindImp
 		
 	def _isLValue(id as Expr) as bool
 		# TODO: push to Expr.isLValue. probably require .didBindImp
@@ -1592,7 +1596,7 @@ class MultiTargetAssignStatement
 		tnames = Set<of String>()
 		for t in _targets
 			if t inherits IdentifierExpr or t inherits AsExpr
-				tnames.add((t to NameExpr).name)	
+				tnames.add((t to NameExpr).name)
 			else
 				return false
 		if all for e in _rvals get e inherits Literal or e inherits DotExpr or e inherits MemberExpr or _
@@ -1601,7 +1605,7 @@ class MultiTargetAssignStatement
 			return true	
 		return false
 		
-	def _writeBlockForList
+	def _makeBlockForSimpleAssign
 		"""
 		Construct expanded assignment block for a multi target assignment from a list of expressions.
 		Assignment block contains
@@ -1611,15 +1615,13 @@ class MultiTargetAssignStatement
 		"""
 		assert _targets.count == _rvals.count
 		stmts = List<of Stmt>()
-		assignTok = .lastToken  # the one we stored in init
-		count = 0
-		for id in _targets
-			expr = _rvals[count]
+		assignTok = .lastToken  # the one we stored in .init
+		for i, id in _targets.numbered
+			expr = _rvals[i]
 			stmts.add(AssignExpr(assignTok, assignTok.which, id, expr))
-			count += 1
-		_block = BlockStmt(.lastToken.copy('INDENT', ''), stmts)	
-
-	def _writeBlockForItem
+		_block = BlockStmt(.lastToken.copy('INDENT', ''), stmts)
+		
+	def _makeBlockForSource
 		"""
 		Construct expanded assignment block for a multi target assignment from a single source expression.
 		if fewer targets than exprs in _source - extra exprs (silently) ignored
