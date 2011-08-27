@@ -1,0 +1,411 @@
+"""
+GtkSourceEditor.cobra
+by Todd A.
+
+This sample program relies on GtkSourceView# which is only known
+to run on Linux, not Mac or Windows.
+
+pkg-config is commonly used with GTK libraries hence it is used
+for properly referencing gtk-sharp and gtksourceview.
+Install these packages using your system's package manager.
+"""
+
+@args -pkg:gtk-sharp-2.0,gtksourceview2-sharp
+
+use Gtk
+use GtkSourceView
+use Pango
+
+
+class Editor
+
+	var _untitledCount = 0
+	var _defaultTitle = 'Untitled'
+	var _filename = ''
+	var _modifiedBuffer = false
+	var _onDisk = false
+
+	var _config = {
+		'lineNumbers': true,
+		'tabWidth': 4,
+		'wrapLines': true,
+		'maxFontSize': 24,
+		'minFontSize': 6,
+		'fontFamily': 'monospace',
+	}
+
+	# The _ui is a dictionary of common parts of the editor that may need to be referenced
+	# throughout various parts of the code.
+	var _ui = {
+		'window': nil,
+		'sourceView': nil,
+	}
+
+	get modifiedBuffer from var
+		"""
+		Keeps track of whether or not the current buffer was modified 
+		and will need saving.
+		"""
+
+	get onDisk from var
+		"""
+		Indicates whether or not the current buffer was loaded from, or already saved to,
+		a file that is on some non-volatile storage.
+		"""
+
+	get source as String?
+		sourceBuffer = _ui['sourceBuffer'] to SourceBuffer
+		return sourceBuffer.text
+
+	def main 
+		Application.init
+
+		accelGroup = AccelGroup()
+		window = Window('')
+		listen window.deleteEvent, ref .exitHandler
+		window.setDefaultSize(800, 600)
+		window.addAccelGroup(accelGroup)
+		_ui['window'] = window
+		_ui['accelGroup'] = accelGroup
+		
+		menubar = _buildMenubar
+		editor = _buildEditor
+		status = _buildStatus
+
+		mainbox = VBox(false, 10)
+
+		mainbox.packStart(menubar, false, false, 0)
+		mainbox.packStart(editor, true, true, 0)
+		mainbox.packStart(status, false, false, 0)
+
+		window.add(mainbox)
+		window.showAll
+
+		.updateTitle(nil)
+
+		Application.run
+
+	def menuNewHandler(sender, e)
+		if .modifiedBuffer
+			responseType = .promptToSave
+			if responseType == ResponseType.Yes, .saveBuffer(.onDisk)
+			else if responseType == ResponseType.Cancel, return
+
+		.updateTitle(nil)
+		_onDisk = false
+		_modifiedBuffer = false
+		sourceBuffer = _ui['sourceBuffer'] to SourceBuffer
+		sourceBuffer.clear
+
+	def menuOpenHandler(sender, e)
+		if .modifiedBuffer
+			responseType = .promptToSave
+			if responseType == ResponseType.Yes, .menuSaveHandler(sender, e)
+			else if responseType == ResponseType.Cancel, return
+			
+		fileChooser = FileChooserDialog('Select a file for opening', _ui['window'] to Window, _
+			FileChooserAction.Open, 'Cancel', ResponseType.Cancel, 'Open', ResponseType.Accept)
+			
+		if fileChooser.run == (ResponseType.Accept to int)
+			filename = fileChooser.filename
+			using reader = StreamReader(File.openRead(filename))
+				source = reader.readToEnd
+				sourceBuffer = _ui['sourceBuffer'] to SourceBuffer
+				sourceBuffer.text = source
+
+				_filename = filename to !
+				_onDisk = true
+				.updateTitle(filename)
+
+				# Though the buffer is modified it is for a file that's just opened hence for
+				# editor purposes it is not modified.
+				_modifiedBuffer = false
+
+		fileChooser.destroy
+	
+	def saveBuffer(onDisk as bool)
+		saved = false
+		if onDisk
+			.writeBuffer(_filename, .source)
+			saved = true
+		else
+			filename = .saveToFile
+			if filename
+				.writeBuffer(filename, .source)
+				_onDisk = true
+				.updateTitle(filename)
+				saved = true
+
+		if saved, .updateStatus('File successfully saved')
+		
+
+	def menuSaveHandler(sender, e)
+		if not .modifiedBuffer, return
+		.saveBuffer(.onDisk)
+
+	def menuSaveAsHandler(sender, e)
+		.saveBuffer(false)
+
+	def menuPrintHandler(sender, e)
+		printDialog = PrintUnixDialog('Print the current file', _ui['window'] to Window)
+		printDialog.run
+		printDialog.destroy
+
+	def menuExitHandler(sender, e)
+		quit = true
+		if .modifiedBuffer
+			responseType = .promptToSave
+			if responseType == ResponseType.Cancel, quit = false
+			else if responseType == ResponseType.Yes, .saveBuffer(.onDisk)
+		if quit, Application.quit
+	
+	def exitHandler(sender, e as DeleteEventArgs)
+		quit = true
+		if .modifiedBuffer
+			responseType = .promptToSave
+			if responseType == ResponseType.Cancel, quit = false
+			else if responseType == ResponseType.Yes, .saveBuffer(.onDisk)
+		e.retVal = not quit
+		if quit, Application.quit
+
+	def menuUndoHandler(sender, e)
+		sourceBuffer = _ui['sourceBuffer'] to SourceBuffer
+		sourceBuffer.undo
+
+	def menuRedoHandler(sender, e)
+		sourceBuffer = _ui['sourceBuffer'] to SourceBuffer
+		sourceBuffer.redo
+
+	def menuCutHandler(sender, e)
+		sourceBuffer = _ui['sourceBuffer'] to SourceBuffer
+		clipboard = Clipboard.get(Gdk.Selection.clipboard)
+		sourceBuffer.cutClipboard(clipboard, true)
+
+	def menuCopyHandler(sender, e)
+		sourceBuffer = _ui['sourceBuffer'] to SourceBuffer
+		clipboard = Clipboard.get(Gdk.Selection.clipboard)
+		sourceBuffer.copyClipboard(clipboard)
+
+	def menuPasteHandler(sender, e)
+		sourceBuffer = _ui['sourceBuffer'] to SourceBuffer
+		clipboard = Clipboard.get(Gdk.Selection.clipboard)
+		sourceBuffer.pasteClipboard(clipboard)
+
+	def menuDeleteHandler(sender, e)
+		sourceBuffer = _ui['sourceBuffer'] to SourceBuffer
+		sourceBuffer.deleteSelection(true, true)
+
+	def menuIncreaseFontSizeHandler(sender, e)
+		.changeFontSize(1)
+		.updateStatus('Increased font size')
+
+	def menuDecreaseFontSizeHandler(sender, e)
+		.changeFontSize(-1)
+		.updateStatus('Decreased font size')
+
+	def menuResetFontSizeHandler(sender, e)
+		sourceView = _ui['sourceView'] to SourceView
+		fontDesc = _ui['defaultFontDescription'] to FontDescription
+		sourceView.modifyFont(fontDesc)
+
+	def menuAboutHandler(sender, e)
+		aboutDialog = MessageDialog(_ui['window'] to Window, DialogFlags.DestroyWithParent, _
+			MessageType.Info, ButtonsType.Close, 'Copyright © 2010 Cobra Language. All rights reserved.')
+		aboutDialog.run
+		aboutDialog.destroy
+
+	def menuSelectAllHandler(sender, e)
+		sourceBuffer = _ui['sourceBuffer']
+		sourceBuffer.selectRange(sourceBuffer.startIter, sourceBuffer.endIter)
+	
+	def menuPassHandler(sender, e as EventArgs)
+		pass
+
+	def bufferModifiedHandler(sender, e as EventArgs)
+		if not _modifiedBuffer, .updateStatus('')
+		_modifiedBuffer = true
+		.refresh
+
+	def writeBuffer(filename as String?, contents as String?)
+		if filename and contents
+			using writer = StreamWriter(filename)
+				writer.write(contents)
+				_modifiedBuffer = false
+
+	def saveToFile as String?
+		fileChooser = FileChooserDialog('Save file', _ui['window'] to Window, _
+			FileChooserAction.Save, 'Cancel', ResponseType.Cancel, 'Save', ResponseType.Accept)
+		fileChooser.modal = true
+			
+		if fileChooser.run == (ResponseType.Accept to int)
+			filename = fileChooser.filename
+			fileChooser.destroy
+			return filename
+
+		fileChooser.destroy
+		return nil
+
+	def promptToSave as ResponseType
+		dialog = MessageDialog(_ui['window'] to Window, DialogFlags.Modal, MessageType.Question, _
+			ButtonsType.None, 'Would you like to save the changes in ')
+		dialog.addButton('Yes', ResponseType.Yes)
+		dialog.addButton('No', ResponseType.No)
+		dialog.addButton('Cancel', ResponseType.Cancel)
+		responseType = dialog.run
+		dialog.destroy
+		return responseType to ResponseType
+
+	def changeFontSize(delta as int)
+		sourceView = _ui['sourceView'] to SourceView
+		context = sourceView.pangoContext
+		fontDesc = context.fontDescription
+		scale = Pango.Scale.pangoScale
+		curSize = fontDesc.size / scale
+		curSize += delta
+		minSize = _config['minFontSize']
+		maxSize = _config['maxFontSize']
+		if curSize >= minSize and curSize <= maxSize
+			fontDesc.size = (curSize * scale) to int
+			sourceView.modifyFont(fontDesc)
+	
+	def refresh 
+		"""
+		Update the state of UI elements based on the current editor state.
+		"""
+		sourceBuffer = _ui['sourceBuffer'] to SourceBuffer
+		redoItem = _ui['menu[Stock.redo]'] to MenuItem
+		undoItem = _ui['menu[Stock.undo]'] to MenuItem
+
+		redoItem.sensitive = sourceBuffer.canRedo
+		undoItem.sensitive = sourceBuffer.canUndo
+
+	def updateTitle(title as String?)
+		window = _ui['window'] to Window
+		if title and title.length
+			window.title = title
+		else
+			_untitledCount += 1
+			_filename = '[_defaultTitle] [_untitledCount]'
+			window.title = _filename
+
+	def updateStatus(message as String)
+		"""
+		Removes any message previously displayed in the status bar then display
+		a new one.
+		"""
+		statusBar = _ui['statusBar'] to Statusbar
+		statusBar.pop(1)
+		statusBar.push(1, message)
+
+	def _buildMenubar as Widget
+		container = MenuBar()
+
+		menuItems as Dictionary<of String, dynamic> = {
+			'File': [
+				[Stock.new, EventHandler(ref .menuNewHandler)],
+				[Stock.open, EventHandler(ref .menuOpenHandler)],
+				[Stock.save, EventHandler(ref .menuSaveHandler)],
+				[Stock.saveAs, EventHandler(ref .menuSaveAsHandler)],
+				['----', nil],
+				[Stock.print, EventHandler(ref .menuPrintHandler)],
+				['----', nil],
+				[Stock.quit, EventHandler(ref .menuExitHandler)]
+			],
+
+			'Edit': [
+				[Stock.undo, EventHandler(ref .menuUndoHandler), StateType.Insensitive],
+				[Stock.redo, EventHandler(ref .menuRedoHandler), StateType.Insensitive],
+				['----', nil],
+				[Stock.cut, EventHandler(ref .menuCutHandler)],
+				[Stock.copy, EventHandler(ref .menuCopyHandler)],
+				[Stock.paste, EventHandler(ref .menuPasteHandler)],
+				[Stock.delete, EventHandler(ref .menuDeleteHandler)],
+				['----', nil],
+				[Stock.selectAll, EventHandler(ref .menuSelectAllHandler)],
+			],
+
+			'Format': [
+				{
+					'FontSize': [
+						[Stock.zoomIn, EventHandler(ref .menuIncreaseFontSizeHandler)],
+						[Stock.zoomOut, EventHandler(ref .menuDecreaseFontSizeHandler)],
+						['----', nil],
+						[Stock.zoom100, EventHandler(ref .menuResetFontSizeHandler)],
+					] to System.Object,
+				}
+			],
+			
+			'Help': [
+				[Stock.about, EventHandler(ref .menuAboutHandler)],
+			],
+		}
+
+		_buildMenu(container, menuItems)
+
+		return container
+	
+	def _buildMenu(container as Container, items as Dictionary<of String, System.Object>)
+		accelGroup = _ui['accelGroup'] to AccelGroup
+		for label, item in items
+			menuItem = MenuItem(label)
+			menu = Menu()
+			for subItem in item to dynamic
+				if subItem inherits List<of System.Object>
+					stockId, handler = subItem
+					subMenuItem = ImageMenuItem(stockId to String, accelGroup)
+					if subItem.count > 2
+						for i in 2 : subItem.count
+							if subItem[i] inherits StateType and subItem[i] to StateType == StateType.Insensitive, subMenuItem.sensitive = true
+
+					_ui['menu[stockId]'] = subMenuItem
+
+					menu.append(subMenuItem)
+
+					if handler inherits EventHandler
+						listen subMenuItem.activated, handler
+				else if subItem inherits List<of String>
+					menu.append(SeparatorMenuItem())
+				else if subItem inherits Dictionary<of String, System.Object>
+					_buildMenu(menu, subItem)
+			menuItem.submenu = menu
+			container.add(menuItem)
+
+	def _buildEditor as Widget
+		container = ScrolledWindow()
+		container.hscrollbarPolicy = PolicyType.Never
+		container.vscrollbarPolicy = PolicyType.Automatic
+
+		fontDesc = FontDescription()
+		fontDesc.family = 'monospace'
+		_ui['defaultFontDescription'] = fontDesc
+
+		languageManager = SourceLanguageManager.default
+		language = languageManager.getLanguage('cobra')
+		buffer = SourceBuffer(language)
+		listen buffer.changed, ref .bufferModifiedHandler
+		sourceView = SourceView(buffer)
+		sourceView.showLineNumbers = _config['lineNumbers'] to bool 
+		sourceView.wrapMode = Gtk.WrapMode.Word
+		sourceView.modifyFont(fontDesc)
+
+		_ui['sourceBuffer'] = buffer
+		_ui['sourceView'] = sourceView
+		_ui['fontDescription'] = fontDesc
+	
+		container.add(sourceView)
+
+		return container
+
+	def _buildStatus as Widget
+		container = Statusbar()
+		_ui['statusBar'] = container
+		return container
+
+	def _saveFileAs
+		fileChooser = FileChooserDialog('Save file as...', _ui['window'] to Window, FileChooserAction.Save, _
+		"Cancel", ResponseType.Cancel, "Save", ResponseType.Accept)
+
+		if fileChooser.run == (ResponseType.Accept to int)
+			# Save the file
+			pass
+		fileChooser.destroy
