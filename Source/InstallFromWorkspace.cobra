@@ -142,6 +142,7 @@ class InstallFromWorkspace
 		print
 		print 'Working...'
 		print
+		.printPlatform
 		_args = .parseCommandLineArgs
 		.verifyElevatedPermissions
 		.verifyInstallDirectory
@@ -414,11 +415,79 @@ class InstallFromWorkspace
 
 	## Stages
 
+	def printPlatform
+		.startStage('Print Platform Description')
+		if .isRunningOnUnix
+			.printPlatformCommand('sw_vers')  # Mac OS X
+			.printPlatformCommand('lsb_release -a')  # could try /etc/*-release if this fails
+			.printPlatformPairCommand('Uname', 'uname -a')
+		else
+			.printPlatformPairCommand('WMI Op Sys Ver', 'wmic os get Caption,CSDVersion /value')
+			.printPlatformCommand('system info', ['OS Name:', 'OS Version:'])
+			.printPlatformPairCommand('Cmd Op Sys Ver', 'ver')
+		.printPlatformPair('Virtual Machine', if(CobraCore.isRunningOnMono, 'Mono', '.NET'))
+		.printPlatformPair('CLR Version', Assembly.getAssembly(Object).imageRuntimeVersion)
+		.printPlatformPair('Env Command Line', Environment.commandLine)
+		.printPlatformPair('Env OS Version', Environment.osVersion)
+		.printPlatformPair('Env System Dir', Environment.systemDirectory)
+		.printPlatformPair('Env Version', Environment.version)
+		if .isRunningOnUnix
+			.printPlatformPairCommand('Mono', 'mono --version')
+		else
+			.printPlatformCommand(r'dir %WINDIR%\Microsoft.Net\Framework\v* /O:-N /B')
+		print
+
+	def printPlatformPair(key as String, value)
+		key += ':'
+		print '[key.padRight(18)] [value]'
+
+	def printPlatformPairCommand(key as String, command as String)
+		.printPlatformPair(key, _platformCommand(command))
+
+	def printPlatformCommand(command as String)	
+		.printPlatformCommand(command, List<of String>())
+		
+	def printPlatformCommand(command as String, grepList as IList<of String>)
+		output = _platformCommand(command)
+		if output is nil, return
+		if grepList.count > 0
+			for line in output.splitLines
+				found = false
+				for grep in grepList
+					if line.contains(grep)
+						found = true
+						break
+				if found, _printRawLine(line)
+		else
+			for line in output.splitLines
+				_printRawLine(line)
+
+	def _platformCommand(command as String) as String?
+		# fails silently as some platform commands may not be available
+		if ' ' in command
+			command, args = command.split(@[c' '], 2)
+		else
+			args = ''
+		p = Process()
+		p.startInfo.fileName = command
+		p.startInfo.arguments = args
+		try
+			return CobraCore.runAndCaptureAllOutput(p).trim
+		catch
+			return nil
+
+	def _printRawLine(line as String)
+		i = line.indexOf(': ')
+		if i == -1, i = line.indexOf(':\t')
+		if i <> -1
+			.printPlatformPair(line[:i].trim, line[i+1:].trim)
+		else
+			print line
+
 	def verifyElevatedPermissions
 		.startStage('Verify running as admin user')
 		if not .isAdmin
 			.error('Please run this executable as an admin user.')
-			
 
 	def verifyInstallDirectory
 		.startStage('Verify installation directory')
