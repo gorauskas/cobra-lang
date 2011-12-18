@@ -28,7 +28,7 @@ class JvmBackEnd inherits BackEnd
 			'IEnumerator<of>' : 'Java.Lang.Iterator<of>',
 			'IDictionaryEnumerator' : 'Java.Lang.Iterator',
 			#'IDictionaryEnumerator' : 'System.Collections.IDictionaryEnumerator',
-			'ICollection': 		'Java.Util.Collection<of Object>',	# non generic collection interface
+			'ICollection': 		'Java.Util.Collection',	# non generic collection interface
 			'ICollection<of>': 	'Java.Util.Collection<of>',
 			'IList'	:  			'Java.Util.List<of Object>',	# non generic List interface
 			'IList<of>'	:  		'Java.Util.List<of>',
@@ -40,17 +40,20 @@ class JvmBackEnd inherits BackEnd
 
 			'bool'	:  'Java.Lang.Boolean',  # boolean
 			'char'  :  'Java.Lang.Character',# char
-			'decimal': 'Java.Lang.Double',	# ??
+			'decimal': 'Java.Lang.Decimal',	#  virtualised -> Double
 			'single':  'Java.Lang.Float',	# float	
 			'double':  'Java.Lang.Double',	# double	
-			'sbyte'	:  'Java.Lang.Byte',		# byte
+			'sbyte'	:  'Java.Lang.Byte',	# byte
 			'int16'	:  'Java.Lang.Short',	# short	
 			'int32'	:  'Java.Lang.Integer',	# int		
-			'int64'	:  'Java.Lang.Long',		# long
-			'byte'	:  'Java.Lang.Short',	# short   # rest are unsigned - use next widest
-			'uint16':  'Java.Lang.Integer',	# int	
-			'uint32':  'Java.Lang.Long',		# long
-			'uint64':  'Java.Lang.Long',		# long
+			'int64'	:  'Java.Lang.Long',	# long
+			'int'	:  'Java.Lang.Integer',	# int primitive (struct) - need same for other primitives??		
+			# rest are unsigned, n/a in Java. But still need to be distinct.
+			# Invent  some fake names and remap at javaClass level
+			'byte'	:  'Java.Lang.UByte',	# virtualised -> Short 
+			'uint16':  'Java.Lang.UShort',	# virtualised -> Integer	
+			'uint32':  'Java.Lang.UInteger',# virtualised -> Long
+			'uint64':  'Java.Lang.ULong',	# virtualised -> Long
 			
 			}
 		
@@ -155,13 +158,13 @@ class JvmBackEnd inherits BackEnd
 		# rt.jar is only one we need
 		.compiler.javaReadJar(JarSig('rt.jar'))
 	
-	def fixNilableMemberSigs is override
-		#.compiler.jvmfixNilableMemberSigs
-		pass # TODO
+	def fixMemberSigs is override
+		.compiler.jvmFixNilableMemberSigs
+		.compiler.jvmFixIndexerMemberSigs
 		
 	def installNativeMethods(box as Box, nativeType as NativeType) is override
-		#.compiler.installJvmNativeMethods(box, nativeType)
-		pass # TODO
+		.compiler.installJvmNativeMethods(box, nativeType)
+		#pass # TODO
 
 	def cobraNameForNativeBoxName(nativeBoxName as String) as String is override
 		return JvmTypeProxy.cobraNameForJvmBoxName(nativeBoxName)

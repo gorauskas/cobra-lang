@@ -198,8 +198,8 @@ class Compiler is partial
 	
 		# work out what doing with indexor and apply to []
 		#_fix('System.Collections.Generic.List<of>', r'[]')
-		_fix('Java.Util.List<of>', r'[] get set remove')
-		_fix('Java.Util.AbstractList<of>', r'[] get set remove')
+		_fix('Java.Util.List<of>', r'[] get set remove size')
+		_fix('Java.Util.AbstractList<of>', r'[] get set remove size')
 		_fix('Java.Util.AbstractSequentialList<of>', r'[] get set remove')
 		_fix('Java.Util.ArrayList<of>', r'[] get set remove')
 		#_fix('Java.Util.CopyOnWriteArrayList<of>', r'[] get set remove')
@@ -218,10 +218,13 @@ class Compiler is partial
 		#_fix('Java.Util.IdentityHash<of,>', r'[] get')
 		#_fix('Java.Util.TreeMap<of,>', r'[] get')
 		#_fix('Java.Util.WeakHashMap<of,>', r'[] get')
-		_fix('Java.Util.Map.Entry<of,>', r'getKey getValue')
+
+		# Nested classes need to be handled when enclosing class is loaded
+		# see Box._nestedUnNil below
+		#_fix('Java.Util.Map.Entry<of,>', r'getKey getValue')
 		#_fix('Java.Util.AbstractMap.SimpleEntry<of,>', r'getKey getValue')
 		#_fix('Java.Util.AbstractMap.SimpleImmutableEntry<of,>', r'getKey getValue')
-		#_fix('Java.Util.Properties', r'getProperty')
+		_fix('Java.Util.Properties', r'getProperty')
 		
 		#_fix('System.IO.File', 'create createText open openRead openText openWrite readAllBytes readAllLines readAllText')
 		_fix('Java.Io.File', 'create createText open openRead openText openWrite readAllBytes readAllLines readAllText getPath getAbsolutePath')
@@ -233,9 +236,9 @@ class Compiler is partial
 		#_fix('java.lang.StringBuilder', 'toString') # ??
 		#_fix('java.lang.Text.RegularExpressions.Regex', 'match replace')
 		#_fix('System.Diagnostics.Process', 'processName')
-		_fix('java.util.regex.Pattern', 'matches matcher pattern split compile')
-		_fix('java.util.regex.Matcher', 'group pattern replaceAll replaceFirst')
-		_fix('java.lang.ProcessBuilder', 'command start directory')
+		_fix('Java.Util.Regex.Pattern', 'matches matcher pattern split compile')
+		_fix('Java.Util.Regex.Matcher', 'group pattern replaceAll replaceFirst')
+		_fix('Java.Lang.ProcessBuilder', 'command start directory')
 		#_fix('java.lang.Process', 'getInputStream getOutputStream getErrorStream')
 		
 		#_fix('System.Reflection.Assembly', 'getEntryAssembly getExecutingAssembly location')
@@ -244,6 +247,21 @@ class Compiler is partial
 		#_fix('System.Reflection.ParameterInfo', 'parameterType')
 		#_fix('System.Reflection.PropertyInfo', 'propertyType')
 
+	def jvmFixIndexerMemberSigs
+		# Mapping for (simple) Indexers to  java methods.
+		# Fix the listed classes to support Indexors using specified members as accessors and mutators.
+		# called from bindInterface phase so this can only refer to top level Classes in a package.
+
+		# Initially and currently hard coded in JvmJarSig. 
+		# TODO: fixup to specify here like nilableMemberSigs 
+		# TODO: this really needs to go in a separate file that the compiler reads each time
+		#print 'fixing Indexers'
+		#Format below is 
+		#_AddIdxr('FullClassName', 'accessorMethod mutatorMethod')  --  Mutator is optional 
+		#_addIdxr('Java.Lang.String', 'charAt')
+		#_addIdxr('Java.Util.Map', 'get put')
+		#_addIdxr('Java.Util.List', 'get set')
+		pass
 		
 	#
 	# Jvm Type Cache
@@ -419,7 +437,7 @@ class Box is partial
 					skip = true
 					break
 			if skip, continue
-			params = _scanJvmParams(ctorInfo.getParameters, ctorInfo.isVari)
+			params = _scanJvmParams(ctorInfo.getParameters, ctorInfo.isVari, false)
 			isNames = _isNamesForJavaMemberInfo(ctorInfo)
 			attribs = _attribsForJavaMemberInfo(ctorInfo)
 			docString = ''  # TODO: get doc string for class?
@@ -481,7 +499,7 @@ class Box is partial
 		for paramInfo in propInfo.getIndexParameters
 			if _badJvmRelatedType(paramInfo)
 				return
-		params = _scanJvmParams(propInfo.getIndexParameters, false)
+		params = _scanJvmParams(propInfo.getIndexParameters, false, true)
 		attribs = _attribsForJavaMemberInfo(propInfo)
 		docString = ''
 		if propInfo.isReadable
@@ -529,7 +547,7 @@ class Box is partial
 			genericParams = List<of IType>()
 			for genArg in methInfo.getGenericArguments
 				genericParams.add(GenericParam(JvmNativeType(genArg)))
-			params = _scanJvmParams(methInfo.getParameters, methInfo.isVari)
+			params = _scanJvmParams(methInfo.getParameters, methInfo.isVari, false)
 			isNames = _isNamesForJavaMemberInfo(methInfo)
 			if methInfo.isOverride,	 isNames.add('override')	# only on methods
 			attribs = _attribsForJavaMemberInfo(methInfo)
@@ -553,7 +571,7 @@ class Box is partial
 			else
 				.addDecl(method)
 
-	def _scanJvmParams(jparams as List<of JavaClassType>?, isVariMethod as bool) as List<of Param>
+	def _scanJvmParams(jparams as List<of JavaClassType>?, isVariMethod as bool, isNotNullable as bool) as List<of Param>
 		"""
 		Returns a list of Cobra Params given a list of Java ClassTypes (presumably a java parameterList)
 		"""
@@ -572,12 +590,16 @@ class Box is partial
 			# To support nilable on params need change representation to a javaParamType containing type + attributes (for param) ( + direction possibly)
 			# Java not support nilable directly so ignore for moment
 			#isNotNull = javaParam.isNonNullable
-			isNotNullable = false # can be null
+			#isNotNullable = false # indexer params not be null others can be
 			parameterType = javaParam
 			type = _jvmMemberTypeProxy(parameterType, isNotNullable)
+			#if isNotNullable, print '>>', javaParam, ' ', type
 			if isVari, type = VariTypeProxy(type)
 			name = 'unkname' # java not keep names of given formal parameters
 			param = Param(name, type)
+			#if isNotNullable 
+			#	print '>>>' stop
+			#	param.writeDeepString
 			param.direction = Direction.In # Java doesnt have Out or InOut equivs
 			params.add(param)
 		return params
@@ -658,11 +680,20 @@ class Box is partial
 	#_fix('java.util.Map<of,>.Entry<of,>', r'getKey getValue')
 	#_fix('java.util.AbstractMap.SimpleEntry<of,>', r'getKey getValue')
 	#_fix('java.util.AbstractMap.SimpleImmutableEntry<of,>', r'getKey getValue')
-		
+	var _nestedUnNil as Dictionary<of String, String> =  { 
+		'Java.Util.Map<of,>.Entry<of,>' : 					r'getKey getValue',
+		'Java.Util.AbstractMap.SimpleEntry<of,>':  			r'getKey getValue',
+		'Java.Util.AbstractMap.SimpleImmutableEntry<of,>': 	r'getKey getValue'
+	}
+
 	def _fixNestedNilables
 		if .parentBox  # nested
-			print 'fixNest', .parentBox.name, .name
-				
+			query = '[.parentBox.qualifiedName].[.name]'
+			print 'fixNest', query
+			memberNames = _nestedUnNil.get(query, '')
+			if memberNames.length
+				.parentBox.membersToUnNil = memberNames
+				#print '  unNil', memberNames
 
 class Class
 	is partial
@@ -729,9 +760,9 @@ class Extension
 		_scanJvmMethods
 		#_scanJvmEvents
 
-	def _scanJvmParams(jparams as List<of JavaClassType>?, isVariMethod as bool) as List<of Param> is override
+	def _scanJvmParams(jparams as List<of JavaClassType>?, isVariMethod as bool, isNotNullable as bool) as List<of Param> is override
 		# the first argument is implicit in an Extension
-		results = base._scanJvmParams(jparams, isVariMethod)
+		results = base._scanJvmParams(jparams, isVariMethod, isNotNullable)
 		return results[1:]
 		
 	def jvmExtnNativeType(nativeType as NativeType) as NativeType

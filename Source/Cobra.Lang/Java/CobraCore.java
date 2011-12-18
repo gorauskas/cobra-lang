@@ -9,6 +9,8 @@
  */
 package cobra.lang;
 
+import java.util.*;
+
 //interface IHasSourceSite {
 //    public SourceSite getSourceSite();
 //}
@@ -25,15 +27,40 @@ public class CobraCore {
     //public static String getRuntimePlatform() { return "jvm"; } // prop
     public static final String runtimePlatform =  "jvm"; 
     
+    // property willCheckAssert
     public static boolean getWillCheckAssert() { return _willCheckAssert; }
     public static void    setWillCheckAssert(boolean b) { _willCheckAssert = b; }
     
+    public static List<String> commandLineArgs = new ArrayList<String>();
+
+    // Compiler inserts calls to this to initialize commandLineArgs
+    public static void _recordCommandLine(String[] args) {
+        commandLineArgs.addAll(java.util.Arrays.asList(args));
+        StackTraceElement[] stack = Thread.currentThread ().getStackTrace();
+        StackTraceElement main = stack[stack.length - 1];
+        String mainClass = main.getClassName();    
+        commandLineArgs.add(0, mainClass);
+    }
+    
+    public static void exit(int exitCode) {
+        //""" Exits the process. """
+	System.exit(exitCode);
+    }
+			
+    public static String newLine =  System.getProperty("line.separator");
+	//""" Returns the newline for the current environment/platform. """
+
     // Property StringMaker techStringMaker
     /*
      * 	Used by `assert` failures, `trace` statements and .toTechString methods.
      */
     static public CobraImp.SimpleStringMaker getTechStringMaker() { return CobraImp._techStringMaker; }
     static public void setTechStringMaker(CobraImp.SimpleStringMaker value) { CobraImp._techStringMaker = value; }
+    
+    static public String toTechString(Object x) 
+    {
+	return CobraImp.toTechString(x);
+    }
     
     public static int noOp(/* allowNull */ Object... args) { 
         /* """

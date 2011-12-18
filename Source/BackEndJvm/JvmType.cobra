@@ -5,9 +5,22 @@
 
 class JvmNativeType inherits NativeType
 
+	shared
+		def nativeType(t0 as IType?) as JavaClassType?
+			"""Obtain Jvm backEnd Native type from given IType (nonnil Box)."""
+			assert t0
+			t = t0 to !
+			if t inherits Box
+				tn = t.nativeType
+				if tn
+					assert tn inherits JvmNativeType
+					return  (tn to JvmNativeType).backEndType
+			return nil
+			
 	var _type as JavaClassType # java.lang.Class eventually
 	var nestedName as String?
-	
+
+		
 	cue init(type as JavaClassType)
 		base.init
 		_type = type
@@ -51,6 +64,11 @@ class JvmNativeType inherits NativeType
 	get isSystemTypeClass as bool is override
 		return /# _type and #/ .fullName == 'java.lang.Class'
 		
+	def toString as String is override
+		return 'JvmNativeType([_type])'
+	
+	def toTechString as String
+		return .toString
 		
 class JvmTypeProxy inherits NativeTypeProxy
 	"""
@@ -83,7 +101,7 @@ class JvmTypeProxy inherits NativeTypeProxy
 				
 		def cobraNameForJvmBoxName(name as String) as String
 			"""
-			Assunmed we've mangled java generics typenames a la .Net ( i.e TypeName`<nGenericTypeParams>) 
+			Assumed we've mangled java generics typenames a la .Net ( i.e TypeName`<nGenericTypeParams>) 
 			Returns 'Foo' for 'Foo' and 'Foo<of,>' for 'Foo`2'
 			Works on generic and non-generic classes, structs and interfaces.
 			Does *not* work for arrays etc.
@@ -105,7 +123,7 @@ class JvmTypeProxy inherits NativeTypeProxy
 
 	cue init(nativeType as NativeType)
 		.init((nativeType to JvmNativeType).backEndType)
-
+		
 	cue init(jvmType as JavaClassType)
 		base.init
 		_jvmType = jvmType
@@ -194,6 +212,8 @@ class JvmTypeProxy inherits NativeTypeProxy
 				.throwError(msg)
 		return .compiler.intType  # CC: to make C# code gen happy.
 	
+	# make dict same as PrimitiveTypesDict but keyed by dynamic so not typed to nativeType/JavaClassType
+	# and set to Compiler.
 	def _initPrimToITypeCache
 		typeToIType = _makePrimitiveTypesDict
 		jvmPrimitiveToIType = Dictionary<of dynamic, IType>()
@@ -201,6 +221,9 @@ class JvmTypeProxy inherits NativeTypeProxy
 			jvmPrimitiveToIType[key] = typeToIType[key]
 		(.compiler to Compiler).primitiveCache	= jvmPrimitiveToIType #to !
 
+	# primitiveTypes java/nativeClassType: cobraBasicType
+	# like Byte: IntType(signed,8), ... Long: IntType(signed, 64)
+	# implies 1:1 nativeClassType: cobraBasicType -  needs fixing
 	def _makePrimitiveTypesDict as IDictionary<of JavaClassType, IType>
 		primitiveToIType = Dictionary<of JavaClassType, IType>()
 		for bt in .compiler.basicTypes
@@ -208,6 +231,8 @@ class JvmTypeProxy inherits NativeTypeProxy
 				# lookup by qualified name (includes translation) and pull out (jvm) NativeType
 				key = (.compiler.nativeType((bt.systemAliasProxy to LibraryTypeProxy).qualifiedName) to JvmNativeType).backEndType
 				primitiveToIType[key] = bt
+				#print '<.', key.name, bt
+		#print '<..', primitiveToIType.count
 		assert primitiveToIType.count == 0 or primitiveToIType.count >=8
 		return primitiveToIType
 	

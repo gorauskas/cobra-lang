@@ -24,21 +24,40 @@ class JarSig
 	shared
 		var classByNameCache = Dictionary<of String, JavaClassType>()
 			"""All classes found in all jars keyed by canonical/full name."""
-				
+			
+	
+		var nameRemaps = {
+			'java.lang.Decimal' : 'java.lang.Double', # BigDecimal eventually with (lotta) codegen support
+			'java.lang.UByte'   : 'java.lang.Short',
+			'java.lang.UShort'  : 'java.lang.Integer',
+			'java.lang.UInteger': 'java.lang.Long',
+			'java.lang.ULong'   : 'java.lang.Long',
+		}
+			"""
+			Remap unique virtualised java class name to an actual existing Java class name.
+			"""
+
 		def lookupClassByCobraName(fullCobraName as String) as JavaClassType
 			"""
-			This is the only way to access the JarSig classCache contents from outside this file.
+			This is intended to be the only way to access the JarSig classCache contents from outside this file.
 			"""
 			assert fullCobraName[0].isUpper
+			#fullCobraName = .nameRemaps.get(fullCobraName, fullCobraName)
 			parts = fullCobraName.split('.')
 			for i in 0: parts.length-1
 				parts[i] = parts[i][0].toLower.toString + parts[i][1:]
 			fullName = parts.join('.')
 			#print 'Lookup "[fullCobraName]" as "[fullName]"'
+			if not JarSig.classByNameCache.containsKey(fullName) # dbg
+				print 'Class [fullName] not in JarSig ClassName cache'
+				throw Exception('Cannot find class [fullName]')
 			return JarSig.classByNameCache[fullName]
 				
 		def lookupClass(fullName as String) as JavaClassType
-			""" Lookup class by full/canonicalName."""
+			""" 
+			Lookup class by full/canonicalName. 
+			Used only for class resolution from within this file.
+			"""
 			if not JarSig.classByNameCache.containsKey(fullName)
 				if fullName.startsWith(r'[')	# [a.b.c; 
 					.addArrayClass(fullName)
@@ -78,7 +97,14 @@ class JarSig
 						print 'Unknown arrayName [elName]'	
 						assert false, 'arrayName [elName]'
 			if not JarSig.classByNameCache.containsKey(elName)
-				print 'Dbg: class "[elName]" not in classByNameCache "[aName]"' 	
+				if elName.contains('<') # a generic
+					elNameRaw = elName.before('<')
+					if JarSig.classByNameCache.containsKey(elNameRaw) 
+						elName = elNameRaw # rawType is superclass of Generic so find that
+					else	
+						print 'Dbg: neither class "[elName]" nor class "[elNameRaw]" are in classByNameCache - element for "[aName]"' 	
+				else	
+					print 'Dbg: class "[elName]" not in classByNameCache - element for "[aName]"' 	
 			#elType = JarSig.classByNameCache[elName]
 			elType = JarSig.lookupClass(elName)
 			arrayCls = JavaClassType(aName, elType) # ArrayType
@@ -209,9 +235,41 @@ class JarSig
 		#_javaTypes.add(l)
 		JarSig.classByNameCache['float']   = JarSig.classByNameCache['java.lang.Float'] 
 		JarSig.classByNameCache['double']  = JarSig.classByNameCache['java.lang.Double'] 
+			
+		# these name remaps will probably need some codegen special handling. 
+		_dupVirtuals
+		_nonGenericCommon
 
-		
+	def _dupVirtuals
+		for dupName in .nameRemaps.keys
+			dupOf = .nameRemaps[dupName]
+			_dupClassTo(dupOf, dupName)
+			
+	def _nonGenericCommon		
+		#pass
+		#	'java.util.Collection'   : 'java.util.Collection<Object>',
+		#_dupClassTo( 'java.util.Collection', 'java.util.Collection<Object>')
+		_makeGenericInstance('java.util.Collection<Object>')  # for ICollection/Java.Util.Collection<of Object>
+		# probably others yet
 				
+	def _dupClassTo(dupOfName as String, asName as String)
+		ct = JarSig.classByNameCache[dupOfName] 
+		parts = asName.split('.')
+		name = parts[parts.length-1]
+		package = parts[0:-1].join('.') # all but last
+		ct = ct.copy(name, package)
+		JarSig.classByNameCache[asName] = ct
+		_javaTypes.add(ct)
+		
+	def _makeGenericInstance(fullName as String)
+		# cached AND exposed to namespace
+		assert fullName.contains('<')
+		.addGenericInstClass(fullName)
+		giCls = JarSig.classByNameCache[fullName]
+		print giCls.canonicalName
+		_javaTypes.add(giCls)
+			#_registerClassType(giCls)	
+		
 	def getExportedTypes as JavaClassType*
 		return _javaTypes
 		
@@ -223,7 +281,7 @@ class JarSig
 	
 #
 # Below are classes describing JavaTypes (class), JavaFields, Java Ctors and JavaMethods	
-# They are temporary placeholders until can get a native implementation and direct access to Java RTL equivalents.
+# They are temporary placeholders until get a native implementation and direct access to Java RTL equivalents.
 
 enum JavaType
 	NoType, JavaClass, JavaInterface, JavaEnum, GenericParam
@@ -260,6 +318,8 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 	var _props as List<of JavaFieldInfo>  =	JavaClassType._emptyFieldList	# JavaFieldInfo*
 	var _ctors as List<of JavaCtorInfo>	  = JavaClassType._emptyCtorList 	# JavaCtorInfo*
 	var _methods as List<of JavaMethodInfo> = JavaClassType._emptyMethodList # JavaMethodInfo*
+	var _indexer as JavaFieldInfo?
+	
 
 	# TODO split these out as subclass
 	var _isGenericDefn = false	
@@ -385,6 +445,7 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 		jct._props  = propList
 		jct._ctors  = ctorList
 		jct._methods = methodList
+		jct._fixIdxr
 		return jct
 			
 	def _parseList(et as String) as List<of String> is shared
@@ -439,19 +500,9 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 			return methodName[2:]
 		return nil	
 			
-	# indexer: get<Propname> and has params  -  first param in paramList is index  (retType is Property Type)
-	#	  or  set<PropName> and more than value in paramList, 1st parameter is index and second is value to set.
-	# hops: this isnt goanna work - too many false positives
-	# may work to hard case Collections, Lists and special case Maps... recognise annotation for user written code
-	def isIndexer(methodName as String, method as JavaMethodInfo, isSetProp) as bool is shared
-		if methodName.startsWith('is')
-			return false
-		assert methodName.startsWith('get') or methodName.startsWith('set')
-		isGetProp = not isSetProp
-		return  (isGetProp and method.paramNames.count) or (isSetProp and method.paramNames.count > 1)
-
-	def _genProp(method as JavaMethodInfo, propName as String, propList as List<of JavaFieldInfo>, props as Dictionary<of String, JavaFieldInfo>) as JavaFieldInfo is shared
-		""" Create or update property fm getter/setter method and update given List and Dict. """
+	# unused old obsolete
+	def _genProp0(method as JavaMethodInfo, propName as String, propList as List<of JavaFieldInfo>, props as Dictionary<of String, JavaFieldInfo>) as JavaFieldInfo is shared
+		""" Create or update property fm getter/setter method and update the given List and Dict. """
 		assert method.name.startsWith('get') or method.name.startsWith('set') or method.name.startsWith('is')	
 		isSetProp = method.name.startsWith('set')
 		isGetProp = not isSetProp
@@ -462,8 +513,7 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 			prop = JavaFieldInfo() # JavaPropInfo
 			prop.name = propName
 			prop.isProp = true
-			#prop.isIndexer = .isIndexer(method.name, method, isSetProp)
-			prop.isIndexer = false  # TODO support indexers
+			prop.isIndexer = false  
 			prop.isReadable = prop.isWritable = false
 			props[propName] = prop
 			propList.add(prop)	
@@ -486,6 +536,100 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 		assert prop.typeName.length
 		return prop
 			
+	def _genProp(method as JavaMethodInfo, propName as String, propList as List<of JavaFieldInfo>, props as Dictionary<of String, JavaFieldInfo>) as JavaFieldInfo is shared
+		""" Create or update property fm getter/setter method and update the given List and Dict. """
+		assert method.name.startsWith('get') or method.name.startsWith('set') or method.name.startsWith('is')	
+		isSetProp = method.name.startsWith('set')
+		isGetProp = not isSetProp
+		#print method.name, propName
+		if not props.containsKey(propName) # No existing property
+			prop = _genAProp(propName, if(isGetProp, method, nil), if(isSetProp, method, nil), false)
+			props[propName] = prop
+			propList.add(prop)	
+			#print '-- new Prop'
+		else
+			prop = props[propName]
+			if isGetProp 
+				prop.isReadable = true
+				prop.getter = method
+				if not prop.typeName.length and method.returnTypeName.length
+					prop.typeName = method.returnTypeName
+				#prop.name0 = method.name
+				#print '-- isGetProp'
+			else #isSetProp 
+				prop.isWritable = true
+				prop.setter = method
+				#print '-- isSetProp'
+				if not prop.typeName.length and method.paramNames.count
+					prop.typeName = method.paramNames[0]
+		assert prop.name.length
+		assert prop.typeName.length
+		return prop
+		
+	def _genAProp(name as String, getMethod as JavaMethodInfo?, setMethod as JavaMethodInfo?, isIndexer as bool ) as JavaFieldInfo is shared
+		""" Create a property given either or both getter/setter methods. """
+		prop = JavaFieldInfo() # JavaPropInfo
+		prop.name = name
+		prop.isProp = true
+		prop.isIndexer = isIndexer
+		if getMethod 
+			prop.isReadable = true
+			prop.getter = getMethod
+			if getMethod.returnTypeName.length, prop.typeName = getMethod.returnTypeName
+			getMethod.prop = prop
+			if not prop.modifiers.count or not prop.modifiers[0].length, prop.modifiers = getMethod.modifiers
+			if not prop.attributes.count, 	 prop.attributes = getMethod.attributes
+		if setMethod
+			prop.isWritable = true
+			prop.setter = setMethod
+			if not prop.typeName.length 
+				if isIndexer 
+					if setMethod.paramNames.count > 1, prop.typeName = setMethod.paramNames[1]
+				else
+					if setMethod.paramNames.count, 	prop.typeName = setMethod.paramNames[0]
+			setMethod.prop = prop
+			if not prop.modifiers.count or not prop.modifiers[0].length, prop.modifiers = setMethod.modifiers
+			if not prop.attributes.count, 	 prop.attributes = setMethod.attributes
+		assert prop.name.length
+		assert prop.typeName.length
+		return prop
+		
+		
+	# support Indexers on Strings and things supporting (java.util.) Map and List Interfaces
+	def _fixIdxr
+		# assumed Default name for indexer methods
+		getterName, setterName = 'getItem', 'setItem'
+		# special case naming weirdnesses of Java lib classes
+		if .canonicalName == 'java.lang.String'
+			getterName, setterName = 'charAt', ''
+		else 
+			for ifcName in .interfaceNames # TODO also chase up interface inheritance tree
+				if ifcName.startsWith('java.util.List')
+					getterName, setterName = 'get', 'set'
+				else if ifcName.startsWith('java.util.Map')
+					getterName, setterName = 'get', 'put'
+
+		#TODO also check for specially annotated methods
+			
+		assert getterName.length
+		getMethod, setMethod = _lookForMethods(getterName, setterName)
+		if getMethod or setMethod
+			idxrProp = _genAProp('_synthesizedIdxr', getMethod, setMethod, true)
+			_props.add(idxrProp)
+			_indexer = idxrProp
+			print 'dbg: [.canonicalName] has IndexerMethods [getterName] and [setterName] '
+		#else
+		#	print 'dbg: No IndexerMethods [getterName]/[setterName] on [.canonicalName]'
+				
+	def _lookForMethods( getterName as String, setterName as String) as List<of JavaMethodInfo?>
+		getter as JavaMethodInfo? = nil
+		setter as JavaMethodInfo? = nil
+		for m in _methods
+			if m.name == getterName, getter = m
+			if m.name == setterName, setter = m
+		return [getter, setter]	
+				
+		
 	cue init(name as String, pkg as String, type as JavaType, super as String, ifcs as List<of String>, modifiers as List<of String> )
 		"""Create a normal Class or GenericClass Defn.   MyClass or MyClass<T>"""
 		base.init
@@ -810,6 +954,7 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 	get props  from var
 	get ctors  from var
 	get methods from var
+	get indexer from var
 
 	#dbg
 	def toMinString as String

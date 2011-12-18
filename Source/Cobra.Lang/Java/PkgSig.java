@@ -492,7 +492,9 @@ class ClassSig {
         System.out.printf( "%-30s %s\n", t, "# JavaType");
         
         printIndent();
-        String pkgName = this.cls.getPackage().getName();
+        String pkgName = "";
+        if (this.cls.getPackage() != null)
+            pkgName = this.cls.getPackage().getName();
         System.out.printf("%-30s %s\n", pkgName, "# package");
         
         // Name of the class(without pkgname), dotNet form for Generic class

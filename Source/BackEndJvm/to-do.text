@@ -1,5 +1,9 @@
 = Java Backend Gen TODO =
 
+Require Base version Java to be java7
+    gain strings in case stmt for free (!)
+
+
 include-tests:no - remove Test invocation call
 
 
@@ -52,19 +56,50 @@ properties - pro/get/set
      codegen for props: 'propName' -> getPropName  (DONE)
                                       setPropName   convert propName = a.b.c -> setPropName(a.b.c) (DONE - minimally at least)
 
+     codegen for is<bool> property accessor  isPropName
+
+    Indexers:
     AutoMap map indexers '[]' to methods X.get(idx) v = X[idx] , X.set(idx,val) and X.put(idx,val) -> X[idx] = val
         - unworkable - too many false positives
             
-Handling of indexing '[]' on Maps and Lists
-                x[i]=v :  map: x.put(i,v)     list: x.set(i,v) 
-                v = x[i]: map: v = map.get(i) list: v = list.get(i)
+    Handling of indexing '[]' on Strings, Maps and Lists
+                x[i]=v :  String: -                    map: x.put(i,v)     list: x.set(i,v) 
+                v = x[i]: String: v = x.charAt(i)      map: v = map.get(i) list: v = list.get(i)
+        DONE  Nov-2011
+        
+    codegen for user code indexers
+	pro/get/set [index as idxT] as T
+		get
+			return _data[index]
+		set
+			_data[index] = value
+
+        accessor: T getIndexer(idxT index) { return _data[index]; }
+        mutator:  void setIndexer(idxT index, T value) { _data[index] = value; } 
+
+String Substitutions:
+    format handling: 
+        e.g.  m=42  
+              assert '[m:N]' == '42.00'
+    1) ignore initially
+    2) either map .Net fmt to java equiv (shudder)
+      or treat as java specific form  - 
+        m=42.0
+        assert '[m:%.2f]' == '42.00'
+      
+
+Arrays
+    Array init from Array literal
+    Array indexing
+
+
 Events
     - auto add boiler plate for listener (de)registration
         - event firing
 
 
 partial classes
-    Add extra phase to aggregate partial classes together into first Module
+    Add extra phase to aggregate partial classes together into first Module or AST Tree
     (Chk if cobra is doing sommat like this or relying on C# compiler)
     
 Extensions
@@ -131,7 +166,10 @@ out and inout (ref)
         in call wrap arg in a SoftRef (or make own version HardRef subclass j.l.ref.Reference)
         Chg param to be a SoftRef to the arg passed (e.g. 'arg_Ref')
         In the method pull it out from the softref as a local name ('arg')
-    
+
+nilable/nonNilable
+    enforcement nonNilable - require use of Java7 and use Objects.requireNonNull() call
+        
 
 Add new compiler directive
  @platform portable|jvm|clr|objc
@@ -153,6 +191,10 @@ Decimal Type
     Maybe easier to just default to Integer and ignore Decimal (initially)
         or default Decimal to Double ?? 
             tests :050-decimal.cobra
+
+Java7 adds java.nio Files and (interface) Path - modify codegen/handling to use that ( wire to >java7)
+    use Paths to create Path and Files to convert Path for use
+        legacy Path p = fileInst.toPath(); // java.io.File to java.nio.Path
 
 Add convenience methods to 
     java.io.File for
