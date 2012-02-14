@@ -28,7 +28,7 @@ interface IBoxCodeMember inherits IBoxMember
 	get hasParams as bool
 	get isExtensionMember as bool
 	get params as IList<of Param>
-	pro testMethod as TestMethod?
+	get testMethods as IList<of TestMethod>
 
 	def matchesSignature(member as IBoxCodeMember) as bool
 	
@@ -59,7 +59,7 @@ class BoxMember
 	var _isNames as IList<of String>?
 	var _attribs as AttributeList
 	var _overloadGroup as MemberOverload?
-	var _testMethod as TestMethod?
+	var _testMethods as List<of TestMethod>?
 	var _matchingBaseMember as IBoxCodeMember?
 	var _sharedMethodBacking as String?
 	var _sharedMethodBackingIsAlias as bool
@@ -108,7 +108,9 @@ class BoxMember
 
 	pro sharedMethodBackingIsAlias from var
 
-	pro testMethod from var
+	get testMethods as IList<of TestMethod>
+		if _testMethods is nil, _testMethods = List<of TestMethod>()
+		return _testMethods to !
 
 	get isAbstract as bool
 		return 'abstract' in _isNames
@@ -277,8 +279,8 @@ class BoxMember
 				_isNames.add('virtual')
 		for attrib in _attribs
 			attrib.bindInt
-		if _testMethod
-			_testMethod.bindInt
+		if _testMethods and _testMethods.count
+			for tm in _testMethods, tm.bindInt
 
 	def bindImp as dynamic
 		assert not .parentBox.isConstructed
@@ -289,7 +291,8 @@ class BoxMember
 		assert .didBindInt  # class members should have always received a bindInt first
 		assert not .parentBox.isConstructed  # not expecting to bindImp on a constructed type
 		for attrib in _attribs, attrib.bindImp
-		if _testMethod, _testMethod.bindImp
+		if _testMethods and _testMethods.count
+			for tm in _testMethods, tm.bindImp
 
 	def usesBase
 		# Needed by AbstractMethod and ProperDexer
@@ -1623,8 +1626,7 @@ class MemberOverload inherits BoxMember is partial
 		# rename the test members of the overload by suffixing them with '_o1' '_o2' etc.
 
 		for i, member in _members.numbered
-			if member.testMethod
-				member.testMethod.overloadId = i+1
+			for tm in member.testMethods, tm.overloadId = i+1
 
 		# TODO: error if the two members have the same arguments
 
