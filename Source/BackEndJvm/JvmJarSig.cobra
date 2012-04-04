@@ -26,7 +26,7 @@ class JarSig
 			"""All classes found in all jars keyed by canonical/full name."""
 			
 	
-		var nameRemaps = {
+		var virtualNameRemaps = {
 			'java.lang.Decimal' : 'java.lang.Double', # BigDecimal eventually with (lotta) codegen support
 			'java.lang.UByte'   : 'java.lang.Short',
 			'java.lang.UShort'  : 'java.lang.Integer',
@@ -42,7 +42,7 @@ class JarSig
 			This is intended to be the only way to access the JarSig classCache contents from outside this file.
 			"""
 			assert fullCobraName[0].isUpper
-			#fullCobraName = .nameRemaps.get(fullCobraName, fullCobraName)
+			#fullCobraName = .virtualNameRemaps.get(fullCobraName, fullCobraName)
 			parts = fullCobraName.split('.')
 			for i in 0: parts.length-1
 				parts[i] = parts[i][0].toLower.toString + parts[i][1:]
@@ -188,6 +188,13 @@ class JarSig
 		_genTypesList
 		_aliasPrimitives
 
+		if jarName == 'rt.jar'	# special for system jarfile
+			# these name remaps will probably need some codegen special handling. 
+			_dupVirtuals
+			_nonGenericCommon
+
+			
+
 	def _genTypesList
 		jarName = if(.name.endsWith('.sig'), .name[:-4], .name)
 		fileName = JarSig.sigFile(jarName)
@@ -236,39 +243,40 @@ class JarSig
 		JarSig.classByNameCache['float']   = JarSig.classByNameCache['java.lang.Float'] 
 		JarSig.classByNameCache['double']  = JarSig.classByNameCache['java.lang.Double'] 
 			
-		# these name remaps will probably need some codegen special handling. 
-		_dupVirtuals
-		_nonGenericCommon
-
 	def _dupVirtuals
-		for dupName in .nameRemaps.keys
-			dupOf = .nameRemaps[dupName]
+		# Make cache and jar export entries for virtualised types that dont exist in java
+		# but cobra has and expects to be distinct. They get remapped to an existing Java Type
+		for dupName in .virtualNameRemaps.keys
+			dupOf = .virtualNameRemaps[dupName]
 			_dupClassTo(dupOf, dupName)
 			
 	def _nonGenericCommon		
-		#pass
+		# spoof generic Instances for cobra non generic Types that java genericises
 		#	'java.util.Collection'   : 'java.util.Collection<Object>',
 		#_dupClassTo( 'java.util.Collection', 'java.util.Collection<Object>')
 		_makeGenericInstance('java.util.Collection<Object>')  # for ICollection/Java.Util.Collection<of Object>
 		# probably others yet
 				
 	def _dupClassTo(dupOfName as String, asName as String)
-		ct = JarSig.classByNameCache[dupOfName] 
-		parts = asName.split('.')
-		name = parts[parts.length-1]
-		package = parts[0:-1].join('.') # all but last
-		ct = ct.copy(name, package)
-		JarSig.classByNameCache[asName] = ct
+		if JarSig.classByNameCache.containsKey(asName) # already cached
+			ct = JarSig.classByNameCache[asName] 
+		else
+			ct = JarSig.classByNameCache[dupOfName] 
+			parts = asName.split('.')
+			name = parts[parts.length-1]
+			package = parts[0:-1].join('.') # all but last
+			ct = ct.copy(name, package)
+			JarSig.classByNameCache[asName] = ct
 		_javaTypes.add(ct)
 		
 	def _makeGenericInstance(fullName as String)
 		# cached AND exposed to namespace
 		assert fullName.contains('<')
-		.addGenericInstClass(fullName)
+		if not JarSig.classByNameCache.containsKey(fullName) # already cached
+			.addGenericInstClass(fullName)
 		giCls = JarSig.classByNameCache[fullName]
-		print giCls.canonicalName
+		#print giCls.canonicalName
 		_javaTypes.add(giCls)
-			#_registerClassType(giCls)	
 		
 	def getExportedTypes as JavaClassType*
 		return _javaTypes
@@ -403,7 +411,9 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 				field.modifiers = _parseList(_popTop(lines), [c' '])
 				field.typeName = _popTop(lines)
 				if type == JavaType.JavaEnum  and field.typeName == absName #'[pkg].[name]'
-					field.value = _popTop(lines)	
+					t = _peekTop(lines)
+					if t.length - t.trimStart.length > 8 
+						field.value = _popTop(lines)	
 				#field.attributes = _parseList(_popTop(lines))
 				fieldList.add(field)
 
@@ -486,6 +496,12 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 				if not e.length, continue
 			break
 		return e.trim
+
+	def _peekTop(content as List<of String>) as String is shared 	
+		if content.count == 0
+			return ''
+		return content[0]
+			
 		
 	# property: get<Propname> and no paramList and returnType is Property Type or
 	#			is<PropName> and no paramList and returnType is bool
@@ -602,11 +618,15 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 		# special case naming weirdnesses of Java lib classes
 		if .canonicalName == 'java.lang.String'
 			getterName, setterName = 'charAt', ''
+		else if .canonicalName.startsWith('java.util.List`')
+			getterName, setterName = 'get', 'set'
+		else if .canonicalName.startsWith('java.util.Map`')
+			getterName, setterName = 'get', 'put'
 		else 
 			for ifcName in .interfaceNames # TODO also chase up interface inheritance tree
-				if ifcName.startsWith('java.util.List')
+				if ifcName.startsWith('java.util.List`')
 					getterName, setterName = 'get', 'set'
-				else if ifcName.startsWith('java.util.Map')
+				else if ifcName.startsWith('java.util.Map`')
 					getterName, setterName = 'get', 'put'
 
 		#TODO also check for specially annotated methods
@@ -614,10 +634,16 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 		assert getterName.length
 		getMethod, setMethod = _lookForMethods(getterName, setterName)
 		if getMethod or setMethod
-			idxrProp = _genAProp('_synthesizedIdxr', getMethod, setMethod, true)
+			idxrProp =  _genAProp('[.canonicalName]_synthesizedIdxr', getMethod, setMethod, true)
 			_props.add(idxrProp)
 			_indexer = idxrProp
-			print 'dbg: [.canonicalName] has IndexerMethods [getterName] and [setterName] '
+			sb = StringBuilder('= ')
+			if getMethod
+				sb.append(getterName)
+				if setMethod, sb.append(',')
+			if setMethod
+				sb.append(setterName)
+			print 'dbg: [.canonicalName] indexerMethods [sb.toString] '
 		#else
 		#	print 'dbg: No IndexerMethods [getterName]/[setterName] on [.canonicalName]'
 				
@@ -1150,6 +1176,8 @@ class JavaMethodInfo inherits JavaCtorInfo
 		sb = StringBuilder('def [nampar] ')
 		if .returnTypeName.length
 			sb.append('as [.returnTypeName] ')
+		else
+			sb.append('as ??? ')
 		if .modifiers.count 
 			sb.append('is ')
 			sep=''

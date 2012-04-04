@@ -14,13 +14,13 @@ public class DynamicOperationException extends RuntimeException
    // The base class for all dynamic operation exceptions.
    //"""
 
-    public DynamicOperationException(String message) { this(message, nil); }
-    public DynamicOperationException(String message, cause as Exception ) {super(message, cause); }
+    public DynamicOperationException(String message) { this(message, null); }
+    public DynamicOperationException(String message, Exception cause) {super(message, cause); }
 }
 
 class CannotEnumerateException extends DynamicOperationException 
 {
-    public CannotEnumerateException (String message) {this(message, nil); }
+    public CannotEnumerateException (String message) {this(message, null); }
     public CannotEnumerateException (String message, Exception cause) {super(message, cause); }
 }		
 		
@@ -30,15 +30,15 @@ class UnknownMemberException extends DynamicOperationException
     protected String _name;
     Class _type;
 
-    public UnknownMemberException(Object obj, String name as String, Class type) {  this(obj, name, type, nil);}
-    public UnknownMemberException(Object obj, String name as String, Class type, Exception cause) 
+    public UnknownMemberException(Object obj, String name, Class type) {  this(obj, name, type, null);}
+    public UnknownMemberException(Object obj, String name, Class type, Exception cause) 
     {
 	super(String.format("obj=%s, name=%s, type=%s", 
                   CobraCore.toTechString(obj), CobraCore.toTechString(name), type),
               cause);
         this._obj = obj;
         this._name = name;
-        this.type = type;
+        this._type = type;
     }
 }
 

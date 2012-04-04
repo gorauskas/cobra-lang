@@ -1,6 +1,6 @@
 /* 
- * java code for cobra assert exception ( placeholder currently)
- * Initially using java assertion till this is working
+ * java code for cobra assert exception 
+ *  ( Root class of Cobra Assertions and contracts exceptions)
  * 
  * Exceptions for Assertions, contracts, etc.
  */
@@ -10,7 +10,7 @@ package cobra.lang;
 import java.util.*;
 
 
-class AssertException extends RuntimeException //implements IHasSourceSite, HasAppendNonPropertyKeyValues
+public class AssertException extends RuntimeException //implements IHasSourceSite, HasAppendNonPropertyKeyValues
 //		has DetailedStackTrace(false)
 {
     protected Object _this;
@@ -36,6 +36,22 @@ class AssertException extends RuntimeException //implements IHasSourceSite, HasA
         _info = info;
     }
     
+    public AssertException(/*SourceSite*/ Object sourceSite, Object[] expressionsArr /*dynamic */, 
+              Object thiss, Object info /*dynamic? */)
+    {
+        this(sourceSite, expressionsArr, thiss, info, null);
+    }
+
+    public AssertException(/*SourceSite*/ Object sourceSite, Object[] expressionsArr /*dynamic */, 
+              Object thiss, Object info /*dynamic?*/, Exception innerExc)
+    {
+        super("assert", innerExc);
+        _sourceSite = sourceSite;
+        _expressions = Arrays.asList(expressionsArr);
+        _this = thiss;
+        _info = info;
+    }
+
     // Property this
     public Object getThis() { return _this; }
 	
@@ -142,145 +158,3 @@ class AssertException extends RuntimeException //implements IHasSourceSite, HasA
 */
 
 }
-
-class InvariantException extends AssertException 
-{
-    public InvariantException(/*SourceSite*/ Object sourceSite, 
-              java.util.List<Object> expressions /*dynamic */,  Object thiss, Object info /*dynamic? */) 
-    {
-        this(sourceSite, expressions, thiss, info, null);
-    }
-    
-    public InvariantException(/*SourceSite*/ Object sourceSite, 
-              java.util.List<Object> expressions /*dynamic */, Object thiss, Object info /*dynamic? */, 
-              Exception cause)
-    {
-        super(sourceSite, expressions, thiss, info, cause);
-    }
-}
-
-class RequireException extends AssertException
-{
-    protected RequireException _next;
-
-    public RequireException(/*SourceSite*/ Object sourceSite, 
-              java.util.List<Object> expressions /*dynamic */, 
-              Object thiss, 
-              Object info /*dynamic? */) 
-    {
-        this(sourceSite, expressions, thiss, info, null);
-    }
-    
-    public RequireException(/*SourceSite*/ Object sourceSite, 
-              java.util.List<Object> expressions /*dynamic */,  
-              Object thiss, 
-              Object info /*dynamic? */,
-              Exception cause )
-          {
-              super(sourceSite, expressions, thiss, info, cause);
-          }    
-    
-    //Property RequireException next
-    public RequireException getNext() { return this._next;}
-    public void setNext(RequireException value) { this._next = value; }
-}
-
-
-class EnsureException extends AssertException
-{
-
-    public EnsureException(/*SourceSite*/ Object sourceSite, 
-              java.util.List<Object> expressions /*dynamic */, 
-              Object thiss, 
-              Object info /*dynamic? */) 
-    {
-        this(sourceSite, expressions, thiss, info, null);
-    }
-
-    public EnsureException(/*SourceSite*/ Object sourceSite, 
-              java.util.List<Object> expressions /*dynamic */,  
-              Object thiss, 
-              Object info /*dynamic? */,
-              Exception cause)
-          {
-              super(sourceSite, expressions, thiss, info, cause);
-          }    
-}
-
-class NonNilCastException extends AssertException
-{
-
-    public NonNilCastException(/*SourceSite*/ Object sourceSite, 
-              java.util.List<Object> expressions /*dynamic */, 
-              Object thiss, 
-              Object info /*dynamic? */) 
-    {
-        this(sourceSite, expressions, thiss, info, null);
-    }
-
-
-    public NonNilCastException(/*SourceSite*/ Object sourceSite, 
-              java.util.List<Object> expressions /*dynamic */,  
-              Object thiss, 
-              Object info /*dynamic? */,
-              Exception cause )
-          {
-              super(sourceSite, expressions, thiss, info, cause);
-          }    
-
-    @Override
-    public String getMessage() {
-        return String.format("Cast to non-nil failed.%s%s", this.nl, super.getMessage() ) ;
-    }
-}
-
-
-
-/*	## Misc exceptions
-
-	class ExpectException inherits Exception
-
-		cue init(expectedExceptionType as Type, actualException as Exception?)
-			base.init
-			_expectedExceptionType = expectedExceptionType
-			_actualException = actualException
-	
-		get expectedExceptionType from var as Type
-	
-		get actualException from var as Exception?
-
-		get message as String? is override
-			sb = StringBuilder()
-			sb.append('Expecting exception: [_expectedExceptionType.name], but ')
-			if _actualException
-				sb.append('a different exception was thrown: [_actualException]')
-			else
-				sb.append('no exception was thrown.')
-			return sb.toString
-
-
-	class FallThroughException inherits Exception
-
-		cue init
-			.init(nil)
-			pass
-
-		cue init(info as Object?)
-			base.init
-			_info = info
-
-		cue init(info as Object?, innerExc as Exception?)
-			base.init(nil, innerExc)
-			_info = info
-
-		get message as String is override
-			return 'info=[CobraCore.toTechString(_info)]'
-
-		get info from var as Object?
-
-
-	class SliceException inherits SystemException
-
-		cue init(msg as String?)
-			base.init
-*/

@@ -51,7 +51,7 @@ import java.lang.reflect.*;
 public abstract class PkgSig { 
     
     static public class ClassComparator implements Comparator<Class> {
-        public int compare( Class cl, Class cl1) {
+        public int compare(Class cl, Class cl1) {
         String n0 = cl.getName();
         String n1 = cl1.getName();
         return n0.compareTo(n1);
@@ -103,25 +103,25 @@ public abstract class PkgSig {
            Enumeration files = null;
            JarFile module = null;
            // for each classpath ...
-           File classPath = new File( (URL.class).isInstance(classPaths[h]) ?
+           File classPath = new File((URL.class).isInstance(classPaths[h]) ?
                                   ((URL)classPaths[h]).getFile() : classPaths[h].toString() );
-           if ( classPath.isDirectory() /*&& jarFilter == null*/){   // is our classpath a directory and jar filters are not active?
+           if (classPath.isDirectory() /*&& jarFilter == null*/){   // is our classpath a directory and jar filters are not active?
                List<String> dirListing = new ArrayList();
                // get a recursive listing of this classpath
                recursivelyListDir(dirListing, classPath, new StringBuffer() );
                // an enumeration wrapping our list of files
-               files = Collections.enumeration( dirListing );
-           } else if( classPath.getName().endsWith(".jar") ) {    // is our classpath a jar?
+               files = Collections.enumeration(dirListing );
+           } else if(classPath.getName().endsWith(".jar") ) {    // is our classpath a jar?
                // skip any jars not list in the filter
                if (! classPath.exists())
                    continue;
 
-               if ( jarFilter != null && !jarFilter.contains( classPath.getName() ) )
+               if (jarFilter != null && !jarFilter.contains(classPath.getName()))
                    continue;
 
                try {
                    // if our resource is a jar, instantiate a jarfile using the full path to resource
-                   module = new JarFile( classPath );
+                   module = new JarFile(classPath);
                } catch (MalformedURLException mue){
                    throw new ClassNotFoundException("Bad classpath. Error: " + mue.getMessage());
                } catch (IOException io){
@@ -134,10 +134,10 @@ public abstract class PkgSig {
            }
       
            // for each file path in our directory or jar
-           while( files != null && files.hasMoreElements() ){
+           while (files != null && files.hasMoreElements()) {
                String fileName = files.nextElement().toString();         // get each fileName
     
-               if ( fileName.endsWith(".class") ) {
+               if (fileName.endsWith(".class")) {
                    processFile(fileName, classLoader, packageFilter, null, allClasses);
                }
                else if ( fileName.endsWith(".jar") ) {
@@ -279,9 +279,15 @@ public abstract class PkgSig {
         int m = theClass.getModifiers();
         //if( java.lang.reflect.Modifier.isPublic(m) )
         //if( ! java.lang.reflect.Modifier.isPrivate(m) )
-        if(  Modifier.isPublic(m) || Modifier.isProtected(m) )
+        if(  Modifier.isPublic(m) || Modifier.isProtected(m) ) {
             allClasses.add( theClass );
-
+        }
+                                    
+        // special case for pkgPrivate java.lang.AbstractStringBuilder parent of public String{Buffer,Builder}
+        if ( ClassSig.isPkgPrivate(m) && theClass.getName().equals("java.lang.AbstractStringBuilder") ) {
+            allClasses.add( theClass );
+        }
+                                          
         // skip interfaces
         //if( theClass.isInterface() ){
         //  continue;
@@ -475,7 +481,7 @@ class ClassSig {
         this.indent--;
     }
     
-    public boolean isPkgPrivate(int m) {
+    static public boolean isPkgPrivate(int m) {
         // if (!cobraGen)
         //  return false
 
@@ -601,7 +607,8 @@ class ClassSig {
                 printIndent();
                 String typeName = f.getType().getName();
                 System.out.printf("%s\n", typeName);
-                if ( f.getType().isEnum()) {
+                //if ( f.getType().isEnum()) {
+                if ( f.isEnumConstant()) {
                     this.indent++;
                     printIndent();
                     System.out.printf("%d\n", Enum.valueOf( this.cls, f.getName()).ordinal() );

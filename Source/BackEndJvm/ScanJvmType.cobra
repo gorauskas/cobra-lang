@@ -184,7 +184,7 @@ class Compiler is partial
 		_fix('Java.Lang.Object', 'toString getClass clone')
 			# ^ regarding .toString, not technically true, but common enough and life is too painful when the return type is nilable
 		#_fix('java.lang.System', 'out') #stdout
-		_fix('Java.Lang.String', 'concat remove replace replaceAll replaceFirst substring toLowerCase toUpperCase trim format')
+		_fix('Java.Lang.String', r'[] length charAt concat remove replace replaceAll replaceFirst substring toLowerCase toUpperCase trim format')
 		#_fix('System.Type', 'assembly name toString')
 			# namespace can return nil if the Type is a generic parameter
 		#_fix('System.Environment', 'commandLine currentDirectory newLine version')
@@ -340,14 +340,14 @@ class Box is partial
 		return .name == 'Exception' and .parentNameSpace and .parentNameSpace.fullName == 'Java.Lang'
 
 	def prepSystemObjectClassJvm
-		# TODO chk thats this has desired result.
+		# TODO chk thats this has desired result. 
 		# map method getType to java getClass
 		# C#'s typeof(X) is X.getType in Cobra.
 		#existing = .declForName('getClass') to BoxMember
 		#overload = MemberOverload(existing)
 		#.registerOverload(overload)
 		meth = Method(TokenFix.empty, TokenFix.empty, this, 'getType', List<of Param>(), .compiler.typeTypeProxy, nil, ['shared'], AttributeList(), 'Returns the Type instance that defines this type.')
-		meth.sharedMethodBacking = 'getClass' 
+		meth.aliasedMethodBacking = 'getClass' 
 		#meth.sharedMethodBackingIsAlias = true # not static
 		#overload.addMember(meth)
 		.addDecl(meth)
@@ -398,13 +398,16 @@ class Box is partial
 			if (lastDecl to Object).getType.getProperty('ParentBox')  # CC: if lastDecl responds to (get parentBox as Box?)
 				lastDecl.parentBox = this
 
-
+	def _isStaticConstant( fi as JavaFieldInfo) as bool
+		return fi.isStatic or fi.name == fi.name.toUpper
+		
 	def _scanJvmFields
 		for fieldInfo in _jvmType.getFields
 			#if fieldInfo.declaringType is not _jvmType, continue
 			if fieldInfo.isDefault, continue	# pkgprivate
 			if fieldInfo.isPrivate, continue
-			name = Utils.cobraNameForNativeMemberName(fieldInfo.name)
+			# Unlike C# leave all static constant fieldnames ((mostly) upcase) as is
+			name = if( _isStaticConstant(fieldInfo), fieldInfo.name, Utils.cobraNameForNativeMemberName(fieldInfo.name))
 			type = _jvmMemberTypeResultProxy(fieldInfo, fieldInfo.type)
 			attrs = AttributeList()
 			if fieldInfo.isProtected
@@ -490,7 +493,10 @@ class Box is partial
 			if propInfo.isWritable
 				prop.makeSetPart(TokenFix.empty)
 			if _declsByName.containsKey(prop.name) # for 			# Double.naN
-				print 'DUP name exists already for property "[prop.name]" on', /#_declsByName[prop.name],#/ .name
+				# unfortunately its common for java libs to use method length() rather than getLength()
+				# lose this when enable postSigFixups handling
+				if prop.name <> 'length'
+					print 'DUP name exists already for property "[prop.name]" on', /#_declsByName[prop.name],#/ .name
 				return # just drop the property; field or method still available
 			.addDecl(prop)
 

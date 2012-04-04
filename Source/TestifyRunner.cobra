@@ -254,7 +254,8 @@ class TestifyRunner
 		options['debugging-tips'] = false
 		options['embed-run-time'] = false
 		options['verbosity'] = 2
-		# trace options
+		options['back-end'] = .options['back-end']
+		#trace options
 		return options to !
 
 	def testifyFinish(message as String)
@@ -385,8 +386,8 @@ class TestifyRunner
 
 		_statusWriter.writeLine('([_statusCount]) [baseName]')
 		_statusCount += 1
+		
 		assert File.exists(baseName)
-
 		source = File.readAllText(baseName)
 
 		print
@@ -470,7 +471,7 @@ class TestifyRunner
 				continue
 
 			if firstLineInsensitive.startsWith('#.require.')
-				rtPlatform  = CobraCore.runtimePlatform
+				rtPlatform = options['back-end']
 				what = firstLineInsensitive[10:]
 				branch what
 					on 'mono'
@@ -738,7 +739,8 @@ class TestifyRunner
 		return 1
 
 	def _testifyRun(c as Compiler) as int
-		if not c.fullExeFileName.endsWith('.exe')
+		if not c.backEnd.isRunnableFile(c.fullExeFileName)
+			# below assumes created file placed in cwd
 			if File.exists(c.fullExeFileName)
 				print 'Produced file "[c.fullExeFileName]" as expected.'
 				return 1
@@ -748,11 +750,9 @@ class TestifyRunner
 				return 0
 		else
 			print 'Run:'
-			if .verbosity >= 1
-				print 'c.fullExeFileName = "[c.fullExeFileName]"'
+			if .verbosity >= 1, print 'c.fullExeFileName = "[c.fullExeFileName]"'
 			p = c.runProcess
-			if .verbosity >= 2
-				print '[p.startInfo.fileName] [p.startInfo.arguments]'
+			if .verbosity >= 2, print '[p.startInfo.fileName] [p.startInfo.arguments]'
 			output = CobraCore.runAndCaptureAllOutput(p).trim
 
 			print 'Output:'

@@ -178,8 +178,8 @@ class Compiler is partial
 	def _parseJavaCompilerOutput(output as String)
 		jcm as JavaCompilationMessage? = nil
 		for line in output.split(c'\n')
-			line = line.trim
-			if not line.length, continue
+			line0 = line.trim
+			if not line0.length, continue
 			if JavaCompilationMessage.willSkipMessage(line)
 				if jcm, jcm.append(line, this)
 				continue
@@ -511,10 +511,10 @@ class NameSpace is partial
 		return .fullName + .javaSuffix
 
 	get javaQualifier as String
-		ensure result.endsWith('.')
-		# TODO : Fix this with correct Namespace setup for java
-		#if .fullName == 'System'
-		#	return 'java.lang.'
+		ensure result.endsWith('.') or result.length == 0
+		# suppress naming of 'global' default namespace
+		if .fullName.toLower == 'global'
+			return ''
 		javaName = 	.fullName.toLower # java idiom is all lowercase for packages
 		return  javaName + .javaSuffix + '.'
 	
@@ -1914,7 +1914,6 @@ class Stmt is partial
 		.writeJavaSetLine(sw)
 		.writeJavaDef(sw)
 
-
 class AssertStmt is partial
 
 	def writeJavaDef(sw as CurlyWriter)
@@ -1922,14 +1921,12 @@ class AssertStmt is partial
 		if not .compiler.options.boolValue('include-asserts')
 			return
 		sw.write('if (cobra.lang.CobraCore._willCheckAssert')
-		# TODO - implement cobra assertions - needs cobra assertException + Sourcesite
-		/# 
+		 
 		sw.write(' && !')
 		_expr.writeJavaDef(sw)
 		sw.write(')\n')
 		sw.indent
 		
-		# TODO later Implement SourceSite and CobraLang AssertException 
 		sw.write('throw new cobra.lang.AssertException([.javaSourceSite], ')
 		_expr.writeJavaBreakdown(sw)
 		sw.write('[.javaThis], ')
@@ -1939,8 +1936,8 @@ class AssertStmt is partial
 			sw.write('null')
 		sw.write(');\n')
 		sw.dedent
-		#/
 		
+		/#
 		# use java asserts initially at least
 		sw.write(')\n')
 		sw.indent
@@ -1962,7 +1959,7 @@ class AssertStmt is partial
 			_info.writeJavaDef(sw)
 		sw.write(';\n')
 		sw.dedent
-
+		#/
 
 class BlockStmt is partial
 
@@ -2094,8 +2091,21 @@ class ForStmt is partial
 
 
 class OldForNumericStmt is partial
+	# We dont support this in Java
 
-	def writeJavaDef(sw as CurlyWriter)
+	def writeJavaDef(sw as CurlyWriter) is override
+		varName = _var.javaName
+		sw.write('Error-Old-Numeric-Form-unsupported;\n')
+		sw.write('// Old Numeric For form is obsolete and not supported - convert cobra code to new form "for [varName] in start : stop : step "\n')
+		sw.write('// Should become something like "for [varName] in ')
+		_start.writeJavaDef(sw)
+		sw.write(':')
+		_stop.writeJavaDef(sw)
+		if _step
+			sw.write(':')
+			_step.writeJavaDef(sw, false)			
+		sw.write('"\n')
+		/#
 		base.writeJavaDef(sw)
 		varName = _var.javaName
 		trackLocals = .compiler.willTrackLocals
@@ -2129,7 +2139,7 @@ class OldForNumericStmt is partial
 				else, sw.write('[varName]--')
 		sw.write(')')
 		_block.writeJavaDef(sw)
-
+		#/
 
 class ForNumericStmt is partial
 
@@ -2375,7 +2385,144 @@ class ReturnStmt is partial
 				sw.write(';\n')
 		else
 			sw.write('return;\n')
+			
+class TraceStmt
+	is partial
 
+	pass
+
+
+class TraceLocationStmt
+	is partial
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		if .includeTraces
+			sw.write('CobraLangInternal.CobraCore.Tracer.Trace([.javaSourceSite]);\n')
+
+
+class TraceAllStmt
+	is partial
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		if .includeTraces
+			sw.write('CobraLangInternal.CobraCore.Tracer.Trace([.javaSourceSite], "this", [_codePart.javaThis]')
+			for param in _codePart.params
+				sw.write(', "[param.name]", [param.javaName]')
+			for local in _codePart.locals
+				sw.write(', "[local.name]", [local.javaName]')
+			sw.write(');\n')
+
+
+class TraceExprsStmt
+	is partial
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		if .includeTraces
+			sw.write('CobraLangInternal.CobraCore.Tracer.Trace([.javaSourceSite]')
+			sep = ', '
+			for expr in _exprs
+				sw.write('[sep][Utils.javaStringLiteralFor(expr.toCobraSource)][sep]')
+				expr.writeJavaDef(sw, false)
+			sw.write(');\n')
+			
+
+class UsingStmt
+	is partial
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		name = _var.javaName
+		sw.write('// using - needs work\n')
+		# should extend this so takes an initialisation block rather than single initExpr
+		sw.write('try ')
+		sw.write('[name] = ')
+		_initExpr.writeJavaDef(sw)
+		sw.write(';\n')
+		_block.writeJavaDef(sw)
+		
+		# by hand ( w/o java7
+		if false
+			sw.write('[name] = ')
+			_initExpr.writeJavaDef(sw)
+			sw.write(';try\n')
+			_block.writeJavaDef(sw)
+			sw.write('finally {\n')
+			sw.indent
+			if _var.type.isReference
+				sw.write('if ([name]!=null) { ((java.lang.AutoCloseable)[name]).close(); [name] = null; }\n')
+			else
+				sw.write('((java.lang.AutoCloseable)[name]).close();\n')
+			sw.dedentAndWrite('}\n')
+
+
+class WhileStmt
+	is partial
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		sw.write('while (')
+		_expr.writeJavaDef(sw, false)
+		sw.write(')')
+		_block.writeJavaDef(sw)
+
+
+class PostWhileStmt
+	is partial
+
+	def writeJavaDef(sw as CurlyWriter) is override
+		# base.writeSharpDef(sw) - don't generate the other form of while loop
+		sw.write('do')
+		_block.writeJavaDef(sw, false)
+		sw.dedent
+		sw.write('} while (')
+		_expr.writeJavaDef(sw, false)
+		sw.write(');\n')
+		
+class YieldStmt
+	is partial
+
+	pass
+
+
+class YieldBreakStmt
+	is partial
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		sw.write('yield break;\n')
+
+
+class YieldReturnStmt
+	is partial
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		ensurePart = .compiler.curCodeMember.ensurePart
+		willEnsure = ensurePart and ensurePart.willGenerateCode
+		if willEnsure
+			sw.write('_lh_canEnsure = true;\n')
+		if _expr
+			backEndResultVarName = .compiler.curCodeMember.backEndResultVarName
+			if willEnsure and backEndResultVarName.length
+				# TODO: resolve yield return with ensure
+				# sw.write('yield return [backEndResultVarName]=')
+				# so for now:
+				sw.write('yield return ')
+				_expr.writeJavaDefInContext(sw)
+				sw.write(';\n')
+			else
+				sw.write('yield return ')
+				_expr.writeJavaDefInContext(sw)
+				sw.write(';\n')
+		else
+			sw.write('yield return;\n')
+
+		
+			
+			
 
 ##
 ## Expressions
@@ -2443,7 +2590,7 @@ class Expr is partial
 		sw.write(';\n')
 
 	def writeJavaBreakdown(sw as CurlyWriter)
-		sw.write(r'new object[] { 0')
+		sw.write(r'new Object[] { 0')
 		.writeJavaBreakdownItems(sw)
 		sw.write('}, ')
 
@@ -2459,7 +2606,26 @@ class Expr is partial
 	def writeJavaDefForBreakdown(sw as CurlyWriter)
 		.writeJavaDef(sw)
 
-
+	def _mapJavaTypeToClass(typeName as String, defaultSuffix as String) as String
+		# support for getClass and primitive mapping
+		if typeName == 'int', typeName = 'Integer.TYPE'
+		else if typeName == 'bool', typeName = 'Boolean.TYPE'
+		else if typeName == 'char', typeName = 'Character.TYPE'
+		else, typeName = typeName + defaultSuffix
+		#else if typeName == 'byte', typeName = 'Byte.TYPE'
+		#else if typeName == 'sbyte', typeName = 'Byte.TYPE'
+		#else if typeName == 'short', typeName = 'Short.TYPE'
+		#else if typeName == 'int16', typeName = 'Short.TYPE'
+		#else if typeName == 'int32', typeName = 'Integer.TYPE'
+		#else if typeName == 'long', typeName = 'Long.TYPE'
+		#else if typeName == 'int64', typeName = 'Long.TYPE'
+		#else if typeName == 'float', typeName = 'Float.TYPE'
+		#else if typeName == 'float32', typeName = 'Float.TYPE'
+		#else if typeName == 'double', typeName = 'Double.TYPE'
+		#else if typeName == 'float64', typeName = 'Double.TYPE'
+		#else, typeName = typeName + defaultSuffix
+		return typeName
+		
 class NameExpr is partial
 
 	get asJava as String
@@ -2560,11 +2726,12 @@ class IdentifierExpr is partial
 
 	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
 		# recall that this cannot be the right side of "foo.bar" since that is a MemberExpr
-		javaRef = .javaQualification + .javaName
-		if _requiresGetClass, javaRef = javaRef + '.getClass()'
-		#print 'Dbg: IdExpr::', javaRef
-		sw.write(javaRef)
-
+		name = .javaQualification + .javaName
+		if _requiresGetClass 
+			name = _getClass(name)
+		#name = _mapJavaTypeToClass(name, '')
+		sw.write(name)
+		
 	get javaQualification as String
 		qual = ''
 		if .definition inherits IVar
@@ -2573,7 +2740,6 @@ class IdentifierExpr is partial
 		else
 			pn = .definition.parentNameSpace
 			if pn, qual = pn.javaQualifier
-		#print 'Dbg: IdExpr.qual::', qual
 		return qual
 		
 	get javaName as String
@@ -2591,7 +2757,7 @@ class IdentifierExpr is partial
 		if not .isTypeReference, return false
 		superNode = .superNode
 		if superNode inherits DotExpr, return false
-		if superNode inherits InheritsExpr, return false
+		#if superNode inherits InheritsExpr, return false
 		if superNode inherits PostCallExpr
 			if superNode.expr is this
 				return false
@@ -2614,9 +2780,19 @@ class IdentifierExpr is partial
 	def writeJavaDefForBreakdown(sw as CurlyWriter) is override
 		name = .javaQualification + .javaName
 		# _requiresGetClass may return false, but in the java def breakdown, .getClass is always required
-		if .isTypeReference, name = name + '.getClass()'
+		if .isTypeReference, name = _getClass(name)
+		#name = _mapJavaTypeToClass(name, '')
 		sw.write(name)
-
+		
+	def _getClass(name as String) as String
+		if .javaName.endsWith('.TYPE') # primitive already typed
+			return name
+		if not .javaName.startsWithLowerLetter 
+			name = name + '.class'
+		else
+			name = _mapJavaTypeToClass(name, '.getClass()')
+		return name
+		
 
 class IfExpr is partial
 
@@ -2695,7 +2871,8 @@ class IndexExpr is partial
 		if parens, sw.write(')')
 
 	def _lookupReadIndexer as JavaFieldInfo?
-		nt = JvmNativeType.nativeType(_target.type)
+		nt = JvmNativeType.nativeType(_target.type.nonNil)
+		#print 'dbg', _target.type.nonNil, nt
 		if nt 
 			ntIdxr = nt.indexer
 			if ntIdxr and ntIdxr.isReadable
@@ -2731,7 +2908,7 @@ class IsNilExpr is partial
 		sw.write('(')
 		_expr.writeJavaDef(sw)
 		sw.write(')')
-		sw.write('==null')
+		sw.write('== null')
 		if parens, sw.write(')')
 
 	def writeJavaBreakdownItems(sw as CurlyWriter)
@@ -2746,7 +2923,7 @@ class IsNotNilExpr is partial
 		sw.write('(')
 		_expr.writeJavaDef(sw)
 		sw.write(')')
-		sw.write('!=null')
+		sw.write('!= null')
 		if parens, sw.write(')')
 
 	def writeJavaBreakdownItems(sw as CurlyWriter)
@@ -2799,14 +2976,28 @@ class TypeExpr
 			#sw.write('typeof(')
 			sw.write('(')
 			sw.write(javaRef)
-			sw.write('.getClass()')
+			sw.write('.getClassX()')
 			sw.write(')')
-		else
+		else if _requiresRawType()
+			sw.write(javaRef)  # might need to map cobratypes like [u]int{8,16,32,64}
+		else	
+			javaRef = _mapJavaTypeToClass(javaRef, '.class')
 			sw.write(javaRef)
 
 	def _requiresGetClass as bool
 		return false 	# may need to extend later
 		
+	def _requiresRawType as bool
+		# In Java some places require class refs amd the Type of any primitives being used
+		superNode = .superNode
+		if superNode is nil
+			return false
+		if superNode inherits BinaryOpExpr  
+			if this is superNode.right
+				if superNode inherits InheritsExpr
+					return false
+		return true
+
 /#	def _requiresTypeOf as bool
 		# Cobra never requires that you wrap a type reference in typeof(Foo).
 		# C# requires typeof() in a variety of circumstances and won't accept it in a variety of others.
@@ -2831,8 +3022,13 @@ class TypeExpr
 	def writeJavaDefForBreakdown(sw as CurlyWriter) is override
 		#requiresTypeOf = _requiresTypeOf # using C# version currently - chop ?
 		#if not requiresTypeOf, sw.write('typeof(')
-		.writeJavaDef(sw)
+		#.writeJavaDef(sw)
 		#if not requiresTypeOf, sw.write(')')
+		
+		# Handle mapping primitives to their classes
+		#javaRef = _containedType.javaRef 
+		javaRef = _mapJavaTypeToClass(_containedType.javaRef, '.class')
+		sw.write(javaRef)
 
 		
 class UnaryOpExpr
@@ -3314,7 +3510,7 @@ class BinaryBoolExpr
 		javaNot = if(_op=='OR', '', '!')
 		sw.write(', [src], new cobra.lang.CobraDirectString([javaNot]')
 		_left.writeJavaDefForBreakdown(sw)
-		sw.write(' ? "(short-circuited)" : cobra.lang.CobraCore.ToTechString(')
+		sw.write(' ? "(short-circuited)" : cobra.lang.CobraCore.toTechString(')
 		_right.writeJavaDefForBreakdown(sw)
 		sw.write('))')
 
@@ -3610,6 +3806,7 @@ class DotExpr
 							sep = ', '
 					sw.write(')')
 					return
+				aliasedName = _dotRightExpr.definition.aliasedMethodBacking
 			# handle static typing
 			# don't write 'this' for shared members
 			writeThis = true
@@ -3626,7 +3823,10 @@ class DotExpr
 					_left.writeJavaDef(sw, not _left inherits DotExpr)
 				sw.write('.')
 			#print 'Dbg: dotExpr::', _left.toCobraSource, _right.toCobraSource
-			_right.writeJavaDef(sw, false)
+			if aliasedName
+				sw.write(aliasedName+'()')  # FTM assume no args
+			else
+				_right.writeJavaDef(sw, false)
 			if didSetInInitCall
 				Stmt.inInitCall = false
 
@@ -3638,9 +3838,18 @@ class InheritsExpr
 	is partial
 				
 	def _writeJavaDef(sw as CurlyWriter) is override
-		_left.writeJavaDef(sw)
-		sw.write(' instanceof ')
+		#_left.writeJavaDef(sw)
+		#sw.write(' instanceof ')
+		#_right.writeJavaDef(sw, false)
+
+		# Compiler generates error with instanceof for non intersecting instance and Type so
+	    # instead use runtime instance lookup
+		#  instead of 'e instanceof T'  becomes 'T.class.isInstance(e)'
 		_right.writeJavaDef(sw, false)
+		#sw.write('.class.isInstance(')
+		sw.write('.isInstance(')
+		_left.writeJavaDef(sw)
+		sw.write(' )')
 
 
 class ToExpr is partial

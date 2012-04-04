@@ -77,7 +77,37 @@ public class CobraImp {
         return s;
     }
     
-    static public Object checkNonNil(Object obj, String sourceCode, Object value, /* SourceSite */ String fileName, int lineNum, String className, String memberName, Object thiss) 
+    @SuppressWarnings("unchecked")
+    static public <T> List<T> makeList(T... args) {
+	return new ArrayList<T>(Arrays.asList(args));
+    }
+    
+    /*
+    @SuppressWarnings("unchecked")
+    static public <T> List<T> makeList(T... args) {
+	List<T> l = new ArrayList<T>();
+        for (T arg : args) {
+            l.add(arg);
+        }
+        return l;
+    }
+    */
+    
+    @SuppressWarnings("unchecked")
+    static public <T> Set<T> makeSet(T... args) {
+        return new HashSet<T>(Arrays.asList(args));
+    }
+    
+    @SuppressWarnings("unchecked") 
+    static public <K,V> Map<K,V> makeDict( Object... args) {
+	Map<K,V>  d = new HashMap<K,V>();
+	for (int i=0; i<args.length; i+=2)
+            d.put((K)args[i], (V)args[i+1]); //[unchecked] warning here
+	return d;
+    }
+    
+
+    static public <T> T checkNonNil(Object obj, String sourceCode, T value, /* SourceSite */ String fileName, int lineNum, String className, String memberName, Object thiss) 
     {
         // used for "x to !" and "someNilable to SomethingNotNilable"
         if (value == null) {
