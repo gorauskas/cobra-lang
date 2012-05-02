@@ -176,9 +176,12 @@ class InstallFromWorkspace
 		if _args.count > 0, return _args.join(' ')
 		else, return '-turbo'
 
-	def isRunningOnDotNet2 as bool
+	def isRunningOnCLR2 as bool
 		ver = Assembly.getAssembly(Object).imageRuntimeVersion
 		return ver.startsWith('v2.') or ver.startsWith('2.')
+
+	def isRunningOnWindows as bool
+		return not .isRunningOnUnix
 
 	def isRunningOnUnix as bool
 		"""
@@ -557,6 +560,21 @@ class InstallFromWorkspace
 
 	def locateGacUtil(startStage as bool)
 		if startStage, .startStage('Locate gacutil.exe')
+		errorMsg = 'Cannot locate a gacutil. Maybe you can try again using the "Visual Studio Command Prompt" or ".NET SDK Command Prompt".'
+		if _willForceDotNet4 and .isRunningOnCLR2 and .isRunningOnWindows
+			programFilesDir = Environment.getFolderPath(Environment.SpecialFolder.ProgramFiles)
+			if programFilesDir.length >= 2
+				drive = programFilesDir[0].toString
+			else
+				drive = 'C'
+			# the following is wrong as it will be gacutil 3.5:
+			# gacutil = drive + r':\Program Files (x86)\Microsoft SDKs\Windows\v7.0A\Bin\GacUtil.exe'
+			# gacutil 4.0 lives here:
+			gacutil = drive + r':\Program Files (x86)\Microsoft SDKs\Windows\v7.0A\Bin\NETFX 4.0 Tools\GacUtil.exe'
+			if File.exists(gacutil)
+				_gacutil = gacutil
+				return
+			.error(errorMsg)
 		slash = .slash
 		gacutil = 'gacutil'
 		p = Process()
@@ -610,11 +628,9 @@ class InstallFromWorkspace
 						# else, print path
 					if found, break
 
-		if not found
-			.error('Cannot locate a gacutil. Maybe you can try again using the "Visual Studio Command Prompt" or ".NET SDK Command Prompt".')
-
+		if not found, .error(errorMsg)
 		_gacutil = gacutil
-		print
+		if startStage, print
 
 	def buildCobraCompiler
 		.startStage('Build new Cobra compiler')
@@ -664,25 +680,30 @@ class InstallFromWorkspace
 
 	def installLibraryToGAC(name as String)
 		.startStage('Install [name] library to the GAC')
-		print 'Invoking Publish.GacInstall...'
 		dllName = name + '.dll'
-		try
-			Publish().gacInstall(dllName)
-			print 'Done.'
-			print
-		catch NotImplementedException
-			print 'Not implemented exception.'
-			print 'Will attempt to use gacutil.exe.'
+		if _willForceDotNet4 and .isRunningOnCLR2 and .isRunningOnWindows
+			# have to run gacutil command line
 			.locateGacUtil(false)
 			.runCommand(_gacutil, '-i [dllName] -f')
-		catch e as Exception
-			print '[e.getType] e.message'
+		else
+			try
+				print 'Invoking Publish.GacInstall...'
+				Publish().gacInstall(dllName)
+				print 'Done.'
+				print
+			catch NotImplementedException
+				print 'Not implemented exception.'
+				print 'Will attempt to use gacutil.exe.'
+				.locateGacUtil(false)
+				.runCommand(_gacutil, '-i [dllName] -f')
+			catch e as Exception
+				print '[e.getType] e.message'
 
 	def verifyGacInstallation(name as String)
 		# TODO: verify the version number: Cobra.Lang, Version=0.0.1.0
 		dllName = name + '.dll'
 		.startStage('Verifying [dllName] installed to the GAC')
-		if _willForceDotNet4 and .isRunningOnDotNet2
+		if _willForceDotNet4 and .isRunningOnCLR2
 			print 'Skipping due to running on .NET 2, but installed for .NET 4.'
 			print
 			return
