@@ -514,7 +514,7 @@ class CommandLine
 	"""
 
 	get versionString as String is shared
-		ensure result.count(c'.') >= 2
+		ensure result.count(c'.') >= 2 or result.startsWith('svn:')
 
 		# Can't just take CobraCore.versionDescription as is, because that will be the one from Snapshot,
 		# not the current Source directory. And Snapshot can be a final release such as '0.7.4' for a
@@ -523,8 +523,10 @@ class CommandLine
 
 		ver = 'svn:[CompileTimeInfo.subversionRevision] (post 0.8) / [CompileTimeInfo.date]'
 		# ver += ', informal release 2009-03-01'
-		ver += ' on ' + .clrVersion
 		return ver
+
+	get platformString as String is shared
+		return .clrVersion + ' on ' + .opSysString
 
 	get clrVersion as String is shared
 		""" Get runtime version, like '.NET CLR v4.0.30319' or 'Mono 2.6.7 CLR v2.0.50727'. """
@@ -540,6 +542,44 @@ class CommandLine
 			ver = '.NET'
 		ver += ' CLR ' + Assembly.getAssembly(Object).imageRuntimeVersion		
 		return ver
+
+	get opSysString as String is shared
+		name = ''
+		if File.exists('/System/Library/CoreServices/SystemVersion.plist')
+			# Mac
+			content = File.readAllText('/System/Library/CoreServices/SystemVersion.plist')
+			match = Regex.match(content, r'<string>(Mac[^<]+)')
+			if match.success
+				name += match.groups[1].toString
+			match = Regex.match(content, r'<string>(\d+\.[\d\.]+)')
+			if match.success
+				name += ' ' + match.groups[1].toString
+		else if File.exists('/etc/lsb-release')
+			# Ubuntu et al
+			content = File.readAllText('/etc/lsb-release')
+			d = Dictionary<of String, String>()
+			for line in content.splitLines
+				line = line.trim
+				if line == '' or line.startsWith('#') or '=' not in line, continue
+				pair = line.split('=', 2)
+				d[pair[0].trim] = d[pair[1].trim]
+			if d.containsKey('DISTRIB_DESCRIPTION'), name = d['DISTRIB_DESCRIPTION'].trim
+			if name == ''
+				try
+					name = d['DISTRIB_ID'] + ' ' + d['DISTRIB_RELEASE']
+				catch
+					pass
+		else if File.exists('/etc/system-release')
+			# CentOS et al
+			name = File.readAllText('/etc/system-release')
+		else if File.exists('/etc/redhat-release')
+			# RedHat et al
+			name = File.readAllText('/etc/redhat-release')
+		name = name.trim
+		if name == ''
+			# everyone else
+			name = Environment.osVersion.toString
+		return name
 
 	var _startTime as DateTime
 	var _verbosity = 0
@@ -944,6 +984,7 @@ class CommandLine
 	def doAbout
 		print
 		print 'The Cobra Programming Language [.versionString]'
+		print 'on [.platformString]'
 		print 'Copyright (C) 2003-[DateTime.now.year] by Cobra Language LLC.  All Rights Reserved.'
 		print ''
 		print 'On the web:  http://cobra-language.com/'
@@ -975,7 +1016,7 @@ class CommandLine
 		return width
 		
 	def doVersion
-		print .versionString
+		print .versionString + ' on ' + .platformString
 
 	def error(msg as String)
 		if msg.length
