@@ -576,11 +576,28 @@ class CommandLine
 		else if File.exists('/etc/redhat-release')
 			# RedHat et al
 			name = File.readAllText('/etc/redhat-release')
+		else if File.exists('/etc/arch-release')
+			name = 'Arch Linux ' + _getCommandOutput('/bin/uname', '-r')
+			pacman = _getCommandOutput('pacman', '--version')
+			match = Regex.match(pacman, r'[Pp]acman v?(\d+\.[\d\.]+)')
+			if match.success
+				name += ' (pacman ' + match.groups[1].toString + ')'
 		name = name.trim
 		if name == ''
 			# everyone else
 			name = Environment.osVersion.toString
 		return name
+
+	def _getCommandOutput(command as String, args as String) as String is shared
+		p = System.Diagnostics.Process()
+		p.startInfo.fileName = command
+		p.startInfo.arguments = args
+		p.startInfo.useShellExecute = false
+		try
+			return CobraCore.runAndCaptureAllOutput(p)
+		catch
+			# specific to users of this method: return '' rather than error
+			return ''
 
 	var _startTime as DateTime
 	var _verbosity = 0
