@@ -113,11 +113,11 @@ class InstallFromWorkspace
 			'flags': '-build-standard-library',
 			'files': 'Cobra.Lang/AssemblyAttrs.cobra',
 		},
-#		{
-#			'name': 'Cobra.Lang.Compiler',
-#			'flags': '-c -t:lib -namespace:Cobra.Lang.Compiler -files:files-to-compile.text',
-#			'files': 'cobra.cobra',
-#		},
+		{
+			'name': 'Cobra.Lang.Compiler',
+			'flags': '-c -t:lib -namespace:Cobra.Lang.Compiler -files:files-to-compile.text',
+			'files': 'cobra.cobra',
+		},
 	]
 
 	def main is shared
@@ -649,14 +649,18 @@ class InstallFromWorkspace
 		# It's called "base version" because it doesn't include any text after the numbers
 		# "0.8.0 post release" --> "0.8.0"
 		output = .runSourceCobra('-version')
-		re = Regex(r'\d+\.\d+\.\d+')
-		reMatch = re.match(output)
+		reMatch = Regex.match(output, r'svn:(\d+)')
 		if reMatch.success
 			assert reMatch.value
-			_baseVersion = reMatch.value
+			_baseVersion = 'svn-' + reMatch.groups[1].toString
 		else
-			.error('Could not extract base version number.')
-		_baseVersion += '-post'
+			reMatch = Regex.match(output, r'\d+\.\d+\.\d+')
+			if reMatch.success
+				assert reMatch.value
+				_baseVersion = reMatch.value
+			else
+				.error('Could not extract base version number.')
+			_baseVersion += '-post'
 		# check for an informal release
 		parent = Path.getFullPath('..')
 		if File.exists('[parent][.slash]InformalRelease.text')
