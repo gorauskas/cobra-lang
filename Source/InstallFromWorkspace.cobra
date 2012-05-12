@@ -871,7 +871,7 @@ class InstallFromWorkspace
 		.startStage('Install "cobra" into a system path directory')
 		commandName = if(.isRunningOnUnix, 'cobra', 'cobra.bat')
 		slash = .slash
-		paths = (Environment.getEnvironmentVariable('PATH') ? '').split(Path.pathSeparator)
+		paths = (Environment.getEnvironmentVariable('PATH') ? '').split(Path.pathSeparator).toList
 		for commandDir in paths
 			if commandDir == '.', continue  # skip the 'cobra' in the <workspace>/Source directory
 			# print 'checking path:', commandDir
@@ -883,10 +883,11 @@ class InstallFromWorkspace
 				print 'found in PATH:', commandPath
 				found = true
 				break
-		print
+#		print
 		baseBinDir = '[_targetDir][slash]bin'
 		if found
 			if String.compare(commandPath, '[baseBinDir][slash][commandName]', not .isRunningOnUnix) == 0
+				# e.g., if the PATH already points to the install directory
 				print 'Your PATH already contains [baseBinDir]'
 				print 'so you can invoke "cobra" from any directory.'
 			else
@@ -894,15 +895,9 @@ class InstallFromWorkspace
 					print 'The existing "cobra" in your path is the correct'
 					print 'symbolic link and has not been changed.'
 				else
-					print 'copy from:', _cobraCommandPath
-					print '       to:', commandPath
-					try, File.delete(commandPath)
-					catch Exception, pass
-					File.copy(_cobraCommandPath, commandPath, true)
-					print
-					print 'The existing "cobra" in your path at'
-					print commandPath
-					print 'has been replaced with the new one.'
+					.copyCobraCommandTo(commandPath, true)
+		else if '/usr/local/bin' in paths
+			.copyCobraCommandTo('/usr/local/bin/[commandName]', false)
 		else
 			# TODO: on unix, create a symlink in /usr/local/bin or /usr/bin if they exist and are in the path
 			print 'The Cobra compiler is not in your PATH. To remedy you can:'
@@ -918,3 +913,20 @@ class InstallFromWorkspace
 				if fileInfo.isSymbolicLink and fileInfo.contentsPath == cobraCommandPath
 					return true
 		return false
+
+	def copyCobraCommandTo(commandPath as String, alreadyExisted as bool)
+		require commandPath.length
+		print 'copy from:', _cobraCommandPath
+		print '       to:', commandPath
+		try, File.delete(commandPath)
+		catch Exception, pass
+		File.copy(_cobraCommandPath, commandPath, true)
+		print
+		if alreadyExisted
+			print 'The existing "cobra" in your path at'
+			print commandPath
+			print 'has been replaced with the new one.'
+		else
+			print 'The "cobra" command has been installed in your PATH at'
+			print commandPath
+
