@@ -9,7 +9,7 @@ class TestCompilerBuild
 
 	def main
 		cobraPath = CompileTimeInfo.cobraPath
-		assert cobraPath.endsWith('Source/cobra.exe')
+		assert cobraPath.endsWith('Source/cobra.exe') or cobraPath.endsWith('Source\\cobra.exe')
 		
 		cobraDir = Path.getDirectoryName(cobraPath)
 		Environment.currentDirectory = cobraDir to !
@@ -32,8 +32,14 @@ class TestCompilerBuild
 		p.startInfo.arguments = args.join(' ')
 		output = CobraCore.runAndCaptureAllOutput(p).trim
 		assert output == 'Compilation succeeded'
+		assert File.exists('Test.Cobra.Lang.Compiler.dll')
 
-		assembly = Assembly.load('Test.Cobra.Lang.Compiler')
+		# Note that .NET/Windows requires a full path to the DLL
+		# whereas Mono will load from the current directory
+		fullPath = Path.combine(Environment.currentDirectory, 'Test.Cobra.Lang.Compiler.dll')
+		assert File.exists(fullPath)
+		assembly = Assembly.loadFrom(fullPath)
+
 		assert assembly
 		assert assembly.getName.name == 'Test.Cobra.Lang.Compiler'
 		cmdLineClass = assembly.getType('Cobra.Lang.Compiler.CommandLine') to ?
@@ -47,5 +53,9 @@ class TestCompilerBuild
 		
 	def removeFiles
 		for fileName in 'Test.Cobra.Lang.Compiler.dll Test.Cobra.Lang.Compiler.dll.pdb Test.Cobra.Lang.Compiler.dll.mdb'.split
-			File.delete(fileName)
+			try
+				File.delete(fileName)
+			catch UnauthorizedAccessException
+				# .NET/Windows locks the .dll when it is loaded
+				pass
 
