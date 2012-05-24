@@ -1,0 +1,51 @@
+"""
+Test that the current Cobra compiler can build itself.
+"""
+
+use System.Reflection
+
+
+class TestCompilerBuild
+
+	def main
+		cobraPath = CompileTimeInfo.cobraPath
+		assert cobraPath.endsWith('Source/cobra.exe')
+		
+		cobraDir = Path.getDirectoryName(cobraPath)
+		Environment.currentDirectory = cobraDir to !
+		
+		.removeFiles
+
+		p = System.Diagnostics.Process()
+		p.startInfo.fileName = cobraPath
+		args = [
+			'-c',
+			'-debug',
+			'-turbo',
+			'-t:lib',
+			'-ert:yes',
+			'-files:files-to-compile.text',
+			'-namespace:Cobra.Lang.Compiler',
+			'-out:Test.Cobra.Lang.Compiler.dll',
+			'cobra.cobra',
+		]
+		p.startInfo.arguments = args.join(' ')
+		output = CobraCore.runAndCaptureAllOutput(p).trim
+		assert output == 'Compilation succeeded'
+
+		assembly = Assembly.load('Test.Cobra.Lang.Compiler')
+		assert assembly
+		assert assembly.getName.name == 'Test.Cobra.Lang.Compiler'
+		cmdLineClass = assembly.getType('Cobra.Lang.Compiler.CommandLine') to ?
+		assert cmdLineClass
+		cl = cmdLineClass()
+		assert cl.versionString.length
+		assert cl.versionString.startsWith('svn:')		
+
+		.removeFiles
+
+		
+	def removeFiles
+		for fileName in 'Test.Cobra.Lang.Compiler.dll Test.Cobra.Lang.Compiler.dll.pdb Test.Cobra.Lang.Compiler.dll.mdb'.split
+			File.delete(fileName)
+
