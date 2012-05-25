@@ -3022,39 +3022,18 @@ class MultiTargetAssignStatement is partial
 	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		if _rightValues
-			# to-do: could make the nodes back in the main class, so that no back-ends would have to gen the code
-			#        on the other hand, this allows each back-end to use whatever technique it likes to
-			assert _rightValues.count > 0
-
-			type = StringBuilder('CobraLangInternal.RightValues<')
-			count, sep = 9, ''
+			sw.write('{ // multi-assign \n')
+			nums = List<of int>()
 			for value in _rightValues
-				type.append('[sep][value.type.sharpRef]')
-				sep = ','
-				count -= 1
-			assert count >= 0
-			while count > 0
-				type.append(',int')
-				count -= 1
-			type.append('>')
-			
-			serialNum = .compiler.curBox.makeNextPrivateSerialNumber
-			local = 'lh_mt_[serialNum]'
-			sw.write('{ [type] [local] = new [type]')
-
-			sw.write('(')
-			sep = ''
-			for rightValue in _rightValues
-				sw.write(sep)
-				rightValue.writeSharpDef(sw, false)
-				sep = ','
-			sw.write(');\n')
-			
+				num = .compiler.curBox.makeNextPrivateSerialNumber
+				sw.write('[value.type.sharpRef] lh_rvalue_[num] = ')
+				value.writeSharpDef(sw, false)
+				sw.write(';\n')
+				nums.add(num)			
 			for i in _rightValues.count
 				assign = _block.stmts[i] to AssignExpr
 				assign.writeSharpDefWithRight(sw, false)  # false = do not write right side
-				sw.write('[local].Value[i+1];\n')
-			
+				sw.write('lh_rvalue_[nums[i]];\n')
 			sw.write('}\n')
 		else
 			_block.writeSharpDef(sw)
