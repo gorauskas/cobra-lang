@@ -1,4 +1,5 @@
 use System.Reflection
+use System.Text.RegularExpressions
 
 
 namespace Cobra.Lang
@@ -501,7 +502,7 @@ namespace Cobra.Lang
 				Return the decoded version of a URL encoded string.
 				"""
 				return UrlUtils.decode(s)
-					
+
 			def singleCompare(left, op as String, right) as bool
 				test
 					cases = [[0, "GT", -0.1, true], [0, "GE", -0.1, true],  [0, "LT", -0.1, false],  [0, "LE", -0.1, false]]
@@ -525,3 +526,64 @@ namespace Cobra.Lang
 					if not .singleCompare(things[index], things[index + 1], things[index + 2])
 						return false
 				return true
+			
+			def operatingSystemDescription as String
+				"""
+				Returns a human readable description of the operating system such as:
+					Microsoft Windows NT 6.1.7601 Service Pack 1
+					Ubuntu 12.04 LTS
+					Mac OS X 10.6.8
+				"""
+				name = ''
+				if File.exists('/System/Library/CoreServices/SystemVersion.plist')
+					# Mac
+					content = File.readAllText('/System/Library/CoreServices/SystemVersion.plist')
+					match = Regex.match(content, r'<string>(Mac[^<]+)')
+					if match.success, name += match.groups[1].toString
+					match = Regex.match(content, r'<string>(\d+\.[\d\.]+)')
+					if match.success, name += ' ' + match.groups[1].toString
+				else if File.exists('/etc/lsb-release')
+					# Ubuntu, ...
+					content = File.readAllText('/etc/lsb-release')
+					d = Dictionary<of String, String>()
+					for line in content.splitLines
+						line = line.trim
+						if line == '' or line.startsWith('#') or '=' not in line, continue
+						pair = line.split('=', 2)
+						d[pair[0].trim] = pair[1].trim
+					if d.containsKey('DISTRIB_DESCRIPTION'), name = d['DISTRIB_DESCRIPTION'].trim
+					if name == ''
+						try
+							name = d['DISTRIB_ID'] + ' ' + d['DISTRIB_RELEASE']
+						catch
+							pass
+					if name.startsWith('"') and name.endsWith('"'), name = name[1:-1]
+				else if File.exists('/etc/arch-release')
+					# Arch Linux
+					name = 'Arch Linux ' + _getCommandOutput('/bin/uname', '-r').trim
+					pacman = _getCommandOutput('pacman', '--version')
+					match = Regex.match(pacman, r'[Pp]acman v?(\d+\.[\d\.]+)')
+					if match.success, name += ' (pacman ' + match.groups[1].toString.trim + ')'
+				else if File.exists('/etc/system-release')
+					# CentOS, Fedora, ...
+					name = File.readAllText('/etc/system-release')
+				else if File.exists('/etc/redhat-release')
+					# RedHat, ...
+					name = File.readAllText('/etc/redhat-release')
+				if name == ''
+					# everyone else
+					name = Environment.osVersion.toString
+				name = name.trim
+				return name
+
+			def _getCommandOutput(command as String, args as String) as String
+				p = System.Diagnostics.Process()
+				p.startInfo.fileName = command
+				p.startInfo.arguments = args
+				p.startInfo.useShellExecute = false
+				try
+					return CobraCore.runAndCaptureAllOutput(p).trim
+				catch
+					# specific to users of this method: return '' rather than error
+					return ''
+
