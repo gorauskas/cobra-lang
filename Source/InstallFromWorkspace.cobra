@@ -572,18 +572,25 @@ class InstallFromWorkspace
 		if startStage, .startStage('Locate gacutil.exe')
 		errorMsg = 'Cannot locate a gacutil. Maybe you can try again using the "Visual Studio Command Prompt" or ".NET SDK Command Prompt".'
 		if _willForceDotNet4 and .isRunningOnCLR2 and .isRunningOnWindows
+			# gacutil must be run externally and must come from .NET 4:
+			dirs = [
+				r':\Program Files (x86)\Microsoft SDKs\Windows\v7.1\Bin',
+				r':\Program Files (x86)\Microsoft SDKs\Windows\v7.0A\Bin\NETFX 4.0 Tools',
+				r':\Program Files\Microsoft SDKs\Windows\v7.1\Bin',
+				r':\Program Files\Microsoft SDKs\Windows\v7.0A\Bin\NETFX 4.0 Tools',
+				# note the following is wrong as it will be gacutil 3.5:
+				# r':\Program Files (x86)\Microsoft SDKs\Windows\v7.0A\Bin'
+			]
 			programFilesDir = Environment.getFolderPath(Environment.SpecialFolder.ProgramFiles)
-			if programFilesDir.length >= 2
-				drive = programFilesDir[0].toString
-			else
-				drive = 'C'
-			# the following is wrong as it will be gacutil 3.5:
-			# gacutil = drive + r':\Program Files (x86)\Microsoft SDKs\Windows\v7.0A\Bin\GacUtil.exe'
-			# gacutil 4.0 lives here:
-			gacutil = drive + r':\Program Files (x86)\Microsoft SDKs\Windows\v7.0A\Bin\NETFX 4.0 Tools\GacUtil.exe'
-			if File.exists(gacutil)
-				_gacutil = gacutil
-				return
+			if programFilesDir.length >= 2, drive = programFilesDir[0].toString
+			else, drive = 'C'
+			for dir in dirs
+				gacutil = drive + dir + r'\gacutil.exe'
+				if File.exists(gacutil)
+					# to-do: verify version number is 4.x
+					_gacutil = gacutil
+					return
+			errorMsg += '\r\nYou may need to install the Windows SDK from http://www.microsoft.com/en-us/download/details.aspx?id=8279 (~0.5MB)'
 			.error(errorMsg)
 		slash = .slash
 		gacutil = 'gacutil'
