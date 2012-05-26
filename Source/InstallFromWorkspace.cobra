@@ -420,9 +420,9 @@ class InstallFromWorkspace
 			.printPlatformCommand('lsb_release -a')  # could try /etc/*-release if this fails
 			.printPlatformPairCommand('Uname', 'uname -a')
 		else
+			.printPlatformCommand('systeminfo', ['OS Name:', 'OS Version:'])
 			.printPlatformPairCommand('WMI Op Sys Ver', 'wmic os get Caption,CSDVersion /value')
-			.printPlatformCommand('system info', ['OS Name:', 'OS Version:'])
-			.printPlatformPairCommand('Cmd Op Sys Ver', 'ver')
+			.printPlatformPairCommand('Cmd Op Sys Ver', 'cmd.exe /c ver')
 		.printPlatformPair('Virtual Machine', if(CobraCore.isRunningOnMono, 'Mono', '.NET'))
 		.printPlatformPair('CLR Version', Assembly.getAssembly(Object).imageRuntimeVersion)
 		.printPlatformPair('Env Command Line', Environment.commandLine)
@@ -433,7 +433,7 @@ class InstallFromWorkspace
 		if .isRunningOnUnix
 			.printPlatformPairCommand('Mono', 'mono --version')
 		else
-			.printPlatformCommand(r'dir %WINDIR%\Microsoft.Net\Framework\v* /O:-N /B')
+			.printPlatformPairCommand('.NET Dirs', r'cmd.exe /c "dir %WINDIR%\Microsoft.Net\Framework\v* /O:-N /B"')
 		print
 
 	def printPlatformPair(key as String, value)
@@ -441,7 +441,15 @@ class InstallFromWorkspace
 		print '[key.padRight(18)] [value]'
 
 	def printPlatformPairCommand(key as String, command as String)
-		.printPlatformPair(key, _platformCommand(command))
+		.printPlatformPair(key, _tighten(_platformCommand(command)))
+
+	def _tighten(s as String?) as String?
+		if s
+			s = s.replace('\r', '').replace('\n', ' ; ')
+			while s.contains('  '), s = s.replace('  ', ' ')
+			while s.contains('; ;'), s = s.replace('; ;', '; ')
+			while s.contains('  '), s = s.replace('  ', ' ')
+		return s
 
 	def printPlatformCommand(command as String)	
 		.printPlatformCommand(command, List<of String>())
@@ -453,7 +461,7 @@ class InstallFromWorkspace
 			for line in output.splitLines
 				found = false
 				for grep in grepList
-					if line.contains(grep)
+					if line.startsWith(grep)
 						found = true
 						break
 				if found, _printRawLine(line)
