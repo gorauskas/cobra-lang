@@ -1,0 +1,122 @@
+"""
+Where oh where can my gacutil be?
+
+To run:
+
+cobra find-gacutil.cobra
+
+
+Notes:
+
+== Example paths of interest
+
+C:\Program Files\Microsoft.NET
+C:\Program Files\Microsoft SDKs\Windows\v6.0A\bin.
+C:\Program Files\Microsoft SDKs\Windows\v7.1\Bin\NETFX 4.0 Tools.
+C:\Program Files\Microsoft Visual Studio 9.0\SDK\v3.5\Bin
+C:\Program Files\Microsoft Visual Studio 9.0
+C:\Windows\Microsoft.NET\Framework
+
+
+== Env vars of interest
+
+PROGRAMFILES=C:\Program Files
+SYSTEMROOT=C:\Windows
+WINDIR=C:\Windows
+SYSTEMDRIVE=C:
+
+
+== Example output
+
+Directories searched:
+    C:\Program Files
+    C:\Windows
+
+Hits:
+    C:\Program Files\Microsoft SDKs\Windows\v6.0A\bin\gacutil.exe
+    C:\Program Files\Microsoft SDKs\Windows\v6.0A\bin\gacutil.exe.config
+    C:\Windows\Microsoft.NET\Framework\v1.1.4322\gacutil.exe.config
+
+"""
+
+use System.Threading
+
+
+class FindGacUtil
+
+	var _pauseOnHit = 3
+	var _prefixes = ['gacutil', 'gacutl']
+
+	var _lookedIn = Set<of String>()
+	var _mainDirs = List<of String>()
+	var _hits = List<of String>()
+
+	def main
+		if CobraCore.isRunningOnUnix
+			print 'This program is Windows-oriented.'
+			return
+		for envVar in 'PROGRAMFILES SYSTEMROOT WINDIR'.split
+			.lookInEnvVar(envVar)
+		.report
+
+	def lookInEnvVar(envVar as String)
+		pathQ = Environment.getEnvironmentVariable(envVar)
+		if pathQ is nil or pathQ.trim == ''
+			print 'warning: env var [envVar] is nil or empty'
+			return
+		path = pathQ to !
+		if path in _lookedIn, return
+		_lookedIn.add(path)
+		print path
+		.lookInMainDir(path)
+	
+	def lookInMainDir(path as String)
+		print path
+		if not Directory.exists(path)
+			print '...does not exist.'
+			return
+		try
+			dirInfo = DirectoryInfo(path)
+		catch IOException
+			print 'warning: Unreadable directory:', path
+			_mainDirs.add(path + ' (unreadable)')
+            return
+        _mainDirs.add(path)
+        for subDir in dirInfo.getDirectories
+			if subDir.name.startsWith('Microsoft')
+				.lookInSubDir(subDir, 1)
+
+	def lookInSubDir(dirInfo as DirectoryInfo, level as int)
+		for i in level, print '    ' stop
+		print dirInfo.name
+		
+		for file in dirInfo.getFiles
+			lowerName = file.name.toLower
+			for prefix in _prefixes
+				if lowerName.startsWith(prefix)
+					for i in level, print '    ' stop
+					print file.name, '   <-----------------------'
+					print file.fullName
+					Thread.sleep(_pauseOnHit*1000)
+					_hits.add(file.fullName)
+
+		level += 1
+		for subDir in dirInfo.getDirectories
+			.lookInSubDir(subDir, level)
+
+	def report
+		print
+		
+		print 'Directories searched:'
+		for dir in _mainDirs
+			print '   ', dir
+		print
+
+		print 'Hits:'
+		_hits.sort
+		for hit in _hits
+			print '   ', hit
+		print
+		
+		print 'Done.'
+
