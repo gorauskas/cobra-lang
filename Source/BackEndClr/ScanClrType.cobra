@@ -9,8 +9,7 @@ class Compiler is partial
 	var _clrTypeCache = Dictionary<of String, System.Type>()
 	
 	
-	# .Net specific Reference loading
-	def dotNetLoadReference(reference as String) as bool
+	def dotNetLoadReference(reference as String) as String?
 		try 
 			return 	__dotNetLoadReference(reference)
 		catch fnfe as System.IO.FileNotFoundException
@@ -18,7 +17,7 @@ class Compiler is partial
 		catch fle as System.IO.FileLoadException
 			throw LoadReferenceException('FileLoadException', fle.fileName ? reference, fle.message)
 
-	def __dotNetLoadReference(reference as String) as bool
+	def __dotNetLoadReference(reference as String) as String?
 		# uses reference parameter
 		# compiler .referenceVerbosity, _willReadDependencies
 		# fills .loadedReferences
@@ -27,11 +26,12 @@ class Compiler is partial
 			reference.endsWith('.dll') or reference.endsWith('.exe')
 			reference not in ['.dll', '.exe']
 		ensure
-			result implies .loadedReferences[.loadedReferences.count-1] == reference
-			not result implies .loadedReferences.count == old .loadedReferences.count
+			not result implies .loadedReferences[.loadedReferences.count-1] == reference
+			result implies .loadedReferences.count == old .loadedReferences.count
 		body
 			rv = .referenceVerbosity
 			assert not (reference.startsWith('-r') and '-r' in reference[2:])
+			couldNotFindMsg = 'Could not find file.'
 			if false
 				# Does not work on Novell Mono. See notes above.
 				referredAss = Assembly.reflectionOnlyLoadFrom(reference)
@@ -71,7 +71,7 @@ class Compiler is partial
 						if rv, print 'Will load with partial name "[reference]"'
 						referredAss = Utils.loadWithPartialName(reference)
 						if rv, print 'Load with partial name returned: [CobraCore.toTechString(referredAss)]'
-						if referredAss is nil, return false
+						if referredAss is nil, return couldNotFindMsg
 						# 2009-08-03 CE: Removed this code:
 						# reference = referredAss.location
 						# To address this:
@@ -106,11 +106,11 @@ class Compiler is partial
 				assert reference.endsWith('.dll') or reference.endsWith('.exe')
 				assert reference not in ['.dll', '.exe']
 				.loadedReferences.add(reference)
-				if rv, print 'Returning true for __loadReference("[reference]").'
-				return true
+				if rv, print 'Returning nil (=okay) for __dotNetLoadReference("[reference]").'
+				return nil
 			else
-				if rv, print 'Returning false for __loadReference("[reference]").'
-				return false
+				if rv, print 'Returning "[couldNotFindMsg]" for __dotNetLoadReference("[reference]").'
+				return couldNotFindMsg
 
 	def _dotNetLoadAssembly(assName as AssemblyName)
 		if .referenceVerbosity
@@ -137,7 +137,7 @@ class Compiler is partial
 			if rv, print 'Did Assembly.load with result: [ass]'
 		catch fnfe as FileNotFoundException  # In fact, will get a FileNotFoundException!
 			if rv, print 'Did Assembly.load with exception: [fnfe]. Will try .loadReference'
-			.loadReference(assName.name to !, true) # .compiler.loadReference(assName.name to !, true)
+			.loadReference(assName.name to !, true)
 			# TODO: compare the the name loaded to the name given with AssemblyName.referenceMatchesDefinition
 			return
 		catch exc as Exception
@@ -155,23 +155,19 @@ class Compiler is partial
 						.outdentPrint
 						print '<< Loading dependency: [dependency]'
 		try
-			.clrReadAssembly(ass to !) # compiler.readAssembly(ass)
+			.clrReadAssembly(ass to !)
 		catch readExc as Exception
 			if rv, print 'Caught exception during read assembly: [readExc]'
 			throw
 
-	# Called by ClrTypeProxy 
-	# dotNet specific  - readLibrary
 	def clrReadAssembly(ass as Assembly)
-		""" Reads the contents of an dotNet assembly (.DLL) so that they are accessible to the program."""
+		"""
+		Reads the contents of an dotNet assembly (.DLL) so that they are accessible to the program.
+		Called by ClrTypeProxy.
+		"""
 		assert _backEnd.typeOf == ClrBackEnd # tmp guard
 		__dotNetReadAssembly(ass, false) # ScanClrType
 			
-			
-	#def dotNetReadAssembly(ass as Assembly)
-	#	""" Reads the contents of an dotNet assembly (.DLL). EntryPoint"""
-	#	__dotNetReadAssembly(ass, false)
-
 	def __dotNetReadAssembly(ass as Assembly, skipCobra as bool)
 		"""
 		Reads the contents of an assembly (.DLL) so that they are accessible to the program.

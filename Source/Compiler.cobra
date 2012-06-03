@@ -29,22 +29,26 @@ class UnexpectedInvocationException
 
 	cue init(obj as Object)
 		base.init('Not expecting invocation.')
-		
+
+
 class LoadReferenceException inherits Exception
 	"""
-	Thrown when Loading a reference fails for some reason.
+	Thrown when loading a reference fails for some reason.
 		FileNotFoundException, FileLoadException
+	The exception message can be shared in Cobra error messages.
 	"""
-	var fileName =''
-	var tag=''
-	
+
 	cue init(tag as String, fileName as String, msg as String)
 		base.init(msg)
-		.tag = tag
-		.fileName = fileName
+		_tag, _fileName = tag, fileName
+
+	get fileName from var as String
+
+	get tag from var as String
 		
 	def toString as String is override
 		return '[.tag] [.fileName] [.message]'	
+
 
 enum PlatformEnum
 	Microsoft
@@ -124,11 +128,11 @@ class BackEnd is abstract
 		"""
 		Augment given lib reference string with backend extension if not already have one.
 		"""
-	
-	def loadLibReference(reference as String) as bool is abstract
+
+	def loadLibReference(reference as String) as String? is abstract
 		"""
 		Load the given library reference file  using the current backend paradigms. 
-		Return true if reference found and loaded correctly, false otherwise
+		Returns an error message, or nil if the reference was loaded correctly.
 		"""
 	
 	def readSystemTypes is abstract
@@ -250,8 +254,8 @@ class BasicBackEnd inherits BackEnd
 			libRef += '.libext'
 		return libRef	
 	
-	def loadLibReference(reference as String) as bool is override
-		return true
+	def loadLibReference(reference as String) as String? is override
+		return nil
 	
 	def readSystemTypes is override
 		pass
@@ -967,8 +971,9 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		# sharp'curDomain.ReflectionOnlyAssemblyResolve += _resolveEvent'
 
 		for reference in references
-			if not .loadReference(reference, false)
-				_addMessage(SourceException('Cannot locate assembly reference "[reference]".'))
+			errorMsg = .loadReference(reference, false)
+			if errorMsg
+				_addMessage(SourceException('Cannot load reference "[reference]" due to: [errorMsg]'))
 
 	def refsForPackage(pkgName as String) as List<of String>
 		"""
@@ -1023,15 +1028,14 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		# see .loadReference which sets up the indented writer
 		(CobraCore.printDestination to IndentedWriter).dedent
 
-	def loadReference(reference as String, addExtn as bool) as bool
+	def loadReference(reference as String, addExtn as bool) as String?
 		"""
 		Attempts to load the given library reference.
-		On success, adds reference to .loadedReferences and returns true.
-		On failure, returns false, but does not add any warnings or errors.
+		On success, adds reference to .loadedReferences and returns nil.
+		On failure, returns an error message, but does not add any warnings or errors.
 		This method is used by Compiler and UseDirective.
 		"""
-		if addExtn
-			reference = .backEnd.fixLibExtension(reference)
+		if addExtn, reference = .backEnd.fixLibExtension(reference)
 		v, rv = .verbosity, .referenceVerbosity
 		if v, print 'Loading reference:', reference
 		if rv
@@ -1039,17 +1043,17 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 				print '>> .loadReference("[reference]")'
 				.indentPrint
 				try
-					r = _loadReference(reference)
+					errorMsg = _loadReference(reference)
 				finally
-					print 'Returning [r]'
+					print 'Returning errorMsg: [errorMsg]'
 					.outdentPrint
 				print '<< .loadReference("[reference]")'
 		else
-			r = _loadReference(reference)
-		if v and not r, print 'Could not load:   ', reference
-		return r
+			errorMsg = _loadReference(reference)
+		if v and errorMsg, print 'Could not load "[reference]" due to: [errorMsg]'
+		return errorMsg
 
-	def _loadReference(reference as String) as bool
+	def _loadReference(reference as String) as String?
 		try
 			return .backEnd.loadLibReference(reference)
 		catch lre as LoadReferenceException
@@ -1057,7 +1061,7 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 			# Culture=neutral, PublcKeyToken=aa95f207798dfdb4' or one of its dependencies. The
 			# system cannot find the file specified.
 			if .referenceVerbosity, print '[lre] in _loadReference("[reference]")'
-			return false
+			return lre.message
 
 	def fixMemberSigs
 		.backEnd.fixMemberSigs
