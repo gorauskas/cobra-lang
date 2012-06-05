@@ -1107,6 +1107,47 @@ class ForExpr inherits Expr is partial
 		return if(_what.type inherits AnyIntType, _what.type, _what.type.innerType)
 
 
+class TryCatchExpr inherits Expr is partial
+	"""
+	Like try/catch statement but returns the value of the try-ed expression or a default expression on Exception
+	Limited to a single expression in both try and get clauses
+	"""
+
+	var _what as Expr
+	var _typeNode as ITypeProxy?
+	var _excType as IType?
+	var _getExpr as Expr
+
+	cue init(token as IToken, what as Expr, excTypeNode as ITypeProxy?, getExpr as Expr)
+		base.init(token)
+		_what, _typeNode, _getExpr = what, excTypeNode, getExpr
+
+	def addSubFields
+		base.addSubFields
+		.addField('what', _what)
+		.addField('typeNode', _typeNode)
+		.addField('getExpr', _getExpr)
+
+	get what from _what
+	get typeNode from _typeNode
+	get getExpr from _getExpr
+	
+	def _bindImp
+		# to-do: revisit this when java backend based on java8 (supports closures)
+		if 'java' in .compiler.backEnd.name 
+			if not _superNode inherits BinaryOpExpr or .binarySuperNode.op <> 'ASSIGN'
+				msg = 'More complicated expressions cannot yet have code generated without side effects.'
+				.throwError('Can only use a tryCatch expression as the simple target of an assignment (e.g "ID = try EXPR catch EXCEPTION get EXPR". [msg]')
+		base._bindImp
+		_what.bindImp  
+		if _typeNode
+			_typeNode.bindImp
+			_excType = _typeNode.realType 
+			_excType.bindAll
+
+		_getExpr.bindImp
+		_type = _getExpr.type to !
+	
 class IdentifierExpr
 	is partial
 	inherits NameExpr

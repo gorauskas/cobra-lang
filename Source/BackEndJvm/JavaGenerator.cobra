@@ -377,7 +377,7 @@ class CobraModule is partial
 		sw.bumpLineNum
 		sw.writeLine('public  MainWrapper() {')
 		sw.indentAndWrite('//super(); \n')
-        sw.dedentAndWrite('}')
+		sw.dedentAndWrite('}')
 		sw.writeLine
 		sw.dedentAndWrite('} // class MainWrapper')
 		sw.writeLine
@@ -2718,8 +2718,34 @@ class EnumCallExpr is partial
 
 class ForExpr is partial
 
-	# TODO
+	# to-do
 	pass
+
+
+class TryCatchExpr	is partial
+
+	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
+		
+		# codegen below is specific to tryCatch as target of an assignment
+		assert _superNode inherits BinaryOpExpr and  .binarySuperNode.op == 'ASSIGN'
+		sw.write('{')
+		sw.write(_type.javaRef)
+		sw.write(' r; try { r = ')
+		.what.writeJavaDef(sw, false)
+		sw.write(';} catch ')
+		if _excType
+			sw.write('(')
+			sw.write(_excType.javaRef)
+			sw.write(') ')
+		sw.write('{ r =')
+		_getExpr.writeJavaDef(sw, false)	
+		sw.write('; } ')
+		lhs = .binarySuperNode.left
+		lhs.writeJavaDef(sw, false)	
+		sw.write(' = r; }')
+	
+		# with java8 try this again for any arbitrarily embedded trycatch expr by generating a closure and 
+		# immediately executing of it - otherwise some method type inference and auto sig lookup/generation.		
 
 
 class IdentifierExpr is partial
@@ -3306,6 +3332,11 @@ class AssignExpr is partial
 	var isJavaSetProperty = false
 	
 	def _writeJavaDef(sw as CurlyWriter) is override
+		# special case handling/trap for tryCatch within assignment
+		if _right inherits TryCatchExpr	# expand trycatch and do assignment within the expansion
+			_right.writeJavaDef(sw)	
+			return	
+
 		# TODO:
 		# if trackLocal:
 		#	out.write('CobraLangInternal.CobraImp.SetLocal("%s", ' % .left.name)
@@ -3843,7 +3874,7 @@ class InheritsExpr
 		#_right.writeJavaDef(sw, false)
 
 		# Compiler generates error with instanceof for non intersecting instance and Type so
-	    # instead use runtime instance lookup
+		# instead use runtime instance lookup
 		#  instead of 'e instanceof T'  becomes 'T.class.isInstance(e)'
 		_right.writeJavaDef(sw, false)
 		#sw.write('.class.isInstance(')

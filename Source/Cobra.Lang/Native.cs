@@ -555,8 +555,37 @@ static public class CobraImp {
 		return results;
 	}
 
+	// Support for TryCatchExpression 
+	// Below is signature of closures containing the expressions 
+	public delegate TOut TryCatchExpr<TOut>(); 
+	
+	// TryCatchExpr - No exception specified 
+	static public TOut RunTryCatchExpr<TOut>(TryCatchExpr<TOut> tryCatch, TryCatchExpr<TOut> tryGet) {
+		TOut r;
+			try { 
+				r = tryCatch();
+			}
+			catch { 
+				r = tryGet();
+			}
+			return r;
+	}
 
-	/* Numeric forExpr - ints in, any type returned */        
+	// TryCatchExpr TExc exception specified 
+	static public TOut RunTryCatchExpr<TOut, TExc>(TryCatchExpr<TOut> tryCatch, TryCatchExpr<TOut> tryGet) 
+		where TExc : System.Exception {
+			TOut r;
+			try { 
+				r = tryCatch();
+			}
+			catch (TExc) { 
+				r = tryGet();
+			}
+			return r;
+	}
+
+
+	/* Numeric forExpr - ints in, any type returned */
 	static public List<TOut> For<TIn, TOut>(int start, int stop, int step, ForGet<int, TOut> forGet) {
 		if ((step > 0 && start > stop) || 
 			(step < 0 && start < stop) || step == 0)
