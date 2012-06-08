@@ -1,0 +1,115 @@
+class Pair implements System.Collections.IEnumerable, IComparable<of Pair>
+	"""
+	This is an example of a class that uses dynamic rather than static typing.
+	A Pair can contain any two objects or even nil. All operations on dynamic
+	types are late bound just as if you were using a dynamic language such as
+	Python or Smalltalk.
+	
+	The elements of the pair are accessed as .a and .b or [0] and [1]. You can
+	also use `for` loop on a pair as it is enumerable. Comparisons between
+	pairs such as `p1 < p2` are effectively comparisons of their elements.
+	
+	You can use a pair's hash code as long as its elements aren't mutable. That
+	means you can put pairs in sets or use them as keys in dictionaries.
+
+	Unit tests below show examples of using pairs.
+	
+	To run the unit tests:
+	cobra -test Pair.cobra
+	
+	Test with various checks turned off:
+ 	cobra -test -contracts:none -include-asserts:no -include-nil-checks:no -include-traces:no Pair.cobra
+	"""
+	
+	test
+		p = Pair(1, 2)
+		assert p.a == 1 and p.b == 2
+		assert p[0] == 1 and p[1] == 2
+		assert p.toString == 'Pair(1, 2)'
+		expect IndexOutOfRangeException, assert p[2] == 3
+
+	cue init(a, b)
+		base.init
+		_a, _b = a, b
+	
+	get a from var as dynamic?
+	
+	get b from var as dynamic?
+
+	get [i as int] as dynamic?
+		if i == 0, return _a
+		if i == 1, return _b
+		throw IndexOutOfRangeException('Index [i] is out of range for a pair (0-1).')
+		
+	def toString as String is override
+		sa = CobraCore.toTechString(.a)
+		sb = CobraCore.toTechString(.b)
+		return '[.typeOf.name]([sa], [sb])'
+
+	def equals(obj as Object?) as bool is override
+		test
+			assert Pair('a', 'b') == Pair('a', 'b')
+		body
+			if obj is nil, return false
+			if obj is this, return true
+			if obj inherits Pair, return obj.a == .a and obj.b == .b
+			return false
+
+	def compareTo(p as Pair) as int
+		test
+			assert Pair('a', 'b') < Pair('b', 'c')
+			assert Pair(2, 3) > Pair(2, 2)
+			assert Pair(nil, 'a') < Pair(nil, 'b')
+			assert Pair(nil, nil) < Pair(1, 1)
+		body
+			diff = .compare(.a, p.a)
+			if diff == 0, diff = .compare(.b, p.b)
+			return diff
+
+	def compare(a, b) as int is private
+		"""
+		Gracefully handly comparisons that involve nil.
+		A simple `a.compareTo(b)` does not work if `a` can be `nil`.
+		"""
+		if a is nil
+			if b is nil, return 0
+			else, return -1
+		else if b is nil
+			return 1
+		else
+			return a.compareTo(b)
+
+	def getHashCode as int is override
+		test
+			d = {
+				Pair(1, 1): 'one',
+				Pair(2, 2): 'two',
+				Pair(nil, nil): 'nil',
+			}
+			assert d[Pair(1, 1)] == 'one'
+			assert d[Pair(2, 2)] == 'two'
+			assert d[Pair(nil, nil)] == 'nil'
+		body
+			return _combine(if(.a is nil, 0, .a.getHashCode), if(.b is nil, 0, .b.getHashCode))
+	
+	def _combine(hc1 as int, hc2 as int) as int is private
+		# don't use xor (^) because a^b == 0 if the two values are the same
+		# that would make Pair('foo','foo'), Pair(1, 1), Pair(3.0, 3.0) all hash to 0
+		hash = 37
+		hash = hash * 23 + hc1
+		hash = hash * 23 + hc2
+		return hash
+
+    def getEnumerator as System.Collections.IEnumerator
+		test
+			assert (for s in Pair('a', 'b') get s) == ['a', 'b']
+		body
+			yield .a
+			yield .b
+
+
+class Program
+
+	def main
+		p = Pair(2, 3)
+		assert p.a + p.b == 5
