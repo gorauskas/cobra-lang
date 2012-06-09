@@ -130,7 +130,16 @@ class AbstractLocalVar
 		if _typeNode inherits IType
 			_type = _typeNode
 			return
-		_type = _typeNode.realType
+		try
+			_type = _typeNode.realType
+		catch ne as NodeException
+			# Aid in error recovery. Example:
+			# Cannot locate nested CLR type "System.ServiceModel.ClientBase`1+BeginOperationDelegate[TChannel]" (simple name is "BeginOperationDelegate").
+			# For .invokeAsync of ClientBase<of> of System.ServiceModel in .NET 4
+			if ne.message.contains('Cannot locate')
+				_type = .typeProvider.nilableType(.typeProvider.objectType)
+			else
+				throw
 		assert _type  # since _realType returns IType (not IType?) this should always pass
 
 	pro type as IType
