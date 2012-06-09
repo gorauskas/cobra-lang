@@ -973,7 +973,7 @@ class Box
 			result.genericParams == typeArgs
 			not result.isGenericDef
 		body
-			_prepLibraryBox
+			if .compiler.isBindingInh, return _constructedInheritanceTypeFor(typeArgs)
 
 			# the cache of constructed types has to come from the root generic type def or you end up with duplicate
 			# constructed types which is not only wasteful, but causes problems with inheritance tests
@@ -981,8 +981,9 @@ class Box
 
 			if _constructedTypes is nil, _constructedTypes = Dictionary<of String, Box>()
 			
-			key = TypeUtil.keyForTypeArgs(typeArgs)
+			_prepLibraryBox
 
+			key = TypeUtil.keyForTypeArgs(typeArgs)
 			if _constructedTypes.containsKey(key), return _constructedTypes[key]
 
 			assert not .isBindingInh
@@ -991,9 +992,6 @@ class Box
 				assert not .didBindInt
 				.bindInh
 				assert not .didBindInt
-				if .nativeType
-					_prepLibraryBox
-					assert not .didBindInt or not .compiler.isBindingInh
 
 			assert _baseInterfaceProxies.count == _baseInterfaces.count
 
@@ -1014,6 +1012,54 @@ class Box
 			if .didBindInt, t._completeConstruction(typeArgs)
 			else, t._needsConstruction(typeArgs)
 			assert t._constructedTypes is nil or t._constructedTypes.count == 0
+
+			return t
+
+	def _constructedInheritanceTypeFor(typeArgs as List<of IType>) as Box
+		require
+			.isGenericDef
+			.containsGenericParameters
+			typeArgs.count == .genericParams.count
+			.compiler.isBindingInh
+		ensure
+			result is not this and result.genericDef is this
+			not result.isGenericDef
+		body
+			if .genericDef, return .genericDef.constructedTypeFor(typeArgs)
+
+			if _constructedTypes is nil, _constructedTypes = Dictionary<of String, Box>()
+			
+			# like _prepLibBox, but no binding of inheritance
+			if .nativeType and not .didBindInh and not .isBindingInh
+				.bindInh
+				assert .didBindInh or .isBindingInh
+
+			key = TypeUtil.keyForTypeArgs(typeArgs)
+			if _constructedTypes.containsKey(key), return _constructedTypes[key]
+
+			if not .didBindInh
+				assert not .didBindInt
+				.bindInh
+				assert not .didBindInt
+
+			assert .isBindingInh or _
+				(.didBindInh and _baseInterfaceProxies.count == _baseInterfaces.count)
+
+			t = .memberwiseClone to Box
+			assert t is not this
+			_constructedTypes[key] = t
+			argNames = (for type in typeArgs get type.name).join(',')
+			t._name = '[.rootName]<of [argNames]>'
+			t._genericDef = this
+			t._nativeType = nil  # The constructed type is really sourced from the generic def. Don't foster confusion with a reference to the original generic def's clr type (if there is one).
+			t.cloneCollections
+			assert t._constructedTypes is nil or t._constructedTypes.count == 0
+
+			# set the contructed type args immediately or its ancestors will get the original
+			# generic args during _bindInt:
+			for i in typeArgs.count, t._genericParams[i] = typeArgs[i]
+
+			t._needsConstruction(typeArgs)
 
 			return t
 
@@ -1176,8 +1222,7 @@ class ClassOrStruct inherits Box is abstract, partial
 
 	def _bindInh
 		# mixins act as interfaces (and more)
-		for proxy in _addsProxies
-			_baseInterfaceProxies.add(proxy)
+		for proxy in _addsProxies, _baseInterfaceProxies.add(proxy)
 		base._bindInh
 
 	def _bindInt
