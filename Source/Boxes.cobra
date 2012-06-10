@@ -643,8 +643,14 @@ class Box
 		_bindBase
 		# structs, classes and interfaces can all have 0 or more interfaces they inherit/implement
 		if _baseInterfaceProxies.count <> _baseInterfaces.count  # otherwise, already done
-			assert _baseInterfaces.count == 0
-			for interfaceProxy in _baseInterfaceProxies
+			# Some interface proxies may have already been converted to types whiles others were not
+			# This happens in test case :
+			# 134-constructed-class-inheritance-self-referencing.cobra
+			# for this line:
+			# class Dar<of TA, TB> implements System.Collections.IEnumerable, IComparable<of Dar<of TA, TB>>
+			# The solution is to start at the correct point:
+			proxies = _baseInterfaceProxies[_baseInterfaces.count:]
+			for interfaceProxy in proxies
 				try
 					baseWhat = interfaceProxy.realType
 					if baseWhat inherits Interface
