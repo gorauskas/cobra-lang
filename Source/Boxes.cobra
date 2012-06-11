@@ -814,24 +814,45 @@ class Box
 			finally, .compiler.boxMemberStack.pop
 
 	def _prepLibraryBox
-		ensure .didBindInh
-		if _nativeType and not _didPrep
-			__prepLibraryBox
-			
-	var _didPrep as bool
+		"""
+		Binary library types get bindInh & bindInt only on demand.
+		Otherwise reading libraries slows down compilation too much.
+		"""
+		_prepLibraryInh
+		if not .compiler.isBindingInh, _prepLibraryInt
 
-	def __prepLibraryBox
-		"""
-		DLL types get bindInh & bindInt only on demand. (Otherwise reading system DLLs slows things down.)
-		"""
+	def _prepLibraryInh
+		ensure .didBindInh
+		if _nativeType and not _didPrepInh, __prepLibraryInh
+
+	var _didPrepInh as bool
+
+	def __prepLibraryInh
 		require .nativeType
 		ensure .didBindInh
-		if _didPrep, return
-		_didPrep = true
+		if _didPrepInh, return
+		_didPrepInh = true
 		if not .didBindInh
 			.bindInh
 			assert .didBindInh
-		if not .didBindInt and not .compiler.isBindingInh
+
+	def _prepLibraryInt
+		# to-do: why isn't the following post condition correct?
+		# ensure .nativeType implies .didBindInt or .isBindingInt
+		if _nativeType and not _didPrepInt, __prepLibraryInt
+
+	var _didPrepInt as bool
+
+	def __prepLibraryInt
+		"""
+		Binary library types get bindInt & bindInt only on demand.
+		Otherwise reading libraries slows things down too much.
+		"""
+		require .nativeType
+		ensure .didBindInt or .isBindingInt
+		if _didPrepInt, return
+		_didPrepInt = true
+		if not .didBindInt
 			.bindInt
 			assert .didBindInt
 
@@ -986,18 +1007,12 @@ class Box
 			if .genericDef, return .genericDef.constructedTypeFor(typeArgs)
 
 			if _constructedTypes is nil, _constructedTypes = Dictionary<of String, Box>()
-			
-			_prepLibraryBox
+
+			_prepLibraryInh
+			assert not .isBindingInh
 
 			key = TypeUtil.keyForTypeArgs(typeArgs)
 			if _constructedTypes.containsKey(key), return _constructedTypes[key]
-
-			assert not .isBindingInh
-
-			if not .didBindInh
-				assert not .didBindInt
-				.bindInh
-				assert not .didBindInt
 
 			assert _baseInterfaceProxies.count == _baseInterfaces.count
 
@@ -1020,7 +1035,8 @@ class Box
 			assert t._constructedTypes is nil or t._constructedTypes.count == 0
 
 			return t
-
+	
+	# to-do: can the following be consolidated into the above?
 	def _constructedInheritanceTypeFor(typeArgs as List<of IType>) as Box
 		require
 			.isGenericDef
