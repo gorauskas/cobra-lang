@@ -1000,13 +1000,16 @@ class Box
 			result.genericParams == typeArgs
 			not result.isGenericDef
 		body
-			if .compiler.isBindingInh, return _constructedInheritanceTypeFor(typeArgs)
-
 			# the cache of constructed types has to come from the root generic type def or you end up with duplicate
 			# constructed types which is not only wasteful, but causes problems with inheritance tests
 			if .genericDef, return .genericDef.constructedTypeFor(typeArgs)
 
 			if _constructedTypes is nil, _constructedTypes = Dictionary<of String, Box>()
+
+			if .compiler.isBindingInh
+				# special case for
+				# 134-constructed-class-inheritance-self-referencing.cobra
+				return __constructedInheritanceTypeFor(typeArgs)
 
 			_prepLibraryInh
 			assert not .isBindingInh
@@ -1016,74 +1019,52 @@ class Box
 
 			assert _baseInterfaceProxies.count == _baseInterfaces.count
 
-			t = .memberwiseClone to Box
-			assert t is not this
-			_constructedTypes[key] = t
-			argNames = (for type in typeArgs get type.name).join(',')
-			t._name = '[.rootName]<of [argNames]>'
-			t._genericDef = this
-			t._nativeType = nil  # The constructed type is really sourced from the generic def. Don't foster confusion with a reference to the original generic def's clr type (if there is one).
-			t.cloneCollections
-
-			# set the contructed type args immediately or its ancestors will get the original generic args during _bindInt:
-			for i in typeArgs.count
-				t._genericParams[i] = typeArgs[i]
-			assert t._constructedTypes is nil or t._constructedTypes.count == 0
+			_constructedTypes[key] = t = __constructTypeFor(typeArgs)
 
 			if .didBindInt, t._completeConstruction(typeArgs)
 			else, t._needsConstruction(typeArgs)
 			assert t._constructedTypes is nil or t._constructedTypes.count == 0
 
 			return t
-	
+
 	# to-do: can the following be consolidated into the above?
-	def _constructedInheritanceTypeFor(typeArgs as List<of IType>) as Box
-		require
-			.isGenericDef
-			.containsGenericParameters
-			typeArgs.count == .genericParams.count
-			.compiler.isBindingInh
-		ensure
-			result is not this and result.genericDef is this
-			not result.isGenericDef
-		body
-			if .genericDef, return .genericDef.constructedTypeFor(typeArgs)
+	def __constructedInheritanceTypeFor(typeArgs as List<of IType>) as Box
+		# like _prepLibBox, but no binding of interface
+		if .nativeType and not .didBindInh and not .isBindingInh
+			.bindInh
+			assert .didBindInh or .isBindingInh
 
-			if _constructedTypes is nil, _constructedTypes = Dictionary<of String, Box>()
-			
-			# like _prepLibBox, but no binding of inheritance
-			if .nativeType and not .didBindInh and not .isBindingInh
-				.bindInh
-				assert .didBindInh or .isBindingInh
+		key = TypeUtil.keyForTypeArgs(typeArgs)
+		if _constructedTypes.containsKey(key), return _constructedTypes[key]
 
-			key = TypeUtil.keyForTypeArgs(typeArgs)
-			if _constructedTypes.containsKey(key), return _constructedTypes[key]
+		if not .didBindInh
+			assert not .didBindInt
+			.bindInh
+			assert not .didBindInt
 
-			if not .didBindInh
-				assert not .didBindInt
-				.bindInh
-				assert not .didBindInt
+		assert .isBindingInh or _
+			(.didBindInh and _baseInterfaceProxies.count == _baseInterfaces.count)
 
-			assert .isBindingInh or _
-				(.didBindInh and _baseInterfaceProxies.count == _baseInterfaces.count)
+		_constructedTypes[key] = t = __constructTypeFor(typeArgs)
 
-			t = .memberwiseClone to Box
-			assert t is not this
-			_constructedTypes[key] = t
-			argNames = (for type in typeArgs get type.name).join(',')
-			t._name = '[.rootName]<of [argNames]>'
-			t._genericDef = this
-			t._nativeType = nil  # The constructed type is really sourced from the generic def. Don't foster confusion with a reference to the original generic def's clr type (if there is one).
-			t.cloneCollections
-			assert t._constructedTypes is nil or t._constructedTypes.count == 0
+		t._needsConstruction(typeArgs)
 
-			# set the contructed type args immediately or its ancestors will get the original
-			# generic args during _bindInt:
-			for i in typeArgs.count, t._genericParams[i] = typeArgs[i]
+		return t
 
-			t._needsConstruction(typeArgs)
-
-			return t
+	def __constructTypeFor(typeArgs as List<of IType>) as Box
+		""" Creates the constructed type. Does not issue any .bindInh, .bindInt, or _prepFoo. """
+		t = .memberwiseClone to Box
+		assert t is not this
+		argNames = (for type in typeArgs get type.name).join(',')
+		t._name = '[.rootName]<of [argNames]>'
+		t._genericDef = this
+		t._nativeType = nil  # The constructed type is really sourced from the generic def. Don't foster confusion with a reference to the original generic def's clr type (if there is one).
+		t.cloneCollections
+		assert t._constructedTypes is nil or t._constructedTypes.count == 0
+		# set the contructed type args immediately or its ancestors will get the original
+		# generic args during _bindInt:
+		for i in typeArgs.count, t._genericParams[i] = typeArgs[i]
+		return t
 
 	var _needs_typeArgs as List<of IType>?
 		"""
