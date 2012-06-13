@@ -64,10 +64,12 @@ class NativeType is abstract
 	def getHashCode as int is override
 		throw Exception('Subclasses must override .getHashCode')
 			
-class NullNativeType inherits NativeType
+
+class FakeNativeType inherits NativeType
 	"""
-	Valid but empty nativeType for Tests
+	Valid but empty NativeType for testing.
 	"""
+
 	var _full = ''
 	var _name = ''
 	
@@ -103,6 +105,7 @@ class NullNativeType inherits NativeType
 		
 	get isSystemTypeClass as bool is override
 		return false	
+
 
 interface ITypeProvider
 	"""
@@ -165,12 +168,13 @@ interface ITypeProvider
 	def defaultType as IType
 
 		
-# 	TODO: rename to TypeProvider, change to a "mix-in" and have the Compiler class inherit it
-class BasicTypeProvider
-	implements ITypeProvider
+class FakeTypeProvider implements ITypeProvider
 	"""
 	This is the base and also can be used as a test TypeProvider
 	"""
+
+	# to-do: some of this can be extracted as a non-Fake mix-in and then duplicate code removed.
+	# methods like .boolType are candidates for reuse.
 
 	var _anyFloatType		as AnyFloatType?
 	var _anyIntType			as AnyIntType?
@@ -321,16 +325,14 @@ class BasicTypeProvider
 		return _defaultType to !
 
 	def libraryType(qualifiedName as String) as IType
-		return BasicLibraryType(.nativeType(qualifiedName))
+		return FakeLibraryType(.nativeType(qualifiedName))
 
 	def nativeType(qualifiedName as String) as NativeType
-		return NullNativeType(qualifiedName) 
+		return FakeNativeType(qualifiedName) 
 		#return ClrNativeType(sharp'System.Type.GetType(qualifiedName)' to System.Type)
 		
 
-class BasicLibraryType
-	is partial
-	implements IType
+class FakeLibraryType implements IType is partial
 	"""
 	These objects are created by BasicTypeProvider and only for testing purposes.
 	The real library types used by the compiler are instances of Class, Interface, Struct, etc.
@@ -339,10 +341,10 @@ class BasicLibraryType
 
 	shared
 		
-		def systemObjectType as BasicLibraryType
-			#nativeType = .compiler.ObjectNativeType
+		def systemObjectType as FakeLibraryType
+			#nativeType = .compiler.objectNativeType
 			nativeType = ClrNativeType(sharp'typeof(System.Object)')
-			return BasicLibraryType(nativeType)
+			return FakeLibraryType(nativeType)
 
 	var _nativeType as NativeType
 
@@ -358,7 +360,7 @@ class BasicLibraryType
 
 	def equals(other as Object?) as bool is override
 		if other
-			if other inherits BasicLibraryType
+			if other inherits FakeLibraryType
 				return .nativeType == other.nativeType
 			else
 				return false
@@ -1062,7 +1064,7 @@ class FloatType
 
 	test
 		saveTP = if(Node.hasTypeProvider, Node.typeProvider, nil)
-		Node.typeProvider = BasicTypeProvider()
+		Node.typeProvider = FakeTypeProvider()
 		try
 			anyFloat = AnyFloatType()
 
@@ -1168,13 +1170,13 @@ class IntType
 
 	test
 		saveTP = if(Node.hasTypeProvider, Node.typeProvider, nil)
-		Node.typeProvider = BasicTypeProvider()
+		Node.typeProvider = FakeTypeProvider()
 		try
 			anyInt = AnyIntType()
 
 			snt16 = IntType(true, 16, anyInt)
 			assert snt16.name == 'int16'
-			assert snt16.isSigned == true
+			assert snt16.isSigned
 			assert snt16.size == 16
 
 			snt64 = IntType(true, 64, anyInt)
@@ -1652,7 +1654,7 @@ class ArrayType inherits WrappedType is partial
 
 	test
 		saveTP = if(Node.hasTypeProvider, Node.typeProvider, nil)
-		Node.typeProvider = BasicTypeProvider()
+		Node.typeProvider = FakeTypeProvider()
 		try
 			a1 = ArrayType(BoolType())
 			a2 = ArrayType(BoolType())
