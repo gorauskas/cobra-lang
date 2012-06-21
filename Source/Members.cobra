@@ -866,6 +866,10 @@ class AbstractMethod
 	get canHaveDetailedStackTrace as bool
 		return .parentBox.canHaveDetailedStackTrace and not .hasYieldStmt
 
+	get hasVariParams as bool is override
+		for param in _params, if param.type inherits VariType, return true
+		return false
+
 	get willRequire as bool
 		# in the future, this will also depend on a command line option to include/exclude preconditions
 		# classes that are sensitive with respect to the DST skip on contracts
@@ -1119,10 +1123,6 @@ class Method inherits AbstractMethod is partial
 
 	get englishName as String is override
 		return 'method'
-
-	get hasVariArgs as bool
-		assert false, 'TODO: complete Method.hasVariArgs'
-		return false
 
 	get isCallable as bool is override
 		return true
@@ -1522,6 +1522,10 @@ class MemberOverload inherits BoxMember is partial
 			member.unNilReturnType
 
 	def computeBestOverload(args as List<of Expr>, genericArgTypes as List<of IType>?, strictBindChecking as bool) as IOverloadable
+		verbose = false
+		if verbose
+			print '-------------------------'
+			trace .idString, args, genericArgTypes, strictBindChecking
 		# References:
 		# http://blogs.msdn.com/ericlippert/archive/2007/11/05/c-3-0-return-type-inference-does-not-work-on-member-groups.aspx
 
@@ -1543,12 +1547,16 @@ class MemberOverload inherits BoxMember is partial
 		else
 			members = .members
 
+		if verbose
+			trace .members.count
+			for i, m in members.numbered, trace i, m, m.params, m.cobraSourceSignature(true)
+
 		_calcMembersScore(members, args, strictBindChecking, candidates)
 			
 		maxScore = -10_000
 		winner = nil to IOverloadable?
 		for pair in candidates
-			if false, print pair[0], (pair[1] to IOverloadable).idString
+			if verbose, print 'candidate:', pair[0], (pair[1] to IOverloadable).idString
 			if pair[0] to int > maxScore
 				maxScore = pair[0] to int
 				winner = pair[1] to IOverloadable
@@ -1570,19 +1578,17 @@ class MemberOverload inherits BoxMember is partial
 						sep = ', '
 				.throwError(msg)
 
-		if false
+		if verbose
 			print
 			trace .token.fileName
-			trace maxScore, _name
-			trace .token.toTechString
-			trace winner
+			trace maxScore, _name, .token.toTechString, winner, winner.params.count, winner.params
 			print 'args:'
 			for arg in args, print '   [arg]'
 			print 'params:'
 			for param in winner.params, print '   [param]'
 			print 'overloads:'
 			for member in .members, print '   [member]'
-		# print 'winner:', score, winner
+			print 'winner:', maxScore, winner
 		assert winner
 		return winner to !
 	

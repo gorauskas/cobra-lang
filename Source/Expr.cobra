@@ -687,8 +687,7 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 							if needInferOutArgs
 								moDefn = definition.members[0]  # not guaranteed to have the best param list 
 								if moDefn.hasParams
-									params = moDefn.params
-									_inferOutArgs(args, params, true)	
+									_inferOutArgs(args, moDefn.params, true)	
 									
 							# Note that overloads can have different return types (even if more than just the return type is needed to distinguish them). Example: Math.
 							# Plenty of info here:
@@ -697,6 +696,12 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 							winner = definition.computeBestOverload(.args, .genericArgTypes, true)
 							sharp'definition = winner'
 							type = winner.resultType
+							if winner inherits BoxMember # .no-warnings.
+								if winner.name not in ['format', 'invoke', 'split', 'sort']  # to-do: hack
+									params = winner.params
+									if _checkParamsCount(winner, args, params)
+										if needInferOutArgs, _inferOutArgs(args, params, false)	
+										_checkArgsAssignable(winner, args, params)
 						else
 							type = definition.resultType
 							if not _didVariArgs(definition)
@@ -841,10 +846,10 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 			else
 				.throwError('Cannot pass type arguments to "[definition.name]" because it is a [definition.getType.name].') # @@ _definition.englishName; also might need this error in other locations
 		return definition
-	
+
 	def _checkParamsCount(definition as BoxMember, args as IList<of Expr>, params as IList<of Param>) as bool
-		if args.count <> params.count
-			if _name=='toString'  # TODO because many structs like Decimal have a toString() overload which cannot currently be expressed in SystemInterfaces.cobra
+		if args.count <> params.count and not (definition inherits AbstractMethod and (definition to AbstractMethod).hasVariParams)
+			if _name=='toString'  # to-do: hack: because many structs like Decimal have a toString() overload which cannot currently be expressed in SystemInterfaces.cobra
 				return false
 			else
 				.throwError('The method "[definition.name]" is expecting [params.count] argument[Utils.plural(params)], but [args.count] are being supplied in this call.')
@@ -863,11 +868,12 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 				if warn
 					sugg = 'You may want to disambiguate this by declaring the variable explicitly.'
 					.compiler.warning(this, 'Cobra has implicitly declared a variable "[newDefn.name] as [newDefn.type.name]" for an undefined out parameter variable but the type inferred may not be correct as the method called is overloaded. [sugg]')
-			
+
 	def _checkArgsAssignable(definition as BoxMember, args as IList<of Expr>, params as IList<of Param>) 
 		for i in args.count
 			arg = args[i]
 			param = params[i]
+			if param.type inherits VariType, break  # to-do: vari args not checked yet
 			if arg.hasError
 				break
 			if arg inherits AssignExpr  # assignments in arguments have special treatment

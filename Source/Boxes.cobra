@@ -128,7 +128,7 @@ class Box
 			for box in .allBaseTypes
 				box._allExtensionMembers(imembers, members)
 			for ud in .compiler.nameSpaceStack.peek.useDirectives
-				_allExtensionMembers(ud.boundNameSpace, imembers, members)
+				_allExtensionMembers(ud.boundNameSpace to !, imembers, members)
 
 	def _allExtensionMembers(ns as NameSpace, imembers as IList<of IBoxMember>, members as IList<of IBoxCodeMember>)
 		for decl in ns.declsInOrder
@@ -465,7 +465,7 @@ class Box
 			diff = a.compareTo(b[1:])
 			return if(diff == 0, -1, diff)
 		return a.compareTo(b)
-	
+
 	def prepIfNeeded
 		if _nativeType, _prepLibraryBox
 		else, .completeMemberConstructionIfNeeded
@@ -1403,8 +1403,7 @@ class Class
 			.addDecl(init)
 		else
 			# provide every initializer from the base class
-			count = 0
-			firstInit as Initializer?
+			v = false
 			.baseClass.prepIfNeeded
 			isFromBinaryLibrary = .baseClass.isFromBinaryLibrary
 			inits = List<of Initializer>()
@@ -1413,6 +1412,7 @@ class Class
 					if decl.isPrivate, continue
 					if isFromBinaryLibrary and not decl.isPublic and not decl.isProtected, continue
 					if decl.isPublic or decl.isProtected
+						if v, trace .baseClass.idString, decl.idString
 						init = Initializer(.token, Token.empty, this, decl.params.clone, decl.isNames, decl.attributes, '', isImplicit=true)
 						inits.add(init)
 						if decl.params.count == 0
@@ -1421,16 +1421,15 @@ class Class
 							args = for param in decl.params get IdentifierExpr(.token.copy('ID', param.name), param.name) to Expr
 							dotRight = CallExpr(.token.copy('ID', 'init'), 'init', args, true)
 						init.addStmt(DotExpr(.token.copy('DOT', '.'), 'DOT', BaseLit(.token.copy('BASE', 'base')), dotRight))
-						if count == 0
-							.addDecl(init)
-							firstInit = init
-						else if count == 1
-							overload = MemberOverload(firstInit)
-							.registerOverload(overload)
-							overload.addMember(init)
-						else
-							overload.addMember(init)
-						count += 1
+
+			if v
+				trace inits.count
+				for init in inits, trace init
+			if inits.count, .addDecl(inits[0])
+			if inits.count > 1
+				overload = MemberOverload(inits[0])
+				.registerOverload(overload)
+				for init in inits[1:], overload.addMember(init)
 			# System.Attribute's initializer is protected, making it awkward if a subclass does not define one. Therefore:
 			if inits.count == 1 and inits[0].params.count == 0 and not inits[0].isPublic
 				inits[0].changeToPublic
@@ -1457,25 +1456,61 @@ class Class
 		# deal with inheritance and overloads
 		assert _baseClass or .isSystemObjectClass
 		if _baseClass
-			#assert _baseClass.didBindInt
-			for decl in List<of IBoxMember>(_declsInOrder)
-				if decl inherits Method and not decl inherits Initializer  # TODO: I don't think this captures Indexers. Make a test case if needed, write: if decl.canBeOverloaded or if decl inherits ICanBeOverloaded
-					other = _baseClass.memberForName(decl.name)
-					if other
-						if decl inherits MemberOverload
-							overload = decl
-						else if decl implements IOverloadable
+			#assert _baseClass.didBindInt  # to-do?
+			v = false
+			if v, trace .idString
+
+			# Note that .registerOverload updates/overwrites _declByName[CI] and appends to
+			# _overloads but not remove overload members from _declsInOrder or add overloads to them.
+			
+			# So create a list of members that prefers overloads over their members:
+
+			declsByName = Dictionary<of String, IBoxMember>()
+			for decl in _declsInOrder
+				name = decl.name
+				if not declsByName.containsKey(name)
+					over = .declForName(name) to? MemberOverload
+					if over, declsByName[name] = over
+					else, declsByName[name] = decl
+			decls = declsByName.values.toList
+			# just for consistent runs:
+			decls.sort(do(a as IBoxMember, b as IBoxMember)=a.name.compareTo(b.name))
+			name = ''
+
+			for decl in decls
+				if not decl implements IOverloadable and not decl inherits MemberOverload, continue
+				baseDecl = _baseClass.memberForName(decl.name)
+				if baseDecl is nil, continue
+				if decl inherits MemberOverload
+					if decl.members[0] inherits Initializer
+						# initializers are not inherited
+						continue
+					if baseDecl inherits MemberOverload
+						for member in baseDecl.members
+							decl.addInheritedMemberIfNoMatch(member)
+					else if baseDecl implements IOverloadable
+						decl.addInheritedMemberIfNoMatch(baseDecl)
+					else
+						decl.members[0].recordError('Cannot declare a [decl.englishName] named "[decl.name]" because the base member "[decl.name]" is a [baseDecl.englishName].')
+				else if decl implements IOverloadable
+					if decl inherits Initializer
+						# initializers are not inherited
+						continue
+					if baseDecl inherits MemberOverload
+						overload = MemberOverload(decl)
+						.registerOverload(overload)
+						for member in baseDecl.members
+							overload.addInheritedMemberIfNoMatch(member)
+					else if baseDecl implements IOverloadable
+						if decl.matchesSignature(baseDecl)
+							# this is an override, not an overload
+							pass
+						else						
 							overload = MemberOverload(decl)
 							.registerOverload(overload)
-						else
-							throw FallThroughException(decl)
-						if other inherits MemberOverload
-							for member in other.members
-								overload.addInheritedMemberIfNoMatch(member)
-						else if other inherits IOverloadable
-							overload.addInheritedMemberIfNoMatch(other)
-						else
-							decl.recordError('Cannot declare a [decl.englishName] named "[decl.name]" because the base member "[decl.name]" is a [other.englishName].')
+							overload.addInheritedMemberIfNoMatch(baseDecl)
+					else					
+						decl.recordError('Cannot declare a [decl.englishName] named "[decl.name]" because the base member "[decl.name]" is a [baseDecl.englishName].')
 		base._finishOverloads
 
 	get englishName as String is override
