@@ -148,7 +148,8 @@ class HelpGenerator
 
 	def printStylesheet
 		print '<style type="text/css">'
-		.embedFile('styles-cobra-help.css')
+		.embedFile('styles-cobra-help.css')  # css specifically for help files only
+		.embedFile('styles-cobra-shl.css')   # syntax highlighting styles for Cobra
 		print '</style>'
 	
 	def embedFile(fileName as String)
@@ -359,7 +360,7 @@ class HelpGenerator
 		members = for member in members where not member inherits TestMethod
 		members = for member in members where not _testMethodRE.isMatch(member.name)
 
-		# to-do: constructors
+		# to-do: inits/constructors
 		memberKindNames = ['constants', 'variables', 'events', 'properties', 'indexers', 'methods']
 		for visibility in 0 : 2    # public, non-public
 			for level in 0 : 2     # shared, instance
@@ -399,6 +400,23 @@ class HelpGenerator
 						print '</tr>'
 
 	def _printBoxMember(m as IBoxMember)
+		_printBoxMemberInFullSignatureStyle(m)
+
+	def _printBoxMemberInFullSignatureStyle(m as IBoxMember)
+		print '<span class="box-pair-member">'
+		try
+			htmlSig = (m to dynamic).cobraSourceSignatureInHtml to String
+			print htmlSig
+		catch
+			try
+				textSig = (m to dynamic).cobraSourceSignature to String
+			catch
+				textSig = m.name
+			print textSig.htmlEncode
+		print '</span>'
+		print .setting('member separator', '<br />')
+
+	def _printBoxMemberInShortStyleWithPopUp(m as IBoxMember)
 		print '<span class="box-pair-member">'
 		matchId = _boxMemberId(m)
 		print '<a id="link-[matchId]" href="#" rel="[matchId]" class="box-pair-link">'
