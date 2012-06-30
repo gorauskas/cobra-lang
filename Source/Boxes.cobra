@@ -787,13 +787,7 @@ class Box
 				attrib.bindImp
 			catch ne as NodeException
 				.compiler.recordError(ne)
-		for i in _invariants.count
-			invari = _invariants[i].bindImp
-			if invari.type is not .compiler.boolType
-				_invariants[i] = TruthExpr(invari).bindAll to Expr
-		# TODO: should be able to remove the following
-		for invari in _invariants
-			invari.bindImp
+		_bindImpInvariants
 		for decl in List<of IBoxMember>(_declsInOrder)
 			assert not decl is this
 			.compiler.boxMemberStack.push(decl)
@@ -815,6 +809,20 @@ class Box
 			.compiler.boxMemberStack.push(tm)
 			try,     tm.bindImp
 			finally, .compiler.boxMemberStack.pop
+
+	def _bindImpInvariants
+		for i in _invariants.count
+			baseExpr = _invariants[i].findFirstExpr(do(e as Expr)=e inherits BaseLit)
+			if baseExpr
+				baseExpr.recordError('Cannot use "base" in invariants.')
+			else
+				try
+					invari = _invariants[i].bindImp
+				catch ne as NodeException
+					.compiler.recordError(ne)
+				success
+					if invari.type is not .compiler.boolType
+						_invariants[i] = TruthExpr(invari).bindAll to Expr
 
 	def _prepLibraryBox
 		"""
