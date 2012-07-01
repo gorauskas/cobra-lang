@@ -290,9 +290,6 @@ class Compiler is partial
 			pass
 		else if File.exists(cscPath+'.exe')
 			cscPath += '.exe'
-		else
-			.recordError(SourceException('Cannot find compiler specified by -native-compiler argument: [cscPath]'))
-			return
 		backEndOptions += ' "[optChar]out:[.fullExeFileName]"'
 		p = System.Diagnostics.Process()
 		p.startInfo.fileName = cscPath
@@ -300,7 +297,15 @@ class Compiler is partial
 		p.startInfo.arguments = '[backEndOptions] [sharpFileNames]'
 		if _verbosity >= 2
 			print '[p.startInfo.fileName] [p.startInfo.arguments]'
-		output = CobraCore.runAndCaptureAllOutput(p)
+		try
+			output = CobraCore.runAndCaptureAllOutput(p)
+		catch exc as System.ComponentModel.Win32Exception
+			# ex: 'ApplicationName='gmcsaoeu', CommandLine='"-r:Cobra.Lang.dll" "-nologo" ...'
+			if exc.message.contains('ApplicationName=')
+				.recordError(SourceException('Cannot find compiler specified by -native-compiler argument: [cscPath]'))
+				return
+			else
+				throw
 		# TODO: check p.exitCode, especially if output is empty
 		_parseSharpCompilerOutput(output)
 
