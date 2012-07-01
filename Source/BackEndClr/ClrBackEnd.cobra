@@ -127,17 +127,31 @@ class ClrBackEnd inherits BackEnd
 	
 	def readSystemTypes is override
 		# TODO: Move the called support methods below out of Compiler
-		
-		# TODO: support targeting a specific CLR version, but not below 2.0
-		#.compiler.readAssembly(Assembly.load('mscorlib.dll') to !)
-		.compiler.clrReadAssembly(Assembly.load('mscorlib.dll') to !)
+		clrProfile = .compiler.options.getDefault('clr-profile', '') to String
+		if clrProfile <> ''
+			if clrProfile.contains('MonoTouch')
+				ver = Assembly.getAssembly(Object).imageRuntimeVersion
+				if ver.startsWith('v'), ver = ver[1:]
+				msg = 'You should be running Cobra on CLR 4 or higher when targeting MonoTouch.'
+				# realistically, the warning may never be displayed due to an exception when trying
+				# to load the assembly. so print it now:
+				print 'cobra: warning:', msg
+				if ver[0] in '123', .compiler.warning(CobraWarning('You should be running Cobra on CLR 4 or higher when targeting MonoTouch.'))
+			for libName in ['mscorlib.dll', 'System.dll']
+				path = Path.combine(clrProfile, libName)
+				a = Assembly.loadFile(path) to !
+				.compiler.clrReadAssembly(a)
+		else
+			# TODO: support targeting a specific CLR version, but not below 2.0
+			#.compiler.readAssembly(Assembly.load('mscorlib.dll') to !)
+			.compiler.clrReadAssembly(Assembly.load('mscorlib.dll') to !)
 
-		# TODO: .readAssembly(Assembly.loadFrom('System.dll') to !)
-		#       gives: Unhandled Exception: System.IO.FileNotFoundException: Could not load file or assembly 'System.dll' or one of its dependencies. The system cannot find the file specified.
+			# TODO: .readAssembly(Assembly.loadFrom('System.dll') to !)
+			#       gives: Unhandled Exception: System.IO.FileNotFoundException: Could not load file or assembly 'System.dll' or one of its dependencies. The system cannot find the file specified.
 
-		t = System.Diagnostics.Process.getType
-		#.compiler.readAssembly(t.assembly) # System.dll
-		.compiler.clrReadAssembly(t.assembly) # System.dll
+			t = System.Diagnostics.Process.getType
+			#.compiler.readAssembly(t.assembly) # System.dll
+			.compiler.clrReadAssembly(t.assembly) # System.dll
 		
 	def fixMemberSigs is override
 		.compiler.dotNetFixNilableMemberSigs # in ScanClrType
