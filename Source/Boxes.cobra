@@ -435,6 +435,27 @@ class Box
 				m = .compiler.curNameSpace.extensionMemberFor(this, name)
 		return m
 
+	def methodForExactSignature(name as String, paramTypes as IList<of IType>, returnType as IType) as AbstractMethod?
+		""" Returns the method with the *exact* match or nil if there is none. """
+		require name.length
+		member = .memberForName(name)
+		if member
+			if member inherits AbstractMethod
+				if _methodMatchesExactly(member, returnType, paramTypes), return member
+			else if member inherits MemberOverload
+				for member2 in member.members
+					if member2 inherits AbstractMethod
+						if _methodMatchesExactly(member2, returnType, paramTypes), return member2
+		return nil
+
+	def _methodMatchesExactly(method as AbstractMethod, returnType as IType, paramTypes as IList<of IType>) as bool
+		if method.resultType <> returnType, return false
+		params = method.params
+		if params.count <> paramTypes.count, return false
+		for i in params.count
+			if params[i].type <> paramTypes[i], return false
+		return true
+		
 	def suggestionsForBadMemberName(name as String) as List<of String>
 		suggs = base.suggestionsForBadMemberName(name)
 		if _baseClass
