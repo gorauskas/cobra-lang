@@ -661,18 +661,23 @@ class ForEnumerableStmt inherits ForStmt is partial
 		token = _token.copy
 		count = 0
 		isStreamOfKeyValue = .what.type.isDictionaryLike
-		if not isStreamOfKeyValue and _var.type inherits Box
-			isStreamOfKeyValue = (_var.type to Box).isIndirectConstructionOf(.compiler.libraryType('System.Collections.Generic.KeyValuePair<of,>') to Box)
+		if isStreamOfKeyValue, kvRHS = ['key', 'value']
+		if _var.type inherits Box
+			if not isStreamOfKeyValue
+				isStreamOfKeyValue = (_var.type to Box).isIndirectConstructionOf(.compiler.libraryType('System.Collections.Generic.KeyValuePair<of,>') to Box)
+				if isStreamOfKeyValue, kvRHS = ['key', 'value']
+			if not isStreamOfKeyValue
+				isStreamOfKeyValue = (_var.type to Box).isDescendantOf(.compiler.libraryType('Cobra.Lang.BasePair') to Box)
+				if isStreamOfKeyValue, kvRHS = ['a', 'b']
 		if isStreamOfKeyValue
 			# This covers:
 			#    * dictionaries such as: [I]Dictionary<of TKey, TValue>
-			#    * streams such as: KeyValuePair<of TKey, TValue>*
+			#    * streams such as: Pair<of T>*, Pair<of TA, TB>*, KeyValuePair<of TKey, TValue>*
 			#    * any user type that implements IEnumerable<of KeyValuePair<of TKey, TValue>>
 			
 			# assume enumerator will return KeyValue so can't have other than 2 multiargs
 			if _multiArgs.count <> 2
 				.throwError('Cannot have other than two multiarg variables in a for statement as assignment targets from a dictionary or key-value stream.')
-			kvRHS = ['key', 'value']
 			for id in _multiArgs
 				forVar    = IdentifierExpr(token.copy('ID', varName), varName)
 				rhsToken  = token.copy('ID', kvRHS[count])
@@ -1802,4 +1807,4 @@ class MultiTargetAssignStatement inherits Stmt is partial
 			idxExpr = IndexExpr(ttoken.copy('LBRACKET', r'['), tmpId, exprs)
 			stmts.add(AssignExpr(assignTok, assignTok.which, id, idxExpr))
 			count += 1
-		_block = BlockStmt(ttoken.copy('INDENT', ''), stmts)	
+		_block = BlockStmt(ttoken.copy('INDENT', ''), stmts)
