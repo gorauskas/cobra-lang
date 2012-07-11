@@ -1116,11 +1116,17 @@ static public class CobraImp {
 						// Same behavior on .NET 2.0 and Mono 2.4. And totally lame.
 						// So special case it:
 						object newB;
-						if (a.GetType().IsEnum)
+						if (a.GetType().IsEnum) {
 							newB = Enum.ToObject(a.GetType(), b);      // yes, may throw exception
-						else
+							return ((IComparable)a).CompareTo(newB);
+						} else if (a.GetType().IsValueType == b.GetType().IsValueType) {
+							// the above if statement guards against a string like '4' being
+							// converted to an int. Cobra does not support `3 < '4'` at compile-time
+							// so it does not support it at run-time either.
 							newB = Convert.ChangeType(b, a.GetType()); // yes, may throw exception
-						return ((IComparable)a).CompareTo(newB);
+							return ((IComparable)a).CompareTo(newB);
+						}
+						return ((IComparable)a).CompareTo(b);
 					} else {
 						throw;
 					}
