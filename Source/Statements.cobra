@@ -677,7 +677,7 @@ class ForEnumerableStmt inherits ForStmt is partial
 			
 			# assume enumerator will return KeyValue so can't have other than 2 multiargs
 			if _multiArgs.count <> 2
-				.throwError('Cannot have other than two multiarg variables in a for statement as assignment targets from a dictionary or key-value stream.')
+				.throwError('Cannot have other than two variables in a for statement as assignment targets from a dictionary or key-value stream.')
 			for id in _multiArgs
 				forVar    = IdentifierExpr(token.copy('ID', varName), varName)
 				rhsToken  = token.copy('ID', kvRHS[count])
@@ -1646,8 +1646,7 @@ class MultiTargetAssignStatement inherits Stmt is partial
 		a = <expr>
 		b = <expr>
 		...
-	TODO: support a, b[,...] = <Enumerable> 
-	TODO: support a, b[,...] = <KeyValuePair|DictionaryEntry>
+	TODO: support a, b[,...] = <Enumerable>  ... easy work around though:  a, b = enumerable.toList
 	"""
 
 	var _targets as List<of Expr>       # Lvalues
@@ -1659,12 +1658,12 @@ class MultiTargetAssignStatement inherits Stmt is partial
 	var _block as BlockStmt?            # the rewritten/expanded code
 
 	cue init(opToken as IToken, args as List<of Expr>, source as Expr?, rvals as List<of Expr>?)
-		base.init(opToken)
-		assert opToken.which == 'ASSIGN'
-		assert (source or rvals) and not (source and rvals) # either but not both
-		_targets = args
-		_source = source
-		_rvals = rvals
+		require
+			opToken.which == 'ASSIGN'
+			(source or rvals) and not (source and rvals) # either but not both
+		body
+			base.init(opToken)
+			_targets, _source, _rvals = args, source, rvals
 
 	def addSubFields
 		base.addSubFields
@@ -1715,6 +1714,7 @@ class MultiTargetAssignStatement inherits Stmt is partial
 				_rightValues = _rvals
 				_rvals = nil			
 		if _source
+			_source.bindImp
 			#TODO: chk _source supports an int indexer  somehow...
 			#if not .can_be_indexed_by_int_indexer(_source) 
 			#	.throwError(r"rhs expression [_source.toCobraSource] must support being indexed by an integer offset (e.g rhs[0]")
@@ -1784,27 +1784,42 @@ class MultiTargetAssignStatement inherits Stmt is partial
 			id0 = lh_mt_serialNum[0] # id0 is contents of targets[0]
 			id1 = lh_mt_serialNum[1] # id1 is contents of targets[1]
 				(... repeated for number of items in targets specifying ids (lvalues))
-		"""
+		"""		
+		assert _targets.count >= 2
+
 		stmts = List<of Stmt>()
 		assignTok = .lastToken  # the one we stored in init
 		serialNum = .compiler.curBox.makeNextPrivateSerialNumber
-		tmpName = 'lh_mt_[serialNum]'  # lh=local handler, mt = multiTarget
+		sourceTmpName = 'lh_mt_[serialNum]'  # lh=local handler, mt = multiTarget
 		ttoken = .lastToken.copy('XXX', 'xxx')  # invalid template token for copying
-		idToken = ttoken.copy('ID', tmpName)
+		sourceIdToken = ttoken.copy('ID', sourceTmpName)
 		
-		tmpId = IdentifierExpr(idToken, idToken.text)
-		s = AssignExpr(assignTok, assignTok.which, tmpId, _source) 
-		stmts.add(s)  
+		stmts.add(
+			AssignExpr(assignTok, assignTok.which, IdentifierExpr(sourceIdToken), _source))
 
-		count = 0
-		for id in _targets
-			intToken = ttoken.copy('INTEGER_LIT', '[count]')
-			intToken.value = count
-			countIntLit = IntegerLit(intToken)
-			exprs = List<of Expr>()
-			exprs.add(countIntLit)
-			tmpId = IdentifierExpr(ttoken.copy('ID', tmpName), tmpName)
-			idxExpr = IndexExpr(ttoken.copy('LBRACKET', r'['), tmpId, exprs)
-			stmts.add(AssignExpr(assignTok, assignTok.which, id, idxExpr))
-			count += 1
+		# check for a source that is a pair
+		if _source.type inherits Box
+			isPair = (_source.type to Box).isDescendantOf(.compiler.libraryType('Cobra.Lang.BasePair') to Box)
+			if isPair
+				memberNames = ['a', 'b']
+			else if not isPair
+				isPair = (_source.type to Box).isIndirectConstructionOf(.compiler.libraryType('System.Collections.Generic.KeyValuePair<of,>') to Box)
+				if isPair, memberNames = ['key', 'value']
+
+		if isPair
+			if _targets.count > 2, .throwError('Cannot have more than two variables to unpack a pair.')
+			for i, targetExpr in _targets.numbered
+				sourceIdExpr = IdentifierExpr(sourceIdToken.copy)
+				memberExpr = MemberExpr(ttoken.copy('ID', memberNames[i]))
+				dotMemberExpr = DotExpr(.token, 'DOT', sourceIdExpr, memberExpr)
+				stmts.add(AssignExpr(assignTok, assignTok.which, targetExpr, dotMemberExpr))
+		else
+			for i, targetExpr in _targets.numbered
+				intToken = ttoken.copy('INTEGER_LIT', i.toString)
+				intToken.value = i
+				indexLit = IntegerLit(intToken)
+				sourceIdExpr = IdentifierExpr(ttoken.copy('ID', sourceTmpName))
+				indexExpr = IndexExpr(ttoken.copy('LBRACKET', r'['), sourceIdExpr, [indexLit to Expr])
+				stmts.add(AssignExpr(assignTok, assignTok.which, targetExpr, indexExpr))
+
 		_block = BlockStmt(ttoken.copy('INDENT', ''), stmts)
