@@ -53,18 +53,18 @@ class Compiler is partial
 		fileName = 'test-[dt.year][dt.month][dt.day][dt.hour][dt.minute].cs'  # TODO: format the numbers to have leading zeros
 		using f = CurlyWriter(.createSharpFile(fileName), CurlyLineNumberTreatment.PoundLine)
 			print to f
-				print 'using CobraLangInternal = Cobra.Lang[.embedRunTimeSuffix];'
+				print 'using CobraCoreInternal = Cobra.Core[.embedRunTimeSuffix];'
 				print ''
 				print 'class _GeneratedTestRunner {'
 				print ''
 				print '	public static void Main() {'
-				print '		CobraLangInternal.CobraImp.ShowTestProgress = true;'
+				print '		CobraCoreInternal.CobraImp.ShowTestProgress = true;'
 				if .hasExceptionReportOption
 					print '		try {'
 				.writeSharpRunAllTests(f)
 				if .hasExceptionReportOption
 					print '		} catch (System.Exception e) {'
-					print '			CobraLangInternal.CobraCore.HandleUnhandledException(e);'
+					print '			CobraCoreInternal.CobraCore.HandleUnhandledException(e);'
 					print '		}'
 				print '	}'
 				print '}'
@@ -72,10 +72,10 @@ class Compiler is partial
 		_modules.add(SharpModule(fileName, _verbosity))
 
 	def writeSharpRunAllTests(cw as CurlyWriter)
-		runner = .options['test-runner'] to String  # ex: Cobra.Lang.CobraCore.runAllTests, ex: MyProgram.runTests
+		runner = .options['test-runner'] to String  # ex: Cobra.Core.CobraCore.runAllTests, ex: MyProgram.runTests
 		if runner <> 'nil'
 			if runner.endsWith('()'), runner = runner[:-2]
-			if runner.startsWith('Cobra.Lang.'), runner = 'CobraLangInternal.' + runner['Cobra.Lang.'.length:]
+			if runner.startsWith('Cobra.Core.'), runner = 'CobraCoreInternal.' + runner['Cobra.Core.'.length:]
 			parts = List<of String>(runner.split(c'.'))
 			if parts.count > 1
 				parts[parts.count-1] = parts.last[0].toUpper.toString + parts.last[1:]
@@ -160,6 +160,7 @@ class Compiler is partial
 			if optimize, backEndOptions.add('[optChar]optimize+')
 
 			for refer in .loadedReferences  # don't take the library references from options, because the references can grow
+				if refer == 'Cobra.Lang.dll', continue  # hack. remove at some point 2012-07-17
 				backEndOptions.add('[optChar]r:[refer]')
 
 			debug = options.getDefault('debug', '') to String
@@ -175,7 +176,7 @@ class Compiler is partial
 			backEndOptions.add('[optChar]nowarn:0108,0162,0169,0183,0184,0219,0414,0429,1717,1718')
 				# CS0108: Hides inherited member. Mono reports this for workspace/Tests/720-libraries/400-other/500-follow-dependencies/102-lib-b.cobra. MS does not. For multiple reasons, disabling is the best choice here.
 				# CS0162: Unreachable code detected
-				# CS0169: The private field `Cobra.Lang.CannotReadPropertyException._ih_invariantGuard' is never used
+				# CS0169: The private field `Cobra.Core.CannotReadPropertyException._ih_invariantGuard' is never used
 				# CS0183: The given expression is always of the provided (`int') type
 				# CS0184: The given expression is never of the provided (`decimal') type
 				# CS0219: The variable `x' is assigned but its value is never used / Cobra handles these
@@ -199,7 +200,7 @@ class Compiler is partial
 			for libPath in .options.getStringList('library-directory')
 				backEndOptions.add('-lib:[libPath]')
 
-			# Cobra.Lang.dll is in the same directory as cobra.exe
+			# Cobra.Core.dll is in the same directory as cobra.exe
 			libPath = Path.getDirectoryName(CobraCore.exePath) to !
 			backEndOptions.add('-lib:[libPath]')
 
@@ -302,7 +303,7 @@ class Compiler is partial
 		try
 			output = CobraCore.runAndCaptureAllOutput(p)
 		catch exc as System.ComponentModel.Win32Exception
-			# ex: 'ApplicationName='gmcsaoeu', CommandLine='"-r:Cobra.Lang.dll" "-nologo" ...'
+			# ex: 'ApplicationName='gmcsaoeu', CommandLine='"-r:Cobra.Core.dll" "-nologo" ...'
 			if exc.message.contains('ApplicationName=')
 				.recordError(SourceException('Cannot find compiler specified by -native-compiler argument: [cscPath]'))
 				return
@@ -475,7 +476,7 @@ class CobraModule is partial
 			if .isMainWrapper 
 				.synthesizeSharpMainWrapper(sw)
 			else
-				sw.write('using CobraLangInternal = Cobra.Lang[.compiler.embedRunTimeSuffix];\n')
+				sw.write('using CobraCoreInternal = Cobra.Core[.compiler.embedRunTimeSuffix];\n')
 				.topNameSpace.writeSharpDef(sw)
 			d = sw.curlyToCobraLineNum
 		if false
@@ -628,11 +629,11 @@ class NameSpace
 		value as Object?
 		if not .addOnValues.tryGetValue('sharpFullName', out value)
 			fullName = .fullName
-			if fullName == 'Cobra.Lang'
-				name = 'Cobra.Lang' + .compiler.embedRunTimeSuffix
-			else if fullName in ['Cobra.Lang.Test']  # must include all namespaces found in CobraWorkspace/Source/Cobra.Lang
-			# else if fullName.startsWith('Cobra.Lang.') -- this breaks -namespace:Cobra.Lang -ert:yes (used in comp-compiler-dll script)
-				name = 'Cobra.Lang[.compiler.embedRunTimeSuffix].' + fullName['Cobra.Lang.'.length:]
+			if fullName == 'Cobra.Core'
+				name = 'Cobra.Core' + .compiler.embedRunTimeSuffix
+			else if fullName in ['Cobra.Core.Test']  # must include all namespaces found in CobraWorkspace/Source/Cobra.Core
+			# else if fullName.startsWith('Cobra.Core.') -- this breaks -namespace:Cobra.Core -ert:yes (used in comp-compiler-dll script)
+				name = 'Cobra.Core[.compiler.embedRunTimeSuffix].' + fullName['Cobra.Core.'.length:]
 			else
 				name = fullName
 			.addOnValues['sharpFullName'] = name
@@ -661,8 +662,8 @@ class NameSpace
 		assert not .isUnified
 		base.writeSharpDef(sw)
 		if not .isRoot
-			# to-do: isn't the following incorrect for Cobra.Lang.Test?
-			suffix = if(.fullName == 'Cobra.Lang', .compiler.embedRunTimeSuffix, '')
+			# to-do: isn't the following incorrect for Cobra.Core.Test?
+			suffix = if(.fullName == 'Cobra.Core', .compiler.embedRunTimeSuffix, '')
 			sw.writeAndIndent('namespace [.name][suffix] {\n\n')
 		for ud in _useDirectives
 			ud.writeSharpDef(sw)
@@ -685,7 +686,7 @@ class UseDirective
 
 # Do not rely on C#'s using statement as it could lead to problems:
 # -- The semantics between Cobra `use` and C# `using` can be different.
-# -- Using Cobra.Lang library type names without qualification in the generated code could lead to confusing errors if the user happens to have a type with the same name.
+# -- Using Cobra.Core library type names without qualification in the generated code could lead to confusing errors if the user happens to have a type with the same name.
 # -- You can't used unqualified type names in IL code which we may migrate to in the future. Might as well deal with this now.
 
 #	def writeSharpDef(sw as CurlyWriter) is override
@@ -852,7 +853,7 @@ class StreamType
 	is partial
 
 	get sharpInit as String is override
-		return 'new CobraLangInternal.EmptyStream<[.theWrappedType.sharpRef]>()'
+		return 'new CobraCoreInternal.EmptyStream<[.theWrappedType.sharpRef]>()'
 
 	get sharpRef as String is override
 		assert .didBindInh and .didBindInt
@@ -1114,7 +1115,7 @@ class Box is partial
 			expr.writeSharpDef(sw)
 			sw.write(')\n')
 			sw.indent
-			sw.write('throw new CobraLangInternal.InvariantException([expr.sharpSourceSite(.name, "invariant", sharpThis)], ')
+			sw.write('throw new CobraCoreInternal.InvariantException([expr.sharpSourceSite(.name, "invariant", sharpThis)], ')
 			expr.writeSharpBreakdown(sw)
 			sw.write('[sharpThis], null);\n')
 			sw.dedent
@@ -1408,7 +1409,7 @@ class Param is partial
 	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		if .type.isReference and not .type inherits NilableType
-			sw.write(r'[CobraLangInternal.NotNull] ')
+			sw.write(r'[CobraCoreInternal.NotNull] ')
 		for attr in .attributes, attr.writeSharpDef(sw, '', false)
 		branch .direction
 			on Direction.In, pass
@@ -1460,7 +1461,7 @@ class BoxMember
 
 	def writeSharpNotNull(sw as CurlyWriter)
 		if .resultType.isReference and not .resultType inherits NilableType
-			sw.writeLine(r'[' + .sharpNotNullPrefix + 'CobraLangInternal.NotNull]')
+			sw.writeLine(r'[' + .sharpNotNullPrefix + 'CobraCoreInternal.NotNull]')
 
 	get sharpNotNullPrefix as String
 		# 2007-12-22 Writing the attribute like [return: NotNull] is problematic because MemberInfo.getCustomAttributes()
@@ -1773,14 +1774,14 @@ class AbstractMethod
 		if .isCompilerGenerated, return
 		if param.type.isReference and not param.type inherits NilableType and not param.isOut
 			if .compiler.options.boolValue('include-nil-checks')
-				sw.write('if (CobraLangInternal.CobraCore._willCheckNil && [param.sharpName]==null) throw new System.ArgumentNullException("[param.name]");\n')
+				sw.write('if (CobraCoreInternal.CobraCore._willCheckNil && [param.sharpName]==null) throw new System.ArgumentNullException("[param.name]");\n')
 
 	def writeDSTHead(sw as CurlyWriter)
 		if not .canHaveDetailedStackTrace
 			return
 		# could be a neat option, -trace-methods, but maybe done with events:
 		# sw.writeLine('Console.WriteLine(">> [.parentBox.name].[.name]");')
-		sw.write('CobraLangInternal.CobraImp.PushFrame("[.parentBox.name]", "[.name]", [Utils.sharpStringLiteralFor(.token.fullPathName)], [.token.lineNum]')
+		sw.write('CobraCoreInternal.CobraImp.PushFrame("[.parentBox.name]", "[.name]", [Utils.sharpStringLiteralFor(.token.fullPathName)], [.token.lineNum]')
 		if not .isShared
 			sw.write(', "this", [.compiler.curBox.sharpThis]')
 		for param in .params
@@ -1796,11 +1797,11 @@ class AbstractMethod
 		# this catch all clashes with yield statements. which is why .canHaveDetailedStackTrace returns false if a method has a yield statement.
 		sw.dedentAndWrite('} catch {\n')
 		sw.indent
-		sw.write('CobraLangInternal.CobraImp.CaughtUncaughtException();\n')
+		sw.write('CobraCoreInternal.CobraImp.CaughtUncaughtException();\n')
 		sw.write('throw;\n')
 		sw.dedentAndWrite('} finally {\n')
 		sw.indent
-		sw.write('CobraLangInternal.CobraImp.PopFrame();\n')
+		sw.write('CobraCoreInternal.CobraImp.PopFrame();\n')
 		sw.dedentAndWrite('}\n')
 
 
@@ -1918,10 +1919,10 @@ class Method
 		if .isMain
 			if .compiler.hasExceptionReportOption
 				sw.dedent
-				sw.writeLine('} catch (System.Exception _lh_exceptionReportException) { CobraLangInternal.CobraCore.HandleUnhandledException(_lh_exceptionReportException); }')
+				sw.writeLine('} catch (System.Exception _lh_exceptionReportException) { CobraCoreInternal.CobraCore.HandleUnhandledException(_lh_exceptionReportException); }')
 			else if .compiler.options.boolValue('debugging-tips')
 				sw.dedent
-				sw.writeLine('} catch { CobraLangInternal.CobraCore.PrintDebuggingTips(); throw; }')
+				sw.writeLine('} catch { CobraCoreInternal.CobraCore.PrintDebuggingTips(); throw; }')
 				
 	get sharpName as String is override
 		return .name.capitalized
@@ -2088,7 +2089,7 @@ class RequirePart
 		base.writeSharpDef(sw)
 		assert .willGenerateCode
 		willInline = .willInlineCode
-		sw.write('if (CobraLangInternal.CobraCore._willCheckRequire) {\n')
+		sw.write('if (CobraCoreInternal.CobraCore._willCheckRequire) {\n')
 		sw.indent
 		if _codeMember.isOverride
 			# Note that in Cobra, when the top level class does not define `require` then that is the
@@ -2124,7 +2125,7 @@ class RequirePart
 						_codeMember.writeSharpPassArgs(sw, '()', true)  # always use *our* code member since the arg names can be different than base classes
 						sw.write(';\n')
 					sw.dedent
-					sw.write('} catch (CobraLangInternal.RequireException re[n]) {\n')
+					sw.write('} catch (CobraCoreInternal.RequireException re[n]) {\n')
 					sw.indent
 					if n>1
 						sw.write('re[n-1].Next = re[n];\n')
@@ -2173,7 +2174,7 @@ class RequirePart
 			expr.writeSharpDef(sw)
 			sw.write(') ')
 			sw.indent
-			sw.write('throw new CobraLangInternal.RequireException([expr.sharpSourceSite], ')
+			sw.write('throw new CobraCoreInternal.RequireException([expr.sharpSourceSite], ')
 			expr.writeSharpBreakdown(sw)
 			sw.write('[.sharpThis], null);\n')
 			sw.dedent
@@ -2188,7 +2189,7 @@ class EnsurePart is partial
 		base.writeSharpDef(sw)
 		assert .willGenerateCode
 		willInline = .willInlineCode
-		sw.write('if (CobraLangInternal.CobraCore._willCheckEnsure) {\n')
+		sw.write('if (CobraCoreInternal.CobraCore._willCheckEnsure) {\n')
 		sw.indent
 		if _codeMember.isOverride
 			curCodeMember = _codeMember to ?
@@ -2238,12 +2239,12 @@ class EnsurePart is partial
 			expr.writeSharpDef(sw)
 			sw.write(') ')
 			sw.indent
-			sw.write('throw new CobraLangInternal.EnsureException([expr.sharpSourceSite], ')
+			sw.write('throw new CobraCoreInternal.EnsureException([expr.sharpSourceSite], ')
 			expr.writeSharpBreakdown(sw)
 			sw.write('[.sharpThis], null);\n')
 			sw.dedent
 		if not _codeMember.isShared and not _codeMember.isExtensionMember
-			sw.write('if (CobraLangInternal.CobraCore._willCheckInvariant && _ih_invariantGuard == 0) {\n')
+			sw.write('if (CobraCoreInternal.CobraCore._willCheckInvariant && _ih_invariantGuard == 0) {\n')
 			sw.indent
 			sw.write('_ih_invariantGuard += 1;\n')
 			sw.write('try {\n')
@@ -2285,7 +2286,7 @@ class Stmt is partial
 			memberName.length
 			sharpThis.length
 		body
-			return 'new CobraLangInternal.SourceSite([.sharpSourceSiteArgs(boxName, memberName, sharpThis)])'
+			return 'new CobraCoreInternal.SourceSite([.sharpSourceSiteArgs(boxName, memberName, sharpThis)])'
 
 	def sharpSourceSiteArgs as String
 		return .sharpSourceSiteArgs(.compiler.curBox.name, .compiler.curBoxMember.name, .sharpThis)
@@ -2317,7 +2318,7 @@ class Stmt is partial
 
 	def writeSharpSetLine(sw as CurlyWriter)
 		if _canSetLine and .token.lineNum > 0
-			sw.write('CobraLangInternal.CobraImp._curFrame._lineNum = [.token.lineNum];\n')
+			sw.write('CobraCoreInternal.CobraImp._curFrame._lineNum = [.token.lineNum];\n')
 
 	def writeSharpStmt(sw as CurlyWriter)
 		require .didBindImp
@@ -2333,11 +2334,11 @@ class AssertStmt
 		base.writeSharpDef(sw)
 		if not .compiler.options.boolValue('include-asserts')
 			return
-		sw.write('if (CobraLangInternal.CobraCore._willCheckAssert && !')
+		sw.write('if (CobraCoreInternal.CobraCore._willCheckAssert && !')
 		_expr.writeSharpDef(sw)
 		sw.write(') \n')  # \n for improved readability of the generated code
 		sw.indent
-		sw.write('throw new CobraLangInternal.AssertException([.sharpSourceSite], ')
+		sw.write('throw new CobraCoreInternal.AssertException([.sharpSourceSite], ')
 		_expr.writeSharpBreakdown(sw)
 		sw.write('[.sharpThis], ')
 		if _info
@@ -2368,7 +2369,7 @@ class BranchStmt
 				sep = ''
 				for e in onPart.exprs
 					sw.write(sep)
-					sw.write('CobraLangInternal.CobraImp.Equals([varName], ')
+					sw.write('CobraCoreInternal.CobraImp.Equals([varName], ')
 					e.writeSharpDef(sw, false)
 					sw.write(')')
 					sep = ' || '
@@ -2473,9 +2474,9 @@ class ExpectStmt
 			wrongExceptionVarName = '_lh_expect_[_varNumber]'
 			assert gotRightExceptionVarName <> wrongExceptionVarName
 			sw.writeAndIndent('catch (System.Exception [wrongExceptionVarName]) {\n')
-			sw.write('throw new CobraLangInternal.ExpectException(typeof([exceptionTypeRef]), [wrongExceptionVarName]);\n')
+			sw.write('throw new CobraCoreInternal.ExpectException(typeof([exceptionTypeRef]), [wrongExceptionVarName]);\n')
 			sw.dedentAndWrite('}\n')
-		sw.write('if (![gotRightExceptionVarName]) throw new CobraLangInternal.ExpectException(typeof([exceptionTypeRef]), null);\n')
+		sw.write('if (![gotRightExceptionVarName]) throw new CobraCoreInternal.ExpectException(typeof([exceptionTypeRef]), null);\n')
 
 
 class ForStmt
@@ -2493,18 +2494,18 @@ class OldForNumericStmt
 		csVar = _var.sharpName
 		trackLocals = .compiler.willTrackLocals
 		if trackLocals
-			sw.write('for (CobraLangInternal.CobraImp.SetLocal("[.var.name]", [csVar]=')
+			sw.write('for (CobraCoreInternal.CobraImp.SetLocal("[.var.name]", [csVar]=')
 		else
 			sw.write('for ([csVar]=')
 		_start.writeSharpDef(sw)
 		if trackLocals
 			sw.write(')')
 		if _var.type.isDynamic
-			sw.write('; CobraLangInternal.CobraImp.DynamicCompare([csVar], ')
+			sw.write('; CobraCoreInternal.CobraImp.DynamicCompare([csVar], ')
 			_stop.writeSharpDef(sw, false)
 			sw.write(')[if(_dir==1, "<", ">")]0')
 			opName = if(_dir==1, 'op_Addition', 'op_Subtraction')
-			sw.write('; [csVar]=CobraLangInternal.CobraImp.DynamicOp("[opName]", [csVar], ')
+			sw.write('; [csVar]=CobraCoreInternal.CobraImp.DynamicOp("[opName]", [csVar], ')
 			if _step
 				_step.writeSharpDef(sw, false)
 			else
@@ -2545,17 +2546,17 @@ class ForNumericStmt
 		csVar = _var.sharpName
 		trackLocals = .compiler.willTrackLocals
 		if trackLocals
-			sw.write('for (CobraLangInternal.CobraImp.SetLocal("[.var.name]", [csVar]=')
+			sw.write('for (CobraCoreInternal.CobraImp.SetLocal("[.var.name]", [csVar]=')
 		else
 			sw.write('for ([csVar]=')
 		_start.writeSharpDef(sw)
 		if trackLocals
 			sw.write(')')
-		sw.write('; CobraLangInternal.CobraImp.DynamicCompare([csVar], ')
+		sw.write('; CobraCoreInternal.CobraImp.DynamicCompare([csVar], ')
 		_stop.writeSharpDef(sw, false)
 		sw.write(')[if(_dir==1, "<", ">")]0')
 		opName = if(_dir==1, 'op_Addition', 'op_Subtraction')
-		sw.write('; [csVar]=CobraLangInternal.CobraImp.DynamicOp("[opName]", [csVar], ')
+		sw.write('; [csVar]=CobraCoreInternal.CobraImp.DynamicOp("[opName]", [csVar], ')
 		if _step
 			_step.writeSharpDef(sw, false)
 		else
@@ -2624,7 +2625,7 @@ class ForNumericStmt
 
 		sw.write('for(')
 		if trackLocals
-			sw.write('CobraLangInternal.CobraImp.SetLocal("[.var.name]", [sharpVar] = [sharpStart])')
+			sw.write('CobraCoreInternal.CobraImp.SetLocal("[.var.name]", [sharpVar] = [sharpStart])')
 		else
 			sw.write('[sharpVar] = [sharpStart]')		
 		if isSimpleStep
@@ -2632,7 +2633,7 @@ class ForNumericStmt
 		else
 			sw.write('; ([sharpDir]==1) ? [sharpVar] < [sharpStop] : [sharpVar] > [sharpStop]; ')
 		if trackLocals
-			sw.write('CobraLangInternal.CobraImp.SetLocal("[.var.name]", [sharpVar] += [sharpStep])')
+			sw.write('CobraCoreInternal.CobraImp.SetLocal("[.var.name]", [sharpVar] += [sharpStep])')
 		else
 			sw.write('[sharpVar] += [sharpStep]')		
 		sw.write(') ')
@@ -2657,7 +2658,7 @@ class ForEnumerableStmt
 		# TODO: the sharpRef of a type is not qualified and there is no using System.Collections;
 		# _what.writeSharpDefInContext(sw, false)
 		if _what.type.isDynamic
-			sw.write('CobraLangInternal.CobraImp.GetEnumerable(')
+			sw.write('CobraCoreInternal.CobraImp.GetEnumerable(')
 			_what.writeSharpDef(sw, false)
 			sw.write(')')
 		else
@@ -2666,7 +2667,7 @@ class ForEnumerableStmt
 		sw.write(')')
 		stmt = '[.var.sharpName] = [helperName]'
 		if .compiler.willTrackLocals
-			stmt = 'CobraLangInternal.CobraImp.SetLocal("[.var.name]", [stmt])'
+			stmt = 'CobraCoreInternal.CobraImp.SetLocal("[.var.name]", [stmt])'
 		stmt += ';\n'
 		_block.writeSharpDef(sw, stmt)
 
@@ -2743,10 +2744,10 @@ class PrintStmt
 			sw.write('.[methodName](')
 		else
 			methodName = if(_stop, 'PrintStop', 'PrintLine')
-			sw.write('CobraLangInternal.CobraImp.[methodName](')
+			sw.write('CobraCoreInternal.CobraImp.[methodName](')
 		sep = ''
 		for arg in _args
-			sw.write('[sep]CobraLangInternal.CobraImp._printStringMaker.MakeString(')
+			sw.write('[sep]CobraCoreInternal.CobraImp._printStringMaker.MakeString(')
 			arg.writeSharpDef(sw)
 			sw.write(')')
 			sep = '+" "+'
@@ -2758,14 +2759,14 @@ class PrintRedirectStmt
 
 	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
-		sw.write('CobraLangInternal.CobraImp.PushPrintTo(')
+		sw.write('CobraCoreInternal.CobraImp.PushPrintTo(')
 		_destination.writeSharpDef(sw, false)
 		sw.write(');\n')
 		sw.write('try')
 		_block.writeSharpDef(sw)
 		sw.write('finally {\n')
 		sw.indent
-		sw.write('CobraLangInternal.CobraImp.PopPrintTo();\n')
+		sw.write('CobraCoreInternal.CobraImp.PopPrintTo();\n')
 		sw.dedent
 		sw.write('}\n')
 
@@ -2821,7 +2822,7 @@ class TraceLocationStmt
 	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		if .includeTraces
-			sw.write('CobraLangInternal.CobraCore.Tracer.Trace([.sharpSourceSite]);\n')
+			sw.write('CobraCoreInternal.CobraCore.Tracer.Trace([.sharpSourceSite]);\n')
 
 
 class TraceAllStmt
@@ -2830,7 +2831,7 @@ class TraceAllStmt
 	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		if .includeTraces
-			sw.write('CobraLangInternal.CobraCore.Tracer.Trace([.sharpSourceSite], "this", [_codePart.sharpThis]')
+			sw.write('CobraCoreInternal.CobraCore.Tracer.Trace([.sharpSourceSite], "this", [_codePart.sharpThis]')
 			for param in _codePart.params
 				sw.write(', "[param.name]", [param.sharpName]')
 			for local in _codePart.locals
@@ -2844,7 +2845,7 @@ class TraceExprsStmt
 	def writeSharpDef(sw as CurlyWriter)
 		base.writeSharpDef(sw)
 		if .includeTraces
-			sw.write('CobraLangInternal.CobraCore.Tracer.Trace([.sharpSourceSite]')
+			sw.write('CobraCoreInternal.CobraCore.Tracer.Trace([.sharpSourceSite]')
 			sep = ', '
 			for expr in _exprs
 				sw.write('[sep][Utils.sharpStringLiteralFor(expr.toCobraSource)][sep]')
@@ -2902,11 +2903,11 @@ class TryStmt
 			if localSuccessVar
 				sb.append('[localSuccessVar] = false;\n')
 			if .compiler.hasDetailedStackTraceOption
-				sb.append('CobraLangInternal.CobraImp.HandledException();\n')
+				sb.append('CobraCoreInternal.CobraImp.HandledException();\n')
 			if eb.varName
 				trackLocals = .compiler.willTrackLocals
 				if trackLocals
-					sb.append('CobraLangInternal.CobraImp.SetLocal("[eb.varName]", ')
+					sb.append('CobraCoreInternal.CobraImp.SetLocal("[eb.varName]", ')
 				sb.append('[eb.sharpVarName] = [helperName]')
 				if trackLocals
 					sb.append(')')
@@ -3161,7 +3162,7 @@ class AnonymousMethodExpr
 
 	def writeSharpDefForBreakdown(sw as CurlyWriter) is override
 		# .writeSharpDef(sw)
-		sw.write('new CobraLangInternal.CobraDirectString("(anonymous method)")')
+		sw.write('new CobraCoreInternal.CobraDirectString("(anonymous method)")')
 
 
 class LambdaExpr
@@ -3185,7 +3186,7 @@ class LambdaExpr
 
 	def writeSharpDefForBreakdown(sw as CurlyWriter) is override
 		# .writeSharpDef(sw)
-		sw.write('new CobraLangInternal.CobraDirectString("(lambda)")')
+		sw.write('new CobraCoreInternal.CobraDirectString("(lambda)")')
 
 
 class CallExpr is partial
@@ -3256,7 +3257,7 @@ class ForExpr
 		# C#:  CobraImp.For(stuff, delegate(x as int) { if (x<0) return x*x; })
 		inType = .inferredType
 		outType = _getExpr.type
-		sw.write('CobraLangInternal.CobraImp.For<[inType.sharpRef],[outType.sharpRef]>(')
+		sw.write('CobraCoreInternal.CobraImp.For<[inType.sharpRef],[outType.sharpRef]>(')
 		if _stop
 			# C#:  Numeric For Expr CobraImp.For(start, stop, step, delegate(x as int) { return x*x; })
 			_start.writeSharpDef(sw, false)
@@ -3304,7 +3305,7 @@ class ForExpr
 class TryCatchExpr is partial
 
 	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
-		sw.write('CobraLangInternal.CobraImp.RunTryCatchExpr<[_type.sharpRef]')
+		sw.write('CobraCoreInternal.CobraImp.RunTryCatchExpr<[_type.sharpRef]')
 		if _excType
 			sw.write(',')
 			sw.write(_excType.sharpRef)
@@ -3422,17 +3423,17 @@ class IfExpr
 
 		# tpart:
 		src = Utils.sharpStringLiteralFor(tpart.toCobraSource)
-		sw.write(', [src], new CobraLangInternal.CobraDirectString(')
+		sw.write(', [src], new CobraCoreInternal.CobraDirectString(')
 		cond.writeSharpDefForBreakdown(sw)
-		sw.write(' ? CobraLangInternal.CobraCore.ToTechString(')
+		sw.write(' ? CobraCoreInternal.CobraCore.ToTechString(')
 		tpart.writeSharpDefForBreakdown(sw)
 		sw.write(') : "(not-evaluated)")')
 
 		# fpart:
 		src = Utils.sharpStringLiteralFor(fpart.toCobraSource)
-		sw.write(', [src], new CobraLangInternal.CobraDirectString(')
+		sw.write(', [src], new CobraCoreInternal.CobraDirectString(')
 		cond.writeSharpDefForBreakdown(sw)
-		sw.write(' ? "(not-evaluated)" : CobraLangInternal.CobraCore.ToTechString(')
+		sw.write(' ? "(not-evaluated)" : CobraCoreInternal.CobraCore.ToTechString(')
 		fpart.writeSharpDefForBreakdown(sw)
 		sw.write('))')
 
@@ -3444,7 +3445,7 @@ class IndexExpr
 
 	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		if _target.type.isDynamic
-			sw.write('CobraLangInternal.CobraImp.GetIndexerValue(')
+			sw.write('CobraCoreInternal.CobraImp.GetIndexerValue(')
 			_target.writeSharpDef(sw, false)
 			for expr in _args
 				sw.write(', ')
@@ -3680,7 +3681,7 @@ class SliceExpr
 
 
 	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
-		sw.write('CobraLangInternal.CobraImp.GetSlice(')
+		sw.write('CobraCoreInternal.CobraImp.GetSlice(')
 		_target.writeSharpDef(sw, false)
 		sw.write(',')
 		if _start is nil, sw.write('null')
@@ -3713,7 +3714,7 @@ class TruthExpr
 			on Treatment.AsIs
 				_expr.writeSharpDef(sw, parens)
 			on Treatment.InvokeRuntime
-				sw.write('CobraLangInternal.CobraImp.IsTrue(')
+				sw.write('CobraCoreInternal.CobraImp.IsTrue(')
 				_expr.writeSharpDef(sw, false)
 				sw.write(')')				
 			on Treatment.CompareToZero
@@ -3782,7 +3783,7 @@ class AllOrAnyExpr
 	is partial
 
 	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
-		sw.write('CobraLangInternal.CobraImp.[.opName.capitalized](')
+		sw.write('CobraCoreInternal.CobraImp.[.opName.capitalized](')
 		.expr.writeSharpDefInContext(sw)
 		sw.write(')')
 
@@ -3809,7 +3810,7 @@ class UnaryOpExpr
 			assert specs.containsKey(.token.text)
 			spec = specs[.token.text]
 			opText = Utils.sharpStringLiteralFor(spec.opMethodName)
-			sw.write('CobraLangInternal.CobraImp.DynamicOp([opText], ')
+			sw.write('CobraCoreInternal.CobraImp.DynamicOp([opText], ')
 			_expr.writeSharpDef(sw, false)
 			sw.write(')')
 			return
@@ -3939,20 +3940,20 @@ class StringSubstLit
 
 	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		if _items.count>1
-			sw.write('CobraLangInternal.CobraImp.MakeString(')
+			sw.write('CobraCoreInternal.CobraImp.MakeString(')
 		sep = ''
 		for item in _items
 			sw.write(sep)
 			if item inherits StringLit
 				item.writeSharpDef(sw, true)  # CC: axe the "true" when the bug about overload groups crossing inheritance is fixed
 			else if item inherits FormattedExpr
-				sw.write('CobraLangInternal.CobraImp._printStringMaker.MakeString(')
+				sw.write('CobraCoreInternal.CobraImp._printStringMaker.MakeString(')
 				item.expr.writeSharpDef(sw)
 				sw.write(',')
 				sw.write(Utils.sharpStringLiteralFor(item.format))
 				sw.write(')')
 			else
-				sw.write('CobraLangInternal.CobraImp._printStringMaker.MakeString(')
+				sw.write('CobraCoreInternal.CobraImp._printStringMaker.MakeString(')
 				item.writeSharpDef(sw, false)
 				sw.write(')')
 			sep = ','
@@ -3997,7 +3998,7 @@ class ListLit
 
 	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		innerType = (_type to Box).genericParams[0]
-		sw.write('CobraLangInternal.CobraImp.MakeList<[innerType.sharpRef]>(typeof([_type.sharpRef])')
+		sw.write('CobraCoreInternal.CobraImp.MakeList<[innerType.sharpRef]>(typeof([_type.sharpRef])')
 		if _exprs.count
 			sw.write(', ')
 			sep = ''
@@ -4027,7 +4028,7 @@ class SetLit
 
 	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		innerType = (_type to Box).genericParams[0]
-		sw.write('CobraLangInternal.CobraImp.MakeSet<[innerType.sharpRef]>(typeof([_type.sharpRef])')
+		sw.write('CobraCoreInternal.CobraImp.MakeSet<[innerType.sharpRef]>(typeof([_type.sharpRef])')
 		if _exprs.count
 			sw.write(', ')
 			sep = ''
@@ -4045,7 +4046,7 @@ class DictLit
 		assert (_type to Box).genericParams.count==2
 		keyType   = (_type to Box).genericParams[0]
 		valueType = (_type to Box).genericParams[1]
-		sw.write('CobraLangInternal.CobraImp.MakeDict<[keyType.sharpRef],[valueType.sharpRef]>(typeof([_type.sharpRef])')
+		sw.write('CobraCoreInternal.CobraImp.MakeDict<[keyType.sharpRef],[valueType.sharpRef]>(typeof([_type.sharpRef])')
 		if _entries.count
 			sw.write(', ')
 			sep = ''
@@ -4105,7 +4106,7 @@ class ToNonNilableExpr
 			_expr.writeSharpDef(sw, false)
 			sw.write(').Value')
 		else if .compiler.options.boolValue('include-nil-checks')
-			sw.write('(CobraLangInternal.CobraCore._willCheckNil?CobraLangInternal.CobraImp.CheckNonNil<[type.sharpRef]>([.sharpThis], [Utils.sharpStringLiteralFor(_expr.toCobraSource)], ')
+			sw.write('(CobraCoreInternal.CobraCore._willCheckNil?CobraCoreInternal.CobraImp.CheckNonNil<[type.sharpRef]>([.sharpThis], [Utils.sharpStringLiteralFor(_expr.toCobraSource)], ')
 			_expr.writeSharpDef(sw, false)
 			sw.write(', [.sharpSourceSiteArgs]):')
 			_expr.writeSharpDef(sw, false)
@@ -4146,7 +4147,7 @@ class AbstractAssignExpr is partial
 
 	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		if _trackLocal
-			sw.write('CobraLangInternal.CobraImp.SetLocal("[_trackName]", ')
+			sw.write('CobraCoreInternal.CobraImp.SetLocal("[_trackName]", ')
 		else if parens
 			sw.write('(')
 		_writeSharpDef(sw)
@@ -4162,11 +4163,11 @@ class AssignExpr is partial
 	def writeSharpDefWithRight(sw as CurlyWriter, right as bool)
 		# TODO:
 		# if trackLocal:
-		#	out.write('CobraLangInternal.CobraImp.SetLocal("%s", ' % .left.name)
+		#	out.write('CobraCoreInternal.CobraImp.SetLocal("%s", ' % .left.name)
 		if _left inherits IndexExpr
 			if _left.target.type.isDynamic
 				# assigning to an indexer of a dynamically typed target requires special code gen
-				sw.write('CobraLangInternal.CobraImp.SetIndexerValue(')
+				sw.write('CobraCoreInternal.CobraImp.SetIndexerValue(')
 				_left.target.writeSharpDef(sw, false)
 				sw.write(', ')
 				_right.writeSharpDef(sw, false)
@@ -4193,7 +4194,7 @@ class AssignExpr is partial
 			if _left inherits DotExpr
 				if _left.left.type.isDynamic
 					assert _left.right inherits MemberExpr
-					sw.write('CobraLangInternal.CobraImp.SetPropertyValue(')
+					sw.write('CobraCoreInternal.CobraImp.SetPropertyValue(')
 					_left.left.writeSharpDef(sw, false)
 					sw.write(', ')
 					sw.write(Utils.sharpStringLiteralFor((_left.right to MemberExpr).name.capitalized))
@@ -4220,7 +4221,7 @@ class NumericPromoExpr is partial
 		assert specs.containsKey(.token.text)
 		spec = specs[.token.text]
 		opText = Utils.sharpStringLiteralFor(spec.opMethodName)
-		sw.write('CobraLangInternal.CobraImp.DynamicOp([opText], ')
+		sw.write('CobraCoreInternal.CobraImp.DynamicOp([opText], ')
 		_left.writeSharpDef(sw)
 		sw.write(', ')
 		_right.writeSharpDef(sw)
@@ -4241,7 +4242,7 @@ class AugAssignMathExpr is partial
 		_left.writeSharpDef(sw, false)
 		sw.write(' = ')
 		sw.write('(' + _left.type.sharpRef + ')')
-		sw.write('CobraLangInternal.CobraImp.Concated(')
+		sw.write('CobraCoreInternal.CobraImp.Concated(')
 		_left.writeSharpDef(sw, false)
 		sw.write(', ')
 		_right.writeSharpDef(sw, false)
@@ -4254,7 +4255,7 @@ class AugAssignMathExpr is partial
 		assert specs.containsKey(.token.text)
 		spec = specs[.token.text]
 		opText = Utils.sharpStringLiteralFor(spec.opMethodName)
-		sw.write('CobraLangInternal.CobraImp.DynamicOp([opText], ')
+		sw.write('CobraCoreInternal.CobraImp.DynamicOp([opText], ')
 		_left.writeSharpDef(sw)  # TODO: add , false
 		sw.write(', ')
 		_right.writeSharpDef(sw)  # TODO: add , false
@@ -4271,7 +4272,7 @@ class AugAssignMathExpr is partial
 			on 'STAR_EQUALS'
 				op = '*='
 			on 'STARSTAR_EQUALS'
-				#op = 'CobraLangInternal.CobraImp.PowerToEquals('
+				#op = 'CobraCoreInternal.CobraImp.PowerToEquals('
 				op = 'System.Math.Pow('
 			on 'SLASH_EQUALS'
 				op = '/='  # TODO: finish this
@@ -4287,7 +4288,7 @@ class AugAssignMathExpr is partial
 			sw.write(op)
 			_right.writeSharpDef(sw)
 		else
-			sw.write(op)  # ex: 'CobraLangInternal.CobraImp.Foo('
+			sw.write(op)  # ex: 'CobraCoreInternal.CobraImp.Foo('
 			_left.writeSharpDef(sw)
 			sw.write(sep)
 			_right.writeSharpDef(sw)
@@ -4305,7 +4306,7 @@ class AugAssignBitwiseExpr
 			assert specs.containsKey(.token.text)
 			spec = specs[.token.text]
 			opText = Utils.sharpStringLiteralFor(spec.opMethodName)
-			sw.write('CobraLangInternal.CobraImp.DynamicOp([opText], ')
+			sw.write('CobraCoreInternal.CobraImp.DynamicOp([opText], ')
 			_left.writeSharpDef(sw)  # TODO: add , false
 			sw.write(', ')
 			_right.writeSharpDef(sw)  # TODO: add , false
@@ -4357,9 +4358,9 @@ class BinaryBoolExpr
 		# do this:
 		src = Utils.sharpStringLiteralFor(_right.toCobraSource)
 		sharpNot = if(_op=='OR', '', '!')
-		sw.write(', [src], new CobraLangInternal.CobraDirectString([sharpNot]')
+		sw.write(', [src], new CobraCoreInternal.CobraDirectString([sharpNot]')
 		_left.writeSharpDefForBreakdown(sw)
-		sw.write(' ? "(short-circuited)" : CobraLangInternal.CobraCore.ToTechString(')
+		sw.write(' ? "(short-circuited)" : CobraCoreInternal.CobraCore.ToTechString(')
 		_right.writeSharpDefForBreakdown(sw)
 		sw.write('))')
 
@@ -4403,7 +4404,7 @@ class BinaryMathExpr is partial
 
 	def _writeSharpDefConcated(sw as CurlyWriter)
 		sw.write('(' + _left.type.sharpRef + ')')
-		sw.write('CobraLangInternal.CobraImp.Concated(')
+		sw.write('CobraCoreInternal.CobraImp.Concated(')
 		_left.writeSharpDef(sw, false)
 		sw.write(', ')
 		_right.writeSharpDef(sw, false)
@@ -4424,7 +4425,7 @@ class BinaryMathExpr is partial
 			on 'STAR'
 				op = '*'
 			on 'STARSTAR'
-				#op = 'CobraLangInternal.CobraImp.PowerTo('
+				#op = 'CobraCoreInternal.CobraImp.PowerTo('
 				op = 'System.Math.Pow('
 				if _left.isKindOf(intType) and _right.isKindOf(intType)
 					pre = '(' + .compiler.intType.sharpRef + ')'
@@ -4454,7 +4455,7 @@ class BinaryMathExpr is partial
 			sw.write(op)
 			_right.writeSharpDef(sw)
 		else
-			sw.write(op)  # ex: 'CobraLangInternal.CobraImp.Foo('
+			sw.write(op)  # ex: 'CobraCoreInternal.CobraImp.Foo('
 			_left.writeSharpDef(sw)
 			sw.write(sep)
 			_right.writeSharpDef(sw)
@@ -4508,19 +4509,19 @@ class CompareExpr
 				if not done
 					assert op in ['EQ', 'NE']
 					assert op == .token.which
-					op = if(op=='EQ', 'CobraLangInternal.CobraImp.Equals(', 'CobraLangInternal.CobraImp.NotEquals(')
+					op = if(op=='EQ', 'CobraCoreInternal.CobraImp.Equals(', 'CobraCoreInternal.CobraImp.NotEquals(')
 		else if op=='IS' or op=='ISNOT'
 			if left.type inherits PrimitiveType and right.type inherits PrimitiveType
 				op = _cobraToSharp[_op]
 			else if left.type.isReference and right.type.isReference
-				# skip the CobraLangInternal.CobraImp.Is call for faster performance
+				# skip the CobraCoreInternal.CobraImp.Is call for faster performance
 				op = if(op=='IS', 'System.Object.ReferenceEquals(', '!System.Object.ReferenceEquals(')
 			else
 				# non-trivial situation.. fall back to runtime support
-				op = if(op=='IS', 'CobraLangInternal.CobraImp.Is(', 'CobraLangInternal.CobraImp.IsNot(')
+				op = if(op=='IS', 'CobraCoreInternal.CobraImp.Is(', 'CobraCoreInternal.CobraImp.IsNot(')
 		else
 			if left.type.isDynamic or right.type.isDynamic
-				sw.write('CobraLangInternal.CobraImp.DynamicCompare(')
+				sw.write('CobraCoreInternal.CobraImp.DynamicCompare(')
 				left.writeSharpDef(sw, false)
 				sw.write(', ')
 				right.writeSharpDef(sw, false)
@@ -4571,7 +4572,7 @@ class ChainedCompareExpr is partial
 		if parens, sw.write(')')
 	
 	def writeSharpDef(sw as CurlyWriter) is override
-		sw.write('CobraLangInternal.CobraCore.ChainedComparison(')
+		sw.write('CobraCoreInternal.CobraCore.ChainedComparison(')
 		_items[0].writeSharpDef(sw)
 		itemIndex = 1
 		for operation in _operations
@@ -4600,13 +4601,13 @@ class DotExpr
 			if _dotRightExpr.definition
 				sw.write('(' + _dotRightExpr.type.sharpRef + ')')
 			if _right inherits MemberExpr
-				sw.write('CobraLangInternal.CobraImp.GetPropertyValue(')
+				sw.write('CobraCoreInternal.CobraImp.GetPropertyValue(')
 				_left.writeSharpDef(sw, not _left inherits DotExpr)
 				sw.write(', ')
 				sw.write(Utils.sharpStringLiteralFor(_right.name.capitalized))
 				sw.write(')')
 			else if _right inherits CallExpr
-				sw.write('CobraLangInternal.CobraImp.InvokeMethod(')
+				sw.write('CobraCoreInternal.CobraImp.InvokeMethod(')
 				_left.writeSharpDef(sw, not _left inherits DotExpr)
 				sw.write(', ')
 				sw.write(Utils.sharpStringLiteralFor(_right.name.capitalized))
@@ -4699,12 +4700,12 @@ class InExpr is partial
 				sw.write(')')
 			else
 				# cobra: left in right
-				# sharp: CobraLangInternal.CobraImp.InWithNullCheck(<left>, delegate(__lh_value) { return <right>.Contains(__lh_value); })
+				# sharp: CobraCoreInternal.CobraImp.InWithNullCheck(<left>, delegate(__lh_value) { return <right>.Contains(__lh_value); })
 				# use:   static public bool InWithNullCheck<T>(T a, Predicate<T> predicate)
 
 				# cobra: left in right
-				# sharp: CobraLangInternal.CobraImp.In(left, delegate() { return right; })
-				sw.write('CobraLangInternal.CobraImp.InWithNullCheck(')
+				# sharp: CobraCoreInternal.CobraImp.In(left, delegate() { return right; })
+				sw.write('CobraCoreInternal.CobraImp.InWithNullCheck(')
 				.left.writeSharpDef(sw, false)
 				sw.write(', delegate([.left.type.sharpRef] __lh_value_[.serialNum]) { return ')
 				if .containsExpr
@@ -4715,7 +4716,7 @@ class InExpr is partial
 					if v, sw.write('/* C */')
 				else
 					# No .containsExpr means we use CobraImp.In(a, b) for the delegate
-					sw.write('CobraLangInternal.CobraImp.In(__lh_value_[.serialNum], ')
+					sw.write('CobraCoreInternal.CobraImp.In(__lh_value_[.serialNum], ')
 					.right.writeSharpDef(sw, false)
 					if v, sw.write('/* D */')
 				sw.write(' })')
@@ -4728,7 +4729,7 @@ class InExpr is partial
 			.containsExpr.writeSharpDef(sw, parens)
 			if v, sw.write('/* F */')
 		else
-			sw.write('CobraLangInternal.CobraImp.In(')
+			sw.write('CobraCoreInternal.CobraImp.In(')
 			.left.writeSharpDef(sw, false)
 			sw.write(',')
 			.right.writeSharpDef(sw, false)
@@ -4760,7 +4761,7 @@ class ToExpr is partial
 		_right.writeSharpDef(sw, false)  # double parens would be pointless and also causes a C# error
 		sw.write(')')
 		if not rightType inherits NilableType and rightType.isReference and .compiler.options.boolValue('include-nil-checks')
-			sw.write('CobraLangInternal.CobraImp.CheckNonNil<[_left.type.sharpRef]>([.sharpThis], [Utils.sharpStringLiteralFor(_left.toCobraSource)], ')
+			sw.write('CobraCoreInternal.CobraImp.CheckNonNil<[_left.type.sharpRef]>([.sharpThis], [Utils.sharpStringLiteralFor(_left.toCobraSource)], ')
 			_left.writeSharpDef(sw, false)
 			sw.write(', [.sharpSourceSiteArgs])')
 		else
@@ -4774,7 +4775,7 @@ class ToQExpr
 		# x to? int     --> ((x is int || x is int?) ? (int?)x : (int?)null)
 		# x to? int?    --> ((x is int || x is int?) ? (int?)x : (int?)null)
 		# ^ but this would cause multiple evaluation of x, so...
-		# x to? int?	--> (int?)CobraLangInternal.CobraImp.ToOrNil(x)
+		# x to? int?	--> (int?)CobraCoreInternal.CobraImp.ToOrNil(x)
 
 		# x to? string  --> (x as String)
 		# x to? string? --> (x as String)
@@ -4787,7 +4788,7 @@ class ToQExpr
 			.left.writeSharpDef(sw)
 			sw.write(') as [typeSharpRef]')
 		else
-			sw.write('[typeSharpRef]?)CobraLangInternal.CobraImp.ToOrNil<[typeSharpRef]>(')
+			sw.write('[typeSharpRef]?)CobraCoreInternal.CobraImp.ToOrNil<[typeSharpRef]>(')
 			.left.writeSharpDef(sw)
 
 
@@ -4811,7 +4812,7 @@ class InverseCoalesceExpr
 				sw.write('null')
 			else
 				# in case `left` has side effects, evaluate it
-				sw.write('CobraLangInternal.CobraImp.Return<[_type.sharpRef]>(null, ')
+				sw.write('CobraCoreInternal.CobraImp.Return<[_type.sharpRef]>(null, ')
 				_left.writeSharpDef(sw, false)
 				sw.write(')')
 		else

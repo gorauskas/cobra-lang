@@ -7,7 +7,7 @@ using System.Reflection;
 using System.Text;
 
 
-namespace Cobra.Lang {
+namespace Cobra.Core {
 
 
 [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.ReturnValue | AttributeTargets.Method, AllowMultiple = false)]
@@ -984,7 +984,7 @@ static public class CobraImp {
 		}
 		// HACK. TODO. This needs to be generalized where extension methods can be registered with the dynamic binder. Will/does DLR have something like this?
 		if (methodName == "Swap" && obj is System.Collections.IList) {
-			Type extension = Type.GetType("Cobra.Lang.Extend_IList_ExtendList");
+			Type extension = Type.GetType("Cobra.Core.Extend_IList_ExtendList");
 			Type extendedType = typeof(System.Collections.IList); // this reference could be put with the extension using an attribute
 			return InvokeMethodFromExtension(extension, extendedType, obj, methodName, argsTypes, args);
 		}
@@ -1304,4 +1304,4 @@ static public class CobraImp {
 
 } // class CobraImp
 
-} // namespace Cobra.Lang
+} // namespace Cobra.Core
