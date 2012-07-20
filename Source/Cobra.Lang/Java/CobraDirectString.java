@@ -2,7 +2,7 @@
  * CobraDirectString Used internally for assert, require and ensure to encode strings 
  *  that should not be passed to CobraCore.toTechString.
  */
-package cobra.lang;
+package cobra.core;
  
 public class CobraDirectString {
     public String string;

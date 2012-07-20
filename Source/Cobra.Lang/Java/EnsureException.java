@@ -3,7 +3,7 @@
  * thrown when a contracts postcondition fails.
  */
 
-package cobra.lang;
+package cobra.core;
 
 import java.util.*;
 

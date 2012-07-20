@@ -5,7 +5,7 @@
  * Exceptions for Assertions, contracts, etc.
  */
 
-package cobra.lang;
+package cobra.core;
 
 import java.util.*;
 

@@ -5,7 +5,7 @@
  *  Currently only stubbed, minimal native code impl.
  * see also Cobra.Lang/NativeExtern.cobra
  */
-package cobra.lang;
+package cobra.core;
 
 import java.lang.*;
 import java.util.*;

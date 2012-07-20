@@ -3,7 +3,7 @@
  * thrown when a contract precondition test fails
  */
 
-package cobra.lang;
+package cobra.core;
 
 import java.util.*;
 

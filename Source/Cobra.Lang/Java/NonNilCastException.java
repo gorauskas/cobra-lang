@@ -3,7 +3,7 @@
  * Thrown when Null check for non nullable instance fails. 
  */
 
-package cobra.lang;
+package cobra.core;
 
 import java.util.*;
 

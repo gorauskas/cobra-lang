@@ -2,7 +2,7 @@
  * Sourcesite.java
  */
  
-package cobra.lang;
+package cobra.core;
 
 import java.io.*;
 

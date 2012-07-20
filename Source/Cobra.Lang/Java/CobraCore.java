@@ -7,7 +7,7 @@
  * 
  * Eventually contents of this file will be all cobra.
  */
-package cobra.lang;
+package cobra.core;
 
 import java.util.*;
 

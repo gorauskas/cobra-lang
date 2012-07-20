@@ -12,7 +12,7 @@
  * This Implementation genericised on ReturnType
  */
 
-package cobra.lang;
+package cobra.core;
 
 import java.lang.*;
 import java.io.*;
