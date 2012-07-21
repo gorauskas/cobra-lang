@@ -1254,54 +1254,6 @@ static public class CobraImp {
 		return a + b;
 	}
 
-	static public string RunAndCaptureAllOutput(object process) {
-		// CC: change to extension method on Process class
-		System.Diagnostics.Process proc = (System.Diagnostics.Process)process;
-		return RunAndCaptureAllOutput(proc, false);
-	}
-
-	static public string RunAndCaptureAllOutput(Process proc, bool verbose) {
-		// Reference: http://msdn2.microsoft.com/en-us/library/system.diagnostics.process.beginoutputreadline(VS.80).aspx
-		if (verbose) {
-			Console.WriteLine("command   : '{0}'", proc.StartInfo.FileName);
-			Console.WriteLine("arguments : '{0}'", proc.StartInfo.Arguments);
-		}
-		_processOutputBuffer = new StringBuilder();
-		ProcessStartInfo info = proc.StartInfo;
-		info.UseShellExecute = false;
-		info.RedirectStandardOutput = true;
-		info.RedirectStandardError = true;
-		proc.OutputDataReceived += new DataReceivedEventHandler(OutputLineReceived);
-		proc.ErrorDataReceived += new DataReceivedEventHandler(ErrorLineReceived);
-		proc.Start();
-		proc.BeginOutputReadLine();
-		proc.BeginErrorReadLine();
-		proc.WaitForExit();
-		string s = _processOutputBuffer.ToString();
-		_processOutputBuffer = null;
-		if (verbose) {
-			Console.WriteLine("output:");
-			Console.WriteLine("---");
-			Console.WriteLine(s);
-			Console.WriteLine("---");
-		}
-		return s;
-	}
-
-	private static StringBuilder _processOutputBuffer;
-
-	static void OutputLineReceived(object sender, DataReceivedEventArgs line) {
-		// Console.WriteLine("async stdout line: {0}", line.Data);
-		_processOutputBuffer.Append(line.Data);
-		_processOutputBuffer.Append(Environment.NewLine);
-	}
-
-	static void ErrorLineReceived(object sender, DataReceivedEventArgs line) {
-		// Console.WriteLine("async stderr line: {0}", line.Data);
-		_processOutputBuffer.Append(line.Data);
-		_processOutputBuffer.Append(Environment.NewLine);
-	}
-
 } // class CobraImp
 
 } // namespace Cobra.Core
