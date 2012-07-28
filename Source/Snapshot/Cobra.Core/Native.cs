@@ -7,7 +7,7 @@ using System.Reflection;
 using System.Text;
 
 
-namespace Cobra.Lang {
+namespace Cobra.Core {
 
 
 [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.ReturnValue | AttributeTargets.Method, AllowMultiple = false)]
@@ -555,8 +555,37 @@ static public class CobraImp {
 		return results;
 	}
 
+	// Support for TryCatchExpression 
+	// Below is signature of closures containing the expressions 
+	public delegate TOut TryCatchExpr<TOut>(); 
+	
+	// TryCatchExpr - No exception specified 
+	static public TOut RunTryCatchExpr<TOut>(TryCatchExpr<TOut> tryCatch, TryCatchExpr<TOut> tryGet) {
+		TOut r;
+			try { 
+				r = tryCatch();
+			}
+			catch { 
+				r = tryGet();
+			}
+			return r;
+	}
 
-	/* Numeric forExpr - ints in, any type returned */        
+	// TryCatchExpr TExc exception specified 
+	static public TOut RunTryCatchExpr<TOut, TExc>(TryCatchExpr<TOut> tryCatch, TryCatchExpr<TOut> tryGet) 
+		where TExc : System.Exception {
+			TOut r;
+			try { 
+				r = tryCatch();
+			}
+			catch (TExc) { 
+				r = tryGet();
+			}
+			return r;
+	}
+
+
+	/* Numeric forExpr - ints in, any type returned */
 	static public List<TOut> For<TIn, TOut>(int start, int stop, int step, ForGet<int, TOut> forGet) {
 		if ((step > 0 && start > stop) || 
 			(step < 0 && start < stop) || step == 0)
@@ -955,7 +984,7 @@ static public class CobraImp {
 		}
 		// HACK. TODO. This needs to be generalized where extension methods can be registered with the dynamic binder. Will/does DLR have something like this?
 		if (methodName == "Swap" && obj is System.Collections.IList) {
-			Type extension = Type.GetType("Cobra.Lang.Extend_IList_ExtendList");
+			Type extension = Type.GetType("Cobra.Core.Extend_IList_ExtendList");
 			Type extendedType = typeof(System.Collections.IList); // this reference could be put with the extension using an attribute
 			return InvokeMethodFromExtension(extension, extendedType, obj, methodName, argsTypes, args);
 		}
@@ -1068,30 +1097,42 @@ static public class CobraImp {
 	}
 
 	static public int DynamicCompare(Object a, Object b) {
+		// should only throw CannotCompareException possibly with an .innerException
+		// containing more details
 		if (object.ReferenceEquals(a, b)) return 0;
-		if (a==null) return 0;
-		if (b==null) return 1;
+		if (a == null) return 0;
+		if (b == null) return 1;
 		if (a is IComparable) {
-			if (PromoteNumerics != null)
-				PromoteNumerics(ref a, ref b); // takes no action if types are same or one of the types is not numeric
 			try {
-				return ((IComparable)a).CompareTo(b);
-			} catch (ArgumentException) {
-				// Some system types are retarded. For example, someDouble.CompareTo(0) throws an exception
-				if (b.GetType() != a.GetType()) {
-					// Convert.ChangeType will sometimes convert an Int32 to an enum, but other times it throws an exception:
-					// System.InvalidCastException: Value is not a convertible object: System.Int32 to Test+MyEnum
-					// Same behavior on .NET 2.0 and Mono 2.4. And totally lame.
-					// So special case it:
-					object newB;
-					if (a.GetType().IsEnum)
-						newB = Enum.ToObject(a.GetType(), b);      // yes, may throw exception
-					else
-						newB = Convert.ChangeType(b, a.GetType()); // yes, may throw exception
-					return ((IComparable)a).CompareTo(newB);
-				} else {
-					throw;
+				if (PromoteNumerics != null)
+					PromoteNumerics(ref a, ref b); // takes no action if types are same or one of the types is not numeric
+				try {
+					return ((IComparable)a).CompareTo(b);
+				} catch (ArgumentException argExc) {
+					// Some system types are retarded. For example, someDouble.CompareTo(0) throws an exception
+					if (b.GetType() != a.GetType()) {
+						// Convert.ChangeType will sometimes convert an Int32 to an enum, but other times it throws an exception:
+						// System.InvalidCastException: Value is not a convertible object: System.Int32 to Test+MyEnum
+						// Same behavior on .NET 2.0 and Mono 2.4. And totally lame.
+						// So special case it:
+						object newB;
+						if (a.GetType().IsEnum) {
+							newB = Enum.ToObject(a.GetType(), b);      // yes, may throw exception
+							return ((IComparable)a).CompareTo(newB);
+						} else if (a.GetType().IsValueType == b.GetType().IsValueType) {
+							// the above if statement guards against a string like '4' being
+							// converted to an int. Cobra does not support `3 < '4'` at compile-time
+							// so it does not support it at run-time either.
+							newB = Convert.ChangeType(b, a.GetType()); // yes, may throw exception
+							return ((IComparable)a).CompareTo(newB);
+						}
+						return ((IComparable)a).CompareTo(b);
+					} else {
+						throw;
+					}
 				}
+			} catch (Exception exc) {
+				throw new CannotCompareException(a, b, exc);
 			}
 		}
 		throw new CannotCompareException(a, b);
@@ -1213,54 +1254,6 @@ static public class CobraImp {
 		return a + b;
 	}
 
-	static public string RunAndCaptureAllOutput(object process) {
-		// CC: change to extension method on Process class
-		System.Diagnostics.Process proc = (System.Diagnostics.Process)process;
-		return RunAndCaptureAllOutput(proc, false);
-	}
-
-	static public string RunAndCaptureAllOutput(Process proc, bool verbose) {
-		// Reference: http://msdn2.microsoft.com/en-us/library/system.diagnostics.process.beginoutputreadline(VS.80).aspx
-		if (verbose) {
-			Console.WriteLine("command   : '{0}'", proc.StartInfo.FileName);
-			Console.WriteLine("arguments : '{0}'", proc.StartInfo.Arguments);
-		}
-		_processOutputBuffer = new StringBuilder();
-		ProcessStartInfo info = proc.StartInfo;
-		info.UseShellExecute = false;
-		info.RedirectStandardOutput = true;
-		info.RedirectStandardError = true;
-		proc.OutputDataReceived += new DataReceivedEventHandler(OutputLineReceived);
-		proc.ErrorDataReceived += new DataReceivedEventHandler(ErrorLineReceived);
-		proc.Start();
-		proc.BeginOutputReadLine();
-		proc.BeginErrorReadLine();
-		proc.WaitForExit();
-		string s = _processOutputBuffer.ToString();
-		_processOutputBuffer = null;
-		if (verbose) {
-			Console.WriteLine("output:");
-			Console.WriteLine("---");
-			Console.WriteLine(s);
-			Console.WriteLine("---");
-		}
-		return s;
-	}
-
-	private static StringBuilder _processOutputBuffer;
-
-	static void OutputLineReceived(object sender, DataReceivedEventArgs line) {
-		// Console.WriteLine("async stdout line: {0}", line.Data);
-		_processOutputBuffer.Append(line.Data);
-		_processOutputBuffer.Append(Environment.NewLine);
-	}
-
-	static void ErrorLineReceived(object sender, DataReceivedEventArgs line) {
-		// Console.WriteLine("async stderr line: {0}", line.Data);
-		_processOutputBuffer.Append(line.Data);
-		_processOutputBuffer.Append(Environment.NewLine);
-	}
-
 } // class CobraImp
 
-} // namespace Cobra.Lang
+} // namespace Cobra.Core

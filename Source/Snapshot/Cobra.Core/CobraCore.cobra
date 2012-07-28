@@ -2,7 +2,7 @@ use System.Reflection
 use System.Text.RegularExpressions
 
 
-namespace Cobra.Lang
+namespace Cobra.Core
 
 	class CobraCore
 
@@ -82,10 +82,11 @@ namespace Cobra.Lang
 				print 'An unhandled exception has occurred.'
 				print
 				print 'Cobra debugging tips:'
-				print '    To get file name and line number information for the stack frames, use:'
-				print '        cobra -debug foo.cobra'
+				# Now the default:
+				#print '    To get file name and line number information for the stack frames, use:'
+				#print '        cobra -debug foo.cobra'
 				if CobraCore.isRunningOnMono
-					print '    If running the executable through "mono" then also use --debug (double dash):'
+					print '    If running the executable through "mono" then use --debug (double dash):'
 					print '        mono --debug foo.exe ...'
 				print '    To get a post-mortem, HTML-formatted report with more details about your objects:'
 				print '        cobra -debug -exception-report foo.cobra'
@@ -93,7 +94,8 @@ namespace Cobra.Lang
 				print '        cobra -debug -exception-report -detailed-stack-trace foo.cobra'
 				print '    Or use the abbreviations:'
 				print '        cobra -d -er -dst foo.cobra'
-				# TODO: print '    See also: http://cobra-language.com/docs/debugging'
+				print '    See also: http://cobra-language.com/trac/cobra/wiki/DebuggingTopics'
+				print '    You can turn off this message with -debugging-tips:no or -d'
 				print
 			
 
@@ -138,9 +140,9 @@ namespace Cobra.Lang
 				"""
 				Run all Cobra `test` sections in all assemblies using reflection to locate them.
 				"""
-				if CobraImp.showTestProgress, listener = Cobra.Lang.Test.TextWriterListener(Console.out)
-				else, listener = Cobra.Lang.Test.TextWriterOnlyOnFailureListener(Console.out)
-				tr = Cobra.Lang.Test.TestRunner(listener)
+				if CobraImp.showTestProgress, listener = Cobra.Core.Test.TextWriterListener(Console.out)
+				else, listener = Cobra.Core.Test.TextWriterOnlyOnFailureListener(Console.out)
+				tr = Cobra.Core.Test.TestRunner(listener)
 				tr.runAllTests
 				if listener.testFailures, CobraCore.exit(1)
 
@@ -253,12 +255,11 @@ namespace Cobra.Lang
 				Runs cobra.exe with the given args, sets the process to the one created for cobra.exe and returns all output including stdio and stderr.
 				In addition to examining the output, you should be interested in process.exitCode which will be zero if there was no problems.
 				Uses CobraCore.findCobraExe and raises IOException if it cannot be found.
-				Uses CobraCore.runAndCaptureAllOutput(p) to run the process.
 				"""
 				cobraExePath = CobraCore.findCobraExe
 				if cobraExePath is nil or cobraExePath == ''
 					throw IOException('Cannot locate cobra.exe using CobraCore.findCobraExe. Consider invoking .findCobraExe with additional search paths and passing the result to .runCobraExe.')
-				return .runCobraExe(cobraExePath, args, out process)
+				return .runCobraExe(cobraExePath to !, args, out process)
 
 			def runCobraExe(cobraPath as String, args as String, process as out System.Diagnostics.Process?) as String
 				require cobraPath.length
@@ -271,7 +272,7 @@ namespace Cobra.Lang
 					p.startInfo.arguments = args
 				# print '[p.startInfo.fileName] [p.startInfo.arguments]'
 				process = p
-				return CobraCore.runAndCaptureAllOutput(p)
+				return p.runAndCaptureAllOutput
 
 			def findCobraExe as String?
 				return .findCobraExe(nil)
@@ -293,12 +294,12 @@ namespace Cobra.Lang
 				path = _findCobraExe(Environment.currentDirectory)
 				if path, return path
 				# check the directory where the current executable resides
-				path = _findCobraExe(Path.getDirectoryName(CobraCore.exePath))
+				path = _findCobraExe(Path.getDirectoryName(CobraCore.exePath) to !)
 				if path, return path
 				# check COBRA environment variable
 				path = Environment.getEnvironmentVariable('COBRA') ? ''
 				if path <> ''
-					path = _findCobraExe(path)
+					path = _findCobraExe(path to !)
 					if path, return path
 				# check the PATH
 				paths = (Environment.getEnvironmentVariable('PATH') ? '').split(Path.pathSeparator)
@@ -316,9 +317,9 @@ namespace Cobra.Lang
 					r'/bin',
 				]
 				if extraPaths, morePaths.addRange(extraPaths)
-				for path in morePaths
-					path = _findCobraExe(path)
-					if path, return path
+				for morePath in morePaths
+					foundPath = _findCobraExe(morePath)
+					if foundPath, return foundPath
 				# cannot find cobra.exe
 				return nil
 
@@ -434,16 +435,8 @@ namespace Cobra.Lang
 				return _random to !
 						
 			def runAndCaptureAllOutput(process as System.Diagnostics.Process) as String
-				"""
-				Example:
-					p = System.Diagnostics.Process()
-					p.startInfo.fileName = 'some-program'
-					p.startInfo.arguments = 'foo bar baz'
-					output = CobraCore.runAndCaptureAllOutput(p)
-					trace p, p.exitCode, output
-				TODO: change to extension method on Process
-				"""
-				return CobraImp.runAndCaptureAllOutput(process)
+				# to-do: remove this method after the next snapshot
+				return process.runAndCaptureAllOutput
 
 			def noOp(args as vari dynamic?) as dynamic?
 				"""
@@ -582,7 +575,7 @@ namespace Cobra.Lang
 				p.startInfo.arguments = args
 				p.startInfo.useShellExecute = false
 				try
-					return CobraCore.runAndCaptureAllOutput(p).trim
+					return p.runAndCaptureAllOutput.trim
 				catch
 					# specific to users of this method: return '' rather than error
 					return ''

@@ -1,7 +1,7 @@
 use System.Text.RegularExpressions
 
 
-namespace Cobra.Lang
+namespace Cobra.Core
 
 	extend System.Object
 
@@ -29,6 +29,33 @@ namespace Cobra.Lang
 			return CobraImp._printStringMaker.makeString(this)
 
 
+	extend Stack<of T>
+	
+		def clone as Stack<of T>
+			ensure
+				result is not this
+				result.count == .count
+				result.typeOf is .typeOf
+			body
+				# see: http://stackoverflow.com/questions/7391348/c-sharp-clone-a-stack
+				return Stack<of T>(Stack<of T>(this))
+
+
+	class TestStack is internal
+
+		test
+			s = Stack<of int>()
+			s.push(1)
+			s.push(2)
+			s.push(3)
+			assert s.toPrintString == '\[3, 2, 1]'
+			c = s.clone
+			assert c is not s
+			assert c.count == s.count
+			assert c.toList == s.toList
+			assert c.toPrintString == s.toPrintString
+
+		
 	extend String
 	
 		def before(sep as String) as String
@@ -106,6 +133,22 @@ namespace Cobra.Lang
 				assert not '1234'.isCapitalized
 			body
 				return .length and this[0].isUpper
+
+		def limitLength(maxLength as int) as String
+			return .limitLength(maxLength, nil)
+
+		def limitLength(maxLength as int, suffix as String?) as String
+			require
+				suffix implies suffix.length < maxLength
+			ensure
+				result.length <= maxLength
+			test
+				assert ''.limitLength(2) == ''
+				assert 'aoeu'.limitLength(2) == 'ao'
+				assert 'aoeu aoeu aoeu aoeu aoeu'.limitLength(10, '...') == 'aoeu ao...'
+			body
+				if .length <= maxLength, return this
+				return .substring(0, maxLength - (suffix ? '').length) + suffix
 
 		def md5HashInHex as String
 			""" Return a string of Hex characters of the md5 hash of this string. """
