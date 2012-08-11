@@ -1123,33 +1123,34 @@ class CobraParser inherits Parser
 		for tok in idTokens
 			name = tok.value to String
 			curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(tok, name)
-			if firstNameSpace is nil
-				firstNameSpace = curNameSpace
+			firstNameSpace = firstNameSpace ? curNameSpace
 			assert not curNameSpace.isUnified
 			_nameSpaceStack.push(curNameSpace)			
 		try
-			.indent
+			indented = .optionalIndent
 			curNameSpace.addDocString(.docString)
 			.zeroOrMore('EOL')
 			while true
 				peek = .peek
-				if peek is nil, .throwError('Expecting a namespace member, but source code ended.')
+				if peek is nil
+					if indented, .throwError('Expecting a namespace member, but source code ended.')
+					else, break
 				tok = peek to !
 				if tok.which == 'DEDENT', break
+				if not indented and tok.which == 'NAMESPACE', break
 				branch tok.which
 					on 'CLASS',		_nameSpaceAddDecl(curNameSpace, .classDecl)
 					on 'INTERFACE',	_nameSpaceAddDecl(curNameSpace, .interfaceDecl)
 					on 'STRUCT',	_nameSpaceAddDecl(curNameSpace, .structDecl)
 					on 'EXTEND',    _nameSpaceAddDecl(curNameSpace, .extendDecl)
 					on 'USE',		curNameSpace.addUseDirective(.useDirective)
-					on 'NAMESPACE',	.nameSpaceDecl
 					on 'ENUM',		_nameSpaceAddDecl(curNameSpace, .enumDecl)
 					on 'SIG',		_nameSpaceAddDecl(curNameSpace, .declareMethodSig)
-					else,			.throwError('Expecting a namespace member but got [tok].')
-			.dedent
+					on 'NAMESPACE',	.nameSpaceDecl
+					else, .throwError('Expecting a namespace member but got [tok].')
+			if indented, .dedent
 		finally
-			for tok in idTokens
-				_nameSpaceStack.pop
+			for tok in idTokens, _nameSpaceStack.pop
 		return firstNameSpace to !
 
 	def _nameSpaceAddDecl(ns as NameSpace, decl as INameSpaceMember) as INameSpaceMember
