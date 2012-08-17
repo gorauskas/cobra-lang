@@ -1,0 +1,312 @@
+namespace Cobra.Core
+
+use System.Collections
+
+class CountedSet<of T> implements ICollection<of T>
+	"""
+	This class is a CountedSet (AKA multiset) collection. Unlike a set, a multiset allows the same
+	item to be inserted multiple times.
+
+	To get the number of times that a particular
+	item is in the CountedSet, use count = CountedSet[item].
+	Adding an item to the CountedSet will increase it's count by one.
+	As an invariant, the count of an item must be > 0 for all items
+	Removing an item decreases the count by one and removes the item entirely if its
+	count reaches 0. Use removeAll to delete all occurances of a particular item.
+
+	For a computer science background, see
+	http://en.wikipedia.org/wiki/Set_(computer_science)#Multiset.
+
+	For a mathematical background, see
+	http://en.wikipedia.org/wiki/Multiset
+	
+	to-do: Collection classes typically provide the ability to specify initial capacity in the initializer.
+	
+	to-do: Dictionary classes typically provide the ability to specify an IEqualityComparer<TKey> in the initializer.
+	"""
+
+	var _data as IDictionary<of T, int>
+
+	cue init
+		base.init
+		_data = Dictionary<of T, int>()
+	
+	cue init(items as T*)
+		.init
+		.addRange(items)
+
+	cue init(other as CountedSet<of T>)
+		.init
+		.addRange(other)
+
+	cue init(other as IDictionary<of T, int>)
+		.init
+		.addRange(other)
+
+	pro [item as T] as int
+		""" If the item is not in the CountedSet, .get returns 0. """
+		get
+			return _data.get(item, 0)
+		set
+			require value > 0
+			_data[item] = value
+
+	get count as int
+		"""
+		Total number of items in the CountedSet. Equivalent to the sum of counts.
+		"""
+		sum = 0
+		for pair in .counts, sum += pair.value
+		return sum
+
+	get uniqueCount
+		"""
+		Returns the total number of unique items in the CountedSet.
+		"""
+		return _data.count
+		
+	get isReadOnly as bool
+		return false
+
+	# to-do: could be Pair<of T, int>, right?
+	get counts as KeyValuePair<of T, int>*
+		"""
+		In the returned Stream of KeyValuePairs, the key is the item
+		and the value is the item's count
+		"""
+		for item, count in _data
+			yield KeyValuePair<of T, int>(item, count)
+		
+	def contains(item as T) as bool
+		return _data.keys.contains(item)
+
+	def items as T*
+		for item, count in _data, for c in count, yield item
+
+	def getEnumerator as System.Collections.IEnumerator
+		implements System.Collections.IEnumerable
+		return .getEnumerator
+
+	def getEnumerator as IEnumerator<of T>
+		return _data.keys.getEnumerator
+
+	cue enumerate as T*
+		for item, count in _data, for c in count, yield item
+
+	def toList as IList<of T>
+		return List<of T>(.enumerate)
+
+	def uniqueSet as Cobra.Core.ISet<of T>
+		return Set<of T>(_data.keys)
+
+	def add(item as T)
+		"""
+		Adding an instance of an item is 
+		equivalent to increasing the item's count by one 
+		"""
+		this[item] += 1
+
+	def add(item as T, num as int)
+		"""
+		Adds num instances of item to the CountedSet
+		This is equivalent to increasing the item's count by num.
+		Num must be >0.
+		"""
+		require num > 0
+		this[item] += num
+		
+	def addRange(other as CountedSet<of T>)
+		for item, count in other.counts, .add(item, count)
+
+	def addRange(other as IDictionary<of T, int>)
+		for item, count in other, .add(item, count)
+
+	def addRange(items as T*)
+		for item in items, .add(item)
+
+	def remove(item as T) as bool
+		"""
+		Removes one instance of item from the CountedSet
+		This is equivalent to subtracting the item's count by one
+		"""
+		return .remove(item, 1) > 0
+
+	def remove(item as T, num as int) as int
+		"""
+		Removes up to num instances of item from the CountedSet
+		This is equivalent to subtracting the item's count by num
+		Returns the actual number of items removed.
+		"""
+		require num > 0
+		ensure result >= 0
+		if .contains(item)
+			maxNumRemoved = this[item]
+			_data[item] -= num
+			if _data[item] <= 0
+				_data.remove(item)
+				return maxNumRemoved
+			return num
+		return 0
+
+	def removeAll(item as T) as bool
+		""" Removes all occurances of item from the CountedSet. """
+		return _data.remove(item)
+
+	def clear
+		""" Removes all items from the CountedSet. """
+		_data.clear
+
+	def copyTo(array as T[], arrayIndex as int)
+		if arrayIndex < 0
+			throw ArgumentOutOfRangeException("arrayIndex = [arrayIndex] must be > 0.")
+		if array.length + arrayIndex < .count
+			throw ArgumentException("The count of this CountedSet = [.count] is greater than" + _
+				" the available space from index = [arrayIndex] to the end of the destination array of length [array.length]")
+		pos = 0
+		for el in .enumerate
+			array[pos + arrayIndex] = el
+			pos += 1
+
+	def equals(other as Object?) as bool is override
+		if not other inherits CountedSet<of T>, return false
+		return _data == (other to CountedSet<of T>)._data
+
+	def getHashCode as int is override
+		return HashCodeUtils.combine(for item in this get item.getHashCode)
+
+	def toString as String is override
+		sb, pos, count = StringBuilder('{'), 0, .count
+		for item in .items
+			sb.append(item)
+			if pos < count - 1, sb.append(', ')
+			pos += 1
+		sb.append(c'}')
+		return sb.toString
+
+	# Multiset math operations
+
+	def sum(other as CountedSet<of T>) as CountedSet<of T>
+		""" Returns the sum of two counted sets without side effects. """
+		answer = CountedSet<of T>(this)
+		answer.addRange(other)
+		return answer
+		
+	def difference(other as CountedSet<of T>) as CountedSet<of T>
+		"""
+		Subtracts the counts of other from this CountedSet.
+		Only keeps items with count > 0
+		"""
+		answer = CountedSet<of T>(this)
+		for item, count in .counts
+			CobraCore.noOp(count)
+			if other.contains(item)
+				newCount = answer[item] - other[item]
+				if newCount > 0, answer[item] = newCount
+				else, answer.removeAll(item)
+		return answer
+				
+	def union(other as CountedSet<of T>) as CountedSet<of T>
+		"""
+		Take the max count of each item from each CountedSet
+		"""
+		answer = CountedSet<of T>(this)
+		for item, count in other.counts
+			if answer[item] < count, answer[item] = count
+		return answer
+
+	def intersection(other as CountedSet<of T>) as CountedSet<of T>
+		"""
+		Takes the min count of each item from each CountedSet
+		"""
+		answer = CountedSet<of T>()
+		for item, count in .counts
+			if other.contains(item)
+				answer[item] = Math.min(count, other[item])
+		return answer
+
+	/# to-do
+	def mostCommon(num as int) as ICollection<of T>
+		This should be implemented with a heap queue#/
+
+	/# to-do
+	These probably don't have much practical use but could be implemented
+	def isSubsetOf(s as CountedSet<of T>) as bool
+	def isSupersetOf(s as CountedSet<of T>) as bool
+	def product(other as CountedSet<of T>) as bool
+	def multiply(n as int)
+	def symmetricDifference(s as CountedSet<of T>) as CountedSet<of T>
+	#/
+
+class TestCountedSet
+
+	test basics
+		cs = CountedSet<of char>('mississippi')
+		assert cs.toList.sorted == [c'i', c'i', c'i', c'i', c'm', c'p', c'p', c's', c's', c's', c's'] 
+		assert cs[c'm'] == 1
+		assert cs[c'i'] == 4
+		assert cs[c'p'] == 2
+		assert cs[c's'] == 4
+
+	test sum
+		cs1 = CountedSet<of int>([1, 2, 2])
+		cs2 = CountedSet<of int>([0, 2, 2])
+		sumCS = cs1.sum(cs2)
+		assert sumCS[1] == 1 and sumCS[2] == 4 and sumCS[0] == 1
+
+	test union
+		cs1 = CountedSet<of int>([1, 2, 2])
+		cs2 = CountedSet<of int>([1, 1, 2])
+		unionCS = cs1.union(cs2)
+		assert unionCS[1] == 2 and unionCS[2] == 2
+
+	test intersection
+		cs1 = CountedSet<of int>([1, 2, 2, 3])
+		cs2 = CountedSet<of int>([1, 1, 2])
+		interCS = cs1.intersection(cs2)
+		assert interCS[1] == 1 and interCS[2] == 1 and interCS[3] == 0
+
+	test difference
+		cs1 = CountedSet<of int>([1, 2, 2, 3, 3, 3])
+		cs2 = CountedSet<of int>([1, 1, 2, 3])
+		diffCS = cs1.difference(cs2)
+		assert diffCS[1] == 0 and diffCS[2] == 1 and diffCS[3] == 2
+		assert not diffCS.contains(1)
+
+	test toString
+		cs = CountedSet<of char>('mississippi')
+		assert cs.toString == '{m, i, i, i, i, s, s, s, s, p, p}'
+
+	test remove
+		cs = CountedSet<of int>()
+		#case: not in CountedSet
+		removed = cs.remove(4,4) 
+		assert removed == 0
+		#case: remove some
+		cs[4] = 4
+		removed = cs.remove(4,2)
+		assert removed == 2
+		assert cs[4] == 2
+		#case: remove all
+		cs[5] = 3
+		removed = cs.remove(5,3) 
+		assert removed == 3
+		assert not cs.contains(5)
+		#case: remove more than count
+		cs[7] = 4
+		removed = cs.remove(7,5)
+		assert removed == 4
+		assert not cs.contains(7)
+
+	test removeAll
+		cs = CountedSet<of char>('mississippi')
+		cs.removeAll(c'i')
+		assert not cs.contains(c'i')
+
+	/#test set
+		CountedSet= CountedSet<of int>()
+		expect Cobra.Core.RequireException, CountedSet[3] = -2 #/
+
+	test uniqueSet
+		cs = CountedSet<of int>([1, 1, 1, 1, 2, 2, 2, 3])
+		assert cs.uniqueSet == Set<of int>([1, 2, 3])
+
