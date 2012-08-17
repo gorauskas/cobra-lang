@@ -304,8 +304,7 @@ class BoxMember
 
 	def usesBase
 		# Needed by AbstractMethod and ProperDexer
-		if 'new' in _isNames or 'override' in _isNames
-			return
+		if 'new' in _isNames or 'override' in _isNames, return
 		# using base implies override, but only if the method sig in the base class is the same
 		# (otherwise it's just an overload)
 		if (parentBox = .parentBox) inherits Class
@@ -314,10 +313,13 @@ class BoxMember
 			baseMember = parentBox.baseClass.memberForName(_name)
 			if baseMember
 				if baseMember inherits MemberOverload
+					matched = false
 					for member in baseMember.members
 						if .matchesSignature(member)
 							baseMember = member
+							matched = true
 							break
+					if not matched, return
 				if baseMember inherits IBoxCodeMember
 					if .matchesSignature(baseMember)
 						if 'nonvirtual' in (baseMember).isNames
@@ -326,6 +328,7 @@ class BoxMember
 							_isNames.add('override')
 						_isNames.remove('virtual')  # virtual is the default for properties and methods
 				else
+					trace this, parentBox.idString, parentBox.baseClass.memberForName(_name), baseMember
 					throw FallThroughException(baseMember)
 
 	def matchesSignature(member as IBoxCodeMember) as bool
