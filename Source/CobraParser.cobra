@@ -2299,7 +2299,7 @@ class CobraParser inherits Parser
 
 	def ifStmt as Stmt
 		token = .expect('IF')
-		cond = .expression
+		cond = _expressionMultiLinePreBlock
 		trueStmts = .block
 		falseStmts as BlockStmt?
 		if .peek.which=='ELSE'
@@ -2344,7 +2344,7 @@ class CobraParser inherits Parser
 	def postWhileStmt as Stmt
 		token = .expect('POST')
 		.expect('WHILE')
-		return PostWhileStmt(token, .expression, .block)
+		return PostWhileStmt(token, _expressionMultiLinePreBlock, .block)
 
 	def traceStmt as TraceStmt?
 		"""
@@ -2544,7 +2544,7 @@ class CobraParser inherits Parser
 		return UsingStmt(token, varr, initExpr, block)
 
 	def whileStmt as Stmt
-		return WhileStmt(.expect('WHILE'), .expression, .block)
+		return WhileStmt(.expect('WHILE'), _expressionMultiLinePreBlock, .block)
 
 	def yieldStmt as Stmt
 		token = .expect('YIELD')
@@ -2758,6 +2758,26 @@ class CobraParser inherits Parser
 
 	var _inExpression as int
 	
+	def _expressionMultiLinePreBlock as Expr
+		"""
+		Special handling for expressions in some statements that may have a multiline/continued expression 
+			prior to an indented block.
+		Ensures a statement that has hanging unpaired indents/dedents from removing indents in a multiline
+			expression cleaned up and has the expected trailing EOL and INDENT after the expression.
+		"""
+		cond = .expression
+		if cond.token.lineNum <> .last.lineNum  and _spaceAgnosticIndentLevel <> 0
+			# expression is broken across multiple lines and changed indentation
+			# unwind indentation and correct indentation tokens for the expected following block
+			_spaceAgnostic
+			_spaceAgnosticIndentLevel = 0
+			if .peek.which <> 'COMMA'
+				.ungrab
+				.replace(.peek.copy('INDENT'))
+				.ungrab
+				.replace(.peek.copy('EOL'))
+		return cond
+
 	def expression as Expr
 		test
 			assert 0 not in _binaryOpPrec.values
@@ -2842,7 +2862,7 @@ class CobraParser inherits Parser
 						op = ''  # cancel the creation of a new binary op expr
 						.grab
 					else
-						right = .expression(prec)
+						right = _continuedExpression(prec, opToken to !)
 					if op == 'DOT' and not right inherits IDotRightExpr
 						if left inherits StringLit or right inherits StringLit
 							sugg = ' Use plus "+", not dot ".", for string concatenation.'
@@ -2993,6 +3013,27 @@ class CobraParser inherits Parser
 						else
 							throw
 
+	var _implicitContinuationOps = [
+		'ASSIGN', 'AND', 'OR', 'STAR', 'SLASH', 'PLUS', 'MINUS',
+		'EQ', 'NE',	'LT', 'GT', 'LE', 'GE', 'IN', 'NOTIN',	
+		'PLUS_EQUALS', 'MINUS_EQUALS', 'STAR_EQUALS', 'SLASH_EQUALS', 'PERCENT_EQUALS', 
+		'SLASHSLASH', 'PERCENT', 'AMPERSAND', 'VERTICAL_BAR', 	'CARET', 'DOUBLE_LT',	
+		'DOUBLE_GT', 'AMPERSAND_EQUALS', 'VERTICAL_BAR_EQUALS', 'CARET_EQUALS', 
+		'DOUBLE_LT_EQUALS', 'DOUBLE_GT_EQUALS', 'STARSTAR', 'STARSTAR_EQUALS' 
+	]
+			
+	def _continuedExpression(prec as int, opToken as IToken) as Expr
+		"""
+		Handle expression that may end in line with an implicit continuation character
+		Relies on _expressionMultilinePreBlock (on if, postwhile and while stmts)
+		and end of statement _finishSpaceAgnostic to handle subsequent indent/dedent cleanup
+		"""
+		if .peek.which == 'EOL' and opToken.which in _implicitContinuationOps 
+			_spaceAgnostic  # eat the following EOL and remove any now hanging indents
+		right = .expression(prec)
+		return right
+		
+		
 	def multiTargetAssign(arg0 as Expr) as Stmt
 		# id, |[id,]... = <expr>
 		args = .commaSepExprsPartial('ASSIGN.EOL.', 'ASSIGN')
