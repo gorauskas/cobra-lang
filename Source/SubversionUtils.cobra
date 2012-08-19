@@ -1,0 +1,72 @@
+use System.Text.RegularExpressions
+
+
+class SubversionUtils
+	"""
+	Provides .readSubversionRevision method to read
+	the revision of a subversion workspace from disk.
+	
+	Other possibilities include:
+		svnversion command
+		svn info -R | grep "Revision\:" | sort -k2nr | head -n1
+		... from http://www.zorched.net/2006/07/20/getting-the-revision-number-of-your-subversion-working-copy/
+	"""
+
+	shared
+
+		def readSubversionRevision(path as String, checkParentDirs as bool) as int?
+			require path.length
+			if not Directory.exists(path), throw FileNotFoundException('not found: [path]', path)
+			return _readSubversionRevision(Path.getFullPath(path), checkParentDirs, 1)
+
+		def _readSubversionRevision(path as String, checkParentDirs as bool, invocationCount as int) as int?
+			if invocationCount > .maxInvocationCount, return nil  # runaway recursion guard
+			svnPath = Path.combine(path, '.svn')
+			if not Directory.exists(svnPath)
+				svnPath = Path.combine(path, '_svn')
+				if not Directory.exists(svnPath)
+					if checkParentDirs
+						if Path.getPathRoot(path) == path
+							return nil  # no more parents to check
+						else
+							parent = Path.getDirectoryName(path)
+							if parent is nil or parent == '', return nil
+							return _readSubversionRevision(parent to !, checkParentDirs, invocationCount+1)
+					else
+						return nil
+			revision = _readRevisionFromDb(svnPath)
+			if revision, return revision
+			revision = _readRevisionFromEntries(svnPath)
+			if revision, return revision
+			return nil
+
+		def _readRevisionFromDb(svnPath as String) as int?
+			# svn >= 1.7
+			dbPath = Path.combine(svnPath, 'wc.db')
+			if File.exists(dbPath)
+				maxVer = int.minValue
+				fileBytes = File.readAllBytes(dbPath)
+				fileText = Encoding.default.getString(fileBytes)
+				re = Regex(r"/!svn/ver/(?'version'[0-9]*)/")
+				for match as Match in re.matches(fileText)
+					revInt, revText = 0, match.groups['version'].value
+					if int.tryParse(revText, out revInt) and revInt > maxVer, maxVer = revInt
+				if maxVer > int.minValue, return maxVer
+			return nil
+
+		def _readRevisionFromEntries(svnPath as String) as int?
+			# svn < 1.7
+			# Reference:
+			# http://netpl.blogspot.com/2011/10/reading-revision-number-of-local-copy.html
+			entriesPath = Path.combine(svnPath, 'entries')
+			if File.exists(entriesPath)
+				revisionInt, revisionText = 0, ''
+				using tr = File.openText(entriesPath)
+					for i in 3, tr.readLine
+					revisionText = tr.readLine.trim
+				if int.tryParse(revisionText, out revisionInt)
+					return revisionInt
+			return nil
+	
+	const maxInvocationCount = 250  # CC: cannot have a 'const' under a 'shared' section
+
