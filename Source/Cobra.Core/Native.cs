@@ -1108,7 +1108,7 @@ static public class CobraImp {
 					PromoteNumerics(ref a, ref b); // takes no action if types are same or one of the types is not numeric
 				try {
 					return ((IComparable)a).CompareTo(b);
-				} catch (ArgumentException argExc) {
+				} catch (ArgumentException) {
 					// Some system types are retarded. For example, someDouble.CompareTo(0) throws an exception
 					if (b.GetType() != a.GetType()) {
 						// Convert.ChangeType will sometimes convert an Int32 to an enum, but other times it throws an exception:
