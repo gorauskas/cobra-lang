@@ -2,104 +2,450 @@ namespace Cobra.Core
 
 	class MultiList<of T>
 		"""
-		This class provides an n-dimensional multi-list containing any other type.
+		This class provides a generic n-dimensional multi-list containing any other type.
+		The shape of a MultiList is a list of ints specifying the length of each dimension.
+		Dimensions are called axes.
+		The count is the total number of elements in the ML.
 
-		The class provides initialization for any number of dimensions, access to the data via
-		indexing (`m[i, j, k]`) and equality comparisons between matrices.
-	
-		The dimension sizes and even the number of dimensions may be hard-coded or delayed until
-		run-time.
+		For efficiency reasons, the MultiList class avoids copying its underlying 
+		data as much as possible. A ML can be a read-only view that shares
+		data with an owner ML. The view can have
+		a different shape, count, and/or order of axes than its owner.
+		One way to construct a view is to call ml.slice
 
-		See the class TestMultiList further below for example usage.
+		Methods that perform operation in place return "this" which allows for method chaining.
+		For example,
+			ml.permute(order).reshape(shape).transpose
+		If you want to perform operations on a view instead of the owner, call
+			ml.view.permute(order).reshape(shape).transpose
+
+		MultiList supports indexing, for example
+			element = ml[i,j,k]
+			ml[i,j,k] = element
+		There are plans to support syntactical multidimensional slicing, such as
+			ml2 = ml[a:b, c:d]
+		However, at the moment, you should use .slice instead
 		
-		This is similar in concept to C++'s Boost.MultiArray though this class is not modeled
-		directly after it.
+		Inspiration for MultiList comes from similar libraries such as 
+		Boost.MultiArray -- http://www.boost.org/doc/libs/1_50_0/libs/multi_array/doc/reference.html
+		Numpy.Array -- http://docs.scipy.org/doc/numpy/reference/arrays.ndarray.html
+		Ruby NArray -- http://narray.rubyforge.org/SPEC.en
+		MATLAB -- http://www.mathworks.com/products/matlab/
+
+		For further discussion on MultiLists, see the forum
+		http://cobra-language.com/forums/viewtopic.php?f=4&t=974
 		"""
+		/#
+		--Notes--
+		to-do:
+		(1) Implement syntactic multidimensional slicing as a property.
+		(3) Could potentially support ml[a:b:c, d:e:f]
+		
+		Implementing more methods would for the most part not affect existing code.
+		The ability to write generic methods will open up a lot of possibilities
+		Some methods that would have changes, however, are
+			Reversing an axis -- http://docs.scipy.org/doc/numpy/reference/generated/numpy.flipud.html#numpy.flipud
+			Removing single length axes -- http://docs.scipy.org/doc/numpy/reference/generated/numpy.squeeze.html#numpy.squeeze
+			Roll -- http://docs.scipy.org/doc/numpy/reference/generated/numpy.roll.html#numpy.roll
+
+		Another thing to consider is making a Matrix<of T> sublcass that is a 2-dim MultiList.
+		#/
 
 		const minDimRank = 1
 		const maxDimRank = 10_000_000
 		const maxCount = 2_100_000_000
-	
-		var _shape as IList<of int>
-		var _count = 1
-		var _data as T[]
 
-		cue init(shape as vari int)
-			require
-				shape.length > 0
-				all for dim in shape get dim >= .minDimRank and dim <= .maxDimRank
-			body
-				.init(shape.toList)
+		var _owner as MultiList<of T>?
+		var _data as T[]
+		var _shape as IList<of int>
+			""" Shape is the size of each axis in the view """
+
+		var _dimOrder as IList<of int>
+			"""
+			Maps the order of the axes stored internally to
+			the external permuted order
+			"""
+		var _inverseDimOrder as IList<of int>
+		var _strides as IList<of int>
+			"""
+			A stride is the number of places in _data separating
+			two adjacent elements of a particular axes.
+			Elements are stored in row major order.
+			for equation, see
+			http://en.wikipedia.org/wiki/Row-major_order#Generalization_to_higher_dimensions	 
+			A slice has the same strides as its owner
+			"""
+		var _ranges as IList<of Pair<of int>>
+			"""
+			For readonly multilists (aka views), _ranges is the range of elements per axis
+			included in the view.
+			"""
+
+		var _isReadOnly = false
+		var _isPermuted = false
+		var _isReferred = false 
+			"""If a referrer is GC'ed, _isReferred will still be true"""
+
+		var _count = 1
+
+		var _viewCount as int?
+
+		var _numDims = 0
 
 		cue init(shape as IList<of int>)
+			"""
+			Constructor for a multilists that "owns" its data
+			"""
 			require
 				shape.count > 0
-				all for dim in shape get dim >= .minDimRank and dim <= .maxDimRank
+				all for s in shape get s >= .minDimRank and s <= .maxDimRank
 			body
 				base.init
 				_shape = shape.clone
-				for dim in shape, _count *= dim
-				assert _count < .maxCount
+				_computeFields
 				_data = T[](_count)
-				assert _data.length == _count
-	
-		get count from var
-	
+
+		cue init(shape as vari int)
+			body
+				.init(shape.toList)
+
+		cue init(shape as IList<of int>, data as T*)
+			""" Length of data can be less than the count but not more"""
+			body
+				.init(shape)
+				.fill(data)
+
+		cue init(original as MultiList<of T>, ranges as IList<of Pair<of int>>) is private
+			"""
+			The readonly view constructor returned from a slice
+			"""		
+			require
+				ranges.count == original._numDims
+				all for r in ranges.count get _
+					ranges[r][0] >= 0 _
+					and ranges[r][1] > ranges[r][0] _
+					and ranges[r][1] - ranges[r][0] <= original._shape[r]
+			ensure
+				not _owner.isReadOnly
+			body
+				base.init
+				_owner = original.owner
+				_data = original._data
+				_isReadOnly = true
+				_isPermuted = original._isPermuted
+				_shape = for range in ranges get range[1] - range[0]
+				_dimOrder = original._dimOrder.clone
+				_inverseDimOrder = original._inverseDimOrder.clone
+				_strides = original._strides
+				_numDims = _shape.count
+				_ranges = ranges.clone
+				_count = original._count
+				_viewCount = 1
+				for s in _shape, _viewCount *= s
+
+		cue enumerate as T*
+			for index in _generateIndices
+				yield this[index]
+
+		get count as int
+			return _viewCount ? _count
+
+		get numDims from var
+
 		get shape as IList<of int>
-			return _shape.clone
+			return _permuteList(_shape)
 
-		pro [indexes as vari int] as T
+		get isReadOnly from var
+
+		get isPermuted from var
+
+		get isReferred from var
+
+		get view as MultiList<of T>
+			"""Syntactic placeholder for this[:] """
+			return .slice
+
+		get owner as MultiList<of T>?
+			"""
+			In ml2 = ml1.slice, ml1 is the owner 
+			and ml2 is a view
+			"""
+			return _owner ? this
+
+		get toList as IList<of T>
+			return .enumerate.toList
+
+		pro [indices as vari int] as T
 			get
-				require indexes.length == .shape.count
-				return _data[_address(indexes)]
+				require
+					indices.length == .numDims
+				body
+					return _data[_address(indices)]
 			set
-				require indexes.length == .shape.count
-				_data[_address(indexes)] = value
+				require
+					indices.length == .numDims
+					not .isReadOnly
+				body
+					_data[_address(indices)] = value
+		
+		def fill(start as int, data as T*) as MultiList<of T>
+			"""
+			Throw IndexOutOfRangeException if the length of data + start exceeds .count
+			"""
+			require 
+				not .isReadOnly 
+				not .isPermuted  # to-do: theoretically not necessary
+			body
+				index = 0
+				for d in data
+					if index + start >= .count
+						throw IndexOutOfRangeException(
+							" data position of [index] plus start of [start] exceeds MultiList count of [.count]")
+					_data[index + start] = d
+					index += 1
+				assert index > 0
+				return this
 
-		def items as T*
-			""" Returns all the items in the multi-list, one at a time, in row-major order. """
-			for item in _data, yield item
+		def fill(data as T*) as MultiList<of T>
+			return .fill(0, data)
+
+			
+		def _computeFields
+			"""
+			Computes/Recomputes _numDims, _strides, _count, ranges,
+			_dimOrder, and _inverseDimOrder for
+			non-sliced, non-permuted ML
+			"""
+			require
+				not .isPermuted
+			ensure
+				_count < .maxCount
+				_count >= 1
+			body
+				_numDims = _shape.count
+
+				_strides = [1]
+				for s in _numDims -1 : 0 : -1
+					_strides.insert(0, _strides[0] * _shape[s])
+					
+				for s in _shape, _count *= s
+				#ranges - Each range is the whole axis 
+				_ranges = for s in _shape get Pair<of int>(0, s)
+				_dimOrder = for i in _numDims get i 
+				_inverseDimOrder = _dimOrder.clone
+
+		def _inversePermuteList(lst as IList<of int>) as IList<of int>
+			"""
+			Reorders the elements in a list according to _inverseDimOrder
+			For example the indices the users gives are in permuted order
+			But the data is stored in the original order.
+			"""
+			require lst.count == _numDims
+			if not _isPermuted, return lst
+			return for i in lst.count get lst[_inverseDimOrder[i]]
+
+		def _inversePermuteArray(arr as int[]) as int[]
+			require arr.length == _numDims
+			if not _isPermuted, return arr
+			permutedArr = int[](arr.length)
+			for i in arr.length, permutedArr[i] = arr[_inverseDimOrder[i]]
+			return permutedArr
+
+		def _permuteList(lst as IList<of int>) as IList<of int>
+			require lst.count == _numDims
+			if not _isPermuted, return lst
+			return for i in lst.count get lst[_dimOrder[i]]
+			
+		def _address(indices as int[]) as int
+			""" See http://en.wikipedia.org/wiki/Row-major_order#Generalization_to_higher_dimensions """
+			require
+				indices.length == _numDims
+			body
+				addr = 0 
+				permuted_indices = _inversePermuteArray(indices)
+				for i in _numDims
+					index = permuted_indices[i]
+					if index < 0 or index >= _shape[i]
+						dim = _dimOrder[i]
+						throw IndexOutOfRangeException(
+							'Array index [index] is out of range 0 : [_shape[dim]] for axis [dim].')
+					addr += (index + _ranges[i][0]) * _strides[i]
+				assert addr >= 0 and addr < _count
+				return addr
+
+		def _generateIndices as int[]*
+			""" 
+			Generates every possible index to a MultiList in order
+			[[0,0,0]. [0,0,1], [0,1,0], [0,1,1], ... ]
+			"""
+			return _generateIndicesRec(_permuteList(_shape), 0)
+				
+		def _generateIndicesRec(shape as IList<of int> , pos as int) as int[]*
+			require
+				shape.count == _numDims
+				pos < _numDims
+			body
+				s = shape[pos]
+				for index in 0 : s
+					if pos == _numDims - 1
+						indices = int[](_numDims)
+						indices[pos] = index
+						yield indices
+					else
+						for indices in _generateIndicesRec(shape, pos + 1)
+							indices[pos] = index
+							yield indices
+
+		def clone as MultiList<of T>
+			""" Returns a shallow copy """
+			return MultiList<of T>(_shape, .enumerate)
+
+		def slice(ranges as vari Pair<of int>) as MultiList<of T>
+			"""
+			Returns a readonly view of the ML.
+			If ranges are provided for the first few axes,
+			then the remaining ranges default to the whole axis. 
+			ml.slice()
+			to-do: implement syntactic slicing as a property.
+			This method is a placeholder.
+			"""
+			_isReferred = true
+			completedRanges = _ranges.clone
+			for r in completedRanges.count
+				rPermuted = _dimOrder.indexOf(r)
+				if rPermuted >= ranges.length, continue
+				range = ranges[rPermuted]
+				lowerBound = completedRanges[r][0] + range[0]
+				upperBound = completedRanges[r][0] + range[1]
+				completedRanges[r] = Pair<of int>(lowerBound, upperBound)
+			return MultiList<of T>(this, completedRanges)
+
+		def permute(order as IList<of int>) as MultiList<of T>
+			"""
+			Permutes the axes in place
+			"""
+			_isPermuted = true
+			_dimOrder = for o in order.count get _dimOrder[order[o]] 
+			_inverseDimOrder = for d in _numDims get _dimOrder.indexOf(d)
+			return this
+
+		def transpose as MultiList<of T>
+			""" Reverses the order of axes in place"""
+			return .permute(for d in _numDims get _numDims - d - 1)
+			
+		def toString as String is override
+			unpermutedShape =_permuteList(_shape)
+			rowSizes = [unpermutedShape.last]
+			for rs in _numDims -1 : 0 : -1
+				rowSizes.insert(0, rowSizes[0] * unpermutedShape[rs - 1])
+			sb = StringBuilder().append(String(c'[', _numDims))
+			count = 1
+			for index in _generateIndices
+				sb.append(this[index])
+				numBrackets = 0
+				for rs in rowSizes, if count % rs == 0, numBrackets += 1
+				if numBrackets <> _numDims
+					sb = sb.append(String(c']', numBrackets)) _
+							.append(', ') _
+							.append(String(c'[', numBrackets))
+				count += 1
+			sb.append(String(c']', _numDims))
+			return sb.toString
+
+		def reshape(shape as IList<of int>) as MultiList<of T>
+			""" Same as reshape(shape, false, false) """
+			return .reshape(shape, false, false)
+
+		def _truncate(stream as T*, length) as T*
+			count = 0
+			for e in stream
+				if count == length, break
+				count += 1
+				yield e
+				
+		def reshape(shape as IList<of int>, noCopy as bool, unsafe as bool) as MultiList<of T>
+			"""
+			Reshapes the axes in place,
+			unsafe == true will reshape the MultiList even if isReferred == true
+			and the count of the shape is different than .count
+			Will cause a data copy if necessary.
+			If a view is copied, it's owner will be nil and .isReadOnly will be false
+			"""
+			require
+				all for s in shape get s >= .minDimRank and s <= .maxDimRank
+			body
+				newCount = 1
+				for s in shape, newCount *= s
+				if newCount <> .owner.count and .isReferred and not unsafe
+					throw InvalidOperationException(
+					".isReferred == true. To reshape, new shape = [shape] with count [newCount] " + _
+					"must have same count [.count] as previous shape [.shape]. " + _
+					"Call .reshape(shape, true) to bypass this restriction.")		
+				else if newCount <> .owner.count and .isReadOnly
+					throw InvalidOperationException(
+					".isReadOnly == true. To reshape, new shape = [shape] with count [newCount] " + _
+					"must have same count [.owner.count] as owner with shape = [.owner.shape].")			
+				else if newCount == .owner.count and not .isPermuted
+					_shape = shape
+					_computeFields
+					_isPermuted = false
+				else if noCopy
+					throw InvalidOperationException(
+					"To reshape to from [.shape] to [shape], " + _
+					"data must be copied but noCopy == true. " + _
+					"Call .reshape(shape, true, [unsafe]) to permit copy.")
+				else
+					# Construct a ML with the new shape, and copy its fields
+					# This procedure reuses a lot of code
+					# The constructor expects a stream with size <= .count
+					copy = MultiList<of T>(shape, _truncate(.enumerate, newCount))
+					_shape = shape
+					_numDims = _shape.count
+					_data = copy._data
+					_isPermuted = false
+					_owner = nil
+					_dimOrder = copy._dimOrder.clone
+					_inverseDimOrder = copy._inverseDimOrder.clone
+					_strides = copy._strides
+					_ranges = copy._ranges.clone
+					_count = copy._count
+				return this
+
+		def getHashCode as int is override
+			"""
+			As a completely mutable object, MultiList does not
+			support getHashCode
+			"""
+			throw InvalidOperationException()
 
 		def equals(m as MultiList<of T>) as bool
+			""" 
+			Equal if shapes are the same, and
+			elements are in the same order.
+			Ignores .isReadOnly, .isPermuted, .isReferred
+			"""	
 			if m.count <> .count, return false
 			if m._shape <> _shape, return false
-			for i in _count, if m._data[i] <> _data[i], return false
+			for indices in _generateIndices
+				if this[indices] <> m[indices], return false
 			return true
 
 		def equals(obj as Object?) as bool is override
 			if obj inherits MultiList<of T>, return .equals(obj)
 			return false
 
-		def getHashCode as int is override
-			throw InvalidOperationException('Highly mutable classes do not have dependable hash codes.')
-
-		def _address(indexes as vari int) as int
-			assert indexes.length == _shape.count
-			# The below calcs are "row-major order", if it matters.
-			# See http://en.wikipedia.org/wiki/Row-major_order#Generalization_to_higher_dimensions
-			address = 0
-			len = indexes.length
-			for i in len
-				index = indexes[i]
-				if index < 0 or index >= _shape[i]
-					throw IndexOutOfRangeException('Array index [index] is out of range 0 - [_shape[i]] for dimension [i].')
-				x = 1
-				for j in i+1 : len, x *= _shape[j]
-				x *= index
-				address += x
-			return address
-
 
 	class TestMultiList
 
 		test
-			m = MultiList<of int>(1)
+			# indexing
+			m = MultiList<of int>([1])
 			assert m.count == 1
 			assert m[0] == 0
 			m[0] = 42
 			assert m[0] == 42
 			expect IndexOutOfRangeException, print m[1]
-		
+			
 			m = MultiList<of int>(3, 7)
 			assert m.count == 21
 			for x in 3, for y in 7, m[x, y] = x*y
@@ -108,13 +454,13 @@ namespace Cobra.Core
 			expect IndexOutOfRangeException, print m[3, 0]
 			expect IndexOutOfRangeException, print m[0, 7]
 			expect IndexOutOfRangeException, print m[4, 8]
-		
+
 			d1, d2, d3 = 10, 5, 3
 			m = MultiList<of int>(d1, d2, d3)
 			assert m.count == d1 * d2 * d3
 			for x in d1, for y in d2, for z in d3, m[x, y, z] = x*y*z
 			for x in d1, for y in d2, for z in d3, assert m[x, y, z] == x*y*z
-		
+
 			shape = [d1, d2, d3]
 			m2 = MultiList<of int>(shape)
 			for x in d1, for y in d2, for z in d3, m2[x, y, z] = x*y*z
@@ -129,5 +475,85 @@ namespace Cobra.Core
 				for y in 2
 					m[x, y] = n
 					n += 1
-			assert m.items.toList == [1, 2, 3, 4]
+			assert m.enumerate.toList == [1, 2, 3, 4]
 
+		test
+			# count, slice, permute, toString
+			ml = MultiList<of int>([3, 4, 2], for i in 24 get i+3)
+			assert ml.toString == _
+				r"[[[3, 4], [5, 6], [7, 8], [9, 10]], [[11, 12], [13, 14], [15, 16], [17, 18]], [[19, 20], [21, 22], [23, 24], [25, 26]]]"
+
+			ml2 = ml.slice(@[Pair<of int>(0,2), Pair<of int>(1,3)])
+			assert ml2.toString == r'[[[5, 6], [7, 8]], [[13, 14], [15, 16]]]'
+
+			ml2.permute([1, 0, 2])
+			assert ml2.toString == r'[[[5, 6], [13, 14]], [[7, 8], [15, 16]]]'
+			assert ml2.count == 8
+			
+			ml3 = ml.slice(@[Pair<of int>(0, 2), Pair<of int>(1, 3)])
+
+			ml3.permute([0, 2, 1])
+			ml3.permute([2, 1, 0])
+			assert ml3.slice(Pair<of int>(0, 1), Pair<of int>(0, 1)).toString == r'[[[5, 13]]]'
+			assert ml3.slice(Pair<of int>(0, 1), Pair<of int>(0, 1)).shape == [1, 1, 2]
+# 2012-07-31 Could not install Cobra without commenting out the following line, which failed
+# issue is that installation builds Cobra.Core with -turbo
+# see discussion at http://cobra-language.com/forums/viewtopic.php?f=4&t=974&p=4966#p4966
+#			expect AssertException, ml3[1,1,1] = 5
+
+			assert ml2.equals(ml2)
+			assert ml2.clone.equals(ml.slice(Pair<of int>(0, 2), Pair<of int>(1, 3)).permute([1, 0, 2]))
+			assert ml3.clone.equals(ml3)
+			assert not ml2.equals(ml3)
+
+		test
+			# fill
+			ml = MultiList<of int>(4, 3, 2).fill(5, [1, 2, 3, 4, 5, 6, 7, 8])
+			assert ml.toString == _
+				r'[[[0, 0], [0, 0], [0, 1]], [[2, 3], [4, 5], [6, 7]], [[8, 0], [0, 0], [0, 0]], [[0, 0], [0, 0], [0, 0]]]'
+			ml1 = MultiList<of Pair<of int>>([2, 2]).fill([Pair<of int>(0, 2), Pair<of int>(1, 3)])
+			ml2 = MultiList<of Pair<of int>>([2, 2], [Pair<of int>(0, 2), Pair<of int>(1, 3)])
+			assert ml1.equals(ml2)
+
+		test
+			# clone, transpose
+			ml = MultiList<of int>([3, 4, 2], for i in 24 get i+3)
+			assert ml.clone.transpose.equals(ml.permute([2, 1, 0]))
+
+		test
+			# owner 
+			# This test must check for physical equality 
+			ml1 = MultiList<of int>([3, 4, 2], for i in 24 get i+3)
+			assert ml1.owner is ml1
+			ml3 = ml1.slice(@[Pair<of int>(0, 2), Pair<of int>(1, 3)])
+			assert ml3.owner is ml1
+			ml4 = ml3.slice
+			assert ml4.owner is ml1
+			ml4 = ml4 #suppress warning
+
+		test
+			# reshape
+			ml = MultiList<of int>([3, 4, 2], for i in 24 get i+3)	
+			ml.reshape([2, 4, 3])
+			assert ml.toString == _
+				r'[[[3, 4, 5], [6, 7, 8], [9, 10, 11], [12, 13, 14]], [[15, 16, 17], [18, 19, 20], [21, 22, 23], [24, 25, 26]]]'
+
+			ml2 = MultiList<of int>([3, 4, 2], for i in 24 get i+3).transpose.reshape([3, 4])
+			assert ml2.toString == _
+				r'[[3, 11, 19, 5], [13, 21, 7, 15], [23, 9, 17, 25]]'
+
+			ml3 = MultiList<of int>([3, 4, 2], for i in 24 get i+3)	
+			assert ml3.transpose.reshape([4, 3, 2]).toString == _
+				r'[[[3, 11], [19, 5], [13, 21]], [[7, 15], [23, 9], [17, 25]], [[4, 12], [20, 6], [14, 22]], [[8, 16], [24, 10], [18, 26]]]'
+
+			ml4 = MultiList<of int>([3, 4, 2], for i in 24 get i+3).view.reshape([2, 4, 3])
+			assert ml4.toString == _	
+				r'[[[3, 4, 5], [6, 7, 8], [9, 10, 11], [12, 13, 14]], [[15, 16, 17], [18, 19, 20], [21, 22, 23], [24, 25, 26]]]'
+
+			expect InvalidOperationException, MultiList<of int>([3, 4, 2], for i in 24 get i+3).view.transpose.reshape([2, 4, 3], true, false)
+
+			expect InvalidOperationException, MultiList<of int>([3, 4, 2]).view.reshape([1, 2])
+			ml5 = MultiList<of int>([3, 4, 2])
+			ml6 = ml5.view #make .isReferred = true
+			CobraCore.noOp(ml6)
+			expect InvalidOperationException, ml5.reshape([1, 2])
