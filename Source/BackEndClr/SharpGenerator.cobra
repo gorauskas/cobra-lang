@@ -235,7 +235,28 @@ class Compiler is partial
 				.recordError(SourceException('Unknown -native-compiler:[nativeCompiler]'))
 
 			_deleteIntermediateFiles
+			
+			_copyCore(outName)
 
+	def _copyCore(outName as String)
+		if not .options.boolValue('copy-core'), return
+		sourceDir = Path.getDirectoryName(Assembly.getEntryAssembly.location) ? ''
+		outDir = Path.getDirectoryName(outName) ? ''
+		_copyFile(sourceDir, outDir, 'Cobra.Core.dll')
+		if .options.getDefault('debug', '') not in ['', '-', '0', 0, false]
+			if CobraCore.isRunningOnMono
+				_copyFile(sourceDir, outDir, 'Cobra.Core.dll.mdb')
+			else
+				_copyFile(sourceDir, outDir, 'Cobra.Core.pdb')
+
+	def _copyFile(sourceDir as String, outDir as String, fileName as String)		
+		source = Path.combine(sourceDir, fileName)
+		destination = Path.combine(outDir, fileName)
+		try
+			File.copy(source, destination, true)
+		catch exc as Exception
+			.recordError(SourceException('Cannot copy [fileName] due to: [exc.typeOf.name]: [exc.message]'))
+		
 	def joinOptions(options as List<of String>) as String
 		sb = StringBuilder()
 		sep = ''
