@@ -95,18 +95,37 @@ class Box
 
 	def allBaseTypes as Box*
 		require .didBindInh
+		for bt in _allBaseTypes(Set<of Box>()), yield bt
+
+	def _allBaseTypes(memo as Set<of Box>) as Box*
 		if .baseClass
-			yield .baseClass to !
-			for bt in .baseClass.allBaseTypes, yield bt
+			if .baseClass not in memo
+				memo.add(.baseClass to !)
+				yield .baseClass to !
+			for bt in .baseClass.allBaseTypes
+				if bt not in memo
+					memo.add(bt)
+					yield bt
 		for bi in .baseInterfaces
-			yield bi
-			for bt in bi.allBaseTypes, yield bt
-		
+			if bi not in memo
+				memo.add(bi)
+				yield bi
+				for bt in bi.allBaseTypes
+					if bt not in memo
+						memo.add(bt)
+						yield bt
+
 	def allMembers as IList<of IBoxMember>
 		imembers = List<of IBoxMember>()
 		members = List<of IBoxCodeMember>()
+
 		_allMembers(imembers, members)
-		_allExtensionMembers(imembers, members)
+		for box in .allBaseTypes
+			assert box is not this
+			box._allMembers(imembers, members)
+
+		_allExtensionMembers(imembers, members, Set<of Box>())
+
 		return imembers
 
 	def _allMembers(imembers as IList<of IBoxMember>, members as IList<of IBoxCodeMember>)
@@ -117,16 +136,16 @@ class Box
 					members.add(imember)
 			else
 				imembers.add(imember)
-		for box in .allBaseTypes
-			box._allMembers(imembers, members)
 
-	def _allExtensionMembers(imembers as IList<of IBoxMember>, members as IList<of IBoxCodeMember>)
+	def _allExtensionMembers(imembers as IList<of IBoxMember>, members as IList<of IBoxCodeMember>, memo as Set<of Box>)
 		if .compiler and .compiler.nameSpaceStack.count
+			if this in memo, return
+			memo.add(this)
 			.prepIfNeeded
 			for ns in .compiler.nameSpaceStack
 				_allExtensionMembers(ns, imembers, members)
 			for box in .allBaseTypes
-				box._allExtensionMembers(imembers, members)
+				box._allExtensionMembers(imembers, members, memo)
 			for ud in .compiler.nameSpaceStack.peek.useDirectives
 				_allExtensionMembers(ud.boundNameSpace to !, imembers, members)
 
