@@ -129,6 +129,7 @@ class InstallFromWorkspace
 	var _args = List<of String>()
 	var _skipStdLib = false
 	var _willForceDotNet4 = false
+	var _platformArg as String?
 
 	def run
 		print
@@ -190,21 +191,19 @@ class InstallFromWorkspace
 		return Path.directorySeparatorChar
 
 	def parseCommandLineArgs as List<of String>
-		args = CobraCore.commandLineArgs
-		args = args[1:]
-
-		i = args.indexOf('-skip-std-lib')
-		if i > -1
-			args.removeAt(i)
-			_skipStdLib = true
-
-		i = args.indexOf('-net4')
-		if i == -1, i = args.indexOf('-dotnet4')
-		if i > -1
-			args.removeAt(i)
-			_willForceDotNet4 = true
-
-		return args
+		remainingArgs = List<of String>()
+		for arg in CobraCore.commandLineArgs[1:]
+			if arg == '-skip-std-lib'
+				_skipStdLib = true
+			else if arg in ['-net4', '-dotnet4']
+				_willForceDotNet4 = true
+			else if arg.startsWith('-platform:')
+				_platformArg = arg
+			else if arg == '-x86'
+				_platformArg = '-platform:x86'
+			else
+				remainingArgs.add(arg)
+		return remainingArgs
 
 	def setUpCLR4(args as List<of String>)
 		# locate the external C# .NET 4 compiler
@@ -663,7 +662,10 @@ class InstallFromWorkspace
 
 	def buildCobraCompiler
 		.startStage('Build new Cobra compiler')
-		.runSnapshotCobra('-compile [.compileFlags] -ert:yes cobra.cobra -files:files-to-compile.text')
+		args = '-compile [.compileFlags] -ert:yes'
+		args += ' cobra.cobra -files:files-to-compile.text'
+		if _platformArg, args += ' -sharp-args:\"[_platformArg]\"'
+		.runSnapshotCobra(args)
 		if not File.exists('cobra.exe'), .error('No cobra.exe file was produced.')
 
 	def getBaseVersion
@@ -710,7 +712,11 @@ class InstallFromWorkspace
 		will be installed to the GAC along with the dll. This is required for the -d compiler option.
 		"""
 		.startStage('Build [name] library')
-		.runSourceCobra('[flags] -debug [.compileFlags] -out:[name].dll -key-file:Cobra.Core[.slash]Cobra.Core.snk [files]')
+		args = '[flags] -debug [.compileFlags] -out:[name].dll'
+		args += ' -key-file:Cobra.Core[.slash]Cobra.Core.snk '
+		args += ' [files]'
+		if _platformArg, args += ' -sharp-args:\"[_platformArg]\"'
+		.runSourceCobra(args)
 
 	def installLibraryToGAC(name as String)
 		.startStage('Install [name] library to the GAC')
