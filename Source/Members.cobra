@@ -223,7 +223,7 @@ class BoxMember
 		return .idString
 
 	def cobraSourceSignatureInHtml as String
-		return .idString.htmlEncode
+		return .cobraSourceSignature.htmlEncode
 
 	def unNilReturnType
 		"""
@@ -429,6 +429,51 @@ class BoxEvent
 			_handlerType = _handlerTypeProxy.realType
 		# TODO: error check that _handlerType is a delegate
 		# _handlerType.nonNil.isDescendantOf(.compiler.delegateType)
+
+	def cobraSourceSignature as String is override
+		# ex: event Name(sender, args as EventArgs)
+		sb = StringBuilder('event [.name]')
+		# to-do: ? generic args
+		if .params.count > 0
+			sb.append('(')
+			sep = ''
+			for param in .params
+				if sep == '' and param.type.nonNil == .typeProvider.objectType
+					sb.append(param.name)
+				else
+					sb.append('[sep][param.name] as ')
+					branch param.direction
+						on Direction.In, pass
+						on Direction.InOut, sb.append('inout ')
+						on Direction.Out, sb.append('out ')
+					sb.append('[param.type.name]')
+				sep = ', '
+			sb.append(')')
+		# to-do: return type. although while this is technically possible in .NET, it's almost unheard of. after all, these are events
+		# to-do: other is names
+		return sb.toString
+
+	def cobraSourceSignatureInHtml as String is override
+		sb = StringBuilder('<span class="shl-kw-md">event</span> <span class="shl-mdn">[.name.htmlEncode]</span>')
+		# to-do: ? generic args
+		if .params.count > 0
+			sb.append('(')
+			sep = ''
+			for param in .params
+				if sep == '' and param.type.nonNil == .typeProvider.objectType
+					sb.append('<span class="shl-pn">[param.name.htmlEncode]</span>')
+				else
+					sb.append('[sep]<span class="shl-pn">[param.name.htmlEncode]</span> <span class="shl-kw">as</span> ')
+					branch param.direction
+						on Direction.In, pass
+						on Direction.InOut, sb.append('<span class="shl-kw">inout</span> ')
+						on Direction.Out, sb.append('<span class="shl-kw">out</span> ')
+					sb.append('<span class="shl-pt">[param.type.name.htmlEncode]</span>')
+				sep = ', '
+			sb.append(')')
+		# to-do: return type. although while this is technically possible in .NET, it's almost unheard of. after all, these are events
+		# to-do: other is names
+		return sb.toString
 
 
 class BoxField inherits BoxMember is abstract, partial
