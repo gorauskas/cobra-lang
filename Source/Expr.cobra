@@ -2325,6 +2325,10 @@ class TruthExpr
 			.throwError('Cannot determine truth because the method does not return a value.')
 		else if type inherits Struct
 			.throwError('Cannot determine truth from an arbitrary struct.')
+		else if type inherits EnumDecl
+			# enums are special symbolic values that require comparison except in the case of flag testing
+			if _isBitwise, _treatment = Treatment.CompareToZero
+			else, .throwError('Cannot treat enums as truth values. Compare them to a value with "==" or "<>", or if they are flags, use a bitwise operator ("&", "|", "~").')
 		else
 			throw FallThroughException(this)
 		if type.isReference and not type inherits NilableType and not type inherits NilType and not type inherits PassThroughType and not type inherits DynamicType
@@ -2350,6 +2354,13 @@ class TruthExpr
 					hint += '.'
 				.compiler.warning(this, 'The expression "[_expr.toCobraSource]" (of type "[type.name]") will always evaluate to true because it is not nilable. [hint]')
 		_type = .compiler.boolType
+
+	def _isBitwise as bool
+		# only invoked if type is enum
+		if _expr inherits BinaryBitwiseExpr, return true
+		if _expr inherits UnaryOpExpr
+			if _expr.op == 'TILDE', return true
+		return false
 
 	def toCobraSource as String is override
 		return _origExpr.toCobraSource
