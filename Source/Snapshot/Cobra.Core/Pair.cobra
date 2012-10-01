@@ -13,6 +13,9 @@ Provides two Pair classes:
 		Pair<of int, String>(3, 'three')
 		Pair<of Customer, decimal>(c, amount)
 
+Note that Pair<of T> inherits Pair<of T, T>. In other words, when accepting arguments, you may wish
+to use the general Pair<of T, T> type which will accept both.
+
 The elements of the pair are accessed as .a and .b or [0] and [1]. You can also use a `for` loop on
 a pair as it is enumerable. Comparisons between pairs such as `p1 < p2` are effectively comparisons
 of their elements.
@@ -45,89 +48,6 @@ namespace Cobra.Core
 			return 2
 
 
-	class Pair<of T> inherits BasePair
-		implements IEnumerable<of T>, IComparable<of Pair<of T>>
-
-		test
-			p = Pair<of int>(1, 2)
-			assert p.a == 1 and p.b == 2
-			assert p[0] == 1 and p[1] == 2
-			assert p.toString == 'Pair(1, 2)'
-			expect IndexOutOfRangeException, assert p[2] == 3
-
-		cue init(a, b)
-			base.init
-			_a, _b = a, b
-	
-		get a from var as T
-	
-		get b from var as T
-
-		get [i as int] as T
-			if i == 0, return _a
-			if i == 1, return _b
-			throw IndexOutOfRangeException('Index [i] is out of range for a pair (0-1).')
-		
-		def toString as String is override
-			sa = CobraCore.toTechString(.a)
-			sb = CobraCore.toTechString(.b)
-			return '[.typeOf.name]([sa], [sb])'
-
-		def equals(other as Pair<of T>) as bool
-			test
-				assert Pair<of String>('a', 'b').equals(Pair<of String>('a', 'b'))
-				assert Pair<of String>('a', 'b').equals(Pair<of String>('a', 'c'))
-			body
-				return other.a == .a and other.b == .b
-
-		def equals(obj as Object?) as bool is override
-			test
-				assert Pair<of String>('a', 'b') == Pair<of String>('a', 'b')
-				assert Pair<of String>('a', 'b') <> Pair<of String>('a', 'c')
-			body
-				if obj is nil, return false
-				if obj is this, return true
-				if obj inherits Pair<of T>, return obj.a == .a and obj.b == .b
-				return false
-
-		def compareTo(p as Pair<of T>) as int
-			test
-				assert Pair<of String>('a', 'b') < Pair<of String>('b', 'c')
-				assert Pair<of int>(2, 3) > Pair<of int>(2, 2)
-				assert Pair<of String?>(nil, 'a') < Pair<of String?>(nil, 'b')
-				assert Pair<of int?>(nil, nil) < Pair<of int?>(1, 1)
-			body
-				diff = _compare(.a, p.a)
-				if diff == 0, diff = _compare(.b, p.b)
-				return diff
-
-		def getHashCode as int is override
-			test
-				d = {
-					Pair<of int>(1, 1): 'one',
-					Pair<of int>(2, 2): 'two',
-					Pair<of dynamic>(nil, nil): 'nil',
-				}
-				assert d[Pair<of int>(1, 1)] == 'one'
-				assert d[Pair<of int>(2, 2)] == 'two'
-				assert d[Pair<of dynamic>(nil, nil)] == 'nil'
-			body
-				return HashCodeUtils.combine(
-							if(.a is nil, 0, .a.getHashCode),
-							if(.b is nil, 0, .b.getHashCode))
-
-		def getEnumerator as IEnumerator<of T>
-			test
-				assert (for s in Pair<of String>('a', 'b') get s) == ['a', 'b']
-			body
-				yield .a
-				yield .b
-
-		def getEnumerator as System.Collections.IEnumerator
-			implements System.Collections.IEnumerable
-			return .getEnumerator
-
-
 	class Pair<of TA, TB> inherits BasePair
 		implements System.Collections.IEnumerable, IComparable<of Pair<of TA, TB>>
 	
@@ -138,7 +58,7 @@ namespace Cobra.Core
 			assert p.toString == 'Pair(1, 2)'
 			expect IndexOutOfRangeException, assert p[2] == 3
 
-		cue init(a, b)
+		cue init(a as TA, b as TB)
 			base.init
 			_a, _b = a, b
 	
@@ -205,4 +125,51 @@ namespace Cobra.Core
 			body
 				yield .a
 				yield .b
+
+
+	class Pair<of T> inherits Pair<of T, T>
+		# to-do? implements IEnumerable<of T> , IComparable<of Pair<of T>>
+
+		test
+			p = Pair<of int>(1, 2)
+			assert p.a == 1 and p.b == 2
+			assert p[0] == 1 and p[1] == 2
+			assert p.toString == 'Pair`1(1, 2)'
+			expect IndexOutOfRangeException, assert p[2] == 3
+			print 'foo'
+
+/#
+		Would be nice if the indexer was strongly typed, but I don't this is possible.
+		get [i as int] as T
+			if i == 0, return _a
+			if i == 1, return _b
+			throw IndexOutOfRangeException('Index [i] is out of range for a pair (0-1).')
+#/
+/#
+
+		# to-do?
+		def compareTo(p as Pair<of T>) as int
+			test
+				assert Pair<of String>('a', 'b') < Pair<of String>('b', 'c')
+				assert Pair<of int>(2, 3) > Pair<of int>(2, 2)
+				assert Pair<of String?>(nil, 'a') < Pair<of String?>(nil, 'b')
+				assert Pair<of int?>(nil, nil) < Pair<of int?>(1, 1)
+			body
+				diff = _compare(.a, p.a)
+				if diff == 0, diff = _compare(.b, p.b)
+				return diff
+
+		# to-do?
+		def getEnumerator as IEnumerator<of T> is override
+			implements System.Collections.IEnumerable<of T>
+			test
+				assert (for s in Pair<of String>('a', 'b') get s) == ['a', 'b']
+			body
+				yield .a
+				yield .b
+
+		def getEnumerator as System.Collections.IEnumerator is override
+			implements System.Collections.IEnumerable
+			return .getEnumerator
+#/
 
