@@ -29,6 +29,7 @@ class UnknownMemberException extends DynamicOperationException
     protected Object _obj;
     protected String _name;
     Class _type;
+    Exception _exc;
 
     public UnknownMemberException(Object obj, String name, Class type) {  this(obj, name, type, null);}
     public UnknownMemberException(Object obj, String name, Class type, Exception cause) 
@@ -39,8 +40,24 @@ class UnknownMemberException extends DynamicOperationException
         this._obj = obj;
         this._name = name;
         this._type = type;
+        this._exc = cause;
     }
 }
+
+
+class CannotInTypeException extends UnknownMemberException
+{
+    public CannotInTypeException(Object obj, String name, Class type)
+    {
+        super(obj, name, type, null);
+    }
+
+    public CannotInTypeException(Object obj, String name, Class type, Exception innerExc)
+    {
+	super(obj, name, type, innerExc);
+    }
+}
+
 
 /*
  * Missing, unreadable Member Exceptions
@@ -77,16 +94,6 @@ class CannotReadPropertyException inherits UnknownMemberException
 		cue init(obj as Object, name as String, type as Type, innerExc as Exception?)
 			base.init(obj, name, type, innerExc)
 
-
-	class CannotInTypeException inherits UnknownMemberException
-
-		# CC: axe init()s
-
-		cue init(obj as Object, name as String, type as Type)
-			.init(obj, name, type, nil)
-
-		cue init(obj as Object, name as String, type as Type, innerExc as Exception?)
-			base.init(obj, name, type, innerExc)
 
 
 class CannotCompareException inherits DynamicOperationException

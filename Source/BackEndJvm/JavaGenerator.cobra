@@ -11,9 +11,15 @@ All of that happens during .bindFoo phases.
 ##
 
 class Compiler is partial
+	var _javaMainClass as String = ''
+	var _fullJarFileName as String = ''
+	
+	get javaMainClass from var
+	get fullJarFileName from var
+	
 
 	# run prior to compilation to determine an output filename for the java source
-	# for testing for need for compilation.
+	# for testing, for need for compilation.
 	# Filename used may be determined later post AST generation using the first classname in file
 	# see 'fixup output filename' in compileJava below
 	def computeOutNameJava as String
@@ -25,25 +31,29 @@ class Compiler is partial
 		if outName == '', outName = .defaultOutName to !
 		if outName.endsWith('.java') or outName.endsWith('.JAVA'), outName = outName[:-5]
 		if outName.endsWith('.cobra') or outName.endsWith('.COBRA'), outName = outName[:-6]
-		_baseExeFileName = outName
+		_javaMainClass = outName
 
-		outName = Utils.forceExtension(outName, '.class')
-		_fullExeFileName = outName
+		#outName = Utils.forceExtension(outName, '.class') #v1
+		outName = Utils.forceExtension(outName, '.jar')		
+		_fullJarFileName = outName
 		return outName
 		
 	def writeJava
 		Node.setCompiler(this)
 		try
-			#pass
 			_moduleFileName_to_curlyToCobraLineNum = Dictionary<of String, Dictionary<of int, int>>()
 			for _curModule in _modules
 				if not _curModule.fileName.endsWith('SystemInterfaces.cobra')
 					javaToCobraLineNum = _curModule.writeJavaDef
-					_moduleFileName_to_curlyToCobraLineNum[_curModule.fileName] = javaToCobraLineNum
-					_moduleFileName_to_curlyToCobraLineNum[Path.getFullPath(_curModule.fileName)] = javaToCobraLineNum
+					.storeJavaFileInfo(_curModule.fileName, javaToCobraLineNum)
 		finally
 			Node.setCompiler(nil)
-
+			
+	def storeJavaFileInfo(fileName as String, javaToCobraLineNum as Dictionary<of int, int>?)
+		# called above and fm Namespace.writeJavaDef after new class file
+		_moduleFileName_to_curlyToCobraLineNum[fileName] = javaToCobraLineNum
+		_moduleFileName_to_curlyToCobraLineNum[Path.getFullPath(fileName)] = javaToCobraLineNum
+			
 	def writeJavaTestInvocation
 		# TODO
 		print 'TODO: writeJavaTestInvocation'
@@ -59,7 +69,6 @@ class Compiler is partial
 			options = .options
 
 			# locate the Java compiler
-			# TODO: This just does files compilation, augment to also generate manifest and executable jarfile
 			# TODO: augment to use Java library compiler when Java native
 			compilerPath = options.getDefault('native-compiler', 'auto') to String
 			if compilerPath <> 'auto'
@@ -71,8 +80,6 @@ class Compiler is partial
 					print 'Cannot find compiler specified by -native-compiler argument: [compilerPath]'
 					throw StopCompilation(this)
 			else
-				# TODO use a javatool - wrap javac and jarfile gen for multiple files		
-				# javaTool -m MainClass -o outFile file-list
 				compilerPath = if(Utils.isRunningOnUnix, 'javac', 'javac.exe')
 				
 			optChar = '-'
@@ -110,10 +117,7 @@ class Compiler is partial
 					nativeArgs = nativeArgs[1:-1]
 				backEndOptions += ' ' + nativeArgs
 
-			#sep = if(CobraCore.isRunningOnUnix, ':', ';') # after next snapshot
-			cpSep = ';'
-			if (Environment.osVersion.platform to int) in [4, 6, 128]  # http://www.mono-project.com/FAQ:_Technical
-				cpSep = ':'
+			cpSep = if(CobraCore.isRunningOnUnix, ':', ';')
 
 			libclassPath = ''
 			for libPath in .options.getStringList('library-directory')
@@ -123,25 +127,32 @@ class Compiler is partial
 			# explicitly add reference to it until we get setup to install a copy in extdirs
 			ccPath = Path.getDirectoryName(CobraCore.exePath) to !
 			ccPath = Path.combine(ccPath, 'CobraCore.jar')
-			backEndOptions += ' -classpath "[ccPath][libclassPath]"'
+			classPath = '[ccPath][libclassPath]'
+			backEndOptions += ' -classpath "[classPath]"'
 				
-			# TODO: add libPaths/classpaths for referenced namespaces
+			# TODO: add libPaths/classpaths for any referenced namespaces
 			
 			# .java files fm first class name in each module
-			javaFileNameList = List<of String>()
+			javaFileNameSet = Set<of String>()
 			for module in _modules[1:]
 				if module.javaFileName.length
-					javaFileNameList.add(module.javaFileName)
-
+					javaFileNameSet.add(module.javaFileName)
+			#javaFileNameList = _intermediateFileNames		
+			for name in _intermediateFileNames		
+				if name.length, javaFileNameSet.add(name)
+			javaFileNameList = List<of String>(javaFileNameSet)
+					
+			#trace javaFileNameList, _intermediateFileNames		
 			# fixup javaMain pkg path all lower case
 			# fixup output filename (classfile) to be in sync with Java filename
 			javaMain = _getFixedMainType
 			if outName <> javaFileNameList[0]
 				outName = javaFileNameList[0]
-				#_baseExeFileName = Path.changeExtension(outName, nil) to ! # remove any extn
-				_baseExeFileName = javaMain
+				_javaMainClass = javaMain
 				outName = Utils.forceExtension(outName, '.class')
-				_fullExeFileName = outName
+
+			if .defaultOutName
+				_fullJarFileName = Utils.forceExtension(.defaultOutName to !, '.jar')
 						
 			# compilation command
 			if _verbosity
@@ -150,20 +161,72 @@ class Compiler is partial
 				print 'compiler =', compilerPath
 				print '    compilerOptions =', backEndOptions
 				print '    nativeArgs =', nativeArgs
-				print '    outName =', .fullExeFileName
+				print '    fullExeFileName=',  _fullJarFileName
 				print '    baseExeFileName =', .baseExeFileName
 				print '    javaFileNameList =', javaFileNameList
-
-			output = _execAndCapture(compilerPath, backEndOptions, javaFileNameList)
-			_parseJavaCompilerOutput(output)
-
+				print '    defaultOutName =', .defaultOutName
+				
+			#output = _execAndCapture(compilerPath, backEndOptions, javaFileNameList)
+			#_parseJavaCompilerOutput(output)
+			_javaTool(compilerPath, backEndOptions, classPath, javaFileNameList)
+				
 			if .errors.count
 				_exitFromErrors
 
 			_deleteIntermediateFiles
+			_copyCoreJvm(outName)
+
+	def _copyCoreJvm(outName as String)
+		if not .options.boolValue('copy-core'), return
+		sourceDir = Path.getDirectoryName(Assembly.getEntryAssembly.location) ? ''
+			# above should be something non platform dependent (COBRA_HOME ?) 
+		outDir = Path.getDirectoryName(outName) ? ''
+		_copyFile(sourceDir, outDir, 'Cobra.Core.jar')
+		#if .options.getDefault('debug', '') not in ['', '-', '0', 0, false]
+		# copy any debug files
+		# TODO: probably also need to adjust Manifest File Class-Path for cobra RTL
 			
-	# Better would be options as optionList as List<of String> but ftm we're stuck with space joined strings
-	# coming into caller
+	def _javaTool(javacPath as String, options as String, classPath as String, fileNameList as List<of String>)
+		"""
+		javatool - wrap executing javac and executable jarfile generation for single or 
+			multiple files		
+		"""
+		# clean directory for java compiled cobraClasses
+		classDir = 'cobraClasses'
+		if Directory.exists(classDir)
+			Directory.delete(classDir, true)
+		Directory.createDirectory(classDir)
+			
+		# put compiled classes in own subdir
+		options = options.replace('-d .', '-d [classDir]')
+
+		# run java compiler on java srcfiles
+		output = _execAndCapture(javacPath, options, fileNameList)
+		_parseJavaCompilerOutput(output)
+		if _errors.count, return
+		
+		# Make manifest file - entry for Class-Path: <classPath>
+		cpSep = if(CobraCore.isRunningOnUnix, ':', ';')
+		manFileName = 'in.mf'	
+		mfClassPath = classPath.replace(cpSep, ' ') # classpath entries space separated
+		mfClassPath = mfClassPath.replace('C:',' ') # cant handle drive designators
+		mfText = 'Class-Path: [mfClassPath] [Environment.newLine]'
+		try
+			File.writeAllLines(manFileName, [mfText].toArray)
+		catch exc as Exception
+			.warning(CobraWarning(manFileName, nil, 'Cannot write manifest file due to: [exc.message] ([exc.getType.name]).'))
+		
+		# make jarfile
+		_intermediateFileNames.add(manFileName)
+		#outName = Utils.forceExtension(.defaultOutName to !, '.jar')
+		outName = _fullJarFileName
+		mainClass = _javaMainClass
+		#print  'jar cfem [outName] [.baseExeFileName] [manFileName] -C [classDir] .'
+		output = _execAndCapture('jar', 'cfem [outName] [mainClass] [manFileName] -C [classDir]', ['.'])
+		#print output # TODO parse this for errs
+		
+	# Better would be options as optionList as List<of String> but ftm we're stuck with space 
+	# joined strings coming into caller
 	# TODO: move this to CobraCore to avoid .NET dependency
 	def _execAndCapture(binaryPath as String, options as String, fileNameList as List<of String>) as String
 		p = System.Diagnostics.Process()
@@ -173,7 +236,11 @@ class Compiler is partial
 		p.startInfo.arguments = '[options] [fileNames]'
 		if _verbosity >= 2
 			print '[p.startInfo.fileName] [p.startInfo.arguments]'
-		output = p.runAndCaptureAllOutput
+		try
+			output = p.runAndCaptureAllOutput
+		catch exc as System.ComponentModel.Win32Exception
+			print 'Error: Compiler file [p.startInfo.fileName] not found in path'
+			throw exc
 		# TODO: check p.exitCode, especially if output is empty
 		return output		
 			
@@ -204,6 +271,22 @@ class Compiler is partial
 			javaMain = '[javaPkg].[exeParts.last]'	
 		#trace .mainMethodTypeName, javaMain
 		return javaMain	
+	
+	#hoisted from CobraModule
+	def newJavaFile( cobraModuleName as String, javaFileName as String) as CurlyWriter
+		#print 'newJavaFile [javaFileName]'
+		file = File.createText(javaFileName)
+		sw = CurlyWriter(file, CurlyLineNumberTreatment.Comment)
+		.addIntermediateFile(javaFileName)
+		sw.start(cobraModuleName)
+		sw.write('// [javaFileName] from [cobraModuleName]\n')
+		sw.write('// Generated by Cobra-[CommandLine.versionString]\n')
+		sw.write('// on [DateTime.now]\n')
+		# TODO: list op sys
+		sw.write('\n')
+		return sw
+	
+		
 ##
 ## Node
 ##
@@ -328,23 +411,14 @@ class CobraModule is partial
 		return classFileName
 						
 	def writeJavaDef as Dictionary<of int, int>? is override
-		file = File.createText(.javaFileName)
-		using sw = CurlyWriter(file, CurlyLineNumberTreatment.Comment)
-			.compiler.addIntermediateFile(_javaFileName)
-			sw.start(.fileName)
-			sw.write('// [_javaFileName] from [_fileName]\n')
-			sw.write('// Generated by Cobra-[CommandLine.versionString]\n')
-			sw.write('// on [DateTime.now]\n')
-			# TODO: list op sys
-			sw.write('\n')
-
+		using sw = (.compiler to Compiler).newJavaFile(.fileName, .javaFileName)
 			if .isMainWrapper 	
 				.synthesizeJavaMainWrapper(sw)
 			else
 				.topNameSpace.writeJavaDef(sw)
 			d = sw.curlyToCobraLineNum
 		return d
-
+		
 	def writeJavaTestInvocation(sw as CurlyWriter) is override
 		# TODO: .topNameSpace.writeJavaTestInvocation(sw)
 		pass
@@ -422,8 +496,10 @@ class Container<of TMember> is partial
 		return .javaRef
 
 	get _computeJavaRef as String
-		if .parent
-			s = .parent.javaRef
+		if .parent 
+			if .parent.javaRef <> 'global' # no global (default) namespace in java
+				s = .parent.javaRef # ?'global'?
+				s += '.'
 			s += .javaName
 		else
 			s = .javaName
@@ -480,7 +556,7 @@ interface IMember is partial
 
 	def writeJavaDef(sw as CurlyWriter)
 		"""
-		Write the Java code for this member declaration to the given CurlyWriter.
+		Write the Java code for this member definition/declaration to the given CurlyWriter.
 		"""
 
 	def writeJavaTestInvocation(sw as CurlyWriter)
@@ -523,21 +599,44 @@ class NameSpace is partial
 	def writeJavaDef(sw as CurlyWriter) is override
 		assert not .isUnified
 		base.writeJavaDef(sw)
+		_writeNameSpaceHeading(sw)
+		
+		# Top Level classes + Interfaces in a Namespace
+		d0 = _declsInOrder[0]
+		firstclass = true
+		for decl in _declsInOrder
+			isNames = List<of String>()
+			if decl inherits Box 
+				.compiler.boxStack.push(decl)
+				isNames.add(decl.defaultAccessLevel)
+			isNames.addRange(decl.isNames)
+			if firstclass or decl == d0 or not 'public' in isNames
+				decl.writeJavaDef(sw)
+				firstclass = if(decl inherits EnumDecl, true, false)
+			else 
+				# java - compile error if public classes are not in their own file - a pox on whoever made this unsuppressable
+				javaFileName = decl.name + '.java'
+				# make it look like this class was made in its own cobra module 
+				# TODO insert Module name in new Java file header
+				cobraModName = decl.name + '.cobra' 
+				#trace javaFileName, cobraModName
+
+				compiler =(.compiler to Compiler)
+				using sw = compiler.newJavaFile(cobraModName, javaFileName)
+					_writeNameSpaceHeading(sw)
+					decl.writeJavaDef(sw)
+					javaToCobraLineNum = sw.curlyToCobraLineNum
+					compiler.storeJavaFileInfo(cobraModName, javaToCobraLineNum)
+			
+			if decl inherits Box, .compiler.boxStack.pop
+
+	def _writeNameSpaceHeading(sw as CurlyWriter)
 		if not .isRoot
-			javaName = .name.toLower # java idiom is all lowercase for packages
-			sw.write('package [javaName][.javaSuffix]; \n\n')
+			pkgName = .name.toLower # java idiom is all lowercase for packages
+			sw.write('package [pkgName][.javaSuffix]; \n\n')
 		for ud in _useDirectives  # imports
 			ud.writeJavaDef(sw)
-		for decl in _declsInOrder
-			if decl inherits Box
-				.compiler.boxStack.push(decl)
-			decl.writeJavaDef(sw)
-			if decl inherits Box
-				.compiler.boxStack.pop
-		# TODO
-		#if not .isRoot
-		#	sw.dedentAndWrite('} // namespace [.name]\n')
-
+		
 	def writeJavaTestInvocation(sw as CurlyWriter) is override
 		for decl in _declsInOrder
 			decl.writeJavaTestInvocation(sw)
@@ -590,7 +689,7 @@ interface IType is partial
 	get javaNameComponent as String
 		"""
 		Returns a string that refers to this type and is suitable for embedding in a larger
-		identifier (meaning there will be no punction, spaces or Java comments).
+		identifier (meaning there will be no punctuation, spaces or Java comments).
 		"""
 
 	get javaRef as String
@@ -778,7 +877,64 @@ class UnspecifiedType is partial
 ## Enums
 ##
 
-# TODO
+class EnumDecl is partial
+	
+	get javaRef as String is override
+		if .isUsedAsSet, return 'java.util.EnumSet<[base.javaRef]>' 
+		return 	base.javaRef
+			
+	get javaRefBase as String
+		return base.javaRef
+
+	get javaInit as String is override
+		if .isUsedAsSet, return 'java.util.EnumSet.noneOf([base.javaRef].class)' 
+		return base.javaRef + '.' + _declsInOrder[0].name
+
+	def writeJavaDef(sw as CurlyWriter) is override
+		base.writeJavaDef(sw)
+		if 'extern' in _isNames
+			return
+		for attr in .attributes
+			attr.writeJavaDef(sw)
+		if not _isNames.count, _isNames.add('internal') # to get nothing
+		.writeJavaIsNames(sw)
+		sw.write('enum [_name]')
+		/# we dont support storageType in java 
+		storageType = _storageType ...
+		#/
+		sw.write(' {\n')
+		sw.indent
+		sep = ''
+		i = 0
+		for em as EnumMember in .declsInOrder
+			sw.write(sep)
+			sw.write(em.name)
+			if em.value
+				sw.write('([em.value])')
+				complex = true
+			i += 1
+			sep = ',\n'
+		sw.write(';\n')
+		if complex # Make something like .Net enum - specific int values 
+			sw.writeLine
+			sw.writeLine('private static int defValue = 0;')
+			sw.writeLine('private static void setDef(int b){defValue = b;}')
+			sw.writeLine('private static int  getDef(){return defValue;}')
+			sw.writeLine('private int value;')
+			sw.writeLine('private [_name](int value) {this.value = value; setDef(value+1);}')
+			sw.writeLine('private [_name]() {this.value = getDef(); setDef(this.value+1);}')
+			sw.writeLine('public int getValue() {return this.value;}')
+		sw.dedent
+		sw.write('}\n\n')
+
+
+class EnumMember is partial
+
+	def writeJavaTestInvocation(sw as CurlyWriter)
+		pass
+
+	get javaRef as String is override
+		return _enumDecl.javaRefBase + '.' + .javaName
 
 
 ##
@@ -831,9 +987,9 @@ class Box is partial
 			#trace .parentNameSpace.javaQualifier
 			javaRef = .parentNameSpace.javaQualifier + javaRef
 		else if .parentBox
-			trace .parentBox.javaRef
+			#trace .parentBox.javaRef
 			javaRef = .parentBox.javaRef + '.' + javaRef
-		#trace java
+		#trace javaRef
 		return javaRef
 
 	def writeJavaDef(sw as CurlyWriter)
@@ -1077,7 +1233,8 @@ class GenericParam is partial
 
 	def writeJavaConstraint(sw as CurlyWriter)
 		if _constraints.count
-			# TODO
+			# TODO map cobra constraints to Java syntax
+			# TODO before that try and comprehend java syntax for generic constraints
 			sw.write(' where [_name] :  ')
 			sep = ''
 			for constraint in _constraints
@@ -1113,7 +1270,7 @@ class GenericTypeConstraint is partial
 
 class Extension is partial
 
-	pass # TODO STUB
+	pass # TODO STUB: Implement extensions
 
 
 ##
@@ -1521,7 +1678,11 @@ class AbstractMethod is partial
 		if .isCompilerGenerated, return
 		if param.type.isReference and not param.type inherits NilableType and not param.isOut
 			if .compiler.options.boolValue('include-nil-checks')
-				sw.write('if (cobra.core.CobraCore._willCheckNil && [param.javaName]==null) throw new System.ArgumentNullException("[param.name]");\n')
+				sw.write('if (cobra.core.CobraCore._willCheckNil)\n')
+				sw.indent
+				sw.write('cobra.core.CobraImp.checkNotNull([param.javaName], "ParameterGuard Fail: non nilable parameter `[param.javaName]` is null" );\n')
+				sw.dedent
+				#sw.write('if (cobra.core.CobraCore._willCheckNil && [param.javaName]==null) throw new NullPointerException("Non nilable parameter named [param.name] is Null");\n')
 
 	def writeJavaDSTHead(sw as CurlyWriter)
 		if not .canHaveDetailedStackTrace
@@ -1802,7 +1963,7 @@ class Indexer is partial
 		#.writeJavaIsNames(sw)
 		sw.write(' [_returnType.javaRef] this')
 		.writeJavaParams(sw, r'[]')
-		#.writeSharpBody(sw)
+		#.writeJavaBody(sw)
 		# TODO: finish correctly (method with special attribute???
 
 class MemberOverload is partial
@@ -1939,30 +2100,6 @@ class AssertStmt is partial
 		sw.write(');\n')
 		sw.dedent
 		
-		/#
-		# use java asserts initially at least
-		sw.write(')\n')
-		sw.indent
-		sw.write('assert ')
-		_expr.writeJavaDef(sw)
-		#_expr.writeJavaBreakdown(sw)
-		#sw.write('[.javaThis]')
-		sw.write(' : ')
-		sw.write('String.format("assertion %s FAILED", ')
-		#sw.write('"assertion " + ')
-		tmpsw = CurlyWriter(StringWriter(), sw.curlyLineNumberTreatment)
-		_expr.writeJavaDef(tmpsw)
-		#sw.write(tmpsw.toString.replace('"', r'\"'))
-		sw.write(Utils.javaStringLiteralFor(tmpsw.toString))
-		#sw.write('" + " FAILED "')
-		sw.write(')')
-		if _info
-			sw.write(' + "info="+')
-			_info.writeJavaDef(sw)
-		sw.write(';\n')
-		sw.dedent
-		#/
-
 class BlockStmt is partial
 
 	def writeJavaDef(sw as CurlyWriter)
@@ -2074,17 +2211,17 @@ class ExpectStmt is partial
 		sw.write('boolean [gotRightExceptionVarName] = false;\n')
 		sw.write('try ')
 		_block.writeJavaDef(sw)
-		sw.writeAndIndent('catch ([exceptionTypeRef]) {\n')
+		sw.writeAndIndent('catch ([exceptionTypeRef] _expExc ) {\n')
 		sw.write('// exactly what is expected\n')
 		sw.write('[gotRightExceptionVarName] = true;\n')
 		sw.dedentAndWrite('}\n')
 		if _exceptionType inherits Box and not (_exceptionType to Box).isJvmSystemExceptionClass
-			wrongExceptionVarName = '_lh_expect_[_varNumber]'
-			assert gotRightExceptionVarName <> wrongExceptionVarName
-			sw.writeAndIndent('catch (java.lang.Throwable [wrongExceptionVarName]) {\n')
-			sw.write('throw new cobra.core.ExpectException(typeof([exceptionTypeRef]), [wrongExceptionVarName]);\n')
+			gotWrongExceptionVarName = '_lh_expect_[_varNumber]'
+			assert gotRightExceptionVarName <> gotWrongExceptionVarName
+			sw.writeAndIndent('catch (java.lang.Throwable [gotWrongExceptionVarName]) {\n')
+			sw.write('throw new cobra.core.ExpectException([gotWrongExceptionVarName].getClass(), [gotWrongExceptionVarName]);\n')
 			sw.dedentAndWrite('}\n')
-		sw.write('if (![gotRightExceptionVarName]) throw new cobra.core.ExpectException([exceptionTypeRef].getClass(), null);\n')
+		sw.write('if (![gotRightExceptionVarName]) throw new cobra.core.ExpectException([exceptionTypeRef].class, null);\n')
 
 
 class ForStmt is partial
@@ -2251,7 +2388,7 @@ class ForEnumerableStmt is partial
 		# in a C# foreach, (1) you must declare a new variable, (2) you cannot reassign it and (3) you cannot access it after the loop
 		# these constraints don't exist in Cobra
 		helperName = '_lh_for_[_var.name]_[_varNumber]'
-		sw.write('foreach ([_var.type.javaRef] [helperName] in ')
+		sw.write('for/*each*/ ([_var.type.javaRef] [helperName] : ')
 
 		# TODO: the javaRef of a type is not qualified and there is no using System.Collections;
 		# _what.writeJavaDefInContext(sw, false)
@@ -2320,10 +2457,17 @@ class PrintStmt is partial
 
 	def writeJavaDef(sw as CurlyWriter)
 		base.writeJavaDef(sw)
-		if _destination	# java Writer
+		if _destination	# java Writer or PrintStream
+			methodName = if(_stop, 'printStop', 'printLine')
+			sw.write('cobra.core.CobraImp.[methodName](')
 			_destination.writeJavaDef(sw, true)
-			methodName = if(_stop, 'write', 'writeLine')
-			sw.write('.[methodName](')
+			sw.write(', ')
+			
+			# if destination as one type or with constant available methods in each type
+			# i.e if we only allowed destination to be a PrintStream or a PrintWriter...
+			#_destination.writeJavaDef(sw, true)
+			#methodName = if(_stop, 'print', 'println')
+			#sw.write('.[methodName](')
 		else
 			methodName = if(_stop, 'printStop', 'printLine')
 			sw.write('cobra.core.CobraImp.[methodName](')
@@ -2429,6 +2573,201 @@ class TraceExprsStmt
 				sw.write('[sep][Utils.javaStringLiteralFor(expr.toCobraSource)][sep]')
 				expr.writeJavaDef(sw, false)
 			sw.write(');\n')
+		
+
+class TryStmt
+	is partial
+
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		if _successBlock
+			# Java also has no "success" (or in Python, "else") block for the "try" statement
+			# so it has to be simulated
+			helperName = '_lh_success_[_varNumber]'
+			sw.write('boolean [helperName] = true;\n')
+			if _finallyBlock
+				sw.write('try {\n')
+				sw.indent
+			sw.write('try')
+			_tryBlock.writeJavaDef(sw, false)
+			sw.dedent
+			sw.write('}\n')
+			if _catchBlocks.count
+				.writeCatchBlocksJava(sw, helperName)
+
+			sw.write('finally /*Success block*/{ if ([helperName])')
+			_successBlock.writeJavaDef(sw)
+			sw.write('}\n')
+
+			if _finallyBlock
+				sw.dedent
+				sw.write('}\n')
+				sw.write('finally')
+				_finallyBlock.writeJavaDef(sw)
+		else
+			sw.write('try')
+			_tryBlock.writeJavaDef(sw)
+			.writeCatchBlocksJava(sw, nil)
+			if _finallyBlock
+				sw.write('finally')
+				_finallyBlock.writeJavaDef(sw)
+    
+	# All exceptions caught will be either
+	# checked exceptions wrapped in a (RuntimeException based) CheckedExceptionWrapper
+	# or other RunTimeException based Exceptions.
+	# Generate code to rethrow these and can then just use the original cobra catchblocks as-is
+	def writeCatchBlocksJava(sw as CurlyWriter, localSuccessVar as String?)
+		sw.write('catch (Exception _exc0) {\n')
+		sw.indent
+		sw.write('try {\n')
+		sw.write('    if (_exc0 instanceof cobra.core.CheckedExceptionWrapper) {\n')
+		sw.write('	      cobra.core.CheckedExceptionWrapper cxw = (cobra.core.CheckedExceptionWrapper)_exc0;\n')
+		sw.write('	      throw cxw.getCause();   //:codeGen: catchblock Header\n')
+		sw.write('    }\n')
+		sw.write('    else throw (RuntimeException)_exc0;}\n')    
+		
+		sw.write('//-- cobra-code catch blocks\n')
+		_writeCatchBlocksJava(sw, localSuccessVar) # cobra code catch blocks
+		sw.write('//-- end cobra-code catch blocks\n')
+		
+		# fallthrough catch clause to propagate uncaught exceptions
+		hasException = false
+		for cb in _catchBlocks
+			if not cb.type or (cb.type and cb.type == .compiler.exceptionType)
+				hasException = true
+				break
+		if not hasException
+			sw.write('catch (Exception _exc1){\n')    
+			sw.write('    if (_exc1 instanceof cobra.core.CheckedExceptionWrapper){\n')
+			sw.write('	      throw (cobra.core.CheckedExceptionWrapper) _exc0; //rethrow as uncaught\n')
+			sw.write('    }\n')
+			sw.write('    else throw (RuntimeException)_exc1;\n}\n')    
+
+		sw.dedent
+		sw.write('}\n')    
+		
+	# This is original writeCatchBlocksJava code generating the cobra catch blocks.
+	# It originally worked alongside writeJavaDef0 in ThrowStmt below
+	def _writeCatchBlocksJava(sw as CurlyWriter, localSuccessVar as String?)
+		for cb in _catchBlocks
+			sw.write('catch (')
+			if cb.type
+				sw.write(' [cb.type.javaRef]')
+			else # no catchAll in Java language so catch Exception
+				sw.write(' java.lang.Exception')
+			helperName = if(cb.varName, cb.sharpHelperName, '_anyExc' )
+			# using sharpHelperName above is correct(same as sharp) - value set in Statements:CatchBlock.bindInt
+			# should be renamed to be non BE specific tho'
+			cb.javaRethrowName = helperName to ! # stash name for possible rethrow
+			sw.write(' [helperName]')
+			sw.write(')')
+			sb = StringBuilder()
+			if localSuccessVar, sb.append('[localSuccessVar] = false;\n')
+			if .compiler.hasDetailedStackTraceOption, sb.append('CobraCoreInternal.CobraImp.HandledException();\n')
+			if cb.varName
+				trackLocals = .compiler.willTrackLocals
+				if trackLocals, sb.append('CobraCoreInternal.CobraImp.SetLocal("[cb.varName]", ')
+				sb.append('[cb.javaVarName] = [helperName]')
+				if trackLocals, sb.append(')')
+				sb.append(';\n')
+			cb.block.writeJavaDef(sw, sb.toString)
+
+		
+		
+class CatchBlock
+	is partial
+
+	get javaVarName as String
+		return _var.javaName
+
+	var javaRethrowName as String?
+	
+class ThrowStmt	is partial
+	/# 
+	# This version tries to hide cobra mapping of Exceptions to RuntimeExceptions from coders
+	# We allow checked Exceptions (cobra coded) but when thrown codegen encloses them in a runtimeException: 
+	# In catch clauses we internally unwrap, examine and handle exceptions as coded
+	#
+	# Feeds into and is related to the (YTBD) determination of  what to do with calls to methods throwing 
+	# checked exceptions -
+	# Ideally codegen would automatically wrap calls generating a checked exception in a RuntimeException 
+	# generating wrapper and remainder handling would be treated  as above. 
+	# There is the possibility of a lotta repeated duplicated line by line code generated for cases 
+	# that a coder writing same would put together in a block using same try-catch...
+	# e.g. multiple sequential file io calls all generating IOException say..
+	# so as a convenience we may also want to provide some level of user specification 
+	# (compiler directive maybe) that specifies the enclosure limits of what should be wrapped in the 
+	# automatic code generated exception trapping boilerplate..
+	#	@jvm-wcx <ExceptionTYPE>
+	#		.. lines of code that may gen such an Exception
+	#
+	# As currently implemented we could just detect such calls (not explicitly wrapped) and emit a 
+	# diagnostic (actually rely on javac to do it for us) suggesting that the cobra code must explicitly 
+	# trap/handle/declare checked exceptions and generate RuntimeException from it.
+	#
+	# This explicitly pushes all the necessary handling onto the user but cruelly exposes our non support for 
+	# conveniently remapping checked exceptions... 
+	# also it makes for ugly code (and obscures the code control flow). 
+	#  (see comment below)
+	#/
+	def writeJavaDef(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		sw.write('throw ')
+		if _expr
+			if _expr.type.isDynamic,  sw.write('((java.lang.RuntimeException)')
+			#throw Runtime Exceptions as is
+			if _expr.type.isDescendantOf(.compiler.libraryType('Java.Lang.RuntimeException') to Box)
+				_expr.writeJavaDef(sw, false)
+			else
+				# Checked exceptions get wrapped in a runtime Exc wrapper
+				sw.write('new cobra.core.CheckedExceptionWrapper("Wrapping checked exception [_expr.type.name]",')
+				_expr.writeJavaDef(sw, false)
+				sw.write(')')
+			if _expr.type.isDynamic, sw.write(')')
+		else # rethrow
+			# Java doesnt support an unadorned throw in a CatchBlock (rethrow), needs an explicit exception
+			# look in enclosing block and if its a catchblock use its stored name (javaVarName)
+			if .superNode and .superNode.superNode inherits CatchBlock
+				rethrow = (.superNode.superNode to CatchBlock).javaRethrowName
+				sw.write('cobra.core.CobraImp.reThrow(')
+				sw.write(rethrow)
+				sw.write(')')
+				
+		sw.write(';\n')
+
+	/# 
+	# This original version of throws codegen was used along with JvmBackEnd
+	#	_tagToTypeName = {... 
+	#		'Exception' : 		'Java.Lang.RuntimeException',
+	#		...}
+	# makes the base Exceptionclass (compiler.ExceptionType) to be set to RuntimeException.
+	#
+	# This forces dvlpr written code to use only RuntimeException based exceptions explicitly		
+	# and also forces the explicit trapping of all methods throwing checked exceptions
+	#(to handle or convert to a wrapping RuntimeException) which does obscure the code layout - just like java... 
+	# We dont provide a way to specify Exceptions thrown on a method definition so the net effect is to 
+	# force cobra code to be written to conform (explicitly) to our forcing of all java Exceptions to 
+	# unchecked which may or may not be seen to be a good thing.....
+	# but its extra boilerplate cruft in cobra code, ugly and inconvenient to do
+	#/
+	def writeJavaDef0(sw as CurlyWriter)
+		base.writeJavaDef(sw)
+		sw.write('throw ')
+		if _expr
+			if _expr.type.isDynamic
+				sw.write('((java.lang.RuntimeException)')
+			_expr.writeJavaDef(sw, false)
+			if _expr.type.isDynamic
+				sw.write(')')
+		else # rethrow
+			# Java doesnt support an unadorned throw in a CatchBlock (rethrow), needs an explicit exception
+			# look in enclosing block and if catchblock use its stored name ( javaVarName)
+			if .superNode and .superNode.superNode inherits CatchBlock
+				rethrow = (.superNode.superNode to CatchBlock).javaRethrowName
+				sw.write(rethrow)
+				
+		sw.write(';\n')
+
 			
 
 class UsingStmt
@@ -2698,15 +3037,18 @@ class CallExpr is partial
 class EnumCallExpr is partial
 
 	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
-		if parens, sw.write('(')
+		isSet = _args.count > 1
+		if parens
+			if isSet, sw.write('java.util.EnumSet.of')
+			sw.write('(')	
 		if _args.count == 0
-			sw.write('default([_definition.javaRef])')
+			sw.write('/*default([_definition.javaRef])*/')
 		else
 			sep = ''
 			for member in _members
 				sw.write(sep)
 				sw.write(member.javaRef)
-				sep = '|'
+				sep = ',' 
 		if parens, sw.write(')')
 
 	def writeJavaBreakdownItems(sw as CurlyWriter)
@@ -2887,27 +3229,32 @@ class IndexExpr is partial
 				handled = true
 		if not handled
 			_target.writeJavaDef(sw)
-
-		ntIdxr = _lookupReadIndexer
+		ntIdxr = _lookupIndexer
 		if ntIdxr
-			assert ntIdxr.getter
-			assert ntIdxr.getter.name.length
+			assert ntIdxr.getter 			 # getter for indexer exists 
+			assert ntIdxr.getter.name.length # and has a name set
 			_writeIndexer(sw, '.[ntIdxr.getter.name](', ')')
 		else
+			# fallback to treat as Array Type
 			_writeIndexer(sw, r'[', r']')
 		
 		if parens, sw.write(')')
 
-	def _lookupReadIndexer as JavaFieldInfo?
+	def _lookupIndexer as JavaFieldInfo?
 		nt = JvmNativeType.nativeType(_target.type.nonNil)
-		#print 'dbg', _target.type.nonNil, nt
+		if not nt # _target.type is genericInstance
+			tt = _target.type.nonNil to Box
+			genDef = tt.genericDef
+			nt = JvmNativeType.nativeType(genDef)
+		#print 'dbg-ReadIdxr', _target.type.nonNil,'\n+ ', nt
 		if nt 
-			ntIdxr = nt.indexer
+			ntIdxr = nt.lookupIndexer
+			#print 'ntIdxr: [ntIdxr]'
 			if ntIdxr and ntIdxr.isReadable
 				return ntIdxr
 		#TODO: check for Indexer attribute for a Cobra user written version
 		return nil		
-				
+	
 	def _writeIndexer(sw as CurlyWriter, prefix as String, suffix as String)
 		sw.write(prefix) 
 		_writeIdxArgs(sw)
@@ -3237,7 +3584,62 @@ class VarLit is partial
 
 	get asJava as String is override
 		return _name
+		
+class SequenceLit
+	is partial
 
+	def writeJavaBreakdownItems(sw as CurlyWriter) is override  # CC: axe is override
+		base.writeJavaBreakdownItems(sw)
+		sw.write(', +1')
+		for expr in _exprs
+			expr.writeJavaBreakdownItems(sw)
+		sw.write(', -1')
+	
+class ListLit
+	is partial
+
+	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
+		innerType = (_type to Box).genericParams[0]
+		sw.write('cobra.core.CobraImp.makeList/*<[innerType.javaRef]>*/(')
+		if _exprs.count
+			sep = ''
+			for expr in _exprs
+				sw.write(sep)
+				expr.writeJavaDef(sw, false)
+				sep = ', '
+		sw.write(')')
+
+
+class ArrayLit
+	is partial
+
+	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
+		sw.write('new [_type.javaRef] { ')
+		if _exprs.count
+			sep = ''
+			for expr in _exprs
+				sw.write(sep)
+				expr.writeJavaDef(sw, false)
+				sep = ', '
+		sw.write(' }')
+
+
+class SetLit
+	is partial
+
+	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
+		innerType = (_type to Box).genericParams[0]
+		sw.write('cobra.core.CobraImp.makeSet/*<[innerType.javaRef]>*/(')
+		if _exprs.count
+			sw.write(', ')
+			sep = ''
+			for expr in _exprs
+				sw.write(sep)
+				expr.writeJavaDef(sw, false)
+				sep = ', '
+		sw.write(')')
+	
+		
 class ToNilableOrNotExpr
 	is partial
 
@@ -3338,6 +3740,7 @@ class AssignExpr is partial
 		if _right inherits TryCatchExpr	# expand trycatch and do assignment within the expansion
 			_right.writeJavaDef(sw)	
 			return	
+		#trace _right
 
 		# TODO:
 		# if trackLocal:
@@ -3867,6 +4270,82 @@ class DotExpr
 		_left.writeJavaBreakdownItems(sw)
 
 
+class InExpr is partial
+	""" v in container"""
+	
+	def writeJavaDef(sw as CurlyWriter, parens as bool) is override
+		v = true
+		branch _op
+			on 'NOTIN', sw.write('!')
+			on 'IN', pass
+			else, throw FallThroughException(_op)
+		if .needsNilCheck
+			# Constraints:
+			# (1) Don't evaluate the left expression twice
+			# (2) Don't evaluate the right expression if the left is nil
+			# In general, don't cause side effects from extra evaluation.
+			if .left inherits IdentifierExpr and (.left to IdentifierExpr).definition inherits IVar
+				# If the left is a var, there is no danger in double evaluation causing side effects.
+				# java: (someVar==null ? false : <check>)
+				sw.write('(')
+				.left.writeJavaDef(sw, false)
+				sw.write('==null ? false : ')
+				# may have to cast int? to int, for example
+				if  .left.type inherits NilableType _
+					and not .left.type.nonNil.isReference _
+					and .containsExpr
+					# well this last condition doesn't work so well due to generic args like List.Contains(T item)
+					# and not (((.containsExpr to DotExpr).dotRight.memberDefinition to Method).params[0].type inherits NilableType)
+					
+					# then need cast
+					assert .left.type inherits NilableType
+					.right.writeJavaDef(sw, false)
+					sw.write('.contains(([.left.type.nonNil.javaRef])')
+					.left.writeJavaDef(sw)
+					sw.write(')')
+					if v, sw.write('/* A */')
+				else
+					.writeInCheckJava(sw, false, v)
+					if v, sw.write('/* B */')
+				sw.write(')')
+			else
+				# cobra: left in right
+				# java: cobra.core.CobraImp.inWithNullCheck(<left>, delegate(__lh_value) { return <right>.Contains(__lh_value); })
+				# use:   static public bool inWithNullCheck<T>(T a, Predicate<T> predicate)
+
+				# cobra: left in right
+				# java: cobra.core.CobraImp.in(left, delegate() { return right; })
+				sw.write('cobra.core/*CobraCoreInternal*/.CobraImp.inWithNullCheck(')
+				.left.writeJavaDef(sw, false)
+				sw.write(', delegate([.left.type.javaRef] __lh_value_[.serialNum]) { return ')
+				if .containsExpr
+					# Do not write the .containsExpr here because it's argument to .contains in the
+					# full left expression. Instead, we want to pass the argument passed to the delegate.
+					.right.writeJavaDef(sw, false)
+					sw.write('.contains(([.left.type.nonNil.javaRef]) __lh_value_[.serialNum]);')
+					if v, sw.write('/* C */')
+				else
+					# No .containsExpr means we use CobraImp.In(a, b) for the delegate
+					sw.write('cobra.core/*CobraCoreInternal*/.CobraImp.in(__lh_value_[.serialNum], ')
+					.right.writeJavaDef(sw, false)
+					if v, sw.write('/* D */')
+				sw.write(' })')
+		else
+			.writeInCheckJava(sw, parens, v)
+			if v, sw.write('/* E */')
+
+	def writeInCheckJava(sw as CurlyWriter, parens as bool, v as bool)
+		if .containsExpr
+			.containsExpr.writeJavaDef(sw, parens)
+			if v, sw.write('/* F */')
+		else
+			sw.write('cobra.core/*CobraCoreInternal*/.CobraImp.in(')
+			.left.writeJavaDef(sw, false)
+			sw.write(',')
+			.right.writeJavaDef(sw, false)
+			sw.write(')')
+			if v, sw.write('/* G */')
+
 class InheritsExpr
 	is partial
 				
@@ -3875,15 +4354,30 @@ class InheritsExpr
 		#sw.write(' instanceof ')
 		#_right.writeJavaDef(sw, false)
 
+		# have to handle primitives ( bool, char, byte,short, int, long,float, double) specially
+		
 		# Compiler generates error with instanceof for non intersecting instance and Type so
 		# instead use runtime instance lookup
 		#  instead of 'e instanceof T'  becomes 'T.class.isInstance(e)'
-		_right.writeJavaDef(sw, false)
-		#sw.write('.class.isInstance(')
+		# Have to map primitives to wrappers cos autoboxing makes it wrong
+		if _right inherits TypeExpr # primitives
+			ctjref = _right.containedType.javaRef
+			if 	ctjref == 'int',    ctjref = 'Integer.class'
+			if 	ctjref == 'char',   ctjref = 'Character.class'
+			if 	ctjref == 'short',  ctjref = 'Short.class'
+			if 	ctjref == 'long',   ctjref = 'Long.class'
+			if 	ctjref == 'boolean', ctjref = 'Boolean.class'
+			if 	ctjref == 'byte',   ctjref = 'Byte.class'
+			if 	ctjref == 'float',  ctjref = 'Float.class'
+			if 	ctjref == 'double', ctjref = 'Double.class'
+			sw.write(ctjref)	
+			isPrim = true
+
+		if not isPrim
+			_right.writeJavaDef(sw, false)
 		sw.write('.isInstance(')
 		_left.writeJavaDef(sw)
 		sw.write(' )')
-
 
 class ToExpr is partial
 
@@ -4164,11 +4658,6 @@ class SharpExpr  # should become JavaExpr or BackEndExpr
 # uu
 
 class AssemblyDecl is partial
-
-	def writeJavaTestInvocation(sw as CurlyWriter)
-		pass
-
-class EnumMember is partial
 
 	def writeJavaTestInvocation(sw as CurlyWriter)
 		pass

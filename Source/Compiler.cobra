@@ -55,257 +55,6 @@ enum PlatformEnum
 	Novell
 
 
-class BackEnd is abstract 
-	"""
-	Holder for items specific to the backEnd implementation
-	"""
-	
-	var _tagToTypeName = Dictionary<of String, String>()
-		""" Map from Typename tags used in compiler to backend specific qualified Type name"""
-	
-	cue init(compiler as Compiler)
-		base.init
-		_name = ''
-		_runTimeLibFileName = 'rtl'
-		_runTimeLibNativeSourceFileName = 'rtlSrc.ext'
-		__compiler = compiler
-
-	get name from var as String
-	
-	get cobraRuntimeLibFileName from _runTimeLibFileName as String 
-		"""Name of the Cobra RunTime Library file for this backend."""
-
-	get runTimeLibNativeSourceFileName from _runTimeLibNativeSourceFileName as String
-		"""Name of the backEnd source file containing any native code support for Cobra.Core."""
-
-	get compiler from __compiler as Compiler
-	
-	get tagToTypeName from var
-		""" Map from TypeName tags used in compiler to backend specific qualified TypeName"""
-	
-	def resolveTypeTag(qualifiedNameOrTag as String) as String
-		if qualifiedNameOrTag.contains('.')			
-			qualifiedName = qualifiedNameOrTag
-		else	
-			qualifiedName = .tagToTypeName[qualifiedNameOrTag]  # type tag to backend qualifiedName
-		return qualifiedName
-		
-	def makePhases(phases as IList<of Phase>) is abstract
-		"""
-		Given a list of core phases for compilation complete it with additions (or even removals and
-		rearrangements if necessary) for this given backend.
-		"""
-		
-	def getRecommendedBuiltInType(parentNameSpace as NameSpace?, name as String) as String? is abstract
-		"""
-		If parentNameSpace is the main system namespace and name is a backEnd builtin type 
-		return the Cobra equivalent language type name (or nil). 
-		"""
-		
-	def computeOutName as String is abstract
-		"""
-		Return the binary file output name for compilation of files for this backend.
-		"""
-		
-	def genNativeModule(filename as String, verbosity as int) as Module? is abstract	
-		"""
-		Check if a filename is a Native module and if so generate and return the Native module type for it
-		otherwise return nil.
-		"""
-	
-	def setupRunProcess(baseExe as String, fullExe as String) as Process is abstract
-		"""
-		Create and initialise the process to run the compiled program post compilation
-		setup varies on the backend (.Clr/Jvm) and platform.
-		"""
-	
-	def setDefaultUseDirectives(ns as NameSpace) is abstract
-		"""
-		Set the default Use directives into the given Namespace (usually topNamespace) for this backend.
-		"""
-	
-	def fixLibExtension(libRef as String) as String is abstract
-		"""
-		Augment given lib reference string with backend extension if not already have one.
-		"""
-
-	def loadLibReference(reference as String) as String? is abstract
-		"""
-		Load the given library reference file  using the current backend paradigms. 
-		Returns an error message, or nil if the reference was loaded correctly.
-		"""
-	
-	def readSystemTypes is abstract
-		""" Read and Load System Types for backend for Compiler to make available"""
-		
-	def fixMemberSigs is abstract
-		"""			
-		Most backends dont natively support nilablility, this marks/fixes the common backend
-		class signatures that should be marked nilable.
-		"""
-	
-	def installNativeMethods(box as Box, nativeType as NativeType) is abstract
-		"""
-		Setup so that static methods (on Primitives and some others) get installed/treated as normal methods
-		on the instance.
-		"""
-			
-	def isRunnableFile( fullExeFileName as String) as bool is abstract
-		"""Test if given filename is an executable ( vs a library or something else) """
-
-	# Native Types access
-	def cobraNameForNativeBoxName(name as String) as String is abstract
-		"""
-		Returns name from backend library entries converted to cobra naming form.
-		"""
-	
-	get objectTypeProxy as AbstractTypeProxy is abstract
-		"""BE TypeProxy for root of back end Object hierarchy."""
-
-	get typeTypeProxy as AbstractTypeProxy is abstract
-		"""BE TypeProxy for BE notion of a class describing a Type."""
-
-	def nativeTypeProxy(type as NativeType) as NativeTypeProxy  is abstract
-		"""
-		Return a Proxy placeHolder for a BackEnd Native Type.
-		"""
-		
-	def nativeType(type as dynamic) as NativeType is abstract
-		"""
-		Return a Native Type wrapped so we can use it without explicitly knowing what it is anywhere
-		else but the providing back end. Used by the backends to generate Types from Libraries.
-		"""
-	
-	def nativeTypeByName(qualifiedName as String) as NativeType is abstract
-		"""
-		Return a Native Type corresponding to the fully qualified name.
-		Abstract Type Literal tags used in the compiler directly can also be obtained through this
-		otherwise the qualified names are expected to conform to the platform back end naming. 
-		"""
-	
-	def prepSystemObjectClass(box as Box) is abstract
-		"""Setup additional or convenience members on the System Object class. """
-		
-	def scanGenericArgs(box as Box) is abstract
-		"""Scan a loaded Dll (generic) type and translate from native any generic Args."""
-		
-	def scanNativeType(box as Box) is abstract
-		"""Scan a loaded Dll type and convert its native Type info to Cobras form """
-		
-	def scanNativeType(edcl as EnumDecl) is abstract
-		"""Scan a loaded Dll Enum type and convert its native info to Cobras form """
-		
-	def setUnderlyingType(edcl as EnumDecl)	 is abstract
-		"""Set underlying Storage Type of the value of an Enum."""
-		
-	def determineExtnNativeType(extn as Extension, nativeType as NativeType) as NativeType
-		"""
-		The real extended type is the type of the first argument of any method.
-		Find and make that type from the param list.
-		"""
-		throw Exception('Need implementation of determineExtnNativeType for backend to determine type for an extension')
-
-	def handleNameSpaceNameCollision(ns as NameSpace, token as IToken, name as String) as NameSpace
-		"""	
-			What to do if a namespace name collides with an existing symbol.
-			Some backends disallow this situation so its an error.
-			Others keep namespace and symbol tables separate so its perfectly
-			allowable.
-		"""
-		throw Exception('In [ns.name] there is a already non-namespace declaration named "[name]".')
-	
-
-class FakeBackEnd inherits BackEnd
-	""" Stub BackEnd for tests. """
-	
-	cue init(compiler as Compiler)
-		base.init(compiler)
-		_name = 'c#-clr(basic)'
-		_runTimeLibFileName = 'cobraRTL.libext'
-		_runTimeLibNativeSourceFileName = 'cobraRTL.ext'
-		
-		_tagToTypeName = {
-			'Object': 'System.Object',
-			'Type'	: 'System.Type',
-		}
-		
-	def makePhases(phases as IList<of Phase>) is override
-		pass
-		
-	def getRecommendedBuiltInType(parentNameSpace as NameSpace?, name as String) as String? is override
-		return nil
-
-	def computeOutName as String  is override
-		return 'FakeOut'
-		
-	def genNativeModule(filename as String, verbosity as int) as Module?  is override
-		return nil
-	
-	def setupRunProcess(baseExe as String, fullExe as String) as Process  is override
-		p = Process()
-		p.startInfo.fileName = 'echo' 
-		p.startInfo.arguments = 'basic BackEnd process - [baseExe]'
-		return p		
-	
-	def setDefaultUseDirectives(ns as NameSpace)  is override
-		pass
-	
-	def fixLibExtension(libRef as String) as String is override
-		if not libRef.endsWith('.libext')
-			libRef += '.libext'
-		return libRef	
-	
-	def loadLibReference(reference as String) as String? is override
-		return nil
-	
-	def readSystemTypes is override
-		pass
-	
-	def fixMemberSigs is override
-		pass
-	
-	def installNativeMethods(box as Box, nativeType as NativeType) is override
-		pass
-		
-	def isRunnableFile(fullExeFileName as String) as bool is override
-		return true
-		
-	# Native Type access
-	def cobraNameForNativeBoxName(name as String) as String is override
-		return name + '_BBE'
-	
-	def prepSystemObjectClass(box as Box) is override
-		pass
-		
-	def scanGenericArgs(box as Box) is override
-		pass
-		
-	def scanNativeType(box as Box) is override
-		pass
-		
-	def scanNativeType(edcl as EnumDecl) is override
-		pass
-		
-	def setUnderlyingType(edcl as EnumDecl)	 is override
-		pass
-
-	# Types
-	get objectTypeProxy as AbstractTypeProxy is override
-		return ClrTypeProxy(Object) # for testing
-			
-	get typeTypeProxy  as AbstractTypeProxy is override
-		return ClrTypeProxy(Type )# for testing
-
-	def nativeTypeProxy(type as NativeType) as NativeTypeProxy is override
-		return ClrTypeProxy(type) #TODO: fix this to something non BE specific Tmp
-		
-	def nativeType(type) as NativeType is override
-		return ClrNativeType(type) #TODO: fix this to something non BE specific Tmp
-	
-	def nativeTypeByName(qualifiedName as String) as NativeType is override
-		return ClrNativeType(System.Object) #TODO: fix this to something non BE specific Tmp
-
-
 class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, ICompilerForNodes is partial
 	"""
 	General notes:
@@ -345,7 +94,6 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 
 	var _intermediateFileNames as List<of String>
 	var _loadedReferences as List<of String>
-
 
 	# caches
 	var _primitiveToITypeCache as IDictionary<of dynamic, IType>? # Key is backend type for a Type ( e.g System.Type)
@@ -405,6 +153,7 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		Returns a cache mapping BackEnd types to their corresponding ITypes.
 		Populated and used by the backend TypeProxy implementations ( {Clr,Jvm,...}TypeProxy)
 		"""
+		
 	set primitiveCache as IDictionary<of dynamic, IType>
 		assert value.count <> 0
 		_primitiveToITypeCache = value
@@ -502,7 +251,16 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 	pro linesCompiled from var as int 
 	pro nodesCompiled from var as int 
 	pro tokensCompiled from var as int 
+	
 
+	get baseExeFileName as String
+		"""Returns the executable file name sans extension."""
+		return .backEnd.baseExeName
+
+	get fullExeFileName as String
+		"""Returns the executable file name path with extension."""
+		return .backEnd.fullExeName
+	
 	def recordError(error as SourceException)
 		"""
 		Node calls this to record errors.
@@ -1335,7 +1093,10 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 
 	def setOfType as Class
 		return _libraryClass('Set<of>')
-
+		
+	def keyValuePairOfType as Box
+		return _libraryBox('KeyValuePair<of,>') 
+		
 	def libraryType(qualifiedNameOrTag as String) as IType
 		"""
 		Implemented for ITypeProvider, but use the more specific methods such as .stringType instead.
@@ -1366,11 +1127,12 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		thing as IContainer? = nil
 		for name in names
 			possible = (thing ? ns).declForName(name)
-			#print name
 			# dbg
-			#if not possible
-			#	trace thing ? ns
-			#	((thing ? ns) to NameSpace).dumpDeclsNameKeys
+			if Utils.isDevMachine and not possible
+				ctnr = (thing ? ns)
+				print 'NAME_LOOKUP_FAILURE: Cannot find "[name]" in namespace/Container "[ctnr.name]"' 
+				trace name, ctnr
+				(ctnr to NameSpace).dumpDeclsNameKeys
 			assert possible, name
 			if possible inherits IContainer
 				thing = possible
@@ -1409,18 +1171,16 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 	#special type proxies for common Types -  Object and Type
 	def objectTypeProxy as AbstractTypeProxy 
 		"""
-		Type proxy for BE notion of a class for the root of Object hierarchy
+		Type proxy for backEnd notion of a class for the root of Object hierarchy
 			e.g. Object in dotNet
 		"""
-		#return ClrTypeProxy(Object)
 		return .backEnd.objectTypeProxy
 
 	def typeTypeProxy as AbstractTypeProxy 
 		"""
-		Type proxy for BE notion of a class for a Type
+		Type proxy for backEnd notion of a class for a Type
 			e.g. System.Type in dotNet, java.lang.class in Java
 		"""
-		#return ClrTypeProxy(Type)
 		return .backEnd.typeTypeProxy
 		
 	def nativeType(qualifiedName as String) as NativeType

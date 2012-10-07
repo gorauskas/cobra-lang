@@ -326,6 +326,15 @@ static public class CobraImp {
 		return false;
 	}
 
+        static bool In(Object a, Enum b) {
+            Type et = b.GetType();
+            if (! Enum.IsDefined(et, a))
+                return false;
+            int v = Convert.ToInt32((Enum)a);
+            int v1 = Convert.ToInt32(b);
+            return (v1 & v) == v;
+        }
+        
 	static public bool In<T>(T a, IList<T> b) {
 		return b.Contains(a);
 	}
@@ -364,6 +373,8 @@ static public class CobraImp {
 				return In(a, (IEnumerable)b);
 			} else if (b is IDictionary) {
 				return In(a, (IDictionary)b);
+			} else if (b is Enum) {
+			    return In(a, (Enum)b);
 			} else {
 				throw new CannotInTypeException(b, "b of `a in b`", b.GetType());
 			}

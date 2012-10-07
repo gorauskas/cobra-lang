@@ -14,26 +14,28 @@ and worked out a few issues I'll run the cross compiler on the
 compiler. Then we'll have a cobra to java compiler on the jvm.
 
 Supporting that is this directory which provides 
-    - stub code for a java cobra RTL (CobraLang.jar)
-    - A tool to generate descriptions for java library classes (Pkgsig files)
-    - a script to build and copy the various supporting pieces the java backend needs to the compiler Source directory.
+    - stub code for a java cobra RTL (CobraCore.jar)
+    - A tool (PkgSig.jar) to generate descriptions for java library classes (Pkgsig files)
+    - a script (mkjarAll) to build and copy the various supporting pieces the java backend needs to 
+        the compiler Source directory. 
     
 
-The base java version supported is currently 1.6.
+The base java version supported is currently 1.7. 
+(I started with 1.6, It may still work to some extent with that java version )
 This one specifically
-java version "1.6.0_24"
-Java(TM) SE Runtime Environment (build 1.6.0_24-b07)
-Java HotSpot(TM) Client VM (build 19.1-b02, mixed mode, sharing)
+java version "1.7.0_04"
+Java(TM) SE Runtime Environment (build 1.7.0_04-b22)
+Java HotSpot(TM) Client VM (build 23.0-b21, mixed mode, sharing)
 
-This will move up to at least 1.7 as the port/code generation progresses
-and will probably stabilise on 1.8 eventually.
+This will move up to 1.8 as the port/code generation progresses and 1.8 gets more useful
+capabilities. I will probably stabilise on 1.8 as the base eventually.
  
 = Caveats =
 
 This backend  is under development 
- - for any but the most trivial uses it is effectively broken.
- There are large amounts of (java) code generation missing.
- It spews debug/diagnostic/conversational/status info all the time.
+ - for any but the most trivial uses it is broken.
+ There are amounts of (java) code generation missing.
+ It will possibly spew debug/diagnostic/conversational/status info all the time.
  There are bugs.
  There are missing capabilities.  
  There are horrible bits 
@@ -48,11 +50,11 @@ common/shared/portable system library.
 This is a source modification - no installation support. 
 Run the compiler out of the cobra source directory
 
-I'm developing this in Windows (XP) - it may or may not be working under mono 
-on any other platform.
+I'm now developing this in Windows 7 (I started in Windows XP but a System crash caused a 
+correction of that)
+ - it may or may not be working under mono on any other platform.
 
-This is (the/an) initial devt snapshot. 
-Its working(ish) but rough, 
+This is a devt snapshot. Its working(ish) but rough, 
 Things will change
 
 - What To Do -
@@ -61,25 +63,26 @@ Things will change
  happens, good for you.
  This is what you will need to do
 
-    1) If necessary 
-       Apply the patches providing the java backend to the Source tree
-        - get the modified compiler subsequently rebuilt
-
-       As on Nov 2011 (and touch wood) all the jvm patches posted have been 
-       applied to the code repository source so it should be enough to pull down the latest compiler source and build it.
+    1) As of Nov 2011 (and touch wood) all the jvm patches posted have been 
+       applied to the code repository source so it should be enough to pull down the latest
+       compiler source and build it.
        
-        Patch should be on the cobra website http://cobra-language.com
+        Any unapplied patches should be on the cobra website http://cobra-language.com
         Ticket 275: More support for java backend
             http://cobra-language.com/trac/cobra/ticket/275
         
-    2) Ensure java and javac executables (1.6 or later) are in your PATH and work.
+    2) Ensure jar, java and javac executables (1.7 or later) are in your PATH and work.
     
-    3) Go into this dir and run ./mkJarAll 
+    3) Go into this dir and run ./mkjarAll 
         ( its a bash script - you will need bash or to port the script, 
-            or run the command contents manually) - this builds the cobra RTL and  
-        package signature tool and uses that to create the class description info and copies 
-        them to the  right places in the  cobra source tree)
+            or run the command contents manually) - this compiles the (minimal) cobra RTL 
+            ( java source to a jarfile) and builds the package signature tool and uses that 
+            to create the class description info (.sig files) and copies 
+                them to the  right places (Source dir alongside cobra.exe)
+                in the cobra source tree)
+                
     4) find a test cobra script and compile it
+        a good smoke test is Tests/100-basic/001.cobra
 
 - How to build and run a cobra program generating a java app -
 
@@ -103,6 +106,11 @@ cobra compiler will barf some sort of exception.
 
 
 - Status - 
+
+    Theres a more complete timeline tracking the uploaded patches on the ticket
+        Ticket 275: More support for java backend
+        http://cobra-language.com/trac/cobra/ticket/275
+    
  Jul-2011 - We can build and run simple (single file) programs. 
     (Up to about 032-* of the files in Tests/100-*. 
         Maybe more but thats what I've tried so far)
@@ -112,6 +120,55 @@ cobra compiler will barf some sort of exception.
     (Up to about 080-* of the files in Tests/100-*)
     Have properties and Indexers, Casting, reading Commandline ...     
 
+ Mar-2012 - Minor cleanups and Testify compiler testcase harness working
+
+ 10-Aug-2012 try and sync a major push for a cobra release.
+   Fix testcase regressions noted from testify runs
+      - fix issue with multiple internal Testify invocations
+      - fix incorrect conversion cobra to java name forms in multiple namespace generics 
+      - get indexing ([]) working mapping to indexer getters/setters
+      - type inference in foreach and support iterators (java vs enumerators in CLR)
+      - In pkgSig correct some bad name handling for nested classes in rt.jar
+      - extend java RTL some more support codegen
+   Support try/catch and throw  (minimally)
+       Modify this to correctly autowrap thrown checked Exceptions into runtimeExceptions and
+       unwrap, catch or propagate correctly in catch clauses.
+       Methods throwing checked Exceptions still need to be explicitly wrapped 
+
+   Pull backEnd Abstract base classs out to its own file
+   
+   Start enum support   
+    (Up to about 301-* of the files in Tests/100-*)
+
+   Sep-2012
+   Complete enum support (Tests/100-*/302-334a*).
+   setup so enums built using the ctor syntax with multiple initial values( Enum(val1,val2) internally
+   use ( in java) and EnumSet. Codegen will break if you try and treat this as a sigle enum value and a multivalue set.
+    
+   Add inbuilt support for testing for an enum value membership in a enum variable (set) using 
+   'value in enumSet'
+   see test  (310j-* and 334a-*)
+   
+   Modify build so creates an executable jar file from classfiles(and runs it).
+   This means all classpath dependencies must be listed correctly in the manifest file 
+   (see JavaGenerator.cobra _javaTool) 
+   Correct handling for multiple cobra files and cobra file containing multiple classes. 
+
+   Fixup codegen for print and print redirection. Add necessary RTL support 
+
+   BackEnd KeyValuePair Type, support Pair (since compiler now uses it) 
+
+
+TODO
+    load annotations into .sig files and use for things like nullability
+        PkgSig.java and handling in JarSig.cobra
+        
+    Support native static methods on box instances
+        installJvmNativeMethods in ScanJvmType    
+        
+    Handling ( wrap and convert) calls to methods in java libs generating
+    non RuntimeExceptions.
+     
 - Other -
 
 Post issues/questions/comments/etc if you have them to Cobra Programming Language Forum

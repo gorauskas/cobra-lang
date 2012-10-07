@@ -18,6 +18,13 @@ import java.util.*;
 
 public class CobraCore {
     
+    // Release info
+    public static final String versionDescription = "svn-post-0.8.0(jvm)";
+        //textual description of the version such as "X.Y.Z" or "svn-post-X.Y.Z".
+    public static final boolean isOfficialRelease = false;
+    public static final int version = CobraCore.toVersionNumber(0,8,0); // Version# - Version(0, 8, 0)
+    public static final int releaseNum = 25;
+
     public static Boolean _willCheckInvariant = true;
     public static Boolean _willCheckRequire = true;
     public static Boolean _willCheckEnsure = true;
@@ -47,7 +54,7 @@ public class CobraCore {
 	System.exit(exitCode);
     }
 			
-    public static String newLine =  System.getProperty("line.separator");
+    public static final String newLine =  System.getProperty("line.separator");
 	//""" Returns the newline for the current environment/platform. """
 
     // Property StringMaker techStringMaker
@@ -76,9 +83,9 @@ public class CobraCore {
 	"""
 	Run all Cobra `test` sections in all assemblies using reflection to locate them.
 	"""
-	if CobraImp.showTestProgress, listener = Cobra.Lang.Test.TextWriterListener(Console.out)
-	else, listener = Cobra.Lang.Test.TextWriterOnlyOnFailureListener(Console.out)
-	tr = Cobra.Lang.Test.TestRunner(listener)
+	if CobraImp.showTestProgress, listener = Cobra.Core.Test.TextWriterListener(Console.out)
+	else, listener = Cobra.Core.Test.TextWriterOnlyOnFailureListener(Console.out)
+	tr = Cobra.Core.Test.TestRunner(listener)
 	tr.runAllTests
 	if listener.testFailures, CobraCore.exit(1)
      */
@@ -102,6 +109,13 @@ public class CobraCore {
         CobraImp.printLine( "        cobra -d -er -dst foo.cobra");
         // TODO: CobraImp.printLine( "    See also: http://cobra-language.com/docs/debugging");
         CobraImp.printLine();
+    }
+    
+    public static final int toVersionNumber( int major, int minor, int rev) {
+        assert major >= 0 && major < 100 : "Major between 0 and 99";
+        assert minor >= 0 && minor < 100 : "Minor between 0 and 99";
+        assert rev >= 0 && rev < 100 :   "Rev between 0 and 99";
+        return major*1000 + minor*100 + rev;
     }
 }
 

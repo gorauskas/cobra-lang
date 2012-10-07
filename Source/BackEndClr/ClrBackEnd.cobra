@@ -36,6 +36,7 @@ class ClrBackEnd inherits BackEnd
 			'IDictionary':   	'System.Collections.IDictionary',
 			'IDictionary<of,>': 'System.Collections.Generic.IDictionary<of,>',
 			'Dictionary<of,>' : 'System.Collections.Generic.Dictionary<of,>',
+			'KeyValuePair<of,>':'System.Collections.Generic.KeyValuePair<of,>',
 			'Set<of>': 			'Cobra.Core.Set<of>',
 
 			'bool'	:  'System.Boolean',
@@ -86,6 +87,14 @@ class ClrBackEnd inherits BackEnd
 			m = SharpModule(filename, verbosity)
 		return m
 	
+	get baseExeName as String is override
+		"""Resulting executable file name for compiled file(s) sans extension."""
+		return .compiler.clrBaseExeFileName
+	
+	get fullExeName as String is override
+		"""Resulting full executable file name (pathname+extn) for compiled file(s)."""
+		return .compiler.clrFullExeFileName
+			
 	def setupRunProcess(baseExe as String, fullExe as String) as Process is override
 		p = Process()
 		branch .compiler.platform
@@ -114,7 +123,7 @@ class ClrBackEnd inherits BackEnd
 	
 	def fixLibExtension(libRef as String) as String is override
 		"""
-		Augment given lib reference string with backend extension if not already have one
+		Augment the given library filename reference with backend extension if not already have one.
 		"""
 		or require libRef.length
 		and ensure result.endsWith('.dll') or result.endsWith('.exe')
@@ -143,14 +152,12 @@ class ClrBackEnd inherits BackEnd
 				.compiler.clrReadAssembly(a)
 		else
 			# TODO: support targeting a specific CLR version, but not below 2.0
-			#.compiler.readAssembly(Assembly.load('mscorlib.dll') to !)
 			.compiler.clrReadAssembly(Assembly.load('mscorlib.dll') to !)
 
 			# TODO: .readAssembly(Assembly.loadFrom('System.dll') to !)
 			#       gives: Unhandled Exception: System.IO.FileNotFoundException: Could not load file or assembly 'System.dll' or one of its dependencies. The system cannot find the file specified.
 
 			t = System.Diagnostics.Process.getType
-			#.compiler.readAssembly(t.assembly) # System.dll
 			.compiler.clrReadAssembly(t.assembly) # System.dll
 		
 	def fixMemberSigs is override
@@ -179,7 +186,7 @@ class ClrBackEnd inherits BackEnd
 		qualifiedName = .resolveTypeTag(qualifiedNameOrTag)
 		return ClrNativeType(.compiler.clrTypeByName(qualifiedName))
 		/#
-		These are the type tags used directly by the compiler code.
+		These are the type tags used directly by cobra code.
 			
 		  	bool 		'System.Boolean'
 			char  		'System.Char'
@@ -222,8 +229,23 @@ class ClrBackEnd inherits BackEnd
 		"""Clr doesnt allow colliding names."""
 		throw Exception('In [ns.name] there is a already non-namespace declaration named "[name]".')
 		
-		
-		
+	def getEnumeratorMember(box as Box) as IMember? is override
+		""" Find enumerator method member in given Box."""
+		return box.getEnumeratorMemberClr
+	
+	def getEnumeratorMemberType(box as Box, enumResultType as IType) as IType? is override
+		"""Return type from lookup of enumerator 'current' field from in given Box."""
+		return box.getEnumeratorMemberTypeClr(enumResultType)
+	
+	def validatePrintDestType(t as IType, n as Stmt) is override
+		"""
+		Check that the given Type is a valid destination for a print statement redirection.
+		If not record an error message
+		"""
+		if  not  t.isDescendantOf(.compiler.libraryType('System.IO.TextWriter'))
+			# actually only needs a write/writeLine call
+			n.recordError('Invalid destination of type "[t.name]" for "print". Use a TextWriter or subclass thereof instead.')
+			
 class GenerateSharpCodePhase inherits Phase
 
 	cue init(c as Compiler)

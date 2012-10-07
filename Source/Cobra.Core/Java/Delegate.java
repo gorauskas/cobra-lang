@@ -8,7 +8,6 @@
  *  call      myDelegate(arg0,...)                                -> d.invoke(arg0,...)  
  *            (or no args:  myDelegate()                          -> d.invoke()  )
  *
- * Doesnt support Generics.
  * This Implementation genericised on ReturnType
  */
 
@@ -18,6 +17,7 @@ import java.lang.*;
 import java.io.*;
 import java.util.*;
 import java.lang.reflect.*;
+
 
 public class Delegate<T> {
     Class<T> returnType;  //  method returnType
@@ -208,7 +208,6 @@ public class Delegate<T> {
         this.multiCastList = null;
     }
 }    
-
 
 class TestDelegate {
 

@@ -667,7 +667,8 @@ class ForEnumerableStmt inherits ForStmt is partial
 		if isStreamOfKeyValue, kvRHS = ['key', 'value']
 		if _var.type inherits Box
 			if not isStreamOfKeyValue
-				isStreamOfKeyValue = (_var.type to Box).isIndirectConstructionOf(.compiler.libraryType('System.Collections.Generic.KeyValuePair<of,>') to Box)
+				#isStreamOfKeyValue = (_var.type to Box).isIndirectConstructionOf(.compiler.libraryType('System.Collections.Generic.KeyValuePair<of,>') to Box)  # compiler.KeyValuePairOfType
+				isStreamOfKeyValue = (_var.type to Box).isIndirectConstructionOf(.compiler.keyValuePairOfType)
 				if isStreamOfKeyValue, kvRHS = ['key', 'value']
 			if not isStreamOfKeyValue
 				isStreamOfKeyValue = (_var.type to Box).isDescendantOf(.compiler.libraryType('Cobra.Core.BasePair') to Box)
@@ -976,9 +977,9 @@ class AbstractPrintStmt inherits Stmt is abstract, partial
 		base._bindImp
 		if .destination
 			.destination.bindImp
-			t = .destination.type
-			if not t.isDynamicOrPassThrough and not t.isDescendantOf(.compiler.libraryType('System.IO.TextWriter'))  # TODO-BACKEND
-				.recordError('Invalid destination of type "[t.name]" for "print". Use a TextWriter or subclass thereof instead.')
+			t = .destination.type 
+			if not t.isDynamicOrPassThrough
+				.compiler.backEnd.validatePrintDestType(t to !, this) 
 
 
 class PrintStmt inherits AbstractPrintStmt is partial
@@ -1403,7 +1404,7 @@ class CatchBlock
 		else if _typeNode
 			_typeNode.bindImp
 			_type = _typeNode.realType  # CC: combine with above: _type = _typeNode.bindImp.realType
-		_sharpHelperName = '_lh_catch_[.compiler.curBox.makeNextPrivateSerialNumber]'
+		_sharpHelperName = '_lh_catch_[.compiler.curBox.makeNextPrivateSerialNumber]' # TODO rename to HelperName or beHelperName - common to both backends
 		_block.bindImp
 
 
@@ -1455,7 +1456,7 @@ class ThrowStmt
 					if _expr.definition inherits BoxEvent
 						reason = 'it is an event, not an exception. Either throw an exception or use "raise" on the event instead of "throw"'
 					else
-						reason = 'it does not inherit from Exception'
+						reason = 'it does not inherit from [exceptionType.name] (Exception)'
 					.throwError('Cannot throw "[_expr.type.name]" because [reason].')
 		.compiler.curCodeMember.hasThrowStmt = true
 
@@ -1807,7 +1808,7 @@ class MultiTargetAssignStatement inherits Stmt is partial
 			if isPair
 				memberNames = ['a', 'b']
 			else if not isPair
-				isPair = (_source.type to Box).isIndirectConstructionOf(.compiler.libraryType('System.Collections.Generic.KeyValuePair<of,>') to Box)
+				isPair = (_source.type to Box).isIndirectConstructionOf(.compiler.keyValuePairOfType)
 				if isPair, memberNames = ['key', 'value']
 
 		if isPair

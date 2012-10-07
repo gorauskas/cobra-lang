@@ -36,22 +36,42 @@ class JarSig
 			"""
 			Remap unique virtualised java class name to an actual existing Java class name.
 			"""
-
+			
+		def reset
+			"""Clear all static caches"""
+			JarSig.classByNameCache.clear
+				
 		def lookupClassByCobraName(fullCobraName as String) as JavaClassType
 			"""
 			This is intended to be the only way to access the JarSig classCache contents from outside this file.
 			"""
 			assert fullCobraName[0].isUpper
 			#fullCobraName = .virtualNameRemaps.get(fullCobraName, fullCobraName)
+			fullName = _convertCobraName(fullCobraName)
+			#print 'Lookup "[fullCobraName]" as "[fullName]"'
+			if not JarSig.classByNameCache.containsKey(fullName) # dbg
+				print 'Class [fullName] not in JarSig ClassName cache'
+				#for k in JarSig.classByNameCache.keys, print k
+				throw Exception('Cannot find class [fullName]')
+			return JarSig.classByNameCache[fullName]
+
+		def _convertCobraName(fullCobraName as String) as String
+			#if fullCobraName.contains('<') # genericInstDef  Aaa.Bbb.C<Jjj.Uuu.C>
+			#	genParts = fullCobraName.split('<')
+			#	for i in 0 : genParts.length
+			#		genParts[i] = _xvertName(genParts[i])
+			#	fullName = genParts.join('<') 
+			#else	
+			#	fullName = _xvertName(fullCobraName)
+			#return fullName
+			#
+		#def _xvertName(fullCobraName as String) as String
+			#"""Turn names of form Aaa.Bbb.Class to aaa.bbb.Class. Cobra form to java."""
 			parts = fullCobraName.split('.')
 			for i in 0: parts.length-1
 				parts[i] = parts[i][0].toLower.toString + parts[i][1:]
 			fullName = parts.join('.')
-			#print 'Lookup "[fullCobraName]" as "[fullName]"'
-			if not JarSig.classByNameCache.containsKey(fullName) # dbg
-				print 'Class [fullName] not in JarSig ClassName cache'
-				throw Exception('Cannot find class [fullName]')
-			return JarSig.classByNameCache[fullName]
+			return fullName	
 				
 		def lookupClass(fullName as String) as JavaClassType
 			""" 
@@ -636,16 +656,17 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 			idxrProp =  _genAProp('[.canonicalName]_synthesizedIdxr', getMethod, setMethod, true)
 			_props.add(idxrProp)
 			_indexer = idxrProp
-			sb = StringBuilder('= ')
-			if getMethod
-				sb.append(getterName)
-				if setMethod, sb.append(',')
-			if setMethod
-				sb.append(setterName)
-			print 'dbg: [.canonicalName] indexerMethods [sb.toString] '
+			#sb = StringBuilder('= ')
+			#if getMethod
+			#	sb.append(getterName)
+			#	if setMethod, sb.append(',')
+			#if setMethod
+			#	sb.append(setterName)
+			#print 'dbg: [.canonicalName] [.getHashCode] indexerMethods [sb.toString] '
 		#else
 		#	print 'dbg: No IndexerMethods [getterName]/[setterName] on [.canonicalName]'
-				
+		#/
+	
 	def _lookForMethods( getterName as String, setterName as String) as List<of JavaMethodInfo?>
 		getter as JavaMethodInfo? = nil
 		setter as JavaMethodInfo? = nil
@@ -653,7 +674,24 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 			if m.name == getterName, getter = m
 			if m.name == setterName, setter = m
 		return [getter, setter]	
-				
+	
+	def lookupIndexer as JavaFieldInfo?
+		"""
+		Search this class and superclass chain for an indexer. Return first hit or nil.
+		Used to map indexing '[]' cobra code to java method calls.
+		"""
+		#depth=0
+		#print depth, .getHashCode, .canonicalName, .superclass
+		idxr = .indexer
+		if idxr
+			return idxr
+		super = .getSuperClass 		# otherwise try superclass chain
+		while super
+			idxr = super.indexer
+			if idxr 
+				break
+			super = super.getSuperClass
+		return idxr
 		
 	cue init(name as String, pkg as String, type as JavaType, super as String, ifcs as List<of String>, modifiers as List<of String> )
 		"""Create a normal Class or GenericClass Defn.   MyClass or MyClass<T>"""
@@ -880,6 +918,9 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 		#return  JvmNativeType(_type.getSuperClass)
 		if JarSig.classByNameCache.containsKey(.superclass)
 			return JarSig.lookupClass(.superclass)
+		else if .superclass.contains('`') # isGeneric
+			key = .superclass.before('`')		
+			return JarSig.lookupClass(key)
 		else 
 			return JarSig.lookupClass('java.lang.Object')
 			# e.g. Abstract base classes with default access - java.lang.AbstractStringBuilder	
@@ -1029,6 +1070,7 @@ class JavaClassType 	# Simplified System Type for java classes, interface, enum
 		assert false, 'dump Indexers NYI'
 	
 class JavaMemberInfo
+	"""Baseclass for java fields and properties, constructors and methods"""
 	var name = ''	
 	var _attributes as List<of String>?
 	var modifiers = List<of String>() # public, default (=protected+pkg), protected, private
@@ -1061,6 +1103,8 @@ class JavaMemberInfo
 		return .attributes.contains('Override')
 
 	get isNonNullable
+		if .isFinal
+			return true # arbitrarily declare final members non nilable till get attributes working.
 		return .attributes.contains('NotNull') or .attributes.contains('NonNull') or .attributes.contains('Nonnull')
 		#for name in .attributes # in java these are annotations, - via pkgSig treated as strings
 		#	if name.endsWith == 'NotNull' or name.endsWith == 'NonNull'  or name.endsWith == 'Nonnull' 
@@ -1114,7 +1158,7 @@ class JavaFieldInfo inherits JavaMemberInfo
 			else if .isReadable, prefix = 'get'
 			else if .isWritable, prefix = 'set'
 
-		sb = StringBuilder('[prefix] [.name]')
+		sb = StringBuilder('[prefix].[.name]')
 		if .typeName.length, sb.append(' as [.type]')
 		if .modifiers.count 
 			sb.append(' is ')

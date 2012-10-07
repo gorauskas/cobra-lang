@@ -44,7 +44,7 @@ class Compiler is partial
 			if not sigFilePath
 				# eventually may also search CLASSPATH				
 				if rv, print 'Returning false for __jvmLoadReference("[reference]").'
-				return 'to-do: what to put here? sigFilePath not found?' 
+				return 'to-do: what to put here? sigFilePath "[sigFilePath]" not found?' 
 
 			if rv, print 'Will read jarsig: [sigFilePath]'
 			try
@@ -98,7 +98,8 @@ class Compiler is partial
 
 	def javaReadJar(jSig as JarSig)
 		"""
-		Reads the contents of a jar (actually JarSig) file so that they are accessible to the program.
+		Reads the contents of a jar (actually JarSig) file and make the symbols accessible 
+		to the compiler for the program being compiled.
 		"""
 		if jSig.name in _didReadJars, return
 		_didReadJars.add(jSig.name)
@@ -113,7 +114,7 @@ class Compiler is partial
 		try
 			_modules.add(module)
 			for jvmType in jSig.getExportedTypes
-				if jvmType.isNested #or jvmType.declaringType
+				if jvmType.isNested # or jvmType.declaringType
 					nestedTypes.add(jvmType)
 					continue
 				typeNamespace = jvmType.packageAsCobra  #Capitalized
@@ -183,7 +184,7 @@ class Compiler is partial
 		
 		_fix('Java.Lang.Object', 'toString getClass clone')
 			# ^ regarding .toString, not technically true, but common enough and life is too painful when the return type is nilable
-		#_fix('java.lang.System', 'out') #stdout
+		_fix('Java.Lang.System', 'in out err lineSeparator')
 		_fix('Java.Lang.String', r'[] length charAt concat remove replace replaceAll replaceFirst substring toLowerCase toUpperCase trim format')
 		#_fix('System.Type', 'assembly name toString')
 			# namespace can return nil if the Type is a generic parameter
@@ -225,6 +226,7 @@ class Compiler is partial
 		#_fix('Java.Util.AbstractMap.SimpleEntry<of,>', r'getKey getValue')
 		#_fix('Java.Util.AbstractMap.SimpleImmutableEntry<of,>', r'getKey getValue')
 		_fix('Java.Util.Properties', r'getProperty')
+		_fix('Java.Util.Calendar', 'getInstance getTimeZone')
 		
 		#_fix('System.IO.File', 'create createText open openRead openText openWrite readAllBytes readAllLines readAllText')
 		_fix('Java.Io.File', 'create createText open openRead openText openWrite readAllBytes readAllLines readAllText getPath getAbsolutePath')
@@ -292,7 +294,7 @@ class Compiler is partial
 	
 	def installJvmNativeMethods(box as Box, nativeType as NativeType) 
 		"""Install entries for native static methods on box instances."""
-		pass
+		pass  #TODO support native static methods on box instances
 		#print '++ TODO scanJvmType.installJvmNativeMethods'
 /#
 		meths = List<of Method>()
@@ -352,6 +354,35 @@ class Box is partial
 		#overload.addMember(meth)
 		.addDecl(meth)
 				
+		
+	def getIteratorMemberJvm as IMember?
+		"""
+		Step1 of 2 step lookup for iterator/enumerator type - return iterator Member for current box 
+		"""
+		getEnum as IMember? 
+		if .declForName('iterator') is not nil # Collections
+			getEnum = .symbolForName('iterator', true)
+			return getEnum
+			
+		if .declForName('entrySet') is not nil # Map
+			es = .symbolForName('entrySet', true)
+			est = es.resultType.nonNil to Box
+			getEnum = est.symbolForName('iterator', true)
+		# could look for  Enumerable here also
+		
+		return getEnum
+		
+	def getIteratorNextTypeJvm(rt as IType) as IType?
+		"""
+		Step2 of 2 step lookup for iterator/Enumerator type - return the type for iterator.next member for current box 
+		rt is the resultType from iterator lookup above - i.e the Iterator for this Box
+		"""
+		if rt inherits Box and (rt to Box).isGeneric
+			rType = rt.memberForName('next').resultType
+		else
+			throw FallThroughException('getEnumeratorMemberType - rt not genericBox [rt]')
+		return rType
+		
 	def scanNativeTypeJvm
 		"""
 		Subclasses should invoke base and then invoke the various _scanXXX methods that are appropriate for them.
@@ -550,6 +581,7 @@ class Box is partial
 						break
 			if skip, continue
 			name = Utils.cobraNameForNativeMemberName(methInfo.name)
+			other = .declForName(name)
 			genericParams = List<of IType>()
 			for genArg in methInfo.getGenericArguments
 				genericParams.add(GenericParam(JvmNativeType(genArg)))
@@ -570,8 +602,19 @@ class Box is partial
 					overload = MemberOverload(other)
 					.registerOverload(overload to !)
 				else
-					print 'Unexpected overload for name:', name, other
-					throw FallThroughException([this, method, other])
+					if not other inherits BoxVar
+						print 'Unexpected overload (existing named decl) for method "[name]":', other
+						throw FallThroughException([this, method, other])
+						
+					# here we have a field name (BoxVar) shadowing a method name. 
+					# In java this is unambiguous cos all methods are called with () suffix. 
+					# In cobra we have to do something else...
+					# currently will choose to drop ( make inaccessible) the field... 
+					# ...stupid field begone
+					print 'DUP field "[name]" is shadowing the method "[name]" on [.name],'
+					print '    Dropping the field. It will not be accessible from cobra code'
+					.rmDecl(other)
+				
 			if overload
 				overload.addMember(method)
 			else
@@ -653,7 +696,8 @@ class Box is partial
 	def _jvmMemberTypeProxy(jvmType as JavaClassType?, notNull as bool) as ITypeProxy		
 		"""
 		Returns a type proxy for a member type such as a parameter type.
-		In Java, reference types are nilable by default, but you can pass `true` for `notNull` to indicate there was a NotNull Annotation in the jar metadata.
+		In Java, reference types are nilable by default, but you can pass `true` for `notNull` to 
+		indicate there was a NotNull Annotation in the jar metadata.
 		"""
 		if jvmType is nil
 			return .compiler.voidType
@@ -695,7 +739,7 @@ class Box is partial
 	def _fixNestedNilables
 		if .parentBox  # nested
 			query = '[.parentBox.qualifiedName].[.name]'
-			print 'fixNest', query
+			#print 'fixNest', query
 			memberNames = _nestedUnNil.get(query, '')
 			if memberNames.length
 				.parentBox.membersToUnNil = memberNames
@@ -789,51 +833,20 @@ class EnumDecl
 	def scanNativeTypeJvm
 		# TODO: read attribs
 		_needScanNativeType = false
-		_storageType = .compiler.anyIntType # tmp ??
+		_storageType = .compiler.anyIntType # Not relevant ??
+	
+		#TODO fake up support for values() and valueOf() and getValue() synthesized in codegen
+		# - or not - how much of C#/Cobra enum capability to support??
 		
 		/# Enable when have Enum and JavaEnumType in PkgSig and JarSig
 		jvmType = (_nativeType to JvmNativeType).backEndType 
 		assert jvmType inherits JavaEnumType # temporary
 		for name, value in jvmType.getConstantValues	# list of names and values
-			intValue = value to int
-			member = EnumMember(name, intValue)
+			member = EnumMember(name, value)
 			member.enumDecl = this
 			.addDecl(member)
 		#/
 			
-		/#
-		isByte  = Enum.getUnderlyingType(jvmType).name == 'Byte'
-		is64    = Enum.getUnderlyingType(jvmType).name == 'Int64'
-		isU32   = Enum.getUnderlyingType(jvmType).name == 'UInt32'
-		isU64   = Enum.getUnderlyingType(jvmType).name == 'UInt64'
-		values  = Enum.getValues(jvmType)
-		i = 0
-		for name in Enum.getNames(jvmType)
-			value = values.getValue(i)
-			# CC: lameness follows
-			if isByte
-				intValue = int.parse((value to uint8).toString)
-			else if is64
-				try
-					intValue = int.parse((value to int64).toString)
-				catch OverflowException
-					intValue = 999  # CC: omg. but probably doesn't affect anything. we're reading the DLL here, not creating one
-			else if isU32
-				try
-					intValue = int.parse((value to uint32).toString)
-				catch OverflowException
-					intValue = 2147483647
-			else if isU64
-				try
-					intValue = int.parse((value to uint64).toString)
-				catch OverflowException
-					intValue = 2147483647
-			else
-				intValue = value to int
-			member = EnumMember(name, intValue)
-			member.enumDecl = this
-			.addDecl(member)
-			i += 1
 #/		
 
 

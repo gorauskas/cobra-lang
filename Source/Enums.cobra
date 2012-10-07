@@ -10,7 +10,8 @@ class EnumDecl
 	var _storageType as IType?
 	var _nativeType as NativeType?
 	var _needScanNativeType as bool
-
+	var _isUsedAsSet = false 	# flag if multi member initted
+	
 	cue init(parent as IParentSpace?, token as IToken, idToken as IToken, name as String, isNames as List<of String>, attribs as AttributeList, storageTypeNode as ITypeProxy?, docString as String, enumMembers as List<of EnumMember>)
 		base.init(parent, token, name, isNames, docString)
 		_idToken = idToken
@@ -27,7 +28,6 @@ class EnumDecl
 		_nativeType = nativeType
 		assert .compiler
 		.backEnd.setUnderlyingType(this)  # sets _storageTypeNode
-		#_storageTypeNode = ClrTypeProxy(Enum.getUnderlyingType((_nativeType to ClrNativeType).backEndType))  # TODO: fix native
 		_needScanNativeType = true
 		
 	def _scanNativeType
@@ -84,6 +84,8 @@ class EnumDecl
 	get typeForReceiver as IType is override
 		return this
 
+	pro isUsedAsSet from var
+		
 	def _bindInt is override
 		base._bindInt
 		for attrib in .attributes, attrib.bindInt
@@ -119,13 +121,14 @@ class EnumDecl
 		body
 			_parentBox = newBox
 
-
+	
 class EnumMember
 	is partial
 	inherits NamedNode
 	implements IMember
 	"""
 	Holds the name and (optionally) value of a member of an EnumDecl.
+	One of these is what an enum instance will be set to.
 	"""
 
 	var _value as int?

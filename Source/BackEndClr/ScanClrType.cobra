@@ -457,7 +457,56 @@ class Box is partial
 		meth = Method(TokenFix.empty, TokenFix.empty, this, 'getType', List<of Param>(), .compiler.typeTypeProxy, nil, ['shared'], AttributeList(), 'Returns the Type instance that defines this type.')
 		meth.sharedMethodBacking = 'typeof'
 		overload.addMember(meth)
-		
+	
+	# Enumeration lookup
+	def getEnumeratorMemberClr as IMember?
+		"""
+		Step1 of 2 step lookup for Enumerator type - return getEnumeratorMember for current box 
+		"""
+		getEnum as IMember? 
+		if .declForName('getEnumerator') is nil
+			# Comes up for IList<of T> which has multiple 'getEnumerator' methods in ancestor interfaces
+			for member in .allMembersForName('getEnumerator')
+				if member inherits Method and member.parentBox.isGeneric
+					getEnum = member
+					break
+		if getEnum is nil
+			getEnum = .symbolForName('getEnumerator', true)
+		if getEnum
+			assert getEnum.didBindInt
+			# can have two getEnumerators -- one generic and the other not. favor the generic one
+			if getEnum inherits MemberOverload
+				for member in getEnum.members
+					if member inherits Method
+						if member.resultType <> .compiler.objectType
+							# implementing IEnumerable<of T> which requires two `getEnumerator` members
+							getEnum = member
+							break
+		return getEnum
+			
+	def getEnumeratorMemberTypeClr(rt as IType) as IType?
+		"""
+		Step2 of 2 step lookup for Enumerator type - return the type for Enumerator member for current box 
+		rt is the resultType from getEnumerator lookup above - i.e the Enumerator for this Box
+		"""
+		if rt inherits Box and (rt to Box).isGeneric
+			# don't take the first argument of the result type -- that won't work for a nested type in a generic class, like ValueCollection, which gets the generic params of its parents
+			return rt.memberForName('current').resultType
+		else
+			if rt.isDescendantOf(.compiler.dictEnumeratorType)
+				return rt.memberForName('entry').resultType
+			if rt.isDescendantOf(.compiler.enumeratorType)
+				rt = rt.memberForName('current').resultType
+				if rt.nonNil.isSystemObjectClass
+					# can we do better with indexer returnType? (e.g. MatchCollection)
+					indexer = .symbolForName(r'[]', true)
+					if indexer, rt = indexer.resultType
+				return rt
+			else
+				throw FallThroughException({'rt': rt, 'this': this })
+		return nil
+	
+	# dll scanning
 	def scanNativeTypeClr
 		"""
 		Subclasses should invoke base and then invoke the various _scanFoo methods that are appropriate for them.

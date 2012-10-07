@@ -281,6 +281,10 @@ class TestifyRunner
 		if baseName.startsWith('.') or baseName.startsWith('_')
 			# examples: .svn, _svn. Also, _ is a nice way to temporarily exclude a directory if possible
 			return
+		if _useConfigPath(dirName), return		
+		_testifyDir(dirName, nil)
+		
+	def _useConfigPath(dirName as String) as bool
 		configPath = Path.combine(dirName, 'testify.kv')
 		if File.exists(configPath)
 			dirOptions = Utils.readKeyValues(configPath)
@@ -288,58 +292,20 @@ class TestifyRunner
 				argSets = dirOptions['args'].split(@[c'|'])
 				for argSet in argSets
 					_testifyDir(dirName, argSet.trim)
-				return
-		_testifyDir(dirName, nil)
-
+				return true
+		return false
+			
 	def _testifyDir(dirName as String, args as String?)
-		willCopyLibs = true  # not CobraCore.isRunningMono  # On Mono, we use MONO_PATH instead of coping the Cobra.Core.dll around
-		libNames = ['Cobra.Core.dll']
 		_extraTestifyArgs = args
 		_statusWriter.writeLine(if(args, '[dirName] with args: [args]', '[dirName]'))
 		_statusWriter.indent
 		try
 			print 'Running tests in [dirName]'
 			saveDir = Environment.currentDirectory
-			if willCopyLibs
-				# _cleanDir will remove these later
-				for libName in libNames
-					# Ideally, the file operations below would not be wrapped with try...catch and a
-					# 'warning' because if the current library files cannot be copied into the test
-					# directory, then the test is not valid. However, Windows has problems with
-					# deleting and/or copying over Cobra.Core.dll right after it has been used. This
-					# comes up on Tests\340-contracts whose testify.kv config file specifies two
-					# runs of the directory.
-					targetPath = Path.combine(dirName, libName)
-					if File.exists(targetPath)
-						if Utils.isRunningOnUnix
-							File.delete(targetPath)
-						else
-							# Windows is just too damn picky...
-							try
-								File.delete(targetPath)
-							catch UnauthorizedAccessException
-								print 'testify warning: cannot delete:', targetPath
-					if libName == 'Cobra.Core.dll' or File.exists(libName)
-						if Utils.isRunningOnUnix
-							File.copy(Path.combine(saveDir, libName), targetPath)
-						else
-							try
-								File.copy(Path.combine(saveDir, libName), targetPath, true)
-							catch IOException
-								print 'testify warning: cannot copy or copy over:', targetPath
+			_copyLibs(saveDir, dirName)
 			Directory.setCurrentDirectory(dirName)
 			try
-				setUpScript = if(Utils.isRunningOnUnix, 'testify-set-up', 'testify-set-up.bat')
-				if File.exists(setUpScript)
-					print '* * * * Running [setUpScript]'
-					process = Process()
-					process.startInfo.fileName = setUpScript
-					setUpOutput = process.runAndCaptureAllOutput
-					if process.exitCode <> 0
-						print 'TESTIFY WARNING: Script [setUpScript] exited with error code [process.exitCode]'
-						print 'begin output'
-						print setUpOutput.trim
-						print 'end output'
+				_runSetupScript
 				paths = List<of String>(Directory.getFiles('.'))
 				paths.addRange(Directory.getDirectories('.') to passthrough)
 				paths.sort
@@ -359,6 +325,60 @@ class TestifyRunner
 		finally
 			_statusWriter.dedent
 		_testifyFlush
+		
+	def _copyLibs(saveDir as String, dirName as String)
+		"""
+		Copy Cobra Libs etc to sources directory if platform needs it.
+		_cleanDir will remove these later
+		"""
+		if _runtimePlatform(nil) <> 'clr'  # other platforms use a Path instead of dll in cwd
+			return
+		# if CobraCore.isRunningMono  # On Mono, we use MONO_PATH instead of copying the Cobra.Core.dll around
+		# 	return	
+		libNames = ['Cobra.Core.dll']
+		for libName in libNames
+			# Ideally, the file operations below would not be wrapped with try...catch and a
+			# 'warning' because if the current library files cannot be copied into the test
+			# directory, then the test is not valid. However, Windows has problems with
+			# deleting and/or copying over Cobra.Core.dll right after it has been used. This
+			# comes up on Tests\340-contracts whose testify.kv config file specifies two
+			# runs of the directory.
+			targetPath = Path.combine(dirName, libName)
+			if File.exists(targetPath)
+				if Utils.isRunningOnUnix
+					File.delete(targetPath)
+				else
+					# Windows is just too damn picky...
+					try
+						File.delete(targetPath)
+					catch UnauthorizedAccessException
+						print 'testify warning: cannot delete:', targetPath
+			if libName == 'Cobra.Core.dll' or File.exists(libName)
+				if Utils.isRunningOnUnix
+					File.copy(Path.combine(saveDir, libName), targetPath)
+				else
+					try
+						File.copy(Path.combine(saveDir, libName), targetPath, true)
+					catch IOException
+						print 'testify warning: cannot copy or copy over:', targetPath
+
+	def _runtimePlatform(options as OptionValues?) as String
+		if not options, options = .testifyOptions
+		rtp = if(options['back-end']=='none', CobraCore.runtimePlatform, options['back-end'] to String)
+		return rtp
+		
+	def _runSetupScript
+		setUpScript = if(Utils.isRunningOnUnix, 'testify-set-up', 'testify-set-up.bat')
+		if File.exists(setUpScript)
+			print '* * * * Running [setUpScript]'
+			process = Process()
+			process.startInfo.fileName = setUpScript
+			setUpOutput = process.runAndCaptureAllOutput
+			if process.exitCode <> 0
+				print 'TESTIFY WARNING: Script [setUpScript] exited with error code [process.exitCode]'
+				print 'begin output'
+				print setUpOutput.trim
+				print 'end output'
 
 	def testifyFile(baseName as String) as int
 		save = _failureCount
@@ -423,7 +443,7 @@ class TestifyRunner
 		if inLineMessages.count > 0 #  hasInlineMessages
 			return _testifyInlineMessages(inLineMessages, expectingError, 
 											compilerVerbosity, [baseName], options, verbose )
-
+											
 		if firstLineInsensitive.startsWith('#.error.')
 			# deprecated: put errors on the lines where they occur. the "hasInlineMessages" code above will detect them.
 			# Note that errors that are only detected by the backend C# compiler are not detectable by testify
@@ -471,7 +491,7 @@ class TestifyRunner
 				continue
 
 			if firstLineInsensitive.startsWith('#.require.')
-				rtPlatform  = if(options['back-end']=='none', CobraCore.runtimePlatform, options['back-end'])
+				rtPlatform  = _runtimePlatform(options)
 				what = firstLineInsensitive[10:]
 				branch what
 					on 'mono'
@@ -714,8 +734,8 @@ class TestifyRunner
 			
 	def _testifyStd(compilerVerbosity as int, fileNames as IList<of String>,
 							options as OptionValues, verbose as bool) as int		
-		c = Compiler(compilerVerbosity, _cachedTestifyModules, commandLineArgParser=_cl.argParser)
 		try
+			c = Compiler(compilerVerbosity, _cachedTestifyModules, commandLineArgParser=_cl.argParser)
 			c.testifyFilesNamed(fileNames, options, _resultsWriter to !, verbose)
 		catch StopCompilation
 			.failed
@@ -768,7 +788,7 @@ class TestifyRunner
 
 		print .bar
 
-		_cachedTestifyModules = for mod in c.modules where mod inherits AssemblyModule get mod
+		#_cachedTestifyModules = for mod in c.modules where mod inherits AssemblyModule get mod
 
 		return 1
 

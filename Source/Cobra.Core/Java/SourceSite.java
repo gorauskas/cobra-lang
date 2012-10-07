@@ -8,7 +8,7 @@ import java.io.*;
 
 public class SourceSite {
     /* 
-     * See Cobra.Lang.SourceSite.cobra
+     * See Cobra.Core.SourceSite.cobra
      * 
      *  A SourceSite instance captures the source location of a statement or expression, as in the
      *  filename, line number, declaring class name, method name and run-time object. The Cobra

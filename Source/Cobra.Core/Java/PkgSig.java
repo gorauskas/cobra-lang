@@ -799,7 +799,9 @@ class ClassSig {
         String tStr = t.toString();
         //System.out.printf("### %-50s \n", tStr);
         tStr = tStr.replace("java.util.Map.java.util.Map", "java.util.Map");  // EntrySets screwed for some reason
-        
+        tStr = tStr.replace("java.nio.file.WatchEvent.java.nio.file.WatchEvent", "java.nio.file.WatchEvent"); 
+        tStr = tStr.replace("java.nio.file.DirectoryStream.java.nio.file.DirectoryStream", "java.nio.file.DirectoryStream");
+
         tStr = tStr.replace("class ", "");  // sometimes puts on leading 'type '
         tStr = tStr.replace("interface ", "");  
         // possibly others - enum ?

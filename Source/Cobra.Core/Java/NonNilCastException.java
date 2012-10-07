@@ -39,7 +39,7 @@ public class NonNilCastException extends AssertException
 
 /*	## Misc exceptions
 
-	class ExpectException inherits Exception
+	class ExpectException extends RuntimeException 
 
 		cue init(expectedExceptionType as Type, actualException as Exception?)
 			base.init

@@ -8,28 +8,35 @@ CORE_RTL='CobraCore.jar'
 
 [ -d classes ] || mkdir classes
 [ -d classes/cobra/lang ] && rm -rf classes/cobra/lang/*
-EXCEPTIONS="AssertException.java InvariantException.java RequireException.java EnsureException.java NonNilCastException.java DynamicOperationException.java"
-javac -d classes SourceSite.java CobraImp.java CobraCore.java Delegate.java ${EXCEPTIONS} CobraDirectString.java
+EXCEPTIONS="AssertException.java InvariantException.java RequireException.java EnsureException.java NonNilCastException.java DynamicOperationException.java ExpectException.java CheckedExceptionWrapper.java"
+javac -d classes SourceSite.java CobraImp.java CobraCore.java Delegate.java DelegateO.java Pair.java ${EXCEPTIONS} CobraDirectString.java
 [ $? == 0 ] || exit
 
 jar cvf ${CORE_RTL} -C classes .
 [ $? == 0 ] || exit
 cp ${CORE_RTL} ../..
 
-if [ ! -e PkgSig.class ]; then 
+#if [ ! -e PkgSig.class ]; then 
+#    echo 'building PkgSig app'
+#    javac -cp . PkgSig.java
+if [ ! -e PkgSig.jar ]; then 
     echo 'building PkgSig app'
-    javac -cp . PkgSig.java
+    PSIGDIR=pkgsig-classes
+    [ -d $PSIGDIR ] || mkdir $PSIGDIR
+    javac -cp . -d $PSIGDIR PkgSig.java
+    jar cvfe PkgSig.jar PkgSig -C $PSIGDIR .
 fi
 
+export CLASSPATH='PkgSig.jar'
 echo 'Gen pkgSig file for '${CORE_RTL}
-java -cp ".;${CORE_RTL}"  PkgSig -j ${CORE_RTL} > ${CORE_RTL}.sig
+java -cp "${CLASSPATH};${CORE_RTL}"  PkgSig -j ${CORE_RTL} > ${CORE_RTL}.sig
 
 echo 'Gen pkgSig file for rt.jar'
-java -cp .  PkgSig -jrt > rt.jar.sig
+java   PkgSig -jrt > rt.jar.sig
 echo 'Gen pkgSig file for java.lang'
-java -cp .  PkgSig  java.lang > java.lang.sig
+java   PkgSig  java.lang > java.lang.sig
 echo 'Gen pkgSig file for java.util'
-java -cp .  PkgSig  java.util > java.util.sig
+java  PkgSig  java.util > java.util.sig
 
-echo 'copy .sig files to compiler directory'
-cp ${CORE_RTL}.sig rt.jar.sig java.util.sig java.lang.sig ../..
+#echo 'copy .sig files to compiler directory'
+#cp ${CORE_RTL}.sig rt.jar.sig java.util.sig java.lang.sig ../..

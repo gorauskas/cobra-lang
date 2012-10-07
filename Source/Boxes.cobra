@@ -600,17 +600,10 @@ class Box
 # TODO: can a for loop go through an IEnumerator<of>?
 #		if .isConstructed and .genericDef is .compiler.enumeratorOfType
 #			return .genericParams[0]
-		getEnum as IMember?
-		if .declForName('getEnumerator') is nil
-			# Comes up for IList<of T> which has multiple 'getEnumerator' methods in ancestor interfaces
-			for member in .allMembersForName('getEnumerator')
-				if member inherits Method and member.parentBox.isGeneric
-					getEnum = member
-					break
-		if getEnum is nil
-			getEnum = .symbolForName('getEnumerator', true)
+		getEnum  = .backEnd.getEnumeratorMember(this) # Enumerator/Iterator
 		if getEnum
 			assert getEnum.didBindInt
+			# CLR specific 
 			# can have two getEnumerators -- one generic and the other not. favor the generic one
 			if getEnum inherits MemberOverload
 				for member in getEnum.members
@@ -619,28 +612,14 @@ class Box
 							# implementing IEnumerable<of T> which requires two `getEnumerator` members
 							getEnum = member
 							break
-			rt = getEnum.resultType
+			rt as IType? = getEnum.resultType
 			if rt.isDynamicOrPassThrough
 				return rt
 			rt = rt.nonNil  # nilable is not a concern; unwrap it
-			if rt inherits Box and (rt to Box).isGeneric
-				# don't take the first argument of the result type -- that won't work for a nested type in a generic class, like ValueCollection, which gets the generic params of its parents
-				rt = rt.memberForName('current').resultType
-				return rt
-			else
-				if rt.isDescendantOf(.compiler.dictEnumeratorType)
-					return rt.memberForName('entry').resultType
-				if rt.isDescendantOf(.compiler.enumeratorType)
-					rt = rt.memberForName('current').resultType
-					if rt.nonNil.isSystemObjectClass
-						# can we do better with indexer returnType? (e.g. MatchCollection)
-						indexer = .symbolForName(r'[]', true)
-						if indexer, rt = indexer.resultType
-					return rt
-				else
-					throw FallThroughException({'rt': rt, 'this': this, 'getEnum': getEnum})
+			rt = .backEnd.getEnumeratorMemberType(this, rt to !) # type for method returning enumerator/iterator item
+			return rt
 		return nil
-
+			
 	def isEquatableTo(t as IType) as bool
 		r = base.isEquatableTo(t)
 		if not r and t inherits CharType and this is .compiler.stringType  # TODO: hacky? could this be determined by looking for a static == operator overload?
@@ -1103,7 +1082,7 @@ class Box
 		return t
 
 	def __constructTypeFor(typeArgs as List<of IType>) as Box
-		""" Creates the constructed type. Does not issue any .bindInh, .bindInt, or _prepFoo. """
+		""" Creates the constructed generic instance type. Does not issue any .bindInh, .bindInt, or _prepFoo. """
 		t = .memberwiseClone to Box
 		assert t is not this
 		argNames = (for type in typeArgs get type.name).join(',')

@@ -10,10 +10,13 @@ All of that happens during .bindFoo phases.
 
 class Compiler is partial
 
+	# executable filenames
 	var _baseExeFileName as String = ''
 	var _fullExeFileName as String = ''
 
-
+	get clrBaseExeFileName from _baseExeFileName
+	get clrFullExeFileName from _fullExeFileName
+	
 	# The next two properties are set in GenerateSharpCodePhase
 	
 	pro nativeCompiler from var = ''
@@ -84,16 +87,6 @@ class Compiler is partial
 
 	var _didWriteSharpInfoClass as bool
 
-	get baseExeFileName from var
-		"""
-		Returns the exe file name sans extension.
-		"""
-
-	get fullExeFileName from var
-		"""
-		Returns the exe file name with extension.
-		"""
-
 	var _platform as PlatformEnum?
 
 	get platform as PlatformEnum
@@ -103,7 +96,7 @@ class Compiler is partial
 		return _platform to !
 
 	def computeOutNameSharp as String
-		ensure result == .fullExeFileName
+		ensure result == _fullExeFileName
 		outName = ''
 		if .options.boolValue('test')
 			outName = _modules.last.sharpFileName
@@ -240,9 +233,9 @@ class Compiler is partial
 
 			_deleteIntermediateFiles
 			
-			_copyCore(outName)
+			_copyCoreClr(outName)
 
-	def _copyCore(outName as String)
+	def _copyCoreClr(outName as String)
 		if not .options.boolValue('copy-core'), return
 		sourceDir = Path.getDirectoryName(Assembly.getEntryAssembly.location) ? ''
 		outDir = Path.getDirectoryName(outName) ? ''
@@ -286,7 +279,7 @@ class Compiler is partial
 				throw StopCompilation(this)
 		_cobraSharpProxy.reset
 
-		backEndOptions.add('[optChar]out:[.fullExeFileName]')
+		backEndOptions.add('[optChar]out:[_fullExeFileName]')
 
 		args = List<of String>(backEndOptions)
 		args.addRange(sharpFileNameList)
@@ -318,7 +311,7 @@ class Compiler is partial
 			pass
 		else if File.exists(cscPath+'.exe')
 			cscPath += '.exe'
-		backEndOptions += ' "[optChar]out:[.fullExeFileName]"'
+		backEndOptions += ' "[optChar]out:[_fullExeFileName]"'
 		p = System.Diagnostics.Process()
 		p.startInfo.fileName = cscPath
 		sharpFileNames = (for fileName in sharpFileNameList get '"' + fileName + '"').join(' ')
@@ -343,13 +336,13 @@ class Compiler is partial
 		cp.compilerOptions = backEndOptions
 		cp.referencedAssemblies.add('System.dll')
 		cp.generateExecutable = .options.getDefault('target', 'exe') in ['exe', 'winexe']
-		cp.outputAssembly = .fullExeFileName
+		cp.outputAssembly = _fullExeFileName
 		if _verbosity >= 2
 			print 'Code Provider =', provider
 			print '    compilerOptions =', backEndOptions
 			print '    referencedAssemblies =', cp.referencedAssemblies
 			print '    generateExecutable =', cp.generateExecutable
-			print '    outputAssembly =', .fullExeFileName
+			print '    outputAssembly =', _fullExeFileName
 			print '    sharpFileNameList =', sharpFileNameList
 		cr = provider.compileAssemblyFromFile(cp, sharpFileNameList.toArray)
 		if false
@@ -4724,7 +4717,7 @@ class InExpr is partial
 					sw.write(')')
 					if v, sw.write('/* A */')
 				else
-					.writeInCheck(sw, false, v)
+					.writeInCheckSharp(sw, false, v)
 					if v, sw.write('/* B */')
 				sw.write(')')
 			else
@@ -4750,10 +4743,10 @@ class InExpr is partial
 					if v, sw.write('/* D */')
 				sw.write(' })')
 		else
-			.writeInCheck(sw, parens, v)
+			.writeInCheckSharp(sw, parens, v)
 			if v, sw.write('/* E */')
 
-	def writeInCheck(sw as CurlyWriter, parens as bool, v as bool)
+	def writeInCheckSharp(sw as CurlyWriter, parens as bool, v as bool)
 		if .containsExpr
 			.containsExpr.writeSharpDef(sw, parens)
 			if v, sw.write('/* F */')
