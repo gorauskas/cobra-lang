@@ -1,3 +1,12 @@
+"""
+
+Rules:
+* If an numeric literal contains a decimal point or the exponential symbol (E),
+  it is a number (decimal, float64, etc.).
+* Else, the type is the first of int, uint, int64, uint64 that will fit the value.
+
+"""
+
 use System.Text.RegularExpressions
 
 
@@ -635,16 +644,27 @@ class CobraTokenizer inherits Tokenizer
 	def onHEX_LIT(tok as IToken) as IToken? 
 		ensure
 			tok.which == 'INTEGER_LIT'
-			tok.info == 32
+			(tok.info to int) in [-32, 32, -64, 64]  # CC: axe cast
 		body
 			try
-				tok.value = int.parse(tok.text[2:], System.Globalization.NumberStyles.HexNumber)
+				val = uint64.parse(tok.text[2:], System.Globalization.NumberStyles.HexNumber)
 			catch FormatException
 				assert false, 'not expecting to get here given regex'
 			catch OverflowException
 				.recordError('Range overflow for hex literal "[tok.text]".')
 			tok.which = 'INTEGER_LIT'
-			tok.info = 32  # unsigned
+			if val <= int.maxValue
+				tok.value = val to int
+				tok.info = -32
+			else if val <= uint.maxValue
+				tok.value = val to uint
+				tok.info = 32
+			else if val <= int64.maxValue
+				tok.value = val to int64
+				tok.info = -64
+			else
+				tok.value = val
+				tok.info = 64
 			return tok
 			
 	def onINT_SIZE(tok as IToken) as IToken?

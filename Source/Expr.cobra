@@ -2738,12 +2738,12 @@ class IntegerLit
 	is partial
 	inherits AtomicLiteral
 
-	var _value as int
+	var _value as Object
 
 	cue init(token as IToken)
-		require token.value inherits int
+		require NumericTypeInfo(token.value.typeOf).isInt
 		base.init(token)
-		_value = token.value to int
+		_value = token.value to !
 
 	cue init(token as IToken, value as int)
 		base.init(token)
@@ -2753,6 +2753,14 @@ class IntegerLit
 		return true
 
 	get value from var
+
+	get valueAsInt as int
+		# The following commented code won't work reliably.
+		# .NET won't unbox and cast numerics to different sizes at the same time.
+		# Unboxing to any struct requires that exact struct type.
+		# return token.value to int
+		# so:
+		return int.parse(.value.toString)
 
 	def canBeAssignedTo(type as IType) as bool is override
 		if type.nonNil.isDescendantOf(.compiler.anyIntType)
@@ -2766,6 +2774,7 @@ class IntegerLit
 		if _type is nil
 			if .token.info inherits int
 				size = .token.info to int
+				assert size in [-8, 8, -16, 16, -32, 32, -64, 64]
 				signed = size < 0
 				size = if(signed, -1, +1) * size
 				_type = .compiler.intType(signed, size)
