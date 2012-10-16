@@ -559,11 +559,13 @@ class CobraTokenizer inherits Tokenizer
 
 	def onINTEGER_LIT(tok as IToken) as IToken?
 		try
-			tok.value = int.parse(tok.text.replace('_', ''), Utils.cultureInfoForNumbers)
+			val = uint64.parse(tok.text.replace('_', ''), Utils.cultureInfoForNumbers)
 		catch FormatException
 			assert false, 'not expecting to get here given regex'
 		catch OverflowException
 			.recordError('Range overflow for integer literal "[tok.text]".')
+			return tok
+		_inferIntSize(tok, val)
 		return tok
 
 	def onINTEGER_LIT_EXPLICIT(tok as IToken) as IToken?
@@ -595,9 +597,7 @@ class CobraTokenizer inherits Tokenizer
 				# cannot have other size specs given regex
 				size = 32
 			try
-				# TODO: The use of int.parse, as opposed to say int64.parse, uint32.parse, etc. probably
-				# means that legit int lits outside the signed 32 bit range will not work in Cobra
-				tok.value = int.parse(s, Utils.cultureInfoForNumbers)
+				tok.value = uint64.parse(s, Utils.cultureInfoForNumbers)
 			catch FormatException
 				assert false, 'not expecting to get here given regex'
 			catch OverflowException
@@ -653,20 +653,23 @@ class CobraTokenizer inherits Tokenizer
 			catch OverflowException
 				.recordError('Range overflow for hex literal "[tok.text]".')
 			tok.which = 'INTEGER_LIT'
-			if val <= int.maxValue
-				tok.value = val to int
-				tok.info = -32
-			else if val <= uint.maxValue
-				tok.value = val to uint
-				tok.info = 32
-			else if val <= int64.maxValue
-				tok.value = val to int64
-				tok.info = -64
-			else
-				tok.value = val
-				tok.info = 64
+			_inferIntSize(tok, val)
 			return tok
-			
+
+	def _inferIntSize(tok as IToken, val as uint64)
+		if val <= int.maxValue
+			tok.value = val to int
+			tok.info = -32
+		else if val <= uint.maxValue
+			tok.value = val to uint
+			tok.info = 32
+		else if val <= int64.maxValue
+			tok.value = val to int64
+			tok.info = -64
+		else
+			tok.value = val
+			tok.info = 64
+
 	def onINT_SIZE(tok as IToken) as IToken?
 		size = int.parse(tok.text[3:])
 		tok.value = size
