@@ -42,20 +42,32 @@ class Compiler is partial
 	def _deleteIntermediateFiles
 		# remove intermediate files such as *.cobra.cs and *.cobra.java
 		if _intermediateFileNames.count == 0
-			if _verbosity >= 1
-				print 'No intermediate files to keep or delete.'
+			if _verbosity >= 1, print 'No intermediate files to keep or delete.'
 		else
 			if .options.getDefault('keep-intermediate-files', 0)
-				if _verbosity >= 1
-					print 'Keeping intermediate files.'
+				if _verbosity >= 1, print 'Keeping intermediate files.'
 			else
-				if _verbosity >= 1
-					print 'Deleting intermediate files.'
-				for fileName in _intermediateFileNames
-					if _verbosity >= 3
-						print 'Deleting', fileName
-					if Directory.exists(fileName), Directory.delete(fileName, true)
-					else if File.exists(fileName), File.delete(fileName)
+				if _verbosity >= 1, print 'Deleting intermediate files.'
+				retry = __deleteIntermediateFiles(1)
+				if retry
+					System.Threading.Thread.sleep(500)
+					__deleteIntermediateFiles(2)
+
+	def __deleteIntermediateFiles(attempt as int) as bool
+		retry = false
+		for fileName in _intermediateFileNames
+			if _verbosity >= 3, print 'Deleting', fileName
+			try
+				if Directory.exists(fileName), Directory.delete(fileName, true)
+				else if File.exists(fileName), File.delete(fileName)
+			catch ioExc as IOException
+				if ioExc.message.toLower.contains('not empty')
+					# this sometimes happens on Windows
+					if attempt > 1, print 'Cannot delete:', fileName
+					retry = true
+				else
+					throw
+		return retry
 
 
 interface IVar is partial
