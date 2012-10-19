@@ -311,6 +311,9 @@ class Compiler is partial
 			pass
 		else if File.exists(cscPath+'.exe')
 			cscPath += '.exe'
+		_compileSharpWithProcessCSC(cscPath, optChar, backEndOptions, sharpFileNameList)
+
+	def _compileSharpWithProcessCSC(cscPath as String, optChar as String, backEndOptions as String, sharpFileNameList as List<of String>)
 		backEndOptions += ' "[optChar]out:[_fullExeFileName]"'
 		p = System.Diagnostics.Process()
 		p.startInfo.fileName = cscPath
@@ -322,7 +325,26 @@ class Compiler is partial
 			output = p.runAndCaptureAllOutput
 		catch exc as System.ComponentModel.Win32Exception
 			# ex: 'ApplicationName='gmcsaoeu', CommandLine='"-r:Cobra.Core.dll" "-nologo" ...'
-			if exc.message.contains('ApplicationName=')
+			/#
+			Win32Exception.NativeErrorCode
+			http://msdn.microsoft.com/en-us/library/ms681382.aspx
+			0 = ERROR_SUCCESS
+			1 = ERROR_INVALID_FUNCTION
+			2 = ERROR_FILE_NOT_FOUND
+			3 = ERROR_PATH_NOT_FOUND
+			4 = ERROR_TOO_MANY_OPEN_FILES
+			5 = ERROR_ACCESS_DENIED
+			...
+			#/
+			if exc.nativeErrorCode == 2
+				# Sometimes Mono will look for 'dmcs' in the PATH and find it,
+				# and other times it will not. Don't know why.
+				if not Path.directorySeparatorChar in cscPath
+					find = Utils.findFileInSystemPath(cscPath)
+					if find
+						if _verbosity >= 1, print 'Found "[cscPath]" at "[find]".'
+						_compileSharpWithProcessCSC(find, optChar, backEndOptions, sharpFileNameList)
+						return
 				.recordError(SourceException('Cannot find compiler specified by -native-compiler argument: [cscPath]'))
 				return
 			else
