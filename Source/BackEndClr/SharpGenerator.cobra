@@ -221,9 +221,11 @@ class Compiler is partial
 			nativeCompiler = .nativeCompiler
 			if nativeCompiler == 'provider'
 				# otherwise use Code Provider
-				_compileSharpWithCodeProvider(optChar, .joinOptions(backEndOptions), sharpFileNameList)
+				nativeCompiler = _compileSharpWithCodeProvider(optChar, .joinOptions(backEndOptions), sharpFileNameList) ? ''
+				if nativeCompiler <> ''
+					_compileSharpWithProcessCSC(nativeCompiler, optChar, .joinOptions(backEndOptions), sharpFileNameList)
 			else if nativeCompiler.endsWith('.dll')
-				# assume the user is specifying some kind of Cobra.Sharp.dll
+				# assume the user is specifying some kind of Cobra.Sharp*.dll
 				_compileSharpWithSharpCompilerLib(nativeCompiler, optChar, backEndOptions, sharpFileNameList)
 			else if nativeCompiler <> ''
 				# use Process class instead of CSharpCodeProvider because the user specified a path to a C# compiler
@@ -346,13 +348,18 @@ class Compiler is partial
 						_compileSharpWithProcessCSC(find, optChar, backEndOptions, sharpFileNameList)
 						return
 				.recordError(SourceException('Cannot find compiler specified by -native-compiler argument: [cscPath]'))
+				if Utils.isDevMachine
+					print exc
+					print 'errorCode:', exc.errorCode
+					print 'nativeErrorCode:', exc.nativeErrorCode
 				return
 			else
 				throw
 		# TODO: check p.exitCode, especially if output is empty
 		_parseSharpCompilerOutput(output)
 
-	def _compileSharpWithCodeProvider(optChar as String, backEndOptions as String, sharpFileNameList as List<of String>)
+	def _compileSharpWithCodeProvider(optChar as String, backEndOptions as String, sharpFileNameList as List<of String>) as String?
+		""" Returns a compiler to use if the CodeDom Compiler failed mysteriously. Otherwise, returns nil. """
 		provider = Microsoft.CSharp.CSharpCodeProvider()
 		cp = System.CodeDom.Compiler.CompilerParameters()
 		cp.compilerOptions = backEndOptions
@@ -366,7 +373,21 @@ class Compiler is partial
 			print '    generateExecutable =', cp.generateExecutable
 			print '    outputAssembly =', _fullExeFileName
 			print '    sharpFileNameList =', sharpFileNameList
-		cr = provider.compileAssemblyFromFile(cp, sharpFileNameList.toArray)
+		try
+			cr = provider.compileAssemblyFromFile(cp, sharpFileNameList.toArray)
+		catch exc as SystemException
+			# On Mono targeting CLR 2, the codedom provider works fine.
+			# However, on at least Mono 2.10.8.1 on Ubuntu 12.04 targeting CLR **4**
+			# this exception can be thrown:
+			#     SystemException: Error running dmcs: Cannot find the specified file
+			# ...despite the fact that dmcs is in the PATH, sits next to gmcs,
+			# works from the command line, etc.
+			if 'Error running dmcs: Cannot find the specified file' in exc.toString
+				if _verbosity >= 2, print 'CodeDom compiler failed for dmcs. Switching to external compiler.'
+				return 'dmcs'
+			else
+				throw
+			
 		if false
 			trace cr.compiledAssembly
 			trace cr.evidence
@@ -396,6 +417,7 @@ class Compiler is partial
 			output = if(cr.output.count==0, '', cr.output[1:].join('\n').trim)
 			# trace output
 			_parseSharpCompilerOutput(output)
+		return nil  # nil means that an external compiler does not have to be run
 
 	def _parseSharpCompilerOutput(output as String)
 		for line in output.split(c'\n')

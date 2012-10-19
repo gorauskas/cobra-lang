@@ -34,29 +34,41 @@ class BindRunTimeLibraryPhase inherits Phase
 
 		# Add the Cobra.Core run-time file paths to the compiler's pathsToCompile
 		c = .compiler
-		pathsToCompile = c.pathsToCompile
-		filesPath = Path.combine(Path.combine(.cobraExeDir, 'Cobra.Core'), 'files.text')
+		suffix = .options.embedRunTimeSuffix
+
+		cobraCoreDir = Path.combine(.cobraExeDir, 'Cobra.Core')
+		if not Directory.exists(cobraCoreDir)
+			.recordError('Cannot find Cobra.Core directory. Installation is bad.')
+			return
+		newDir = 'Cobra.Core' + suffix + '.tmp'
+		
+		if Directory.exists(newDir), Directory.delete(newDir, true)
+		Utils.copyDirectory(cobraCoreDir, newDir)
+		cobraCoreDir = newDir
+		
+		filesPath = Path.combine(cobraCoreDir, 'files.text')
 		runTimePaths = c.commandLineArgParser.readFilesFile(filesPath)
 		runTimePaths.reverse
+		
 		runTimeLibNativeSourceFileName = c.backEnd.runTimeLibNativeSourceFileName   # 'Native.cs', 'Native.m', etc.
 		assert runTimeLibNativeSourceFileName.count(c'.') == 1
 		for runTimePath in runTimePaths
 			if Path.getFileName(runTimePath) == runTimeLibNativeSourceFileName
-				suffix = .options.embedRunTimeSuffix
 				nativeCode = File.readAllText(runTimePath)
 				nativeCode = nativeCode.replace('namespace Cobra.Core', 'namespace Cobra.Core'+suffix)
 				newPath = Path.getFullPath(runTimeLibNativeSourceFileName.before('.') + suffix + '.' + runTimeLibNativeSourceFileName.after('.'))
 				File.writeAllText(newPath, nativeCode)
 				c.addIntermediateFile(newPath)
-				pathsToCompile.insert(0, newPath)
+				c.pathsToCompile.insert(0, newPath)
 			else
-				pathsToCompile.insert(0, runTimePath)
+				c.pathsToCompile.insert(0, runTimePath)
+		c.addIntermediateFile(cobraCoreDir)
 
 	def _subversionRevision as String
 		rev = SubversionUtils.readSubversionRevision('.', /#checkParentDirs=#/true)
 		if rev, return rev.toString
 		else, return ''
-		
+
 	def _refRunTime	
 		if .verbosity >= 2, print 'Referencing Cobra run-time'
 		.compiler.addRunTimeRef(.options)  # then reference run-time dll
