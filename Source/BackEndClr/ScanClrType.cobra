@@ -1,3 +1,11 @@
+"""
+References:
+
+	Reflection-only loading of assemblies
+	http://blogs.msdn.com/b/junfeng/archive/2004/08/24/219691.aspx
+"""
+
+
 class Compiler is partial
 
 	var _didLoadAssemblies = Set<of String>()
@@ -9,18 +17,19 @@ class Compiler is partial
 	var _clrTypeCache = Dictionary<of String, System.Type>()
 	
 	
-	def dotNetLoadReference(reference as String) as String?
+	def clrLoadReference(reference as String) as String?
 		try 
-			return 	__dotNetLoadReference(reference)
+			return 	_clrLoadReference(reference)
 		catch fnfe as System.IO.FileNotFoundException
 			throw LoadReferenceException('FileNotFound', fnfe.fileName, fnfe.message)
 		catch fle as System.IO.FileLoadException
 			throw LoadReferenceException('FileLoadException', fle.fileName ? reference, fle.message)
 
-	def __dotNetLoadReference(reference as String) as String?
-		# uses reference parameter
-		# compiler .referenceVerbosity, _willReadDependencies
-		# fills .loadedReferences		
+	def _clrLoadReference(reference as String) as String?
+		"""
+		uses compiler .referenceVerbosity, _willReadDependencies
+		fills compiler .loadedReferences
+		"""
 		require
 			reference.endsWith('.dll') or reference.endsWith('.exe')
 			reference not in ['.dll', '.exe']
@@ -31,56 +40,41 @@ class Compiler is partial
 			rv = .referenceVerbosity
 			assert not (reference.startsWith('-r') and '-r' in reference[2:])
 			couldNotFindMsg = 'Could not find file.'
-			if false
-				# Does not work on Novell Mono. See notes above.
-				referredAss = Assembly.reflectionOnlyLoadFrom(reference)
-				# TODO: handle all the exceptions from Assembly.loadFrom
+			if File.exists(reference)
+				# try current directory
+				if rv, print '"[reference]" found as file. Will _loadAssemblyFileNamed().'
+				referredAss = _loadAssemblyFileNamed(reference)
+				if rv, print '_loadAssemblyFileNamed() returned: [CobraCore.toTechString(referredAss)]'
 			else
-				if File.exists(reference)
-					# try current directory
-					if rv, print '"[reference]" found as file. Will Assembly.loadFrom().'
-					referredAss = Assembly.loadFrom(reference)
-					if rv, print 'Assembly.loadFrom() returned: [CobraCore.toTechString(referredAss)]'
-				else
-					# TODO: the problem with -lib: in both Cobra and C# is that it has no effect on runtime,
-					# you must still register the DLLs in the GAC or copy them into the same dir as the .exe
-					# because the -lib: paths are not passed into executable.
-					# So should Cobra copy the .dll's into the target directory (if their paths are not in MONO_PATH)?
-					if rv, print 'File does not exist.'
-					searchPaths = .options.getDefault('library-directory', List<of String>()) to List<of String>
-					# TODO: ?: searchPaths.add(Path.getDirectoryName(Assembly.getExecutingAssembly.location))  # try Cobra's directory - also should be added to .options.'library-directory' not to a local var
-					found = false
-					for searchPath in searchPaths
-						if rv, print 'Checking lib path: "[searchPath]"'
-						combinedPath = Path.combine(searchPath, reference)
-						if File.exists(combinedPath)
-							if rv, print '"[reference]" found as file. Will Assembly.loadFrom().'
-							referredAss = Assembly.loadFrom(combinedPath)
-							if rv, print 'Assembly.loadFrom() returned: [CobraCore.toTechString(referredAss)]'
-							found = true
-							break
-					if rv
-						if searchPaths.count
-							if not found, print 'Did not find "[reference]" in lib paths'
-						else
-							print 'No lib paths to search.'
-					if not found
-						# try system wide (GAC)
-						if reference.endsWith('.dll'), reference = reference[:-4]
-						if rv, print 'Will load with partial name "[reference]"'
-						referredAss = Utils.loadWithPartialName(reference)
-						if rv, print 'Load with partial name returned: [CobraCore.toTechString(referredAss)]'
-						if referredAss is nil, return couldNotFindMsg
-						# 2009-08-03 CE: Removed this code:
-						# reference = referredAss.location
-						# To address this:
-						# http://cobra-language.com/forums/viewtopic.php?f=4&t=501
-						# See also: ../Tests/720-libraries/100-microsoft/110-winforms-native-compiler.cobra
-						#           Note the -native-compiler option in that test which triggers this.
-						# Also, it doesn't see right to have to use the full path of a GAC-based assembly anyway.
-						# But still have to end in .dll or .exe:
-						reference += if(referredAss.location.endsWith('.exe'), '.exe', '.dll')
-				# TODO: handle all the exceptions from Assembly.loadFrom
+				# TODO: the problem with -lib: in both Cobra and C# is that it has no effect on runtime,
+				# you must still register the DLLs in the GAC or copy them into the same dir as the .exe
+				# because the -lib: paths are not passed into executable.
+				# So should Cobra copy the .dll's into the target directory (if their paths are not in MONO_PATH)?
+				if rv, print 'File does not exist.'
+				searchPaths = .options.getDefault('library-directory', List<of String>()) to List<of String>
+				found = false
+				for searchPath in searchPaths
+					if rv, print 'Checking lib path: "[searchPath]"'
+					combinedPath = Path.combine(searchPath, reference)
+					if File.exists(combinedPath)
+						if rv, print '"[reference]" found as file. Will _loadAssemblyFileNamed().'
+						referredAss = _loadAssemblyFileNamed(combinedPath)
+						if rv, print '_loadAssemblyFileNamed() returned: [CobraCore.toTechString(referredAss)]'
+						found = true
+						break
+				if rv
+					if searchPaths.count
+						if not found, print 'Did not find "[reference]" in lib paths'
+					else
+						print 'No lib paths to search.'
+				if not found
+					# try system wide (GAC)
+					if reference.endsWith('.dll'), reference = reference[:-4]
+					if rv, print 'Will load with partial name "[reference]"'
+					referredAss = _loadAssemblyPartialNamed(reference)
+					if rv, print 'Load with partial name returned: [CobraCore.toTechString(referredAss)]'
+					if referredAss is nil, return couldNotFindMsg
+					reference += if(referredAss.location.endsWith('.exe'), '.exe', '.dll')
 			if referredAss
 				if _willReadDependencies # wired false in Compiler.cobra
 					for dependency in referredAss.getReferencedAssemblies
@@ -88,15 +82,15 @@ class Compiler is partial
 							print '>> Loading dependency: [dependency]'
 							.indentPrint
 							try
-								_dotNetLoadAssembly(dependency)
+								_loadAssemblyNamed(dependency)
 							finally
 								.outdentPrint
 								print '<< Loading dependency: [dependency]'
 						else
-							_dotNetLoadAssembly(dependency)
+							_loadAssemblyNamed(dependency)
 				if rv, print 'Will read assembly: [referredAss]'
 				try
-					__dotNetReadAssembly(referredAss, reference <> 'Cobra.Core.dll')
+					_readAssembly(referredAss, reference <> 'Cobra.Core.dll')
 				catch readExc as Exception
 					if rv, print 'Caught exception during read assembly: [readExc]'
 					throw
@@ -111,19 +105,19 @@ class Compiler is partial
 				if rv, print 'Returning "[couldNotFindMsg]" for __dotNetLoadReference("[reference]").'
 				return couldNotFindMsg
 
-	def _dotNetLoadAssembly(assName as AssemblyName)
+	def _loadAssemblyNamed(assName as AssemblyName)
 		if .referenceVerbosity
 			print '>> loadAssembly [assName]'
 			.indentPrint
 			try
-				_loadAssembly(assName)
+				__loadAssemblyNamed(assName)
 			finally
 				.outdentPrint
 				print '<< loadAssembly [assName]'
 		else
-			_loadAssembly(assName)
+			__loadAssemblyNamed(assName)
 
-	def _loadAssembly(assName as AssemblyName)
+	def __loadAssemblyNamed(assName as AssemblyName)
 		rv = .referenceVerbosity - 1
 		if rv < 0, rv = 0
 		if assName.toString in _didLoadAssemblies
@@ -149,7 +143,7 @@ class Compiler is partial
 					print '>> Loading dependency: [dependency]'
 					.indentPrint
 					try
-						_dotNetLoadAssembly(dependency)
+						_loadAssemblyNamed(dependency)
 					finally
 						.outdentPrint
 						print '<< Loading dependency: [dependency]'
@@ -159,15 +153,37 @@ class Compiler is partial
 			if rv, print 'Caught exception during read assembly: [readExc]'
 			throw
 
+	def _loadAssemblyFileNamed(assemblyName as String) as Assembly?
+		if false
+			# to-do
+			return Assembly.reflectionOnlyLoadFrom(assemblyName)
+		else
+			return Assembly.loadFrom(assemblyName)
+
+	def _loadAssemblyPartialNamed(name as String) as Assembly?
+		# TODO: Holy crap! loadWithPartialName is marked obsolete,
+		# but I know of no other way to support a library reference like "compiler /r:System.Data.dll myprog.ext" as C#, Cobra, etc. do.
+		# Suggestions/solutions are welcome.
+		
+		# avoid warning: "System.Reflection.Assembly.LoadWithPartialName(string)" is obsolete
+		# return Assembly.loadWithPartialName(name)
+		# with dynamic binding:
+		assemblyType = Assembly to dynamic
+		try 
+			ass = assemblyType.loadWithPartialName(name)
+		catch System.Reflection.TargetInvocationException # or any Exception 
+			ass = nil
+		return ass
+
 	def clrReadAssembly(ass as Assembly)
 		"""
 		Reads the contents of an dotNet assembly (.DLL) so that they are accessible to the program.
 		Called by ClrTypeProxy.
 		"""
 		assert _backEnd.typeOf == ClrBackEnd # tmp guard
-		__dotNetReadAssembly(ass, false) # ScanClrType
+		_readAssembly(ass, false) # ScanClrType
 			
-	def __dotNetReadAssembly(ass as Assembly, skipCobra as bool)
+	def _readAssembly(ass as Assembly, skipCobra as bool)
 		"""
 		Reads the contents of an assembly (.DLL) so that they are accessible to the program.
 		In other words, this method reads libraries.
