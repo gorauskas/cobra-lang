@@ -67,7 +67,7 @@ class Compiler is partial
 						if not found, print 'Did not find "[reference]" in lib paths'
 					else
 						print 'No lib paths to search.'
-				if not found
+				if not found and not reference.hasSlash
 					# try system wide (GAC)
 					if reference.endsWith('.dll'), reference = reference[:-4]
 					if rv, print 'Will load with partial name "[reference]"'
@@ -106,6 +106,8 @@ class Compiler is partial
 				return couldNotFindMsg
 
 	def _loadAssemblyNamed(assName as AssemblyName)
+		# to-do: retire this?
+		throw Exception('not expecting this to be called')
 		if .referenceVerbosity
 			print '>> loadAssembly [assName]'
 			.indentPrint
@@ -153,27 +155,42 @@ class Compiler is partial
 			if rv, print 'Caught exception during read assembly: [readExc]'
 			throw
 
+	def _willLoadReflectionOnly as bool
+		# to-do: baby steps.
+		return false  # CobraCore.isRunningOnMono
+
 	def _loadAssemblyFileNamed(assemblyName as String) as Assembly?
-		if false
-			# to-do
-			return Assembly.reflectionOnlyLoadFrom(assemblyName)
-		else
-			return Assembly.loadFrom(assemblyName)
+		require
+			not assemblyName.contains('Culture=')
+			not assemblyName.contains('PublicKeyToken=')
+			File.exists(assemblyName)
+		body
+			if _willLoadReflectionOnly
+				# to-do
+				return Assembly.reflectionOnlyLoadFrom(assemblyName)
+			else
+				return Assembly.loadFrom(assemblyName)
 
 	def _loadAssemblyPartialNamed(name as String) as Assembly?
-		# TODO: Holy crap! loadWithPartialName is marked obsolete,
-		# but I know of no other way to support a library reference like "compiler /r:System.Data.dll myprog.ext" as C#, Cobra, etc. do.
-		# Suggestions/solutions are welcome.
+		require
+			not name.endsWith('.dll') and not name.endsWith('.exe')
+			not name.contains('Culture=')
+			not name.contains('PublicKeyToken=')
+			not name.hasSlash
+		body
+			# TODO: Holy crap! loadWithPartialName is marked obsolete,
+			# but I know of no other way to support a library reference like "compiler /r:System.Data.dll myprog.ext" as C#, Cobra, etc. do.
+			# Suggestions/solutions are welcome.
 		
-		# avoid warning: "System.Reflection.Assembly.LoadWithPartialName(string)" is obsolete
-		# return Assembly.loadWithPartialName(name)
-		# with dynamic binding:
-		assemblyType = Assembly to dynamic
-		try 
-			ass = assemblyType.loadWithPartialName(name)
-		catch System.Reflection.TargetInvocationException # or any Exception 
-			ass = nil
-		return ass
+			# avoid warning: "System.Reflection.Assembly.LoadWithPartialName(string)" is obsolete
+			# return Assembly.loadWithPartialName(name)
+			# with dynamic binding:
+			assemblyType = Assembly to dynamic
+			try 
+				ass = assemblyType.loadWithPartialName(name)
+			catch System.Reflection.TargetInvocationException # or any Exception 
+				ass = nil
+			return ass
 
 	def clrReadAssembly(ass as Assembly)
 		"""
