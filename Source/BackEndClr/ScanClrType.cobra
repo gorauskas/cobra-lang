@@ -71,7 +71,7 @@ class Compiler is partial
 					# try system wide (GAC)
 					if reference.endsWith('.dll'), reference = reference[:-4]
 					if rv, print 'Will load with partial name "[reference]"'
-					referredAss = _loadAssemblyPartialNamed(reference)
+					referredAss = _loadAssemblyWithSimpleName(reference)
 					if rv, print 'Load with partial name returned: [CobraCore.toTechString(referredAss)]'
 					if referredAss is nil, return couldNotFindMsg
 					reference += if(referredAss.location.endsWith('.exe'), '.exe', '.dll')
@@ -155,42 +155,128 @@ class Compiler is partial
 			if rv, print 'Caught exception during read assembly: [readExc]'
 			throw
 
+	var __willLoadReflectionOnly as bool?
+	
 	def _willLoadReflectionOnly as bool
-		# to-do: baby steps.
-		return false  # CobraCore.isRunningOnMono
+		if __willLoadReflectionOnly is nil
+			__willLoadReflectionOnly = CobraCore.isRunningOnMono and Environment.version.major >= 4
+			if .referenceVerbosity > 0, print 'Reflection-only:', __willLoadReflectionOnly
+		return __willLoadReflectionOnly to !
 
-	def _loadAssemblyFileNamed(assemblyName as String) as Assembly?
+	var __didInitForReflectionOnlyLoading = false
+	
+	def _loadAssemblyFileNamed(assemblyFileName as String) as Assembly?
 		require
-			not assemblyName.contains('Culture=')
-			not assemblyName.contains('PublicKeyToken=')
-			File.exists(assemblyName)
+			assemblyFileName.length > 0
+			not assemblyFileName.contains('Culture=')
+			not assemblyFileName.contains('PublicKeyToken=')
+			File.exists(assemblyFileName)
 		body
 			if _willLoadReflectionOnly
-				# to-do
-				return Assembly.reflectionOnlyLoadFrom(assemblyName)
+				if not __didInitForReflectionOnlyLoading
+					__didInitForReflectionOnlyLoading = true
+					curDomain = AppDomain.currentDomain
+					listen curDomain.reflectionOnlyAssemblyResolve, ref _onReflectionOnlyAssemblyResolve
+				return Assembly.reflectionOnlyLoadFrom(assemblyFileName)
 			else
-				return Assembly.loadFrom(assemblyName)
+				return Assembly.loadFrom(assemblyFileName)
 
-	def _loadAssemblyPartialNamed(name as String) as Assembly?
+	def _onReflectionOnlyAssemblyResolve(sender, args as ResolveEventArgs) as Assembly?
+		assName = args.name
+		rv = .referenceVerbosity - 1
+		if rv < 0, rv = 0
+		if assName in _didLoadAssemblies
+			if rv, print 'Already loaded.'
+			return nil
+		_didLoadAssemblies.add(args.name to !)
+		try
+			if rv, print 'Will Assembly.load([assName])'
+			ass = Assembly.reflectionOnlyLoad(assName)
+			if rv, print 'Did Assembly.load with result: [ass]'
+		catch fnfe as FileNotFoundException
+			if rv, print 'Did Assembly.load with exception: [fnfe]. Will try .reflectionOnlyLoad'
+			return Assembly.reflectionOnlyLoadFrom(assName)
+		catch exc as Exception
+			msg = 'Could not open assembly "[assName]" due to: [exc.getType.name]: [exc.message]'
+			if rv, print msg
+			throw SourceException(msg)
+		return ass
+
+	def _loadAssemblyWithSimpleName(name as String) as Assembly?
 		require
-			not name.endsWith('.dll') and not name.endsWith('.exe')
-			not name.contains('Culture=')
-			not name.contains('PublicKeyToken=')
+			name.length > 0
 			not name.hasSlash
+			not name.endsWith('.dll') and not name.endsWith('.exe')
+			not name.contains('Culture=') and not name.contains('PublicKeyToken=')
 		body
-			# TODO: Holy crap! loadWithPartialName is marked obsolete,
-			# but I know of no other way to support a library reference like "compiler /r:System.Data.dll myprog.ext" as C#, Cobra, etc. do.
-			# Suggestions/solutions are welcome.
+			if _willLoadReflectionOnly
+				# find this in the GAC
+				path = _pathForGacAssemblyWithSimpleName(name)
+				if path, return _loadAssemblyFileNamed(path)  # uu
+				else, return nil
+			else
+				# TODO: Holy crap! loadWithPartialName is marked obsolete,
+				# but I know of no other way to support a library reference like "compiler /r:System.Data.dll myprog.ext" as C#, Cobra, etc. do.
+				# Suggestions/solutions are welcome.
 		
-			# avoid warning: "System.Reflection.Assembly.LoadWithPartialName(string)" is obsolete
-			# return Assembly.loadWithPartialName(name)
-			# with dynamic binding:
-			assemblyType = Assembly to dynamic
-			try 
-				ass = assemblyType.loadWithPartialName(name)
-			catch System.Reflection.TargetInvocationException # or any Exception 
-				ass = nil
-			return ass
+				# avoid warning: "System.Reflection.Assembly.LoadWithPartialName(string)" is obsolete
+				# return Assembly.loadWithPartialName(name)
+				# with dynamic binding:
+				assemblyType = Assembly to dynamic
+				try 
+					ass = assemblyType.loadWithPartialName(name)
+				catch System.Reflection.TargetInvocationException # or any Exception 
+					ass = nil
+				return ass
+
+	var _gacPath as String?
+	
+	def _pathForGacAssemblyWithSimpleName(name as String) as String?
+		require
+			name.length > 0
+			not name.hasSlash
+			not name.endsWith('.dll') and not name.endsWith('.exe')
+			not name.contains('Culture=') and not name.contains('PublicKeyToken=')
+		ensure
+			result implies result.endsWith('.dll')
+		body
+			# only tested on Mono 2.10 + CLR 4 so far
+			rv = .referenceVerbosity
+			if _gacPath is nil
+				# find the gac
+				a = Assembly.getAssembly(System.Uri)
+					# System.Uri is in System.dll
+					# a=System, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089
+					# a.location='/usr/lib/mono/gac/System/2.0.0.0__b77a5c561934e089/System.dll'
+				sep = Path.directorySeparatorChar
+				_gacPath = a.location.split('[sep]System[sep]')[0]
+				if rv > 0, print 'Found gac at:', _gacPath
+				# ex: /usr/lib/mono/gac
+
+			path = Path.combine(_gacPath, name)
+			if rv > 0, print 'Checking:', path
+			# ex: # ex: /usr/lib/mono/gac/System.Data
+
+			if not Directory.exists(path)
+				if rv > 0, print 'Not found.'
+				return nil
+			subdirs = DirectoryInfo(path).getDirectories.toList
+			# ex: 4.0.0.0__b77a5c561934e089  2.0.0.0__b77a5c561934e089
+
+			subdirs.sort(do(d1 as DirectoryInfo, d2 as DirectoryInfo)=d2.name.compareTo(d1.name))
+			for subdir in subdirs
+				if subdir.name[0].isDigit
+					if rv > 0, print 'Found:', subdir.name
+					path = Path.combine(subdir.fullName, name+'.dll')
+					if rv > 0, print 'Full path:', path
+					if not File.exists(path)
+						if rv > 0, print 'Full path not found.'
+					else
+						return path
+			
+			if rv > 0, print 'Could not find in gac:', name
+			return nil
+
 
 	def clrReadAssembly(ass as Assembly)
 		"""
@@ -615,7 +701,7 @@ class Box is partial
 			if fieldInfo.isInitOnly or fieldInfo.isLiteral
 				# to-do: technically this is picking up 'readonly' as well
 				isNames.add('nonvirtual')
-				value = if(fieldInfo.isStatic, fieldInfo.getValue(nil), nil)
+				value = if(_clrType.assembly.reflectionOnly, nil, if(fieldInfo.isStatic, fieldInfo.getValue(nil), nil))
 				initExpr = SharpExpr(TokenFix.empty, if(value, .toString, 'nil'))  # DocGenerator.cobra uses this
 				boxConst = BoxConst(TokenFix.empty, TokenFix.empty, this, name, type, isNames, initExpr, attrs, '')
 				boxConst.binaryName = fieldInfo.name
@@ -986,7 +1072,7 @@ class Extension is partial
 		
 	def clrExtnNativeType(nativeType as NativeType) as NativeType
 		# the real extended type is the type of the first argument of any method
-		for methInfo in _clrType.getMethods 
+		for methInfo in _clrType.getMethods
 			nativeType = ClrNativeType(methInfo.getParameters[0].parameterType)
 			break
 		return nativeType
