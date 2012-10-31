@@ -172,6 +172,10 @@ class InstallFromWorkspace
 		if _args.count > 0, return _args.join(' ')
 		else, return '-turbo'
 
+	def envVar(name as String) as String?
+		require name.length > 0
+		return Environment.getEnvironmentVariable(name)
+
 	def isRunningOnCLR2 as bool
 		ver = Assembly.getAssembly(Object).imageRuntimeVersion
 		return ver.startsWith('v2.') or ver.startsWith('2.')
@@ -219,7 +223,7 @@ class InstallFromWorkspace
 	def setUpCLR4InMono(args as List<of String>)
 		# look for dmcs - the Mono C# .NET 4 compiler
 		found = false
-		for path in Environment.getEnvironmentVariable('PATH').split(c':')
+		for path in .envVar('PATH').split(c':')
 			dmcs = Path.combine(path, 'dmcs')
 			if File.exists(dmcs)
 				found = true
@@ -238,8 +242,11 @@ class InstallFromWorkspace
 		# the 'Windows' enum is only in .NET 4:
 		# windowsPath = Environment.getFolderPath(Environment.SpecialFolder.Windows)  # typically C:\Windows
 
+		# btw .NET 4.5 is an "in place" install over .NET 4 with no change in version info
+		# see http://blogs.msdn.com/b/dotnet/archive/2011/09/26/compatibility-of-net-framework-4-5.aspx
+
 		for envVarName in ['windir', 'WINDIR', 'systemroot', 'SYSTEMROOT']
-			windowsPath = Environment.getEnvironmentVariable(envVarName)
+			windowsPath = .envVar(envVarName)
 			if windowsPath and windowsPath <> ''
 				break
 		if windowsPath is nil or windowsPath == ''
@@ -520,12 +527,12 @@ class InstallFromWorkspace
 		print
 
 	def askNet4
-		.startStage('.NET 4.0 Prompt')
+		.startStage('.NET 4.0/4.5 Prompt')
 		if _willForceDotNet4
 			print '-net4 was passed on the command line'
 			answer = 'y'
 		else
-			print 'Cobra can be installed for .NET 2.0/3.0/3.5 or .NET 4.0.'
+			print 'Cobra can be installed for .NET 2.0/3.0/3.5 or .NET 4.0/4.5.'
 			default = 'n'
 			if CobraCore.isRunningOnMono
 				mono = CobraCore.monoVersionString
@@ -536,12 +543,12 @@ class InstallFromWorkspace
 						default = 'y'
 			else if .isRunningOnWindows
 				# windowsPath = Environment.getFolderPath(Environment.SpecialFolder.Windows) # .NET 4 only
-				windowsPath = Environment.getEnvironmentVariable('WINDIR') ? Environment.getEnvironmentVariable('SYSTEMROOT')
+				windowsPath = .envVar('WINDIR') ? .envVar('SYSTEMROOT')
 				if windowsPath
 					net4Path = Path.combine(windowsPath, r'Microsoft.NET\Framework\v4.0.30319\csc.exe')
 					if File.exists(net4Path), default = 'y'
 			while true
-				print 'Do you want to install for .NET 4.0? \[[default]] ' stop
+				print 'Do you want to install for .NET 4.0/4.5? \[[default]] ' stop
 				answer = Console.readLine.trim
 				if answer == '', answer = default
 				answer = answer[0].toString.toLower
@@ -583,28 +590,35 @@ class InstallFromWorkspace
 		if startStage, .startStage('Locate gacutil.exe')
 		errorMsg = 'Cannot locate a gacutil. Maybe you can try again using the "Visual Studio Command Prompt" or ".NET SDK Command Prompt".'
 		if _willForceDotNet4 and .isRunningOnCLR2 and .isRunningOnWindows
-			# gacutil must be run externally and must come from .NET 4:
-			dirs = [
-				r':\Program Files (x86)\Microsoft SDKs\Windows\v8.0A\bin\NETFX 4.0 Tools',
-				r':\Program Files (x86)\Microsoft SDKs\Windows\v7.1\Bin\NETFX 4.0 Tools',
-				r':\Program Files (x86)\Microsoft SDKs\Windows\v7.0A\Bin\NETFX 4.0 Tools',
-				r':\Program Files\Microsoft SDKs\Windows\v8.0A\bin\NETFX 4.0 Tools',
-				r':\Program Files\Microsoft SDKs\Windows\v7.1\Bin\NETFX 4.0 Tools',
-				r':\Program Files\Microsoft SDKs\Windows\v7.0A\Bin\NETFX 4.0 Tools',
-				# note the following is wrong as it will be gacutil 3.5:
-				# r':\Program Files (x86)\Microsoft SDKs\Windows\v7.0A\Bin'
-			]
-			programFilesDir = Environment.getFolderPath(Environment.SpecialFolder.ProgramFiles)
-			if programFilesDir.length >= 2, drive = programFilesDir[0].toString
-			else, drive = 'C'
-			for dir in dirs
-				gacutil = drive + dir + r'\gacutil.exe'
-				if File.exists(gacutil)
-					# to-do: verify version number is 4.x
-					_gacutil = gacutil
-					return
-			errorMsg += '\r\nYou may need to install the Windows SDK from http://www.microsoft.com/en-us/download/details.aspx?id=8279 (~0.5MB)'
-			.error(errorMsg)
+			prefixes = List<of String>()
+			pfiles = .envVar('PROGRAMFILES')
+			if pfiles, prefixes.add(pfiles)
+			pfiles = .envVar('ProgramW6432')
+			if pfiles, prefixes.add(pfiles)
+			if prefixes.count == 0
+				pfiles = Environment.getFolderPath(Environment.SpecialFolder.ProgramFiles)
+				if pfiles, prefixes.add(pfiles)
+			if prefixes.count == 0, .error('Cannot find a "Program Files" directory.')
+			for prefix in prefixes
+				# gacutil must be run externally and must come from .NET 4:
+				dirs = [
+					r'\Microsoft SDKs\Windows\v8.0A\bin\NETFX 4.0 Tools',
+					r'\Microsoft SDKs\Windows\v7.1\Bin\NETFX 4.0 Tools',
+					r'\Microsoft SDKs\Windows\v7.0A\Bin\NETFX 4.0 Tools',
+					r'\Microsoft SDKs\Windows\v8.0A\bin\NETFX 4.0 Tools',
+					r'\Microsoft SDKs\Windows\v7.1\Bin\NETFX 4.0 Tools',
+					r'\Microsoft SDKs\Windows\v7.0A\Bin\NETFX 4.0 Tools',
+					# note the following is wrong as it will be gacutil 3.5:
+					# r'\Microsoft SDKs\Windows\v7.0A\Bin'
+				]
+				for dir in dirs
+					gacutil = Path.combine(Path.combine(prefix, dir), r'\gacutil.exe')
+					if File.exists(gacutil)
+						# to-do: verify version number is 4.x
+						_gacutil = gacutil
+						return
+				errorMsg += '\r\nYou may need to install the Windows SDK (https://www.google.com/search?q=windows+sdk+.net+4)'
+				.error(errorMsg)
 		slash = .slash
 		gacutil = 'gacutil'
 		p = Process()
@@ -893,12 +907,12 @@ class InstallFromWorkspace
 		.startStage('Install "cobra" into a system path directory')
 		commandName = if(.isRunningOnUnix, 'cobra', 'cobra.bat')
 		slash = .slash
-		paths = (Environment.getEnvironmentVariable('PATH') ? '').split(Path.pathSeparator).toList
+		paths = (.envVar('PATH') ? '').split(Path.pathSeparator).toList
 		for commandDir in paths
 			if commandDir == '.', continue  # skip the 'cobra' in the <workspace>/Source directory
 			# print 'checking path:', commandDir
 			if commandDir.startsWith('~')
-				home = Environment.getEnvironmentVariable('HOME')
+				home = .envVar('HOME')
 				if home, commandDir = home + commandDir[1:]
 			commandPath = Path.getFullPath('[commandDir][slash][commandName]')
 			if File.exists(commandPath)
