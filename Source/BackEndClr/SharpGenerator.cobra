@@ -1102,10 +1102,11 @@ class Box is partial
 	
 			sw.writeAndIndent('{\n')
 			.writeSharpInvariantMethod(sw)
-			for tm in _testMethods
-				.compiler.boxMemberStack.push(tm)
-				try,     tm.writeSharpDef(sw)
-				finally, .compiler.boxMemberStack.pop
+			if not .isGenericDef
+				for tm in _testMethods
+					.compiler.boxMemberStack.push(tm)
+					try,     tm.writeSharpDef(sw)
+					finally, .compiler.boxMemberStack.pop
 			for decl in _declsInOrder
 				if not .willWriteDeclSharpDef(decl), continue
 				.compiler.boxMemberStack.push(decl)
@@ -1113,12 +1114,33 @@ class Box is partial
 					decl.writeSharpDef(sw)
 				finally
 					.compiler.boxMemberStack.pop
-			if .compiler.includeTests
-				.writeSharpTest(sw)
+			if .compiler.includeTests and not .isGenericDef, .writeSharpTest(sw)
 			sw.dedentAndWrite('} // [.sharpKeyWord] [.name]\n')
 			sw.write('\n')
 		finally
 			.compiler.boxStack.pop
+		if .compiler.includeTests and .isGenericDef, .writeSharpTestsForGeneric(sw)
+
+	def writeSharpTestsForGeneric(sw as CurlyWriter)
+		sw.write('public class [.sharpNameComponent]_Tests_[.serialNum] {\n')
+		sw.write('// tests for: [.name]\n')
+
+		for tm in _testMethods
+			.compiler.boxMemberStack.push(tm)
+			try,     tm.writeSharpDef(sw)
+			finally, .compiler.boxMemberStack.pop
+		.writeSharpTest(sw)
+
+		for decl in _declsInOrder
+			if not .willWriteDeclSharpDef(decl), continue
+			.compiler.boxMemberStack.push(decl)
+			try
+				# decl.writeSharpDef(sw)
+				(decl to BoxMember).writeSharpTest(sw)
+			finally
+				.compiler.boxMemberStack.pop
+
+		sw.write('}\n\n')
 
 	def willWriteDeclSharpDef(decl) as bool
 		return true
@@ -1514,8 +1536,7 @@ class ResultVar
 ##
 
 
-class BoxMember
-	is partial
+class BoxMember is partial
 
 	var _sharpExtraIsNames as Set<of String>?
 
@@ -1535,6 +1556,11 @@ class BoxMember
 		#return 'return: '
 		return ''
 
+	def includeSharpTestDirectly as bool
+		# cannot put static/shared test methods in a generic def since they cannot be invoked
+		# (without computing some type args which could end up being non-trivial)
+		return .compiler.includeTests and not .parentBox.isGenericDef
+		
 	def writeSharpTest(sw as CurlyWriter)
 		if _testMethods and _testMethods.count
 			for tm in _testMethods, tm.writeSharpDef(sw)
@@ -1671,8 +1697,7 @@ class BoxVar
 		return .type.isReference and not .type.nonNil inherits GenericParam
 
 
-class AbstractMethod
-	is partial
+class AbstractMethod is partial
 
 	get sharpGenericParams as String
 		"""
@@ -1908,8 +1933,7 @@ class Initializer is partial
 			_requirePart.writeSharpMethod(sw)
 		if _ensurePart
 			_ensurePart.writeSharpMethod(sw)
-		if .compiler.includeTests
-			.writeSharpTest(sw)
+		if .includeSharpTestDirectly, .writeSharpTest(sw)
 
 	def _fixIsNames
 		# suppress adding default access modifiers on static initializer
@@ -1966,7 +1990,7 @@ class Method
 			else, .writeSharpImp(sw, false)
 			if _requirePart, _requirePart.writeSharpMethod(sw)
 			if _ensurePart, _ensurePart.writeSharpMethod(sw)
-			if .compiler.includeTests, .writeSharpTest(sw)
+			if .includeSharpTestDirectly, .writeSharpTest(sw)
 
 	def writeSharpImpHeader(sw as CurlyWriter)
 		base.writeSharpImpHeader(sw)
@@ -2057,8 +2081,7 @@ class Property
 					setPart.ensurePart.writeSharpMethod(sw)
 			finally
 				.compiler.codeMemberStack.pop
-		if .compiler.includeTests
-			.writeSharpTest(sw)
+		if .includeSharpTestDirectly, .writeSharpTest(sw)
 
 
 class Indexer
@@ -2097,8 +2120,7 @@ class Indexer
 					setPart.ensurePart.writeSharpMethod(sw)
 			finally
 				.compiler.codeMemberStack.pop
-		if .compiler.includeTests
-			.writeSharpTest(sw)
+		if .includeSharpTestDirectly, .writeSharpTest(sw)
 
 
 class MemberOverload
