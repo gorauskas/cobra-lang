@@ -1,0 +1,118 @@
+"""
+dump-assembly.cobra
+
+A minimal program to dump the contents (sans bytecode implementation) of an assembly.
+Used in investigations.
+Specific to .NET.
+
+Windows:
+
+	dump-assembly.exe System.Data
+
+Unix-like:
+
+	mono dump-assembly.exe System.Data
+	mono dump-assembly.exe 'System.Transactions, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'
+
+"""
+
+use System.Reflection
+
+class DumpAssembly
+
+	def main
+		args = CobraCore.commandLineArgs[1:]
+		if args.count == 0
+			.usage
+			CobraCore.exit(1)
+		else
+			for arg in args
+				.dump(arg)
+	
+	def usage
+		program = Path.getFileName(CobraCore.commandLineArgs[0])
+		print '[program] ASSEMBLIES'
+
+	def error(msg as String)
+		print 'error: [msg]'
+		CobraCore.exit(1)
+
+	def dump(name as String)
+		print
+		print 'Loading [name] ' stop
+		if name.contains('PublicKeyToken=')
+			print 'with Assembly.load ...'
+			a = Assembly.load(name)
+		else
+			print 'with Assembly.loadWithPartialName'
+			a = Assembly.loadWithPartialName(name)
+		if a is nil
+			.error('Could not load.')
+		.dump(a)
+
+	def dump(a as Assembly)
+		.dumpHeader(a)
+		.dumpProperties(a)
+		.dumpReferencedAssemblies(a)
+		.dumpTypes(a)
+		.dumpFooter(a)
+	
+	def dumpHeader(a as Assembly)
+		.heading1('Assembly: [a]')
+
+	def dumpProperties(obj as Object)
+		.heading2('Properties')
+		props = obj.getType.getProperties(BindingFlags(Public, NonPublic, Instance, FlattenHierarchy)).toList
+		props.sort(do(a as PropertyInfo, b as PropertyInfo)=a.name.toLower.compareTo(b.name.toLower))
+		for prop in props
+			if prop.canRead
+				try
+					value = prop.getValue(obj, nil)
+					if value, value = .toTechString(value)
+				catch exc as Exception
+					value = '(exception: [exc])'
+				print '[prop.name] = [value]'
+
+	def dumpReferencedAssemblies(a as Assembly)
+		.heading2('Referenced Assemblies')
+		for ra in a.getReferencedAssemblies
+			print ra
+
+	def dumpTypes(a as Assembly)
+		.heading2('Types')
+		types = a.getTypes.toList
+		types.sort(do(t1 as Type, t2 as Type)=t1.fullName.toLower.compareTo(t2.fullName.toLower))
+		for t in types
+			print '[t.fullName] - ' stop
+			if t.isClass, print 'class'
+			else if t.isInterface, print 'interface'
+			else if t.isValueType, print 'struct'
+
+	def dumpFooter(a as Assembly)
+		print
+		print 'end of assembly', a
+
+	def toTechString(obj) as String
+		if obj is nil or _
+			obj inherits bool or _
+			obj inherits String or _
+			obj inherits int or _
+			obj inherits int64
+			# then
+			return CobraCore.toTechString(obj)
+		try
+			s = obj.toString
+		catch exc as Exception
+			s = '(toString exception: [exc])'
+		return '[obj.getType.name]: [s]'
+
+	def heading1(s as String)
+		print
+		print s
+		print String(c'=', s.length)
+	
+	def heading2(s as String)
+		print
+		print s
+		print String(c'-', s.length)
+		print
