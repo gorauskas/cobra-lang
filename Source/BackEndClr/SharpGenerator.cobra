@@ -635,36 +635,18 @@ class Container<of TMember>
 		return s
 
 	def writeSharpIsNames(sw as CurlyWriter)
-		# TODO: cache this somewhere
-		accessLevels = ['public', 'protected', 'internal', 'protected internal', 'private']
-		# CC: accessLevels = 'public,protected,internal,protected internal,private'.split(c',')
-			# same names in both Cobra and C#
-
-		# TODO:
-		# if isNames is nil
-		#	isNames = _isNames
-		isNames = List<of String>()
-		isNames.addRange(_isNames)
-		if .defaultAccessLevel.length
-			found = false
-			for level as String in accessLevels  # CC: axe as
-				if level in isNames
-					found = true
-			if not found
-				isNames.insert(0, .defaultAccessLevel)
 		isNameCS = {
 			# only have to specify the ones that are different
 			'shared': 'static',
 			'nonvirtual': '',
 		}
 		sep = ''
-		for name in isNames
+		for name in _isNames
 			name = isNameCS.get(name, name)
 			sw.write(sep)
 			sw.write(name)
 			sep = ' '
-		if sep.length
-			sw.write(' ')
+		if sep.length, sw.write(' ')
 
 	def writeSharpTestInvocation(sw as CurlyWriter)
 		pass
@@ -1294,9 +1276,16 @@ class Mixin is partial
 	get sharpKeyWord as String is override
 		return if(.canHaveStatements, 'class', 'interface')
 
+	shared
+		var _nonPublicVisibility = ['protected', 'internal', 'protected internal', 'private']
+
 	def willWriteDeclSharpDef(decl) as bool is override
 		# this is for writing the interface
-		return not decl inherits BoxVar and decl.isPublic
+		if decl inherits BoxVar, return false
+		for viz in _nonPublicVisibility
+			for name in decl.isNames
+				if name == viz, return false
+		return true 
 
 	def writeSharpDef(sw as CurlyWriter)
 		# write the interface
@@ -1586,9 +1575,6 @@ class BoxMember is partial
 			sw.write(parens[1].toString+' ')
 
 	def writeSharpIsNames(sw as CurlyWriter)
-		# TODO:
-		# if isNames is nil
-		#	isNames = _isNames
 		isNameCS = {
 			# only have to specify the ones that are different
 			'shared': 'static',
@@ -1609,8 +1595,7 @@ class BoxMember is partial
 					sw.write(sep)
 					sw.write(name)
 					sep = ' '
-		if sep.length
-			sw.write(' ')
+		if sep.length, sw.write(' ')
 
 	def writeSharpAttribs(sw as CurlyWriter)
 		for attrib in _attribs
@@ -1780,17 +1765,14 @@ class AbstractMethod is partial
 
 	def writeSharpPassArgs(sw as CurlyWriter, parens as String, excludeOutArgs as bool)
 		require parens.length==2 or parens==''
-		if parens.length
-			sw.write(parens[0])
+		if parens.length, sw.write(parens[0])
 		sep = ''
 		for param in _params
-			if excludeOutArgs and param.isOut
-				continue
+			if excludeOutArgs and param.isOut, continue
 			sw.write(sep)
 			sw.write(param.sharpName)
 			sep = ', '
-		if parens.length
-			sw.write(parens[1])
+		if parens.length, sw.write(parens[1])
 
 	def writeSharpLocals(sw as CurlyWriter, locals as List<of LocalVar>?, open as bool)
 		if open, sw.writeAndIndent('{\n')
@@ -1869,8 +1851,7 @@ class AbstractMethod is partial
 				sw.write('if (CobraCoreInternal.CobraCore._willCheckNil && [param.sharpName]==null) throw new System.ArgumentNullException("[param.name]");\n')
 
 	def writeDSTHead(sw as CurlyWriter)
-		if not .canHaveDetailedStackTrace
-			return
+		if not .canHaveDetailedStackTrace, return
 		# could be a neat option, -trace-methods, but maybe done with events:
 		# sw.writeLine('Console.WriteLine(">> [.parentBox.name].[.name]");')
 		sw.write('CobraCoreInternal.CobraImp.PushFrame("[.parentBox.name]", "[.name]", [Utils.sharpStringLiteralFor(.token.fullPathName)], [.token.lineNum]')
@@ -1883,8 +1864,7 @@ class AbstractMethod is partial
 		sw.writeAndIndent('try {\n')
 
 	def writeDSTTail(sw as CurlyWriter)
-		if not .canHaveDetailedStackTrace
-			return
+		if not .canHaveDetailedStackTrace, return
 		# sw.writeLine('Console.WriteLine("<< [.parentBox.name].[.name]");')
 		# this catch all clashes with yield statements. which is why .canHaveDetailedStackTrace returns false if a method has a yield statement.
 		sw.dedentAndWrite('} catch {\n')
@@ -1955,8 +1935,7 @@ class Method
 	get sharpGenericParams as String is override
 		params = .parentBox.extendedMethodGenericParams(_genericParams)
 		if params.count
-			sb = StringBuilder()
-			sb.append('<')
+			sb = StringBuilder('<')
 			sep = ''
 			for param in params
 				sb.append(sep)
