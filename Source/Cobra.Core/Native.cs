@@ -326,15 +326,14 @@ static public class CobraImp {
 		return false;
 	}
 
-        static bool In(Object a, Enum b) {
-            Type et = b.GetType();
-            if (! Enum.IsDefined(et, a))
-                return false;
-            int v = Convert.ToInt32((Enum)a);
-            int v1 = Convert.ToInt32(b);
-            return (v1 & v) == v;
-        }
-        
+	static bool In(Object a, Enum b) {
+		Type et = b.GetType();
+		if (!Enum.IsDefined(et, a)) return false;
+		int v = Convert.ToInt32((Enum)a);
+		int v1 = Convert.ToInt32(b);
+		return (v1 & v) == v;
+	}
+
 	static public bool In<T>(T a, IList<T> b) {
 		return b.Contains(a);
 	}
@@ -374,7 +373,7 @@ static public class CobraImp {
 			} else if (b is IDictionary) {
 				return In(a, (IDictionary)b);
 			} else if (b is Enum) {
-			    return In(a, (Enum)b);
+				return In(a, (Enum)b);
 			} else {
 				throw new CannotInTypeException(b, "b of `a in b`", b.GetType());
 			}
@@ -564,6 +563,26 @@ static public class CobraImp {
 				results.Add(value);
 		}
 		return results;
+	}
+
+	static public int PowerTo(int a, int b) {
+		// return (int) Math.Pow(a, b)
+		//  below is about 25x faster than calling Math.Pow
+		if (b == 0)
+			return 1;
+		int r = 0;
+		if (b > 0) {
+			r = a;
+			while (b > 1) {
+				r *= a;
+				b -= 1;
+			}
+		}
+		return r;
+	}
+
+	static public double PowerTo(double a, double b) {
+		return  System.Math.Pow(a, b);
 	}
 
 	// Support for TryCatchExpression 
