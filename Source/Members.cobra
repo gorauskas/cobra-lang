@@ -500,6 +500,11 @@ class BoxField inherits BoxMember is abstract, partial
 		base.addSubFields
 		.addField('initExpr', _initExpr)
 
+	get endToken as IToken
+		if _initExpr, return _initExpr.endToken
+		else if _typeNode, return _typeNode.endToken
+		else, return base.endToken
+
 	pro isAssignedTo from var
 
 	get requiresDotPrefix as bool
@@ -778,6 +783,13 @@ class AbstractMethod
 		_oldExprs = List<of OldExpr>()
 		_locals = List<of LocalVar>()
 		_stmts = List<of Stmt>()
+
+	get endToken as IToken
+		if _stmts.count, return _stmts.last.endToken
+		else if _ensurePart, return _ensurePart.endToken
+		else if _requirePart, return _requirePart.endToken
+		else if _returnTypeNode, return _returnTypeNode.endToken
+		else, return base.endToken
 
 	get params as IList<of Param> is override
 		return _params
@@ -1242,6 +1254,12 @@ class Method inherits AbstractMethod is partial
 			_isNames.remove('virtual')
 		_stmts = List<of Stmt>()
 
+	get endToken as IToken
+		endToken = base.endToken
+		if _implementsTypeNode and _implementsType.endToken.lineNum > endToken.lineNum
+			endToken = _implementsTypeNode.endToken
+		return endToken
+
 	get englishName as String is override
 		return 'method'
 
@@ -1483,6 +1501,15 @@ class ProperDexer
 		base.addSubFields
 		if _getPart, .addField('getPart', _getPart)
 		if _setPart, .addField('setPart', _setPart)
+
+	get endToken as IToken
+		endToken = base.endToken
+		if _getPart and _getPart.endToken.lineNum > endToken.lineNum, endToken = _getPart.endToken
+		if _setPart and _setPart.endToken.lineNum > endToken.lineNum, endToken = _setPart.endToken
+		if _coverVar and _coverVar.endToken.lineNum > endToken.lineNum, endToken = _coverVar.endToken
+		if _returnTypeNode and _returnTypeNode.endToken.lineNum > endToken.lineNum
+			endToken = _returnTypeNode.endToken
+		return endToken
 
 	get returnType from var
 
@@ -1845,7 +1872,7 @@ class ContractPart
 	The abstract base class for RequirePart and EnsurePart.
 	"""
 
-	var _connectToken as IToken?
+	var _connectToken as IToken?  # ex: or, and
 	var _codeMember as AbstractMethod
 	var _exprs as List<of Expr>
 
@@ -1872,6 +1899,9 @@ class ContractPart
 	get codeMember from var
 
 	get connectWord as String is abstract
+
+	get endToken as IToken
+		return if(_exprs.count, _exprs.last.endToken, base.endToken)
 
 	get exprs from var
 		has Subnodes
