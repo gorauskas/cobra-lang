@@ -400,6 +400,10 @@ class AnonymousMethodExpr inherits AnonymousExpr is partial
 		base.init(token, params, returnTypeProxy)
 		_stmts = List<of Stmt>()
 
+	get endToken as IToken
+		if .stmts.count, return .stmts.last.endToken
+		else, return base.endToken
+
 	get stmts from var as List<of Stmt>
 	
 	def addStmt(stmt as Stmt)
@@ -425,6 +429,9 @@ class LambdaExpr inherits AnonymousExpr is partial
 	cue init(token as IToken, params as List<of Param>, returnTypeProxy as ITypeProxy?, expr as Expr)
 		base.init(token, params, returnTypeProxy)
 		_expr = expr
+
+	get endToken as IToken is override
+		return .expr.endToken
 
 	get allExprs as Expr*
 		for expr in base.allExprs, yield expr
@@ -485,6 +492,9 @@ class AsExpr
 
 	get canBeStatement as bool is override
 		return true
+
+	get endToken as IToken is override
+		return _typeNode.endToken
 
 	def _bindImp is override
 		base._bindImp
@@ -619,6 +629,10 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 	get allExprs as Expr*
 		for expr in base.allExprs, yield expr
 		for arg in .args, for expr in arg.allExprs, yield expr
+
+	get endToken as IToken
+		if .args.count, return .args.last.endToken
+		else, return base.endToken				
 
 	get genericArgProxies from var
 	
@@ -973,6 +987,10 @@ class EnumCallExpr
 		for expr in base.allExprs, yield expr
 		for arg in .args, for expr in arg.allExprs, yield expr
 
+	get endToken as IToken
+		if .args.count, return .args.last.endToken
+		else, return base.endToken
+
 	get name from var
 	
 	get args from var
@@ -1067,6 +1085,15 @@ class ForExpr inherits Expr is partial
 		if .stop, for expr in .stop.allExprs, yield expr
 		if .step, for expr in .step.allExprs, yield expr
 
+	get endToken as IToken is override
+		t = _nameExpr.endToken
+		if _whereExpr and _whereExpr.endToken.lineNum > t.lineNum, t = _whereExpr.endToken
+		if _getExpr.endToken.lineNum > t.lineNum, t = _getExpr.endToken
+		if _start and _start.endToken.lineNum > t.lineNum, t = _start.endToken
+		if _stop and _stop.endToken.lineNum > t.lineNum, t = _stop.endToken
+		if _step and _step.endToken.lineNum > t.lineNum, t = _stop.endToken
+		return t	
+
 	get nameExpr from _nameExpr
 
 	get what from _what
@@ -1146,6 +1173,9 @@ class TryCatchExpr inherits Expr is partial
 		.addField('what', _what)
 		.addField('typeNode', _typeNode)
 		.addField('getExpr', _getExpr)
+	
+	get endToken as IToken is override
+		return _getExpr.endToken
 
 	get what from _what
 	get typeNode from _typeNode
@@ -1321,6 +1351,9 @@ class IfExpr
 		for expr in .tpart.allExprs, yield expr
 		for expr in .fpart.allExprs, yield expr
 
+	get endToken as IToken is override
+		return _fpart.endToken
+
 	get cond from var
 	
 	get tpart from var
@@ -1397,6 +1430,10 @@ class IndexExpr inherits Expr is partial
 		for expr in base.allExprs, yield expr
 		for expr in .target.allExprs, yield expr
 		for arg in .args, for expr in arg.allExprs, yield expr
+
+	get endToken as IToken
+		if .args.count, return .args.last.endToken
+		else, return base.endToken
 
 	get definition is override
 		return _definition
@@ -1498,13 +1535,7 @@ class IndexExpr inherits Expr is partial
 		return sb.toString
 
 
-class IsNilExpr
-	is partial
-	inherits Expr
-
-	var _expr as Expr
-	get expr from var
-
+class IsNilExpr inherits Expr is partial	
 
 	cue init(token as IToken, expr as Expr)
 		base.init(token)
@@ -1513,6 +1544,11 @@ class IsNilExpr
 	get allExprs as Expr*
 		for expr in base.allExprs, yield expr
 		for expr in .expr.allExprs, yield expr
+
+	get expr from var as Expr
+
+	get endToken as IToken is override
+		return .expr.endToken
 
 	get willChangeVar as bool is override
 		if _expr.willChangeVar, return true
@@ -1524,11 +1560,7 @@ class IsNilExpr
 		_type = .compiler.boolType
 
 
-class IsNotNilExpr
-	is partial
-	inherits Expr
-
-	var _expr as Expr
+class IsNotNilExpr inherits Expr is partial
 
 	cue init(token as IToken, expr as Expr)
 		base.init(token)
@@ -1538,7 +1570,10 @@ class IsNotNilExpr
 		for expr in base.allExprs, yield expr
 		for expr in .expr.allExprs, yield expr
 
-	get expr from var
+	get endToken as IToken is override
+		return .expr.endToken
+
+	get expr from var as Expr
 
 	get willChangeVar as bool is override
 		if _expr.willChangeVar, return true
@@ -1720,6 +1755,9 @@ class OldExpr
 		for expr in base.allExprs, yield expr
 		for expr in .expr.allExprs, yield expr
 
+	get endToken as IToken is override
+		return .expr.endToken
+
 	get expr from var as Expr
 	
 	get name as String
@@ -1798,6 +1836,10 @@ class PostCallExpr
 
 	get canBeStatement as bool is override
 		return true
+
+	get endToken as IToken is override
+		if .args.count, return .args.last.endToken
+		else, return .expr.endToken
 
 	get expr from var
 
@@ -2040,6 +2082,9 @@ class RefExpr inherits Expr is partial
 		for expr in base.allExprs, yield expr
 		for expr in .expr.allExprs, yield expr
 
+	get endToken as IToken is override
+		return .expr.endToken
+
 	get expr from var as Expr
 
 	get willChangeVar as bool is override
@@ -2113,6 +2158,9 @@ class SharpExpr
 	get canBeStatement as bool is override
 		return true
 
+	get endToken as IToken is override
+		return .expr.endToken
+
 	get sharpSource from var
 	
 	get expr from var
@@ -2163,6 +2211,13 @@ class SliceExpr
 		if .start, for expr in .start.allExprs, yield expr
 		if .stop, for expr in .stop.allExprs, yield expr
 		if .step, for expr in .step.allExprs, yield expr
+
+	get endToken as IToken is override
+		t = _target.endToken
+		if _start, t = _start.endToken
+		if _stop, t = _stop.endToken
+		if _step, t = _step.endToken
+		return t
 
 	get willChangeVar as bool is override
 		if _target.willChangeVar, return true
@@ -2289,6 +2344,9 @@ class TruthExpr
 		for expr in base.allExprs, yield expr
 		for expr in .expr.allExprs, yield expr
 
+	get endToken as IToken is override
+		return .expr.endToken
+
 	get expr from var
 
 	get willChangeVar as bool is override
@@ -2397,6 +2455,14 @@ class TypeExpr
 	get definition is override
 		return _containedType
 
+	get endToken as IToken is override
+		if _typeNode
+			t = _typeNode.endToken
+			if t.isEmpty, t = base.endToken
+		else
+			t = base.endToken
+		return t
+
 	get _innerHasError as bool
 		return base._innerHasError or (.typeNode and .typeNode.hasError)
 
@@ -2451,6 +2517,9 @@ class AllOrAnyExpr
 		for expr in .expr.allExprs, yield expr
 
 	get opName as String is abstract
+
+	get endToken as IToken is override
+		return .expr.endToken
 
 	get expr from var
 
@@ -2531,6 +2600,9 @@ class UnaryOpExpr
 	get allExprs as Expr*
 		for expr in base.allExprs, yield expr
 		for expr in .expr.allExprs, yield expr
+
+	get endToken as IToken is override
+		return .expr.endToken
 
 	get willChangeVar as bool is override
 		if _expr.willChangeVar, return true
@@ -2850,6 +2922,10 @@ class StringSubstLit
 		for expr in base.allExprs, yield expr
 		for item in .items, for expr in item.allExprs, yield expr
 
+	get endToken as IToken
+		if .items.count, return .items.last.endToken
+		else, return base.endToken
+
 	get items from var
 		has Subnodes
 
@@ -2891,6 +2967,9 @@ class FormattedExpr
 	get allExprs as Expr*
 		for expr in base.allExprs, yield expr
 		for expr in .expr.allExprs, yield expr
+
+	get endToken as IToken is override
+		return .expr.endToken
 
 	get expr from var
 
@@ -3016,6 +3095,10 @@ class SequenceLit
 		for expr in base.allExprs, yield expr
 		for expr in .exprs, for expr2 in expr.allExprs, yield expr2
 
+	get endToken as IToken
+		if .exprs.count, return .exprs.last.endToken
+		else, return base.endToken
+
 	get exprs from var
 		has Subnodes
 
@@ -3139,6 +3222,10 @@ class DictLit inherits CompositeLiteral is partial
 		for expr in base.allExprs, yield expr
 		for entry in .entries, for element in entry, for expr in element.allExprs, yield expr
 
+	get endToken as IToken
+		if .entries.count, return .entries.last.last.endToken
+		else, return base.endToken
+
 	get willChangeVar as bool is override
 		for entry in _entries
 			for expr in entry
@@ -3219,6 +3306,9 @@ class ToNilableOrNotExpr
 	get allExprs as Expr*
 		for expr in base.allExprs, yield expr
 		for expr in .expr.allExprs, yield expr
+
+	get endToken as IToken is override
+		return .expr.endToken
 
 	get rightTok from var
 	
@@ -3316,6 +3406,10 @@ class ChainedCompareExpr inherits Expr is partial
 	get allExprs as Expr*
 		for expr in base.allExprs, yield expr
 		for item in .items, for expr in item.allExprs, yield expr
+
+	get endToken as IToken
+		if .items.count, return .items.last.endToken
+		else, return base.endToken
 
 	get items from var
 
