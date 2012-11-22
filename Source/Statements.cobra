@@ -1088,66 +1088,68 @@ class RaiseStmt
 			catch ne as NodeException
 				.compiler.recordError(ne)
 				hasError = true
-		if not hasError
-			expr = _exprs[0]
-			if expr inherits DotExpr
-				right = expr.dotRight
-				defi = right.definition
-				if defi inherits BoxEvent
-					if right inherits CallExpr
-						.throwError('Cannot call events. The general form is "raise .<event>, \[<sender>], <arg1>, <arg2>, ...".')
-					_definition = defi
-					_name = defi.name
-					_eventType = defi.handlerType
-				else
-					.throwError('Expecting an event to raise.')
-			else if expr inherits IdentifierExpr  # ex: raise _eventName
-				_name = expr.name
-				_eventType = expr.potentialType
-				if not _eventType
-					hint = ''
-					if expr.type inherits MethodSig 
-						hint = ' Use "[_name](args)" to invoke the method reference (delegate).'
-					.throwError('The target of "raise" is not an event.[hint]')
-				if _eventType.isDescendantOf(.compiler.delegateType)
-					pass
-				else if _eventType.isDescendantOf(.compiler.exceptionType)
-					.throwError('Use "throw" instead of "raise" for the exception "[_eventType.name]".')
-				else
-					.throwError('Invalid expression for raising events. Use "raise .someEvent, args" or "throw SomeException(args)".')
+		if hasError, return
+		expr = _exprs[0]
+		if expr inherits DotExpr
+			right = expr.dotRight
+			defi = right.definition
+			if defi inherits BoxEvent
+				if not expr.left inherits ThisLit
+					# C# disallows raising events for other classes (though I presume inheritance is okay)
+					# Currently, Cobra is a little stricter and does not allow it even on other instances.
+					.throwError('Cannot raise events for other objects.')
+				if right inherits CallExpr
+					.throwError('Cannot call events. The general form is "raise .<event>, \[<sender>], <arg1>, <arg2>, ...".')
+				_definition, _name, _eventType = defi, defi.name, defi.handlerType
+			else
+				.throwError('Expecting an event to raise.')
+		else if expr inherits IdentifierExpr  # ex: raise _eventName
+			_name = expr.name
+			_eventType = expr.potentialType
+			if not _eventType
+				hint = ''
+				if expr.type inherits MethodSig 
+					hint = ' Use "[_name](args)" to invoke the method reference (delegate).'
+				.throwError('The target of "raise" is not an event.[hint]')
+			if _eventType.isDescendantOf(.compiler.delegateType)
+				pass
+			else if _eventType.isDescendantOf(.compiler.exceptionType)
+				.throwError('Use "throw" instead of "raise" for the exception "[_eventType.name]".')
 			else
 				.throwError('Invalid expression for raising events. Use "raise .someEvent, args" or "throw SomeException(args)".')
-			if _eventType inherits MethodSig
-				_params = _eventType.params
+		else
+			.throwError('Invalid expression for raising events. Use "raise .someEvent, args" or "throw SomeException(args)".')
+		if _eventType inherits MethodSig
+			_params = _eventType.params
+		else
+			member = _eventType.memberForName('invoke')
+			if member inherits Method
+				_params = member.params
 			else
-				member = _eventType.memberForName('invoke')
-				if member inherits Method
-					_params = member.params
-				else
-					.throwError('Cannot find a single "invoke" method for "_eventType.name".')
-			# TODO: check type compatibility of exprs with params
-			args = _exprs[1:]
-			params = _params
-			unThis = 'Unnecessary "this" which is already implied by raising an event. You can remove it.'
-			if args.count == params.count
-				if args.count > 0 and args[0] inherits ThisLit
-					.compiler.warning(this, unThis)
-			else if args.count == params.count - 1
-				# off by one.
-				if args[0] inherits ThisLit
-					.compiler.warning(this, unThis)
-					# since we have 'this', try appending the args object
-					args.add(_postCallForType(params[params.count-1].type))
-				else
-					# since we don't have 'this', try prepending 'this'
-					args.insert(0, ThisLit(.token).bindImp)
-			else if args.count == 0 and params.count == 2
-				# missing both 'this' and event args
-				args.add(ThisLit(.token).bindImp)
+				.throwError('Cannot find a single "invoke" method for "_eventType.name".')
+		# TODO: check type compatibility of exprs with params
+		args = _exprs[1:]
+		params = _params
+		unThis = 'Unnecessary "this" which is already implied by raising an event. You can remove it.'
+		if args.count == params.count
+			if args.count > 0 and args[0] inherits ThisLit
+				.compiler.warning(this, unThis)
+		else if args.count == params.count - 1
+			# off by one.
+			if args[0] inherits ThisLit
+				.compiler.warning(this, unThis)
+				# since we have 'this', try appending the args object
 				args.add(_postCallForType(params[params.count-1].type))
 			else
-				.throwError('Event expects [params.count] arguments, but the "raise" statement is providing [args.count].')
-			_args = args
+				# since we don't have 'this', try prepending 'this'
+				args.insert(0, ThisLit(.token).bindImp)
+		else if args.count == 0 and params.count == 2
+			# missing both 'this' and event args
+			args.add(ThisLit(.token).bindImp)
+			args.add(_postCallForType(params[params.count-1].type))
+		else
+			.throwError('Event expects [params.count] arguments, but the "raise" statement is providing [args.count].')
+		_args = args
 
 	def _postCallForType(type as IType) as PostCallExpr		
 		init = type.memberForName('cue.init')
