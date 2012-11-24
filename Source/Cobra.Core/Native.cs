@@ -565,6 +565,18 @@ static public class CobraImp {
 		return results;
 	}
 
+	static public decimal IntDiv(decimal a, decimal b) {
+		return Math.Floor(a / b);
+	}
+	
+	static public double IntDiv(double a, double b) {
+		return Math.Floor(a / b);
+	}
+	
+	static public float IntDiv(float a, float b) {
+		return (float)Math.Floor(a / b);
+	}
+	
 	static public int PowerTo(int a, int b) {
 		// return (int) Math.Pow(a, b)
 		//  below is about 25x faster than calling Math.Pow
