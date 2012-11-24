@@ -396,13 +396,6 @@ class NumericPromoExpr inherits BinaryOpExpr is partial
 	
 
 class AugAssignMathExpr inherits NumericPromoExpr is partial
-	"""
-	TODO: How should:
-		someInt /= someInt
-	be handled given that
-		someInt / someInt
-	gives a decimal?
-	"""
 
 	# TODO: does not inherit AbstractAssignExpr.
 	# TODO: Does not participate in -detailed-stack-trace
@@ -440,6 +433,9 @@ class AugAssignMathExpr inherits NumericPromoExpr is partial
 				else
 					msg = 'Cannot use the operator "[.token.text]" on events or delegates.'
 			.throwError(msg)
+		else if .op == 'SLASH_EQUALS' and .left.type.nonNil.isDescendantOf(.compiler.anyIntType)
+			.throwError('Cannot use fractional division (/=) to modify an integer. Use integer division (//=) instead.')
+
 
 class AugAssignBitwiseExpr
 	is partial
@@ -493,9 +489,7 @@ class BinaryBitwiseExpr
 		base._bindImp
 
 
-class BinaryMathExpr
-	is partial
-	inherits NumericPromoExpr
+class BinaryMathExpr inherits NumericPromoExpr is partial
 
 	cue init(opToken as IToken, op as String, left as Expr, right as Expr)
 		base.init(opToken, op, left, right)
