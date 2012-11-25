@@ -577,24 +577,27 @@ static public class CobraImp {
 		return (float)Math.Floor(a / b);
 	}
 	
-	static public int PowerTo(int a, int b) {
+	static public int PowerTo(int base_, int exponent) {
 		// return (int) Math.Pow(a, b)
-		//  below is about 25x faster than calling Math.Pow
-		if (b == 0)
-			return 1;
+		//   below is about 25x faster than calling Math.Pow
+		if (exponent < 0) {
+			var msg = string.Format("Exponent is negative for 'base ** exponent' where both are ints. Cast one to a fractional type (number, decimal, float). Exponent = {0}", exponent);
+			throw new InvalidOperationException(msg);
+		}
+		if (exponent == 0) return 1;
 		int r = 0;
-		if (b > 0) {
-			r = a;
-			while (b > 1) {
-				r *= a;
-				b -= 1;
+		if (exponent > 0) {
+			r = base_;
+			while (exponent > 1) {
+				r *= base_;
+				exponent--;
 			}
 		}
 		return r;
 	}
 
-	static public double PowerTo(double a, double b) {
-		return  System.Math.Pow(a, b);
+	static public double PowerTo(double base_, double exponent) {
+		return System.Math.Pow(base_, exponent);
 	}
 
 	// Support for TryCatchExpression 
