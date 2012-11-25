@@ -585,17 +585,35 @@ static public class CobraImp {
 			throw new InvalidOperationException(msg);
 		}
 		if (exponent == 0) return 1;
-		int r = 0;
+		if (base_ == 0 || base_ == 1) return base_;
+		int result = 0;
 		if (exponent > 0) {
-			r = base_;
+			result = base_;
 			while (exponent > 1) {
-				r *= base_;
+				result *= base_;
 				exponent--;
 			}
 		}
-		return r;
+		return result;
 	}
 
+	static public decimal PowerTo(decimal base_, decimal exponent) {
+		// credit: CommonLibrary.NET which is also open source under MIT license
+		if (exponent == 0) return 1;
+		if (base_ == 0 || base_ == 1) return base_;
+		var result = base_;
+		// case: exponent has fractional part
+		if (Math.Truncate(exponent) < exponent)
+			return (decimal)Math.Pow(Decimal.ToDouble(base_), Decimal.ToDouble(exponent));
+		// case: positive exponent
+		var power = exponent < 0 ? Math.Abs(exponent) : exponent;
+		for (var i = 1; i < power; i++)
+			result *= base_;
+		if (exponent > 0) return result;
+		// case: negative exponent
+		return 1m / result;
+	}
+	
 	static public double PowerTo(double base_, double exponent) {
 		return System.Math.Pow(base_, exponent);
 	}
