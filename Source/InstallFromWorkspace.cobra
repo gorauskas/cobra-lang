@@ -146,10 +146,10 @@ class InstallFromWorkspace
 		.askNet4
 		.verifyVirtualMachineVersion
 		.locateSnapshotCompiler
-		# .locateGacUtil
 		.buildCobraCompiler
 		.getBaseVersion
 		if not _skipStdLib
+			.locateGacUtil
 			for lib in .libs
 				# keys: name, flags
 				libName = lib['name']
@@ -586,15 +586,15 @@ class InstallFromWorkspace
 		assert 'Copyright' in output
 		assert 'Usage' in output
 
-	def locateGacUtil(startStage as bool)
-		if startStage, .startStage('Locate gacutil.exe')
+	def locateGacUtil
+		if _gacutil, return
+		.startStage('Locate gacutil.exe')
 		errorMsg = 'Cannot locate a gacutil. Maybe you can try again using the "Visual Studio Command Prompt" or ".NET SDK Command Prompt".'
 		if _willForceDotNet4 and .isRunningOnCLR2 and .isRunningOnWindows
 			prefixes = List<of String>()
-			pfiles = .envVar('PROGRAMFILES')
-			if pfiles, prefixes.add(pfiles)
-			pfiles = .envVar('ProgramW6432')
-			if pfiles, prefixes.add(pfiles)
+			for varName in ['PROGRAMFILES', 'ProgramFiles(x86)', 'ProgramW6432']
+				pfiles = .envVar(varName)
+				if pfiles and pfiles.length and pfiles not in prefixes, prefixes.add(pfiles)
 			if prefixes.count == 0
 				pfiles = Environment.getFolderPath(Environment.SpecialFolder.ProgramFiles)
 				if pfiles, prefixes.add(pfiles)
@@ -616,9 +616,11 @@ class InstallFromWorkspace
 					if File.exists(gacutil)
 						# to-do: verify version number is 4.x
 						_gacutil = gacutil
+						print 'Found:', _gacutil
+						print
 						return
-				errorMsg += '\r\nYou may need to install the Windows SDK (https://www.google.com/search?q=windows+sdk+.net+4)'
-				.error(errorMsg)
+			errorMsg += '\r\nYou may need to install the Windows SDK (https://www.google.com/search?q=windows+sdk+.net+4)'
+			.error(errorMsg)
 		slash = .slash
 		gacutil = 'gacutil'
 		p = Process()
@@ -674,7 +676,8 @@ class InstallFromWorkspace
 
 		if not found, .error(errorMsg)
 		_gacutil = gacutil
-		if startStage, print
+		print 'Found:', _gacutil
+		print
 
 	def buildCobraCompiler
 		.startStage('Build new Cobra compiler')
@@ -739,7 +742,7 @@ class InstallFromWorkspace
 		dllName = name + '.dll'
 		if _willForceDotNet4 and .isRunningOnCLR2 and .isRunningOnWindows
 			# have to run gacutil command line
-			.locateGacUtil(false)
+			.locateGacUtil
 			.runCommand(_gacutil, '-i [dllName] -f')
 		else
 			try
@@ -750,7 +753,7 @@ class InstallFromWorkspace
 			catch NotImplementedException
 				print 'Not implemented exception.'
 				print 'Will attempt to use gacutil.exe.'
-				.locateGacUtil(false)
+				.locateGacUtil
 				.runCommand(_gacutil, '-i [dllName] -f')
 			catch e as Exception
 				print '[e.getType] e.message'
@@ -782,7 +785,7 @@ class InstallFromWorkspace
 			File.move(tmpFileName, dllName)
 		catch NotImplementedException
 			print 'Attempting to use gacutil.'
-			if not _gacutil, .locateGacUtil(false)
+			if not _gacutil, .locateGacUtil
 			output = .runCommand(_gacutil, '-l Cobra.Core')
 			if '[dllName], Version=' in output
 				print '[dllName] has been successfully installed to the GAC.'
