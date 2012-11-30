@@ -581,7 +581,7 @@ static public class CobraImp {
 		// return (int) Math.Pow(a, b)
 		//   below is about 25x faster than calling Math.Pow
 		if (exponent < 0) {
-			var msg = string.Format("Exponent is negative for 'base ** exponent' where both are ints. Cast one to a fractional type (number, decimal, float). Exponent = {0}", exponent);
+			string msg = string.Format("Exponent is negative for 'base ** exponent' where both are ints. Cast one to a fractional type (number, decimal, float). Exponent = {0}", exponent);
 			throw new InvalidOperationException(msg);
 		}
 		if (exponent == 0) return 1;
@@ -601,13 +601,13 @@ static public class CobraImp {
 		// credit: CommonLibrary.NET which is also open source under MIT license
 		if (exponent == 0) return 1;
 		if (base_ == 0 || base_ == 1) return base_;
-		var result = base_;
+		decimal result = base_;
 		// case: exponent has fractional part
 		if (Math.Truncate(exponent) < exponent)
 			return (decimal)Math.Pow(Decimal.ToDouble(base_), Decimal.ToDouble(exponent));
 		// case: positive exponent
-		var power = exponent < 0 ? Math.Abs(exponent) : exponent;
-		for (var i = 1; i < power; i++)
+		decimal power = exponent < 0 ? Math.Abs(exponent) : exponent;
+		for (int i = 1; i < power; i++)
 			result *= base_;
 		if (exponent > 0) return result;
 		// case: negative exponent
