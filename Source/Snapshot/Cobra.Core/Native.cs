@@ -326,6 +326,14 @@ static public class CobraImp {
 		return false;
 	}
 
+	static bool In(Object a, Enum b) {
+		Type et = b.GetType();
+		if (!Enum.IsDefined(et, a)) return false;
+		int v = Convert.ToInt32((Enum)a);
+		int v1 = Convert.ToInt32(b);
+		return (v1 & v) == v;
+	}
+
 	static public bool In<T>(T a, IList<T> b) {
 		return b.Contains(a);
 	}
@@ -364,6 +372,8 @@ static public class CobraImp {
 				return In(a, (IEnumerable)b);
 			} else if (b is IDictionary) {
 				return In(a, (IDictionary)b);
+			} else if (b is Enum) {
+				return In(a, (Enum)b);
 			} else {
 				throw new CannotInTypeException(b, "b of `a in b`", b.GetType());
 			}
@@ -553,6 +563,59 @@ static public class CobraImp {
 				results.Add(value);
 		}
 		return results;
+	}
+
+	static public decimal IntDiv(decimal a, decimal b) {
+		return Math.Floor(a / b);
+	}
+	
+	static public double IntDiv(double a, double b) {
+		return Math.Floor(a / b);
+	}
+	
+	static public float IntDiv(float a, float b) {
+		return (float)Math.Floor(a / b);
+	}
+	
+	static public int PowerTo(int base_, int exponent) {
+		// return (int) Math.Pow(a, b)
+		//   below is about 25x faster than calling Math.Pow
+		if (exponent < 0) {
+			string msg = string.Format("Exponent is negative for 'base ** exponent' where both are ints. Cast one to a fractional type (number, decimal, float). Exponent = {0}", exponent);
+			throw new InvalidOperationException(msg);
+		}
+		if (exponent == 0) return 1;
+		if (base_ == 0 || base_ == 1) return base_;
+		int result = 0;
+		if (exponent > 0) {
+			result = base_;
+			while (exponent > 1) {
+				result *= base_;
+				exponent--;
+			}
+		}
+		return result;
+	}
+
+	static public decimal PowerTo(decimal base_, decimal exponent) {
+		// credit: CommonLibrary.NET which is also open source under MIT license
+		if (exponent == 0) return 1;
+		if (base_ == 0 || base_ == 1) return base_;
+		decimal result = base_;
+		// case: exponent has fractional part
+		if (Math.Truncate(exponent) < exponent)
+			return (decimal)Math.Pow(Decimal.ToDouble(base_), Decimal.ToDouble(exponent));
+		// case: positive exponent
+		decimal power = exponent < 0 ? Math.Abs(exponent) : exponent;
+		for (int i = 1; i < power; i++)
+			result *= base_;
+		if (exponent > 0) return result;
+		// case: negative exponent
+		return 1m / result;
+	}
+	
+	static public double PowerTo(double base_, double exponent) {
+		return System.Math.Pow(base_, exponent);
 	}
 
 	// Support for TryCatchExpression 

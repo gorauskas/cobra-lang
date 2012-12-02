@@ -48,9 +48,58 @@ namespace Cobra.Core
 
 	extend IEnumerable<of T>
 
+		def first as T
+			for item in this, return item
+			throw InvalidOperationException('the sequence is empty')
+
+		def take(count as int) as T*
+			require
+				count >= 0
+			body
+				if count < 1, yield break
+				for i, value in .numbered
+					if i < count, yield value
+					else, break
+
+		def skip(count as int) as T*
+			require
+				count >= 0
+			body
+				for i, value in .numbered
+					if i >= count, yield value
+
 		def toList as List<of T>
 			""" Turn an IEnumerable of T into a list of T. """
 			return List<of T>(this)
+
+		def numbered as KeyValuePair<of int, T>*
+			"""
+			Returns a stream of pairs of (index, value).
+
+			Can be used like so:
+				for i, value in someList.numbered
+					...
+			"""
+			# could use other overload, but saving a method call
+			i = 0
+			for item in this
+				yield KeyValuePair<of int, T>(i, item)
+				i += 1
+
+		def numbered(start as int) as KeyValuePair<of int, T>*
+			"""
+			Returns a stream of pairs of (index, value)
+			where the first index == start.
+
+			Can be used like so:
+				for i, value in someList.numbered
+					...
+			"""
+			i = start
+			for item in this
+				yield KeyValuePair<of int, T>(i, item)
+				i += 1
+
 /#
 	TODO: cannot do the following yet due to a bug in extensions and how they are chosen with respect to inheritance
 	these are available in lists though, so you can use .toList above
@@ -59,18 +108,6 @@ namespace Cobra.Core
 		def last as T
 			for item in this, pass
 			return item
-
-		def numbered as KeyValuePair<of int, T>*
-			"""
-			Returns a stream of pairs of (index, value).
-			Can be used like so:
-				for i, value in someStream.numbered
-					...
-			"""
-			i = 0
-			for item in this
-				yield KeyValuePair<of int, T>(i, item)
-				i += 1
 
 		def reversed as List<of T>
 			return .toList.reversed
@@ -127,3 +164,21 @@ namespace Cobra.Core
 			assert .empty.reversed == []
 			assert .empty.sorted == []
 #/
+
+		test first
+			assert [1, 2].first == 1
+			expect InvalidOperationException
+				[].first
+
+		test take
+			assert [1, 2].take(0).toList.count == 0
+			assert [1, 2, 3, 4].take(3).toList == [1, 2, 3]
+			assert [1, 2, 3, 4].take(10).toList == [1, 2, 3, 4]
+			assert [].take(5).toList.count == 0
+
+		test skip
+			assert [1, 2].skip(0).toList == [1, 2]
+			assert [1, 2].skip(2).toList.count == 0
+			assert [1, 2].skip(3).toList.count == 0
+			assert [].skip(0).toList.count == 0
+			assert [].skip(1).toList.count == 0
