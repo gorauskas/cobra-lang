@@ -1,0 +1,91 @@
+"""
+ShowSharedDataPhase.cobra
+
+Notes:
+
+ * There is no automated test for this right now, but you can quickly test on a real code base by
+   running it against the Cobra compiler:
+
+	cobra -c -show-shared-data -ert:yes cobra.cobra -files:files-to-compile.tex
+
+Ideas:
+
+ * Could change the option to take a string which is the file name to write the report to.
+"""
+
+class ShowSharedDataPhase inherits Phase
+	"""
+	Show all data members that are shared.
+	"""
+
+	cue init(c as Compiler)
+		base.init(c)
+
+	get description as String is override
+		return 'Showing shared data'
+
+	def innerRun is override
+		print '-show-shared-data:'
+		ShowSharedDataVisitor().visit(.compiler)
+		print
+		print 'end of -show-shared-data'
+
+
+class ShowSharedDataVisitor inherits Visitor
+	"""
+	Visit the nodes in the source modules for the purpose of
+	showing all data members that are 'shared'.
+	"""
+	
+	cue init
+		base.init
+
+	def reset
+		_lastModule = nil
+		_lastBox = nil
+	
+	get methodName as String is override
+		return 'visit'
+
+	def visit(c as Compiler) as ShowSharedDataVisitor
+		.dispatch(c.modules)
+		.reset
+		return this
+	
+	def visit(mod as Module)
+		pass
+
+	var _lastModule as Module?
+
+	var _didPrintModule = false
+		
+	def visit(mod as CobraModule)
+		_lastModule = mod
+		_didPrintModule = false
+		for decl in mod.topNameSpace.declsInOrder
+			.dispatch(decl)
+
+	def visit(ns as NameSpace)
+		.dispatch(ns.declsInOrder)
+
+	def visit(b as Box)
+		.dispatch(b.declsInOrder)
+	
+	var _lastBox as Box?
+	
+	def visit(v as BoxVar)
+		if not v.isShared, return
+		if _lastBox is nil or _lastBox <> v.parentBox
+			if not _didPrintModule
+				_didPrintModule = true
+				print
+				print '#', _lastModule.fileName
+			print
+			print '[v.parentBox.englishName] [v.parentBox.name]'
+			print
+		_lastBox = v.parentBox
+		print '    var [v.name] as [v.resultType.name] is shared'
+
+	def visit(node as INode)
+		# catch all
+		pass
