@@ -1,0 +1,32 @@
+"""
+Should fail with:
+
+Unhandled Exception: System.InvalidOperationException: Cannot run parser in parallel threads.
+"""
+
+use System.Threading
+use Cobra.Compiler
+
+class P
+
+	def main
+		.parse
+		threads = List<of Thread>()
+		for i in 10
+			t = Thread(ThreadStart(ref .parse))
+			threads.add(t)
+		for t in threads, t.start
+		for t in threads, t.join
+		print 'done.'
+
+	def parse
+		id = Thread.currentThread.managedThreadId
+		print '>> [id] parse'
+		c = Compiler()  # to-do: the parser should not require a Compiler for unit tests
+		p = CobraParser()
+		p.globalNS = NameSpace(Token.empty, '(global)')
+		p.typeProvider = FakeTypeProvider()
+		p.backEnd = FakeBackEnd(c)
+		module = p.parseSource('test1', 'class SomeClass\n\tpass\n')
+		trace id, module
+		print '<< [id] parse'

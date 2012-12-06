@@ -194,25 +194,32 @@ class CobraParser inherits Parser
 		require .typeProvider and .backEnd
 		return .parseSource('(no file name)', source)
 
+	var _parallelGuard as bool is shared
+
 	def parseSource(fileName as String, source as String) as CobraModule
 		"""
 		Parses module source code and returns resulting Cobra module.
 		The fileName is recorded, but the file is not physically accessed.
 		After parsing, .references will hold a list of any @ref directive references that were parsed.
 		"""
-		if not _preParseSource(fileName, source)
-			# Throw an exception to stop subsequent compilation phases.
-			# Note that this doesn't get recorded as an error message.
-			# That only happens through .throwError and .recordError
-			throw ParserException(fileName, 'Lexer errors.')
+		if _parallelGuard, throw InvalidOperationException('Cannot run parser in parallel threads.')
+		_parallelGuard = true
 		try
-			if source.trim.length == 0, _warning('File is empty.')
-			return _parseTokens()
-		catch pe as ParserException
-			if _errorRecorder, _errorRecorder.recordError(pe)
-			_tokenizer = nil
-			throw
-		if _tokenizer and _tokenizer.errors.count <> 0, _tokenizer = nil
+			if not _preParseSource(fileName, source)
+				# Throw an exception to stop subsequent compilation phases.
+				# Note that this doesn't get recorded as an error message.
+				# That only happens through .throwError and .recordError
+				throw ParserException(fileName, 'Lexer errors.')
+			try
+				if source.trim.length == 0, _warning('File is empty.')
+				return _parseTokens()
+			catch pe as ParserException
+				if _errorRecorder, _errorRecorder.recordError(pe)
+				_tokenizer = nil
+				throw
+			if _tokenizer and _tokenizer.errors.count <> 0, _tokenizer = nil
+		finally
+			_parallelGuard = false
 
 	def _preParseSource(fileName as String, source as String) as bool
 		"""

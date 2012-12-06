@@ -344,7 +344,17 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 	def compileFilesNamed(paths as IList<of String>)
 		.compileFilesNamed(paths, false, nil)
 
+	var _parallelGuard as bool is shared
+	
 	def compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool, stopCompilation as Predicate<of Compiler>?)
+		if _parallelGuard, throw InvalidOperationException('Cannot run parser in parallel threads.')
+		_parallelGuard = true
+		try
+			_compileFilesNamed1(paths, writeTestInvocation, stopCompilation)
+		finally
+			_parallelGuard = false
+			
+	def _compileFilesNamed1(paths as IList<of String>, writeTestInvocation as bool, stopCompilation as Predicate<of Compiler>?)
 		.initBackEnd
 		.defaultOutName = if(.options.buildStandardLibrary, 'Cobra.Core.dll', paths[0])
 		if .options.boolValue('compile-if-needed')
@@ -353,12 +363,12 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 				return
 				
 		if .options.boolValue('reveal-internal-exceptions')
-			_compileFilesNamed(paths, writeTestInvocation, stopCompilation)
+			_compileFilesNamed2(paths, writeTestInvocation, stopCompilation)
 			.printMessages
 			return
 
 		try
-			_compileFilesNamed(paths, writeTestInvocation, stopCompilation)
+			_compileFilesNamed2(paths, writeTestInvocation, stopCompilation)
 		catch StopCompilation
 			throw
 		catch exc as Exception
@@ -385,7 +395,7 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		success
 			.printMessages
 
-	def _compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool, stopCompilation as Predicate<of Compiler>?)
+	def _compileFilesNamed2(paths as IList<of String>, writeTestInvocation as bool, stopCompilation as Predicate<of Compiler>?)
 		timeit = .options.boolValue('timeit') and .verbosity
 		timings, totalElapsed = [], 0.0f
 		.willWriteTestInvocation = writeTestInvocation
