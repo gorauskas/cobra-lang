@@ -1132,7 +1132,7 @@ class CobraParser inherits Parser
 			curNameSpace = curNameSpace.getOrMakeNameSpaceNamed(tok, name)
 			firstNameSpace = firstNameSpace ? curNameSpace
 			assert not curNameSpace.isUnified
-			_nameSpaceStack.push(curNameSpace)			
+			_nameSpaceStack.push(curNameSpace)
 		try
 			indented = .optionalIndent
 			curNameSpace.addDocString(.docString)
@@ -1170,43 +1170,42 @@ class CobraParser inherits Parser
 		# TODO: complain if inheritance or is-names are different. at least for inheritance, that needs to be done post-parsing
 		checkForDups = true
 		if 'partial' in decl.isNames
-			if decl inherits Box
-				if not (decl inherits Class or decl inherits Struct or decl inherits Interface)
-					.throwError(decl.token, '[decl.englishName.capitalized] cannot be "partial".')
-				checkForDups = false
-				otherDecl = ns.unifiedNameSpace.declForName(decl.name)
-				if otherDecl
-					if otherDecl.getType is not decl.getType
-						.throwError(decl.token, 'The other partial declaration is a "[otherDecl.englishName]", not a "[decl.englishName]".')
-					if 'partial' not in otherDecl.isNames
-						.throwError(decl.token, 'The other declaration is not marked "partial".')
-					otherBox = otherDecl to Box  # will always work because of above check
-					
-					# deal with partial classes and inheritance
-					if otherBox inherits Class
-						myDecl = decl to Class # safe because already checked that it was the same type as otherBox
-						if otherBox.baseNode is nil					
-							if myDecl.baseNode is not nil
-								otherBox.baseNode = myDecl.baseNode
-						else
-							myOtherType = otherBox.baseNode to AbstractTypeIdentifier
-							if otherBox.baseNode == myDecl.baseNode
-								_warning(myDecl.token, 'The class "[otherBox.name]" already inherits from "[myOtherType.name]".')
-							else if myDecl.baseNode is not nil
-								thisType = myDecl.baseNode to AbstractTypeIdentifier
-								.throwError(myDecl.token, 'The class "[otherBox.name]" already inherits from "[myOtherType.name]" and cannot inherit from "[thisType.name]" too.')
-					
-					for memberDecl in decl.declsInOrder
-						overload = _overloadIfNeeded(memberDecl.idToken, otherBox, memberDecl.name)
-						if overload
-							(memberDecl to IOverloadable).overloadGroup = nil
-							overload.addMember(memberDecl to IOverloadable)
-						else
-							otherBox.addDecl(memberDecl)
-						memberDecl.mergedIntoPartialBox(otherBox)
-					return otherDecl
-			else
-				.throwError(decl.token, '[decl.englishName.capitalized] cannot be "partial".')
+			box = decl to? Box
+			if box is nil, .throwError(decl.token, '[decl.englishName.capitalized] cannot be "partial".')
+			if not (box inherits Class or box inherits Struct or box inherits Interface)
+				.throwError(box.token, '[box.englishName.capitalized] cannot be "partial".')
+			checkForDups = false
+			otherDecl = ns.unifiedNameSpace.declForName(box.name)
+			if otherDecl
+				if otherDecl.getType is not box.getType
+					.throwError(box.token, 'The other partial declaration is a "[otherDecl.englishName]", not a "[box.englishName]".')
+				if 'partial' not in otherDecl.isNames
+					.throwError(box.token, 'The other declaration is not marked "partial".')
+				otherBox = otherDecl to Box  # will always work because of above check
+				
+				# deal with partial classes and inheritance
+				if otherBox inherits Class
+					myDecl = decl to Class # safe because already checked that it was the same type as otherBox
+					if otherBox.baseNode is nil					
+						if myDecl.baseNode is not nil
+							otherBox.baseNode = myDecl.baseNode
+					else
+						myOtherType = otherBox.baseNode to AbstractTypeIdentifier
+						if otherBox.baseNode == myDecl.baseNode
+							_warning(myDecl.token, 'The class "[otherBox.name]" already inherits from "[myOtherType.name]".')
+						else if myDecl.baseNode is not nil
+							thisType = myDecl.baseNode to AbstractTypeIdentifier
+							.throwError(myDecl.token, 'The class "[otherBox.name]" already inherits from "[myOtherType.name]" and cannot inherit from "[thisType.name]" too.')
+				
+				for memberDecl in box.declsInOrder
+					overload = _overloadIfNeeded(memberDecl.idToken, otherBox, memberDecl.name)
+					if overload
+						(memberDecl to IOverloadable).overloadGroup = nil
+						overload.addMember(memberDecl to IOverloadable)
+					else
+						otherBox.addDecl(memberDecl)
+					memberDecl.mergedIntoPartialBox(otherBox)
+				return otherDecl
 		if checkForDups
 			if ns.declForName(decl.name)
 				.throwError((decl to dynamic).token to IToken, 'The namespace "[ns.fullName]" already contains a declaration named "[decl.name]".')  # TODO: give an "error" for the location 
