@@ -93,6 +93,7 @@ class CobraTokenizer inherits Tokenizer
 			r'WHITESPACE_LINE		^[\t ]+$',
 			r'WHITESPACE_COMMENT_1	^[\t]+[ ]*\#.*$',
 			r'WHITESPACE_COMMENT_2	^[ ]+[\t]*\#.*$',
+			r'SINGLE_LINE_COMMENT_BLOCK	^[ \t]*\/\#.*\#\/[ \t]*$',
 			r'COMMENT_BLOCK_START	^[ \t]*\/\#.*$',  
 			r'INDENT_MIXED_TSNS		^[\t]+[ ]+(?=[^\t ])',
 			r'INDENT_MIXED_TS		^[\t]+[ ]+',
@@ -347,7 +348,7 @@ class CobraTokenizer inherits Tokenizer
 				# CC: _commentBlockDefs = List<of TokenDef>[_commentBlockStop, _commentBlockLine] # instead of the next 5 lines
 				defs = List<of TokenDef>()
 				defs.add(.tokenDefsByWhich['COMMENT_BLOCK_START'])
-				defs.add(TokenRegexDef('COMMENT_BLOCK_STOP', r'[^#]*\#\/.*$'))
+				defs.add(TokenRegexDef('COMMENT_BLOCK_STOP', r'[^#]*\#\/.*$'))  # to-do: the .*$ portion looks wrong as in that text will never be processed
 				defs.add(TokenRegexDef('COMMENT_BLOCK_LINE', '.*\n'))
 				_commentBlockDefs = defs
 			.pushTokenDefs(_commentBlockDefs to !)
@@ -447,11 +448,11 @@ class CobraTokenizer inherits Tokenizer
 		_didLineContinuation = .lastToken and .lastToken.text == '_' and .lastToken.which == 'ID'
 		return tok
 
+	def onSINGLE_LINE_COMMENT_BLOCK(tok as IToken) as IToken?
+		return .onSINGLE_LINE_COMMENT(tok)
+
 	def onSINGLE_LINE_COMMENT(tok as IToken) as IToken?
-		if .checkForCommentDirective(tok)
-			return .directiveToken(tok)
-		else
-			return .commentToken(tok)
+		return if(.checkForCommentDirective(tok), .directiveToken(tok), .commentToken(tok))
 
 	def onINLINE_COMMENT(tok as IToken) as IToken?
 		return .commentToken(tok)
