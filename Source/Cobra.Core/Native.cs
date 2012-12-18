@@ -1121,7 +1121,7 @@ static public class CobraImp {
 //		Console.WriteLine(" <> (   type specs) {7}, op={0}, value1={1}, type1={2}, value2={3}, type2={4}, type={5}, mi={6}, promote={8}",
 //			opMethodName, value1, value1.GetType(), value2, value2.GetType(), type, mi, __dynamicOpCount, promote);
 //		__dynamicOpCount++;
-		if (mi!=null) {
+		if (mi != null) {
 			return mi.Invoke(value1, new object[] { value1, value2 });
 		} else {
 			String name = opMethodName + '_' + value1.GetType().Name + '_' + value2.GetType().Name;
@@ -1134,8 +1134,15 @@ static public class CobraImp {
 				return typeof(CobraImp).InvokeMember(name, BindingFlags.Public|BindingFlags.Static|BindingFlags.InvokeMethod, null, null, new object[] { value1, value2 });
 			} catch (MissingMethodException) {
 			}
-			if (promote && PromoteNumerics != null && PromoteNumerics(ref value1, ref value2))
-				return DynamicOp(opMethodName, value1, value2, false);
+			if (promote) {
+				if (type == types[1]) {
+					var ti = new NumericTypeInfo(type);
+					if (ti.IsInt && ti.Size < 32)
+						return DynamicOp(opMethodName, Convert.ToInt32(value1), Convert.ToInt32(value2), false);						
+				}
+			 	if (PromoteNumerics != null && PromoteNumerics(ref value1, ref value2))
+					return DynamicOp(opMethodName, value1, value2, false);
+			}
 			throw new UnknownMemberException(value1, opMethodName + " or " + name, type);
 		}
 	}
