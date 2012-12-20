@@ -1136,7 +1136,7 @@ static public class CobraImp {
 			}
 			if (promote) {
 				if (type == types[1]) {
-					var ti = new NumericTypeInfo(type);
+					NumericTypeInfo ti = new NumericTypeInfo(type);
 					if (ti.IsInt && ti.Size < 32)
 						return DynamicOp(opMethodName, Convert.ToInt32(value1), Convert.ToInt32(value2), false);						
 				}
