@@ -1376,7 +1376,6 @@ class IfExpr
 	def _bindImp is override
 		and ensure
 			.cond.hasError or .tpart.hasError or .fpart.hasError implies .hasError
-			.hasError implies .type == .compiler.passThroughType
 		body
 			base._bindImp
 			hadError = false
@@ -1397,12 +1396,13 @@ class IfExpr
 			catch ne as NodeException
 				.compiler.recordError(ne)
 				hadError = true
-			if hadError
-				_type = .compiler.passThroughType
-			else
+			if not hadError
 				assert _tpart.type
 				assert _fpart.type
+			if _tpart.type and _fpart.type
 				_type = _tpart.type.greatestCommonDenominatorWith(_fpart.type to !)
+			else
+				_type = .compiler.passThroughType
 
 	def toCobraSource as String is override
 		return 'if([.cond.toCobraSource], [.tpart.toCobraSource], [.fpart.toCobraSource])'
@@ -1961,7 +1961,11 @@ class PostCallExpr
 				_type = .compiler.nilableDynamicType
 			else if expr.definition inherits NameSpace
 				.throwError('Cannot instantiate the namespace "[(expr.definition to NameSpace).fullName]".')
+			else if exprType == .typeProvider.passThroughType
+				_type = .typeProvider.passThroughType
 			else
+				trace .idString, expr.idString, exprType.idString
+				trace this, expr
 				assert false, expr
 
 		if .hasKeywordArg and not .isForAttribute and not .hasError
