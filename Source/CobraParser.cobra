@@ -1025,6 +1025,7 @@ class CobraParser inherits Parser
 		docString = .docString
 		enumMembers = List<of EnumMember>()
 		nameSet = Set<of String>()
+		nameSetCI = Set<of String>()
 		while .peek.which <> 'DEDENT'
 			.zeroOrMore('EOL')
 			enumNameToken = .expect('ID')
@@ -1033,14 +1034,15 @@ class CobraParser inherits Parser
 				enumValue = .expect('INTEGER_LIT').value to int?
 			else
 				enumValue = nil
-			if not .optional('COMMA')
-				.endOfLine
+			if not .optional('COMMA'), .endOfLine
 			if enumNameToken.text in nameSet
 				.recordError(enumNameToken, 'Already defined "[enumNameToken.text]" earlier.')
+			else if enumNameToken.text.toLower in nameSetCI
+				.throwError('Cannot have members with the same name in different case ("[enumNameToken.text]").')
 			else
 				enumMembers.add(EnumMember(enumNameToken, enumValue))
 				nameSet.add(enumNameToken.text)
-			# TODO: check for values that repeat or go backwards
+				nameSetCI.add(enumNameToken.text.toLower)
 		.dedent
 		if not enumMembers.count
 			.throwError('Missing enum members.')
