@@ -114,7 +114,6 @@ class CobraParser inherits Parser
 
 	var _spaceAgnosticIndentLevel as int
 	var _spaceAgnosticExprLevel as int
-	var _isContractOnSameLine as bool
 
 	var _isTraceOn as bool
 
@@ -1927,16 +1926,18 @@ class CobraParser inherits Parser
 			<any statement 2>
 			<any statement N>
 		Example source
+			require <cond 1> |
 			require
 				<cond 1>
 				<cond N>
+			ensure <cond 1>  |	
 			ensure
 				<cond 1>
 				<cond N>
-			test
+			[test
 				<any statement 1>
 				<any statement 2>
-				<any statement N>
+				<any statement N>]
 			[body
 				<any statement 1>
 				<any statement 2>
@@ -1945,8 +1946,10 @@ class CobraParser inherits Parser
 			Nothing.
 		Errors
 			Already encountered "code" block.
-			Already encountered "test" block.
+			Missing 'body' block
 		Notes
+			If have 'test' blocks or indented 'ensure' or 'require' blocks must also have 'body' code block
+			May (now) have multiple 'test' blocks'
 			The caller must check whether or not statements were found and issue an error when appropriate.
 			For example, interface members and abstract members cannot have any statements.
 			Other members must have at least one.
@@ -1958,27 +1961,38 @@ class CobraParser inherits Parser
 			while .peek.which == 'EOL', .grab
 			if .peek.which.isOneOf('BODY.TEST.REQUIRE.ENSURE.OR.AND.')
 				# sectional
-				# not flexible. sequence is signature, contract, test, implementation
-				_isContractOnSameLine = false
+				# not flexible. sequence is signature, contracts, tests, implementation body
+				# if have indented contract or test blocks, must also have an explicit body block
+				haveContract = haveTest = indentedContract = false
 				if .peek.which.isOneOf('REQUIRE.OR.')
+					haveContract, indentedContract = true, _isIndentedContract
 					.requireSection(codePart)
 				if .peek.which.isOneOf('ENSURE.AND.')
+					haveContract, indentedContract = true, _isIndentedContract
 					.ensureSection(codePart)
 				while .peek.which == 'TEST'
+					haveTest = true 
 					.testSection(codePartContainingTest to !)
-				if .peek.which=='BODY'
+
+				bodyNeeded = not codePart.bodyExclusion 	
+				detail='mandate that the body code also be indented. You need the "body" keyword with indented code following it.'		
+				if haveTest and .peek.which <> 'BODY'
+					.throwError('Missing BODY keyword. Earlier (indented) "test" clauses [detail]')		
+				if .peek.which == 'BODY'
 					.grab
 					.indent
 					_statementsFor(codePart)
+					.dedent
 				else
-					if _isContractOnSameLine
+					if haveContract 
+						if indentedContract and bodyNeeded
+							.throwError('Missing BODY keyword. Earlier indented contract clauses [detail]')
 						_statementsFor(codePart)
 					else
 						pass
 						# There is no body for abstract or interface members. Error checking is done elsewhere.
 						# .throwError('Expecting `body` section.')
-				if not _isContractOnSameLine
-					.dedent
+
 			else
 				# non-sectional
 				_statementsFor(codePart)
@@ -1993,7 +2007,7 @@ class CobraParser inherits Parser
 					# TODO: is the toplevel statement really useful?
 					_warning('More than 100 lines of code ([codePart.statements.count] toplevel statements) in method [fullName].') 
 				#print '[fullName.padLeft(50)]\t[nLines]\t[codePart.statements.count]'
-
+				
 	def _statementsFor(codePart as HasAddStmt)
 		"""
 		Utility method for .statementsFor.
@@ -2440,6 +2454,13 @@ class CobraParser inherits Parser
 		expr = if(.peek.which == 'EOL', nil, .expression)
 		return ReturnStmt(token, expr)
 
+	def _isIndentedContract as bool
+		require .peek.which.isOneOf('REQUIRE.ENSURE.OR.AND.')
+		ofst=0
+		if .peek(ofst).which.isOneOf('.OR.AND.'),        ofst +=1
+		if .peek(ofst).which.isOneOf('REQUIRE.ENSURE.'), ofst += 1
+		return .peek(ofst).which.isOneOf('EOL.COLON.')	# code must be indented
+		
 	def requireSection(codeMember as AbstractMethod) as ContractPart
 		return _requireOrEnsure(codeMember, 'OR', 'REQUIRE', RequirePart)
 
@@ -2449,7 +2470,7 @@ class CobraParser inherits Parser
 	def _requireOrEnsure(codeMember as AbstractMethod, connectWhich as String, mainWhich as String, theClass as Type) as ContractPart
 		connectToken = .optional(connectWhich)
 		mainToken = .expect(mainWhich)
-		if .peek.which.isOneOf('EOL.COLON.')
+		if .peek.which.isOneOf('EOL.COLON.')  # TODO: COLON here should throw a not-needed-warning 
 			.indent
 			exprs = List<of Expr>()
 			while true
@@ -2465,7 +2486,6 @@ class CobraParser inherits Parser
 			# one expression, on the same line
 			exprs = [.expression]
 			.endOfLine
-			_isContractOnSameLine = true
 		return theClass(connectToken, mainToken, codeMember, exprs) to ContractPart
 
 	def throwStmt as Stmt
