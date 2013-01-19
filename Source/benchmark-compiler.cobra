@@ -1,0 +1,68 @@
+"""
+cd CobraWorkSpace/Source
+bin/build-compiler-lib -turbo
+
+# then one of these
+
+cobra benchmark-compiler.cobra
+
+cobra -contracts:none -include-asserts:no -include-nil-checks:no -include-tests:no -optimize benchmark-compiler.cobra
+
+time mono --profile=log:report,calldepth=200 benchmark-compiler.exe > profile-`tss`.text
+"""
+
+use Cobra.Compiler
+use System.Diagnostics
+
+
+class CustomBackEnd inherits ClrBackEnd
+
+	def makePhases(phases as IList<of Phase>) is override
+		# don't generate .exe or .dll
+		# this is for benchmarking wrt IDE parsing and autocompletion
+		pass
+
+
+class P
+
+	const reps = 10
+	
+	def main
+		print 'Starting'
+		sw = Stopwatch()
+		sw.start
+		for i in .reps
+			print
+			print 'rep [i+1]'
+			.run
+		sw.stop
+		elapsed = sw.elapsedMilliseconds
+		avg = elapsed to decimal / .reps
+		trace .reps, elapsed, avg
+		print 'Done.'
+		
+	
+	def run
+		verbosity = 0
+
+		compiler = Compiler(verbosity)
+		
+		options = OptionValues()
+		options.add('compile', true)
+		options.add('contracts', 'inline')
+		options.add('turbo', true)
+		options.add('number', 'decimal')
+		options.add('reveal-internal-exceptions', true)
+		options.add('native-compiler', 'auto')
+		options.add('verbosity', verbosity)
+		options.add('timeit', false) # won't take if verbosity == 0
+
+		compiler.options = options
+		compiler.initBackEnd(CustomBackEnd(compiler))
+		
+		sep = Path.directorySeparatorChar
+		paths = ['..[sep]Samples[sep]GeneticAlgorithm.cobra']
+		print 'Compiling'
+		compiler.compileFilesNamed(paths, false, do(c as Compiler))
+			return false
+		print 'Done compiling'
