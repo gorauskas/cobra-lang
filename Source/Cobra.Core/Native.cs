@@ -314,6 +314,18 @@ static public class CobraImp {
 		return a.HasValue && b.IndexOf(a.Value)!=-1;
 	}
 
+	static public bool In(int a, int[] b) {
+		// improves speed
+		return Array.IndexOf(b, a) != -1;
+	}
+
+/*
+	// doesn't improve things
+	static public bool In(string a, string[] b) {
+		return Array.IndexOf(b, a) != -1;
+	}
+*/
+
 	static public bool In(object a, IList b) {
 		return b.Contains(a);
 	}
