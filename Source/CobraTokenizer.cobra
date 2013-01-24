@@ -247,9 +247,9 @@ class CobraTokenizer inherits Tokenizer
 		tokens = base.allTokens
 		if _inCommentBlock, .throwError('Unfinished multi-line comment.')
 		return tokens
-		
-	def makeSPACE(definition as String) as TokenDef?
-		return SpaceTokenDef('SPACE', definition)
+
+	def makeID(definition as String) as TokenDef?
+		return IdTokenDef('ID', definition)
 
 	def makeOPEN_GENERIC(definition as String) as TokenDef?
 		return OpenGenericTokenDef('OPEN_GENERIC', definition)
@@ -257,6 +257,9 @@ class CobraTokenizer inherits Tokenizer
 	def makeOPEN_CALL(definition as String) as TokenDef?
 		return OpenCallTokenDef('OPEN_CALL', definition)
 		
+	def makeSPACE(definition as String) as TokenDef?
+		return SpaceTokenDef('SPACE', definition)
+
 	def makeSTRING_START_SINGLE(definition as String) as TokenDef?
 		return StringStartTokenDef('STRING_START_SINGLE', definition[0])
 		
@@ -930,6 +933,52 @@ class CobraTokenizer inherits Tokenizer
 ###
 ### Custom Token Defs
 ###
+
+
+class IdTokenDef inherits TokenDef
+	"""
+	[A-Za-z_][A-Za-z0-9_]*
+	"""
+
+	test
+		tokDef = IdTokenDef('OPEN_CALL', '')
+		assert tokDef.match('x').text == 'x'
+		assert tokDef.match('foo').text == 'foo'
+		assert tokDef.match('Foo').text == 'Foo'
+		assert tokDef.match('Foo ').text == 'Foo'
+		assert tokDef.match('Foo aoeu').text == 'Foo'
+		assert tokDef.match('1234') is nil
+		assert tokDef.match('(') is nil
+
+	cue init(which as String, definition as String)
+		base.init(which)
+	
+	get length as int is override
+		throw Exception('ordered token')
+	
+	get firstChars as List<of char> is override
+		t = List<of char>()
+		for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_', t.add(c)
+		return t
+	
+	def _match(input as String) as TokenMatch? is override
+		state = 0
+		for i in input.length
+			c = input[i]
+			branch state
+				on 0
+					# [A-Za-z_]
+					if (c >= c'A' and c <= c'Z') or (c >= c'a' and c <= c'z') or (c == c'_')
+						state = 1
+					else
+						return nil
+				on 1
+					# [A-Za-z0-9_]*
+					if (c >= c'A' and c <= c'Z') or (c >= c'a' and c <= c'z') or (c == c'_') or (c >= c'0' and c <= c'9')
+						pass
+					else
+						return TokenMatch(input.substring(0, i))
+		return TokenMatch(input.substring(0, i))
 
 
 class OpenCallTokenDef inherits TokenDef
