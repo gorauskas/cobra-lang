@@ -251,9 +251,8 @@ class CobraTokenizer inherits Tokenizer
 	def makeSPACE(definition as String) as TokenDef?
 		return SpaceTokenDef('SPACE', definition)
 
-# TODO
-#	def makeOPEN_GENERIC(definition as String) as TokenDef?
-#		return OpenGenericTokenDef('OPEN_GENERIC', definition)
+	def makeOPEN_GENERIC(definition as String) as TokenDef?
+		return OpenGenericTokenDef('OPEN_GENERIC', definition)
 		
 	def makeSTRING_START_SINGLE(definition as String) as TokenDef?
 		return StringStartTokenDef('STRING_START_SINGLE', definition[0])
@@ -926,10 +925,6 @@ class CobraTokenizer inherits Tokenizer
 
 
 class SpaceTokenDef inherits TokenDef
-	"""
-	This is just an idea for speeding up the tokenizer...
-	implement some of the token defs by hand in the hope that they will be faster than the regex.
-	"""
 	
 	test
 		# .timeIt
@@ -980,10 +975,18 @@ class SpaceTokenDef inherits TokenDef
 		return if(i==0, nil, TokenMatch(input.substring(0, i)))
 
 
-/#
-TODO
 class OpenGenericTokenDef inherits TokenDef
-	""" [A-Za-z_][A-Za-z0-9_]*<of[ \n\r\t] """
+	"""
+	[A-Za-z_][A-Za-z0-9_]*<of([ \n\r\t]|(?=[,>]))
+	52 X faster than regex
+	"""
+
+	test
+		tokDef = OpenGenericTokenDef('OPEN_GENERIC', '')
+		assert tokDef.match('Foo<of ')
+		assert tokDef.match('Foo<of>')
+		assert tokDef.match('Foo<of,>')
+		assert tokDef.match('Foo<fo') is nil
 
 	cue init(which as String, definition as String)
 		base.init(which)
@@ -993,15 +996,59 @@ class OpenGenericTokenDef inherits TokenDef
 	
 	get firstChars as List<of char> is override
 		t = List<of char>()
-		for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_'
-			t.add(c)
+		for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_', t.add(c)
 		return t
 	
+	shared
+	
+		var _spaces = @[c' ', c'\n', c'\r', c'\t']
+
 	def _match(input as String) as TokenMatch? is override
+		# time savings here included:
+		#  1. eliminating use of StringBuilder() and instead returning input.substring(0, i+1)
+		#  2. switch from: c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_'
+		#              to: (c >= c'A' and c <= c'Z') or (c >= c'a' and c <= c'z') or (c == c'_')
 		state = 0
 		for i in input.length
-			...
-#/
+			c = input[i]
+			branch state
+				on 0
+					# [A-Za-z_]
+					if (c >= c'A' and c <= c'Z') or (c >= c'a' and c <= c'z') or (c == c'_')
+						state = 1
+					else
+						return nil
+				on 1
+					# [A-Za-z0-9_]*
+					if (c >= c'A' and c <= c'Z') or (c >= c'a' and c <= c'z') or (c == c'_') or (c >= c'0' and c <= c'9')
+						pass
+					else if c == c'<'
+						state = 2
+					else
+						return nil
+				on 2
+					# o - <of
+					if c == c'o'
+						state = 3
+					else
+						return nil
+				on 3
+					# f - <of
+					if c == c'f'
+						state = 4
+					else
+						return nil
+				on 4
+					# ([ \n\r\t]|(?=[,>]))'
+					if c in _spaces
+						return TokenMatch(input.substring(0, i+1))
+					else if c == c',' or c == c'>'
+						# positive lookahead - (?=[,>])
+						# so don't add to sb
+						return TokenMatch(input.substring(0, i))
+					else
+						return nil
+		return nil
 
 class StringTokenDef inherits TokenDef is abstract
 	"""
