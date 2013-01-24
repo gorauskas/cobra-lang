@@ -25,15 +25,18 @@ class CustomBackEnd inherits ClrBackEnd
 
 class P
 
-	const reps = 10
+	const reps = 5
+	var verbosity = 0
 	
 	def main
 		print 'Starting'
+		Console.out.flush
 		sw = Stopwatch()
 		sw.start
 		for i in .reps
 			print
 			print 'rep [i+1] / [.reps]'
+			Console.out.flush
 			.run
 		sw.stop
 		elapsed = sw.elapsedMilliseconds
@@ -44,29 +47,68 @@ class P
 		proc = Process.start('mono', '--version')
 		proc.waitForExit
 		print 'Done.'
-		
-	
+
+	var _defaultOptions = {
+		'compile': true,
+		'contracts': 'inline',
+		'debug': true,
+		'turbo': true,
+		'number': 'decimal',
+		'reveal-internal-exceptions': true,
+		'native-compiler': 'auto',
+		'timeit': false, # won't take if verbosity == 0
+	}
+
+	def defaultOptions as IDictionary<of String, dynamic>
+		options = _defaultOptions.clone
+		options['verbosity'] = .verbosity
+		return options
+
 	def run
-		verbosity = 0
+		.compileCompiler
+#		.compileGeneticAlgorithm
 
-		compiler = Compiler(verbosity)
+	def compileCompiler
+		options = .defaultOptions
+		options['embed-run-time'] = true
+		# options['timeit'] = true
+		paths = ['cobra.cobra']
+		paths.addRange(.readFilesFile('files-to-compile.text'))
+		.compile(options, paths)
 		
-		options = OptionValues()
-		options.add('compile', true)
-		options.add('contracts', 'inline')
-		options.add('turbo', true)
-		options.add('number', 'decimal')
-		options.add('reveal-internal-exceptions', true)
-		options.add('native-compiler', 'auto')
-		options.add('verbosity', verbosity)
-		options.add('timeit', false) # won't take if verbosity == 0
-
-		compiler.options = options
-		compiler.initBackEnd(CustomBackEnd(compiler))
-		
+	def compileGeneticAlgorithm
+		options = .defaultOptions
 		sep = Path.directorySeparatorChar
 		paths = ['..[sep]Samples[sep]GeneticAlgorithm.cobra']
+		.compile(options, paths)
+
+	def compile(options as IDictionary<of String, dynamic>, paths as List<of String>?)
+		compiler = Compiler(.verbosity)
+				
+		ov = OptionValues()
+		for key, value in options, ov[key] = value
+		compiler.options = ov
+		
+		versionString = 'svn:9999'
+		argParser = ArgParser(versionString, nil)
+#		argParser.parseArgs(paths.clone, out ov, out paths)
+		compiler.commandLineArgParser = argParser
+
+		compiler.initBackEnd(CustomBackEnd(compiler))
+		
 		print 'Compiling'
-		compiler.compileFilesNamed(paths, false, do(c as Compiler))
-			return false
+		try
+			compiler.compileFilesNamed(paths ? List<of String>(), false, do(c as Compiler))
+				return false
+		catch Cobra.Compiler.StopCompilation
+			compiler.printConsoleMessages
 		print 'Done compiling'
+
+	def readFilesFile(fileName as String) as String*
+		baseDir = Path.getDirectoryName(fileName)
+		for line in File.readAllLines(fileName)
+			line = line.trim
+			if line.length==0 or line.startsWith('#'), continue
+			if not line.endsWith('.cobra'), line += '.cobra'
+			fileArg = Path.combine(baseDir, line)
+			yield fileArg
