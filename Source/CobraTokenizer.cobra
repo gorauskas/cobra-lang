@@ -254,6 +254,9 @@ class CobraTokenizer inherits Tokenizer
 	def makeOPEN_GENERIC(definition as String) as TokenDef?
 		return OpenGenericTokenDef('OPEN_GENERIC', definition)
 		
+	def makeOPEN_CALL(definition as String) as TokenDef?
+		return OpenCallTokenDef('OPEN_CALL', definition)
+		
 	def makeSTRING_START_SINGLE(definition as String) as TokenDef?
 		return StringStartTokenDef('STRING_START_SINGLE', definition[0])
 		
@@ -975,6 +978,53 @@ class SpaceTokenDef inherits TokenDef
 		return if(i==0, nil, TokenMatch(input.substring(0, i)))
 
 
+class OpenCallTokenDef inherits TokenDef
+	"""
+	[A-Za-z_][A-Za-z0-9_]*\(
+	25 X faster
+	"""
+
+	test
+		tokDef = OpenCallTokenDef('OPEN_CALL', '')
+		assert tokDef.match('x(')
+		assert tokDef.match('foo(')
+		assert tokDef.match('Foo(')
+		assert tokDef.match('Foo<of ') is nil
+		assert tokDef.match('(') is nil
+
+	cue init(which as String, definition as String)
+		base.init(which)
+	
+	get length as int is override
+		throw Exception('ordered token')
+	
+	get firstChars as List<of char> is override
+		t = List<of char>()
+		for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_', t.add(c)
+		return t
+	
+	def _match(input as String) as TokenMatch? is override
+		state = 0
+		for i in input.length
+			c = input[i]
+			branch state
+				on 0
+					# [A-Za-z_]
+					if (c >= c'A' and c <= c'Z') or (c >= c'a' and c <= c'z') or (c == c'_')
+						state = 1
+					else
+						return nil
+				on 1
+					# [A-Za-z0-9_]*
+					if (c >= c'A' and c <= c'Z') or (c >= c'a' and c <= c'z') or (c == c'_') or (c >= c'0' and c <= c'9')
+						pass
+					else if c == c'('
+						return TokenMatch(input.substring(0, i+1))
+					else
+						return nil
+		return nil
+
+	
 class OpenGenericTokenDef inherits TokenDef
 	"""
 	[A-Za-z_][A-Za-z0-9_]*<of([ \n\r\t]|(?=[,>]))
@@ -1042,7 +1092,7 @@ class OpenGenericTokenDef inherits TokenDef
 					# ([ \n\r\t]|(?=[,>]))'
 					if c in _spaces
 						return TokenMatch(input.substring(0, i+1))
-					else if c == c',' or c == c'>'
+					else if c == c',' or c == c'>' or i == input.length-1
 						# positive lookahead - (?=[,>])
 						# so don't add to sb
 						return TokenMatch(input.substring(0, i))
