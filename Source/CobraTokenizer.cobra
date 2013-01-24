@@ -927,55 +927,9 @@ class CobraTokenizer inherits Tokenizer
 		return if(.willReturnDirectives, tok, nil)
 
 
-class SpaceTokenDef inherits TokenDef
-	
-	test
-		# .timeIt
-		pass
-		
-	def timeIt is shared
-		input1, input2 = '\t\tx = 5', '# foo'
-		reps = 10_000_000
-
-		re = Regex(r'[ \t]+', RegexOptions.Compiled)
-		sw = System.Diagnostics.Stopwatch()
-		sw.start
-		for i in reps
-			re.match(input1)
-			re.match(input2)
-		sw.stop
-		timeRE = sw.elapsedMilliseconds
-
-		td = SpaceTokenDef('SPACE', r'[ \t]+')
-		sw = System.Diagnostics.Stopwatch()
-		sw.start
-		for i in reps
-			td.match(input1)
-			td.match(input2)
-		sw.stop
-		timeTD = sw.elapsedMilliseconds
-		
-		ratio = timeRE / timeTD
-		trace timeRE, timeTD, ratio
-
-		# trace: timeRE=6875 (Int64); timeTD=462 (Int64); ratio=14.88 (Decimal);
-		# so at least for SpaceTokenDef, its .match is more than 14 X faster than a compiled regex!
-
-	cue init(which as String, definition as String)
-		base.init(which)
-		assert definition == r'[ \t]+'
-	
-	get length as int is override
-		throw Exception('ordered token')
-
-	get firstChars as List<of char> is override
-		return [c' ', c'\t']
-
-	def _match(input as String) as TokenMatch? is override
-		for i in input.length
-			c = input[i]
-			if c <> c' ' and c <> c'\t', break
-		return if(i==0, nil, TokenMatch(input.substring(0, i)))
+###
+### Custom Token Defs
+###
 
 
 class OpenCallTokenDef inherits TokenDef
@@ -1099,6 +1053,58 @@ class OpenGenericTokenDef inherits TokenDef
 					else
 						return nil
 		return nil
+
+
+class SpaceTokenDef inherits TokenDef
+	
+	test
+		# .timeIt
+		pass
+		
+	def timeIt is shared
+		input1, input2 = '\t\tx = 5', '# foo'
+		reps = 10_000_000
+
+		re = Regex(r'[ \t]+', RegexOptions.Compiled)
+		sw = System.Diagnostics.Stopwatch()
+		sw.start
+		for i in reps
+			re.match(input1)
+			re.match(input2)
+		sw.stop
+		timeRE = sw.elapsedMilliseconds
+
+		td = SpaceTokenDef('SPACE', r'[ \t]+')
+		sw = System.Diagnostics.Stopwatch()
+		sw.start
+		for i in reps
+			td.match(input1)
+			td.match(input2)
+		sw.stop
+		timeTD = sw.elapsedMilliseconds
+		
+		ratio = timeRE / timeTD
+		trace timeRE, timeTD, ratio
+
+		# trace: timeRE=6875 (Int64); timeTD=462 (Int64); ratio=14.88 (Decimal);
+		# so at least for SpaceTokenDef, its .match is more than 14 X faster than a compiled regex!
+
+	cue init(which as String, definition as String)
+		base.init(which)
+		assert definition == r'[ \t]+'
+	
+	get length as int is override
+		throw Exception('ordered token')
+
+	get firstChars as List<of char> is override
+		return [c' ', c'\t']
+
+	def _match(input as String) as TokenMatch? is override
+		for i in input.length
+			c = input[i]
+			if c <> c' ' and c <> c'\t', break
+		return if(i==0, nil, TokenMatch(input.substring(0, i)))
+
 
 class StringTokenDef inherits TokenDef is abstract
 	"""
