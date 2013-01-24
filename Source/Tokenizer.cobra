@@ -890,7 +890,34 @@ class TokenDef implements IComparable is abstract
 
 	pro isActive from var
 
-	def match(input as String) as TokenMatch? is abstract
+	shared
+		var matchStats = Dictionary<of String, Pair<of int, int64>>()
+
+		def printMatchStats
+			print
+			print 'TokenDef Match Stats'
+			print .matchStats.count
+			for key, value in .matchStats
+				name = key.replace('"', '""')
+				print '[value.a],[value.b],"[name]"'
+
+	def match(input as String) as TokenMatch?
+		return _match(input)
+		/#
+		sw = System.Diagnostics.Stopwatch()
+		sw.start
+		tm = _match(input)
+		sw.stop
+		key = .toString
+		if .matchStats.containsKey(key)
+			pair = .matchStats[key]
+			.matchStats[key] = Pair<of int, int64>(pair.a + 1, pair.b + sw.elapsedMilliseconds)
+		else
+			.matchStats[key] = Pair<of int, int64>(1, sw.elapsedMilliseconds)
+		return tm
+		#/
+
+	def _match(input as String) as TokenMatch? is abstract
 		require input.length
 
 	def toString as String is override
@@ -983,7 +1010,7 @@ class TokenRegexDef inherits TokenDef
 
 	get re from var
 
-	def match(input as String) as TokenMatch? is override
+	def _match(input as String) as TokenMatch? is override
 		# trace _regExSource  # see ..\Developer\most-common-regexes.text
 		reMatch = _re.match(input)
 		if reMatch.success
