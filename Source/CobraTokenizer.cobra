@@ -257,6 +257,12 @@ class CobraTokenizer inherits Tokenizer
 	def makeID(definition as String) as TokenDef?
 		return IdTokenDef('ID', definition)
 
+	def makeINDENT_ALL_TABS(definition as String) as TokenDef?
+		return IndentAllTokenDef('INDENT_ALL_TABS', c'\t', definition)
+	
+	def makeINDENT_ALL_SPACES(definition as String) as TokenDef?
+		return IndentAllTokenDef('INDENT_ALL_SPACES', c' ', definition)
+
 	def makeINDENT_MIXED_TSNS(definition as String) as TokenDef?
 		return IndentMixedTokenDef(1, definition)
 	
@@ -1077,6 +1083,42 @@ class IdTokenDef inherits TokenDef
 						or (c >= c'0' and c <= c'9'), pass
 					else, return TokenMatch(input.substring(0, i))
 		return TokenMatch(input.substring(0, i))
+
+
+class IndentAllTokenDef inherits TokenDef
+	"""
+	r'INDENT_ALL_TABS		^[\t]+',
+	r'INDENT_ALL_SPACES		^[ ]+',
+	"""
+
+	test
+		tokDef = IndentAllTokenDef('INDENT_ALL_SPACES', c' ', '')
+		cases = [' ', '  ', '    ', ' x', '   foo']
+		for case in cases
+			match = tokDef.match(case)
+			assert match
+			assert match.text.trim == ''
+		assert not tokDef.match('x  ')
+
+	var _ch as char
+	
+	cue init(which as String, ch as char, definition as String)
+		base.init(which)
+		_ch, _requiresBOL = ch, true
+
+	get length as int is override
+		throw Exception('ordered token')
+	
+	get firstChars as List<of char> is override
+		return [_ch]
+
+	def _match(input as String) as TokenMatch? is override
+		ch = _ch
+		for i in input.length
+			if input[i] == ch, pass
+			else, break
+		if i > 0, return TokenMatch(.which, input.substring(0, i))
+		else, return nil
 
 
 class IndentMixedTokenDef inherits TokenDef
