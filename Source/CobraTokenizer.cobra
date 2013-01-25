@@ -276,6 +276,29 @@ class CobraTokenizer inherits Tokenizer
 	
 	## end popular single chars
 	
+	## popular strings
+	
+	def makeDOTDOT(definition as String) as TokenDef?
+		return StringTokenDef('DOTDOT', '..')
+
+	def makeOPEN_IF(definition as String) as TokenDef?
+		return StringTokenDef('OPEN_IF', 'if(')
+
+	def makeTOQ(definition as String) as TokenDef?
+		return StringTokenDef('TOQ', 'to?')
+	
+	def makeOPEN_DO(definition as String) as TokenDef?
+		return StringTokenDef('OPEN_DO', 'do(')
+	
+	def makeEQ(definition as String) as TokenDef?
+		return StringTokenDef('EQ', '==')
+
+	# to-do: why is this broke?
+#	def makeNE(definition as String) as TokenDef?
+#		return StringTokenDef('NE', '<>')
+
+	## end popular strings
+	
 	def makeEOL(definition as String) as TokenDef?
 		return EolTokenDef('EOL', definition)
 
@@ -1018,7 +1041,47 @@ class CharTokenDef inherits TokenDef
 		if input[0] == _ch, return TokenMatch(.which, _ch.toString)
 		else, return nil
 	
-		
+
+class StringTokenDef inherits TokenDef
+	"""
+	A literal string. If it's one character long, use CharTokenDef instead.
+	Examples:
+		..
+		==
+		to?
+		do(
+	"""
+	
+	test
+		tokDef = StringTokenDef('FOO', 'foo')
+		match = tokDef.match('foo')
+		assert match and match.which == 'FOO' and match.text == 'foo'
+		match = tokDef.match('foooo')
+		assert match and match.which == 'FOO' and match.text == 'foo'
+		assert tokDef.match('bfoo') is nil
+
+	var _s as String
+	
+	cue init(which as String, s as String)
+		require s.length > 1
+		.init(which, s, false)
+
+	cue init(which as String, s as String, requiresBOL as bool)
+		require s.length > 1
+		base.init(which)
+		_s, _requiresBOL = s, requiresBOL
+	
+	get length as int is override
+		return _s.length
+	
+	get firstChars as List<of char> is override
+		return [_s[0]]
+	
+	def _match(input as String) as TokenMatch? is override
+		if input.startsWith(_s), return TokenMatch(.which, _s)
+		else, return nil
+
+
 class CommentBlockStartTokenDef inherits TokenDef
 	"""
 	^[ \t]*\/\#.*$
@@ -1463,7 +1526,7 @@ class SpaceTokenDef inherits TokenDef
 		return if(i==0, nil, TokenMatch(input.substring(0, i)))
 
 
-class StringTokenDef inherits TokenDef is abstract
+class StringLiteralTokenDef inherits TokenDef is abstract
 	"""
 	Regexes were:
 		r"STRING_START_SINGLE	'[^'\n\[]*\[",
@@ -1517,7 +1580,7 @@ class StringTokenDef inherits TokenDef is abstract
 		return '[.getType.name]([CobraCore.toTechString(_quote)])'
 
 
-class StringStartTokenDef inherits StringTokenDef
+class StringStartTokenDef inherits StringLiteralTokenDef
 	
 	cue init(which as String, quote as char)
 		base.init(which, quote)
@@ -1548,7 +1611,7 @@ class StringStartTokenDef inherits StringTokenDef
 			return _matchBetween(input, _quote, c'[', _quote)
 
 
-class StringPartTokenDef inherits StringTokenDef
+class StringPartTokenDef inherits StringLiteralTokenDef
 	
 	cue init(which as String, quote as char)
 		base.init(which, quote)
@@ -1579,7 +1642,7 @@ class StringPartTokenDef inherits StringTokenDef
 			return _matchBetween(input, c']', c'[', _quote)
 
 
-class StringStopTokenDef inherits StringTokenDef
+class StringStopTokenDef inherits StringLiteralTokenDef
 	
 	cue init(which as String, quote as char)
 		base.init(which, quote)
