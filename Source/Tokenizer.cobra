@@ -591,11 +591,11 @@ class Tokenizer
 				for word in keywords
 					_keywordToWhichToken[word] = word.toUpper
 			# longest tokens need to be matched first
-			others.sort(ref .compareTokenDefLengthDesc)  # CC: others.sort(def(a, b)=b.length.compareTo(a.length))
+			others.sort(ref .compareTokenDefLength)  # CC: others.sort(def(a, b)=b.length.compareTo(a.length))
 			_tokenDefs.addRange(others)
 			.pushTokenDefs(_tokenDefs to !)
 
-	def compareTokenDefLengthDesc(a as TokenDef, b as TokenDef) as int
+	def compareTokenDefLength(a as TokenDef, b as TokenDef) as int
 		return b.length.compareTo(a.length)
 		
 	def _obtainSource as bool
@@ -858,7 +858,7 @@ class TokenDef implements IComparable is abstract
 	var _requiresBOL as bool
 	var _ignoreCount as int
 	var _isActive = true
-	var _isActiveCall as Object? # @@@@??
+	var _isActiveCall as Object? # to-do @@@@??
 
 	cue init(which as String)
 		require
@@ -903,6 +903,7 @@ class TokenDef implements IComparable is abstract
 				print '[value.a],[value.b],"[name]"'
 
 	def match(input as String) as TokenMatch?
+		require input.length
 		return _match(input)
 		/#
 		sw = System.Diagnostics.Stopwatch()
@@ -948,11 +949,11 @@ class CharTokenDef inherits TokenDef
 		assert match and match.which == 'X' and match.text == 'x'
 		assert tokDef.match('yxx') is nil
 	
-	var _ch as char
-
 	cue init(which as String, ch as char)
 		base.init(which)
 		_ch = ch
+
+	get ch from var as char
 
 	get length as int is override
 		return 1
@@ -963,6 +964,9 @@ class CharTokenDef inherits TokenDef
 	def _match(input as String) as TokenMatch? is override
 		if input[0] == _ch, return TokenMatch(.which, _ch.toString)
 		else, return nil
+
+	def _innerToString as String is override
+		return base._innerToString + ', [.length], [.ch.toTechString]'
 	
 
 class StringTokenDef inherits TokenDef
@@ -983,8 +987,6 @@ class StringTokenDef inherits TokenDef
 		assert match and match.which == 'FOO' and match.text == 'foo'
 		assert tokDef.match('bfoo') is nil
 
-	var _s as String
-	
 	cue init(which as String, s as String)
 		require s.length > 1
 		.init(which, s, false)
@@ -994,6 +996,8 @@ class StringTokenDef inherits TokenDef
 		base.init(which)
 		_s, _requiresBOL = s, requiresBOL
 	
+	get s from var as String
+
 	get length as int is override
 		return _s.length
 	
@@ -1003,6 +1007,9 @@ class StringTokenDef inherits TokenDef
 	def _match(input as String) as TokenMatch? is override
 		if input.startsWith(_s), return TokenMatch(.which, _s)
 		else, return nil
+
+	def _innerToString as String is override
+		return base._innerToString + ', [.length], [.s.toTechString]'
 
 
 class TokenRegexDef inherits TokenDef
@@ -1027,9 +1034,8 @@ class TokenRegexDef inherits TokenDef
 			_requiresBOL = regExSource.startsWith('^')
 			_firstChars = _computeFirstChars(regExSource)
 			_regExSource = regExSource
-			if not _requiresBOL
-				regExSource = '^' + regExSource
 			_length = regExSource.length
+			if not _requiresBOL, regExSource = '^' + regExSource
 			if _compiledRegExes.containsKey(regExSource)
 				_re = _compiledRegExes[regExSource]
 			else
@@ -1091,7 +1097,7 @@ class TokenRegexDef inherits TokenDef
 			return nil
 
 	def _innerToString as String is override
-		return base._innerToString + ', [_regExSource], [_re]'
+		return base._innerToString + ', [.length], [_regExSource], [_re]'
 
 
 class TokenMatch
