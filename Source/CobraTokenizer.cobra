@@ -248,6 +248,9 @@ class CobraTokenizer inherits Tokenizer
 		if _inCommentBlock, .throwError('Unfinished multi-line comment.')
 		return tokens
 
+	def makeCOMMENT_BLOCK_START(definition as String) as TokenDef?
+		return CommentBlockStartTokenDef(definition)
+
 	def makeEOL(definition as String) as TokenDef?
 		return EolTokenDef('EOL', definition)
 
@@ -264,7 +267,7 @@ class CobraTokenizer inherits Tokenizer
 		return SpaceTokenDef('SPACE', definition)
 
 	def makeSINGLE_LINE_COMMENT_BLOCK(definition as String) as TokenDef?
-		return SingleLineCommentBlock(definition)
+		return SingleLineCommentBlockTokenDef(definition)
 
 	def makeSTRING_START_SINGLE(definition as String) as TokenDef?
 		return StringStartTokenDef('STRING_START_SINGLE', definition[0])
@@ -944,6 +947,62 @@ class CobraTokenizer inherits Tokenizer
 ###
 
 
+class CommentBlockStartTokenDef inherits TokenDef
+	"""
+	^[ \t]*\/\#.*$
+	"""
+
+	test
+		tokDef = CommentBlockStartTokenDef('')
+		cases = [
+			'/# ...',
+			'/#',
+			'/##',
+			'/## /',
+		]
+		for case in cases
+			assert tokDef.match(case)
+			assert tokDef.match(' ' + case)
+			assert tokDef.match(case + ' ')
+			assert tokDef.match(case + '\n')
+			assert tokDef.match(case + ' \n')
+		cases = [
+			'/ # ...',
+		]
+		for case in cases
+			assert tokDef.match(case) is nil
+
+	cue init(definition as String)
+		base.init('COMMENT_BLOCK_START')
+		_requiresBOL = true
+
+	get length as int is override
+		throw Exception('ordered token')
+	
+	get firstChars as List<of char> is override
+		return [c'\t', c' ', c'/']
+	
+	def _match(input as String) as TokenMatch? is override
+		state = 0
+		for i in input.length
+			c = input[i]
+			branch state
+				on 0
+					# [ \t]*
+					if c == c' ' or c == c'\t', pass
+					else if c == c'/', state = 1
+					else, return nil
+				on 1
+					# \#.*$
+					if c == c'#', state = 2
+					else, return nil
+				on 2
+					# .*$
+					if c == c'\n', return TokenMatch(input.substring(0, i))
+		if state == 2, return TokenMatch(input)
+		else, return nil
+
+
 class EolTokenDef inherits TokenDef
 	"""
 	\n
@@ -1138,13 +1197,13 @@ class OpenGenericTokenDef inherits TokenDef
 		return nil
 
 
-class SingleLineCommentBlock inherits TokenDef
+class SingleLineCommentBlockTokenDef inherits TokenDef
 	"""
 	^[ \t]*\/\#.*\#\/[ \t]*$
 	"""
 
 	test
-		tokDef = SingleLineCommentBlock('')
+		tokDef = SingleLineCommentBlockTokenDef('')
 		cases = [
 			'/# ... #/',
 			'/##/',
@@ -1176,8 +1235,7 @@ class SingleLineCommentBlock inherits TokenDef
 		return [c'\t', c' ', c'/']
 	
 	def _match(input as String) as TokenMatch? is override
-		state = 0
-		lenM1 = input.length - 1
+		state, lenM1 = 0, input.length - 1
 		for i in input.length
 			c = input[i]
 			branch state
