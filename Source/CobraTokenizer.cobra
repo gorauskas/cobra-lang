@@ -263,6 +263,9 @@ class CobraTokenizer inherits Tokenizer
 	def makeSPACE(definition as String) as TokenDef?
 		return SpaceTokenDef('SPACE', definition)
 
+	def makeSINGLE_LINE_COMMENT_BLOCK(definition as String) as TokenDef?
+		return SingleLineCommentBlock(definition)
+
 	def makeSTRING_START_SINGLE(definition as String) as TokenDef?
 		return StringStartTokenDef('STRING_START_SINGLE', definition[0])
 		
@@ -1135,6 +1138,75 @@ class OpenGenericTokenDef inherits TokenDef
 		return nil
 
 
+class SingleLineCommentBlock inherits TokenDef
+	"""
+	^[ \t]*\/\#.*\#\/[ \t]*$
+	"""
+
+	test
+		tokDef = SingleLineCommentBlock('')
+		cases = [
+			'/# ... #/',
+			'/##/',
+			'/######/',
+		]
+		for case in cases
+			assert tokDef.match(case)
+			assert tokDef.match(' ' + case)
+			assert tokDef.match(case + ' ')
+			assert tokDef.match(case + '\n')
+			assert tokDef.match(case + ' \n')
+		cases = [
+			'/# ...',
+			'/ # ... ',
+			'/# ... # /',
+			'/# ...\n...#/',
+		]
+		for case in cases
+			assert tokDef.match(case) is nil
+
+	cue init(definition as String)
+		base.init('SINGLE_LINE_COMMENT_BLOCK')
+		_requiresBOL = true
+
+	get length as int is override
+		throw Exception('ordered token')
+	
+	get firstChars as List<of char> is override
+		return [c'\t', c' ', c'/']
+	
+	def _match(input as String) as TokenMatch? is override
+		state = 0
+		lenM1 = input.length - 1
+		for i in input.length
+			c = input[i]
+			branch state
+				on 0
+					# [ \t]*
+					if c == c' ' or c == c'\t', pass
+					else if c == c'/', state = 1
+					else, return nil
+				on 1
+					# \#.*\#\/[ \t]*$
+					if c == c'#', state = 2
+					else, return nil
+				on 2
+					# .*\#\/[ \t]*$
+					if c == c'\n', return nil
+					else if c == c'#' and i < lenM1 and input[i+1] == c'/', state = 3
+				on 3
+					# \/[ \t]*$
+					assert c == c'/'
+					state = 4
+				on 4
+					if c == c' ' or c == c'\t', pass
+					else if c == c'\n', return TokenMatch(input.substring(0, i+1))
+					else, return nil
+		if state == 2, return nil
+		assert state == 3 or state == 4
+		return TokenMatch(input)
+
+
 class SpaceTokenDef inherits TokenDef
 	
 	test
@@ -1353,6 +1425,7 @@ class WhiteSpaceLineTokenDef inherits TokenDef
 
 	cue init(which as String, definition as String)
 		base.init(which)
+		_requiresBOL = true
 	
 	get length as int is override
 		throw Exception('ordered token')
