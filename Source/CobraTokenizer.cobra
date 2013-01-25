@@ -257,6 +257,12 @@ class CobraTokenizer inherits Tokenizer
 	def makeID(definition as String) as TokenDef?
 		return IdTokenDef('ID', definition)
 
+	def makeINDENT_MIXED_TSNS(definition as String) as TokenDef?
+		return IndentMixedTokenDef(1, definition)
+	
+	def makeINDENT_MIXED_TS(definition as String) as TokenDef?
+		return IndentMixedTokenDef(2, definition)
+
 	def makeOPEN_GENERIC(definition as String) as TokenDef?
 		return OpenGenericTokenDef('OPEN_GENERIC', definition)
 		
@@ -1071,6 +1077,75 @@ class IdTokenDef inherits TokenDef
 						or (c >= c'0' and c <= c'9'), pass
 					else, return TokenMatch(input.substring(0, i))
 		return TokenMatch(input.substring(0, i))
+
+
+class IndentMixedTokenDef inherits TokenDef
+	"""
+	r'INDENT_MIXED_TSNS		^[\t]+[ ]+(?=[^\t ])',
+	r'INDENT_MIXED_TS		^[\t]+[ ]+',
+	"""
+
+	test
+		tokDef = IndentMixedTokenDef(1, '')
+		cases = [
+			'\t x',
+			'\t\t foo',
+			'\t   bar',
+		]
+		for case in cases
+			match = tokDef.match(case)
+			assert match, case
+			assert match.which == 'INDENT_MIXED_TSNS'
+			assert match.text.trim == ''
+		tokDef = IndentMixedTokenDef(2, '')
+		cases = [
+			'\t x',
+			'\t\t foo',
+			'\t   bar',
+		]
+		for case in cases
+			match = tokDef.match(case)
+			assert match
+			assert match.which == 'INDENT_MIXED_TS'
+			assert match.text.trim == ''
+
+	var _num as int
+
+	cue init(num as int, definition as String)
+		require num in [1, 2]
+		base.init('INDENT_MIXED_'+if(num==1, 'TSNS', 'TS'))
+		_num, _requiresBOL = num, true
+
+	get length as int is override
+		throw Exception('ordered token')
+	
+	get firstChars as List<of char> is override
+		return [c'\t']
+	
+	def _match(input as String) as TokenMatch? is override
+		state = 0
+		for i in input.length
+			c = input[i]
+			branch state
+				on 0  # [\t]+
+					if c <> c'\t', return nil
+					else, state = 2
+				on 2  # [\t]+[ ]+
+					if c == c'\t', pass
+					else if c == c' ', state = 3
+					else, return nil
+				on 3  # [ ]+
+					if c == c' '
+						pass
+					else
+						if _num == 1  # (?=[^\t ])
+							if c <> c'\t' and c <> c' '
+								return TokenMatch(.which, input.substring(0, i))
+							else
+								return nil
+						else
+							return TokenMatch(.which, input.substring(0, i))
+		return nil
 
 
 class OpenCallTokenDef inherits TokenDef
