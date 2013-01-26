@@ -120,10 +120,11 @@ class CobraTokenizer inherits Tokenizer
 
 			r'AT_ID					r	@[A-Za-z_][A-Za-z0-9_]*',
 
-			OpenGenericTokenDef('OPEN_GENERIC', r'[A-Za-z_][A-Za-z0-9_]*<of([ \n\r\t]|(?=[,>]))'),
-			r'OPEN_DO				s	do(',
-			r'OPEN_IF				s	if(',
-			OpenCallTokenDef('OPEN_CALL', r'[A-Za-z_][A-Za-z0-9_]*\('),
+			OpenComboTokenDef(),
+			# OpenGenericTokenDef('OPEN_GENERIC', r'[A-Za-z_][A-Za-z0-9_]*<of([ \n\r\t]|(?=[,>]))'),
+			# r'OPEN_DO				s	do(',
+			# r'OPEN_IF				s	if(',
+			# OpenCallTokenDef('OPEN_CALL', r'[A-Za-z_][A-Za-z0-9_]*\('),
 
 			r'HEX_LIT_UNSIGN		r	0x[\dA-Fa-f][\dA-Fa-f]*(_?u)(8|16|32|64)?',
 			r'HEX_LIT_EXPLICIT		r	0x[\dA-Fa-f][\dA-Fa-f]*_(8|16|32|64)?',
@@ -1186,6 +1187,92 @@ class IndentMixedTokenDef inherits TokenDef
 		return nil
 
 
+class OpenComboTokenDef inherits TokenDef
+	"""
+	Combines these which appear sequentially in the token list:
+	
+		OpenGenericTokenDef('OPEN_GENERIC', r'[A-Za-z_][A-Za-z0-9_]*<of([ \n\r\t]|(?=[,>]))'),
+		r'OPEN_DO				s	do(',
+		r'OPEN_IF				s	if(',
+		OpenCallTokenDef('OPEN_CALL', r'[A-Za-z_][A-Za-z0-9_]*\('),
+	"""
+
+	test
+		tokDef = OpenComboTokenDef()
+		# OPEN_GENERIC
+		cases = ['Foo<of ', 'Foo<of>', 'Foo<of,>']
+		for case in cases
+			match = tokDef.match(case)
+			assert match and match.which == 'OPEN_GENERIC' and match.text.trim.endsWith('<of')
+		# OPEN_DO
+		match = tokDef.match('do(')
+		assert match and match.which == 'OPEN_DO'
+		# OPEN_IF
+		match = tokDef.match('if(')
+		assert match and match.which == 'OPEN_IF'
+		# OPEN_CALL
+		cases = ['x(', 'foo(', 'Foo(']
+		for case in cases
+			match = tokDef.match(case)
+			assert match and match.which == 'OPEN_CALL'
+		# negative cases
+		cases = ['foo', 'Foo<off ', '<of', 'Foo<fo', '<', '(foo', '(']
+		for case in cases, assert tokDef.match(case) is nil
+	
+	cue init
+		base.init('OpenComboTokenDef')
+	
+	get length as int is override
+		throw Exception('ordered token')
+	
+	get firstChars as List<of char> is override
+		t = List<of char>()
+		for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_', t.add(c)
+		return t
+
+	shared
+	
+		var _spaces = @[c' ', c'\n', c'\r', c'\t']
+
+	def _match(input as String) as TokenMatch? is override
+		# time savings here included:
+		#  1. eliminating use of StringBuilder() and instead returning input.substring(0, i+1)
+		#  2. switch from: c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_'
+		#              to: (c >= c'A' and c <= c'Z') or (c >= c'a' and c <= c'z') or (c == c'_')
+		state = 0
+		for i in input.length
+			c = input[i]
+			branch state
+				on 0  # [A-Za-z_]
+					if (c >= c'A' and c <= c'Z') or (c >= c'a' and c <= c'z') or (c == c'_'), state = 1
+					else, return nil
+				on 1  # [A-Za-z0-9_]*
+					if (c >= c'A' and c <= c'Z') or (c >= c'a' and c <= c'z') or (c == c'_') _
+						or (c >= c'0' and c <= c'9'), pass
+					else if c == c'<', state = 2
+					else if c == c'('
+						text = input.substring(0, i+1)
+						if text == 'do(', return TokenMatch('OPEN_DO', text)
+						else if text == 'if(', return TokenMatch('OPEN_IF', text)
+						else, return TokenMatch('OPEN_CALL', text)
+					else, return nil
+				on 2  # o - <of
+					if c == c'o', state = 3
+					else, return nil
+				on 3  # f - <of
+					if c == c'f', state = 4
+					else, return nil
+				on 4  # ([ \n\r\t]|(?=[,>]))'
+					if c in _spaces
+						return TokenMatch('OPEN_GENERIC', input.substring(0, i+1))
+					else if c == c',' or c == c'>' or i == input.length-1
+						# positive lookahead - (?=[,>])
+						# so don't add to sb
+						return TokenMatch('OPEN_GENERIC', input.substring(0, i))
+					else
+						return nil
+		return nil
+
 class OpenCallTokenDef inherits TokenDef
 	"""
 	[A-Za-z_][A-Za-z0-9_]*\(
@@ -1256,10 +1343,6 @@ class OpenGenericTokenDef inherits TokenDef
 		var _spaces = @[c' ', c'\n', c'\r', c'\t']
 
 	def _match(input as String) as TokenMatch? is override
-		# time savings here included:
-		#  1. eliminating use of StringBuilder() and instead returning input.substring(0, i+1)
-		#  2. switch from: c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_'
-		#              to: (c >= c'A' and c <= c'Z') or (c >= c'a' and c <= c'z') or (c == c'_')
 		state = 0
 		for i in input.length
 			c = input[i]
