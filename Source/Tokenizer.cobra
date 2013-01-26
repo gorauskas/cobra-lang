@@ -14,6 +14,7 @@
 
 """
 
+use System.Collections
 use System.Text.RegularExpressions
 use System.Reflection
 
@@ -368,10 +369,10 @@ class Tokenizer
 
 	## Subclasses often override
 
-	def orderedTokenSpecs as List<of String>
+	def orderedTokenSpecs as IList
 		return List<of String>()
 
-	def unorderedTokenSpecs as List<of String>
+	def unorderedTokenSpecs as IList
 		return List<of String>()
 
 	get keywords as IList<of String>
@@ -525,8 +526,16 @@ class Tokenizer
 			tok.which = _keywordToWhichToken[tok.text]
 		return tok
 
-	def addTokenSpec(spec as String)
+	def addTokenSpec(spec)
 		_tokenDefs.add(.tokenDefForSpec(spec))
+			
+	def tokenDefForSpec(spec) as TokenDef
+		if spec inherits TokenDef
+			return spec
+		else if spec inherits String
+			return .tokenDefForSpec(spec)
+		else
+			throw FallThroughException(spec)
 
 	def tokenDefForSpec(spec as String) as TokenDef
 		"""
@@ -1173,7 +1182,7 @@ class TestTokenizer inherits Tokenizer
 
 	get idCount from var
 
-	def orderedTokenSpecs as List<of String> is override
+	def orderedTokenSpecs as IList is override
 		return [
 			'OPEN_IF		ifx\\(',
 			ns'ID			[A-Za-z_][A-Za-z0-9_]*',
@@ -1181,7 +1190,7 @@ class TestTokenizer inherits Tokenizer
 			'NEWLINE		\\n',
 			]
 
-	def unorderedTokenSpecs as List<of String> is override
+	def unorderedTokenSpecs as IList is override
 		return [
 			'DOT		\\.',
 			'COLON		:',

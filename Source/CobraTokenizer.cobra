@@ -7,6 +7,7 @@ Rules:
 
 """
 
+use System.Collections
 use System.Text.RegularExpressions
 
 
@@ -97,32 +98,32 @@ class CobraTokenizer inherits Tokenizer
 	#       the regex design for the tokens below.
 
 
-	def orderedTokenSpecs as List<of String> is override
+	def orderedTokenSpecs as IList is override
 		return [
 			# whitespace
-			r'WHITESPACE_LINE		^[\t ]+$',
-			r'WHITESPACE_COMMENT_1	^[\t]+[ ]*\#.*$',
-			r'WHITESPACE_COMMENT_2	^[ ]+[\t]*\#.*$',
-			r'SINGLE_LINE_COMMENT_BLOCK	^[ \t]*\/\#.*\#\/[ \t]*$',
-			r'COMMENT_BLOCK_START	^[ \t]*\/\#.*$',  
-			r'INDENT_MIXED_TSNS		^[\t]+[ ]+(?=[^\t ])',
-			r'INDENT_MIXED_TS		^[\t]+[ ]+',
+			WhiteSpaceLineTokenDef(r'^[\t ]+$'),
+			WhiteSpaceCommentTokenDef(1, r'^[\t]+[ ]*\#.*$'),
+			WhiteSpaceCommentTokenDef(2, r'^[ ]+[\t]*\#.*$'),
+			SingleLineCommentBlockTokenDef(r'^[ \t]*\/\#.*\#\/[ \t]*$'),
+			CommentBlockStartTokenDef(r'^[ \t]*\/\#.*$'),
+			IndentMixedTokenDef(1, r'^[\t]+[ ]+(?=[^\t ])'),
+			IndentMixedTokenDef(2, r'^[\t]+[ ]+'),
 			r'INDENT_MIXED_ST		^[ ]+[\t]+',
-			r'INDENT_ALL_TABS		^[\t]+',
-			r'INDENT_ALL_SPACES		^[ ]+',
+			IndentAllTokenDef('INDENT_ALL_TABS', c'\t', r'^[\t]+'),
+			IndentAllTokenDef('INDENT_ALL_SPACES', c' ', r'^[ ]+'),
 			r'NO_INDENT				^(?=[^\t\n#\/])',
-			r'EOL					\n',
+			EolTokenDef('EOL', r'\n'),
 			r'INLINE_COMMENT		\/\#.*\#/',
 			r'SINGLE_LINE_COMMENT	\#.*',
 			r'AMBIGUOUS_COMMENT		\/\#.*',
-			r'SPACE					[ \t]+',
+			SpaceTokenDef('SPACE', r'[ \t]+'),
 
 			r'AT_ID					@[A-Za-z_][A-Za-z0-9_]*',
 
-			r'OPEN_GENERIC			[A-Za-z_][A-Za-z0-9_]*<of([ \n\r\t]|(?=[,>]))',
+			OpenGenericTokenDef('OPEN_GENERIC', r'[A-Za-z_][A-Za-z0-9_]*<of([ \n\r\t]|(?=[,>]))'),
 			r'OPEN_DO				do\(',
 			r'OPEN_IF				if\(',
-			r'OPEN_CALL				[A-Za-z_][A-Za-z0-9_]*\(',
+			OpenCallTokenDef('OPEN_CALL', r'[A-Za-z_][A-Za-z0-9_]*\('),
 
 			r'HEX_LIT_UNSIGN		0x[\dA-Fa-f][\dA-Fa-f]*(_?u)(8|16|32|64)?',
 			r'HEX_LIT_EXPLICIT		0x[\dA-Fa-f][\dA-Fa-f]*_(8|16|32|64)?',
@@ -157,13 +158,13 @@ class CobraTokenizer inherits Tokenizer
 
 			# substituted strings
 			r'RBRACKET_SPECIAL		]',
-			r"STRING_START_SINGLE	'",  # see "def makeSTRING_FOO_BAR"
-			r"STRING_PART_SINGLE	'",
-			r"STRING_STOP_SINGLE	'",
+			StringStartTokenDef('STRING_START_SINGLE', c"'"),
+			StringPartTokenDef('STRING_PART_SINGLE', c"'"),
+			StringStopTokenDef('STRING_STOP_SINGLE', c"'"),
 
-			r'STRING_START_DOUBLE	"',
-			r'STRING_PART_DOUBLE	"',
-			r'STRING_STOP_DOUBLE	"',
+			StringStartTokenDef('STRING_START_DOUBLE', c'"'),
+			StringPartTokenDef('STRING_PART_DOUBLE', c'"'),
+			StringStopTokenDef('STRING_STOP_DOUBLE', c'"'),
 
 			r'STRING_PART_FORMAT	:[^X"\n\[]*(?=])'.replace('X', "'"),
 
@@ -175,10 +176,10 @@ class CobraTokenizer inherits Tokenizer
 			r'STRING_DOUBLE			"(?:\\.?|[^"\n])*"',
 
 			r'TOQ					to\?',
-			r'ID					[A-Za-z_][A-Za-z0-9_]*',
+			IdTokenDef('ID', ''),		# [A-Za-z_][A-Za-z0-9_]*
 		]
 
-	def unorderedTokenSpecs as List<of String> is override
+	def unorderedTokenSpecs as IList is override
 		return [
 			r'SHARP_OPEN		\$sharp\(',  # deprecated. $ is reserved for future language level regex support
 			r"SINGLE_QUOTE		'",
@@ -258,9 +259,6 @@ class CobraTokenizer inherits Tokenizer
 		if _inCommentBlock, .throwError('Unfinished multi-line comment.')
 		return tokens
 
-	def makeCOMMENT_BLOCK_START(definition as String) as TokenDef?
-		return CommentBlockStartTokenDef(definition)
-
 	## popular single chars
 	
 	def makeASSIGN(definition as String) as TokenDef?
@@ -308,62 +306,6 @@ class CobraTokenizer inherits Tokenizer
 
 	## end popular strings
 	
-	def makeEOL(definition as String) as TokenDef?
-		return EolTokenDef('EOL', definition)
-
-	def makeID(definition as String) as TokenDef?
-		return IdTokenDef('ID', definition)
-
-	def makeINDENT_ALL_TABS(definition as String) as TokenDef?
-		return IndentAllTokenDef('INDENT_ALL_TABS', c'\t', definition)
-	
-	def makeINDENT_ALL_SPACES(definition as String) as TokenDef?
-		return IndentAllTokenDef('INDENT_ALL_SPACES', c' ', definition)
-
-	def makeINDENT_MIXED_TSNS(definition as String) as TokenDef?
-		return IndentMixedTokenDef(1, definition)
-	
-	def makeINDENT_MIXED_TS(definition as String) as TokenDef?
-		return IndentMixedTokenDef(2, definition)
-
-	def makeOPEN_GENERIC(definition as String) as TokenDef?
-		return OpenGenericTokenDef('OPEN_GENERIC', definition)
-		
-	def makeOPEN_CALL(definition as String) as TokenDef?
-		return OpenCallTokenDef('OPEN_CALL', definition)
-		
-	def makeSPACE(definition as String) as TokenDef?
-		return SpaceTokenDef('SPACE', definition)
-
-	def makeSINGLE_LINE_COMMENT_BLOCK(definition as String) as TokenDef?
-		return SingleLineCommentBlockTokenDef(definition)
-
-	def makeSTRING_START_SINGLE(definition as String) as TokenDef?
-		return StringStartTokenDef('STRING_START_SINGLE', definition[0])
-		
-	def makeSTRING_START_DOUBLE(definition as String) as TokenDef?
-		return StringStartTokenDef('STRING_START_DOUBLE', definition[0])
-
-	def makeSTRING_PART_SINGLE(definition as String) as TokenDef?
-		return StringPartTokenDef('STRING_PART_SINGLE', definition[0])
-		
-	def makeSTRING_PART_DOUBLE(definition as String) as TokenDef?
-		return StringPartTokenDef('STRING_PART_DOUBLE', definition[0])
-
-	def makeSTRING_STOP_SINGLE(definition as String) as TokenDef?
-		return StringStopTokenDef('STRING_STOP_SINGLE', definition[0])
-		
-	def makeSTRING_STOP_DOUBLE(definition as String) as TokenDef?
-		return StringStopTokenDef('STRING_STOP_DOUBLE', definition[0])
-
-	def makeWHITESPACE_LINE(definition as String) as TokenDef?
-		return WhiteSpaceLineTokenDef('WHITESPACE_LINE', definition)
-
-	def makeWHITESPACE_COMMENT_1(definition as String) as TokenDef?
-		return WhiteSpaceCommentTokenDef(1, definition)
-
-	def makeWHITESPACE_COMMENT_2(definition as String) as TokenDef?
-		return WhiteSpaceCommentTokenDef(2, definition)
 
 	def afterStart is override
 		base.afterStart
@@ -1179,8 +1121,8 @@ class IndentAllTokenDef inherits TokenDef
 
 class IndentMixedTokenDef inherits TokenDef
 	"""
-	r'INDENT_MIXED_TSNS		^[\t]+[ ]+(?=[^\t ])',
-	r'INDENT_MIXED_TS		^[\t]+[ ]+',
+	1	r'INDENT_MIXED_TSNS		^[\t]+[ ]+(?=[^\t ])',
+	2	r'INDENT_MIXED_TS		^[\t]+[ ]+',
 	"""
 
 	test
@@ -1692,7 +1634,7 @@ class WhiteSpaceLineTokenDef inherits TokenDef
 	"""
 
 	test
-		tokDef = WhiteSpaceLineTokenDef('OPEN_CALL', '')
+		tokDef = WhiteSpaceLineTokenDef('')
 		cases = [
 			' ', '  ', '\t  ',
 			'\t', '\t\t', ' \t\t'
@@ -1703,8 +1645,8 @@ class WhiteSpaceLineTokenDef inherits TokenDef
 		assert tokDef.match('    foo') is nil
 		assert tokDef.match('foo') is nil
 
-	cue init(which as String, definition as String)
-		base.init(which)
+	cue init(definition as String)
+		base.init('WHITESPACE_LINE')
 		_requiresBOL = true
 	
 	get length as int is override
