@@ -9,6 +9,19 @@ cobra benchmark-compiler.cobra
 cobra -contracts:none -include-asserts:no -include-nil-checks:no -include-tests:no -optimize benchmark-compiler.cobra
 
 time mono --profile=log:report,calldepth=200 benchmark-compiler.exe > profile-`tss`.text
+
+time mono --profile=log:calls,alloc,output=output.mlpd,maxframes=8,calldepth=100 benchmark-compiler.exe
+
+time mono --profile=log:calls,alloc,output=output-`tss`.mlpd,maxframes=8,calldepth=200 benchmark-compiler.exe
+
+time mono --profile=output=output-`tss`.mlpd,calldepth=200 benchmark-compiler.exe
+#
+> profile-`tss`.text
+
+--method-sort=self
+
+mprof-report --traces --method-sort=self output-2013-01-23-21-54-20.mlpd > report.text
+mprof-report --method-sort=self output-2013-01-23-21-54-20.mlpd > report.text
 """
 
 use Cobra.Compiler
@@ -20,7 +33,12 @@ class CustomBackEnd inherits ClrBackEnd
 	def makePhases(phases as IList<of Phase>) is override
 		# don't generate .exe or .dll
 		# this is for benchmarking wrt IDE parsing and autocompletion
-		pass
+		newPhases = List<of Phase>()
+		for phase in phases
+			newPhases.add(phase)
+			if phase inherits ParsePhase, break
+		phases.clear
+		phases.addRange(newPhases)
 
 
 class P
@@ -75,6 +93,9 @@ class P
 		paths = ['cobra.cobra']
 		paths.addRange(.readFilesFile('files-to-compile.text'))
 		.compile(options, paths)
+		# uu
+		# TokenDef.printMatchTimes
+
 		
 	def compileGeneticAlgorithm
 		options = .defaultOptions
