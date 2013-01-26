@@ -540,15 +540,25 @@ class Tokenizer
 	def tokenDefForSpec(spec as String) as TokenDef
 		"""
 		Returns a TokenDef object for a spec such as
-			r'ID			[A-Za-z_][A-Za-z0-9_]*'
+			r'ID		r	[A-Za-z_][A-Za-z0-9_]*'
+			r'PLUS		s	+'
+		r = regex, s = string
 		"""
 		spec = spec.trim.replace('\t', ' ')
-		parts = spec.split(@[c' '], 2)
-		assert parts.length == 2
-		which, re = parts
-		re = re.trim
-		assert which.length and re.length
-		return TokenRegexDef(which, re)
+		i = spec.indexOf(' ')
+		which = spec[:i]
+		spec = spec[i+1:].trim
+		assert spec.length
+		type = spec[0]
+		assert type in [c'r', c's']
+		text = spec[1:].trim
+		if type == 'r'
+			return TokenRegexDef(which, text)
+		else
+			if text.length == 1
+				return CharTokenDef(which, text[0])
+			else
+				return StringTokenDef(which, text)
 
 	def afterStart
 		"""
@@ -1156,19 +1166,19 @@ class TestTokenizer inherits Tokenizer
 
 	def orderedTokenSpecs as IList is override
 		return [
-			'OPEN_IF		ifx\\(',
-			ns'ID			[A-Za-z_][A-Za-z0-9_]*',
-			ns'SPACE		[ ]+',
-			'NEWLINE		\\n',
+			'OPEN_IF	r	ifx\\(',
+			ns'ID		r	[A-Za-z_][A-Za-z0-9_]*',
+			ns'SPACE	r	[ ]+',
+			'NEWLINE	r	\\n',
 			]
 
 	def unorderedTokenSpecs as IList is override
 		return [
-			'DOT		\\.',
-			'COLON		:',
-			'PLUS		\\+',
-			'ASSIGN		=',
-			'EQUALS		==',
+			'DOT		r	\\.',
+			'COLON		r	:',
+			'PLUS		r	\\+',
+			'ASSIGN		r	=',
+			'EQUALS		r	==',
 			]
 
 	get keywords as IList<of String> is override
