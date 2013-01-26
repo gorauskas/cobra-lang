@@ -112,7 +112,7 @@ class CobraTokenizer inherits Tokenizer
 			IndentAllTokenDef('INDENT_ALL_TABS', c'\t', r'^[\t]+'),
 			IndentAllTokenDef('INDENT_ALL_SPACES', c' ', r'^[ ]+'),
 			r'NO_INDENT				r	^(?=[^\t\n#\/])',
-			EolTokenDef('EOL', r'\n'),
+			CharTokenDef('EOL', c'\n'),
 			r'INLINE_COMMENT		r	\/\#.*\#/',
 			r'SINGLE_LINE_COMMENT	r	\#.*',
 			r'AMBIGUOUS_COMMENT		r	\/\#.*',
@@ -1015,31 +1015,6 @@ class CommentBlockStartTokenDef inherits TokenDef
 		else, return nil
 
 
-class EolTokenDef inherits TokenDef
-	"""
-	\n
-	"""
-
-	test
-		tokDef = EolTokenDef('EOF', '')
-		assert tokDef.match('\n').text == '\n'
-		assert tokDef.match('\n\n').text == '\n'
-		assert tokDef.match('\r') is nil
-
-	cue init(which as String, definition as String)
-		base.init(which)
-	
-	get length as int is override
-		throw Exception('ordered token')
-	
-	get firstChars as List<of char> is override
-		return [c'\n']
-
-	def _match(input as String) as TokenMatch? is override
-		if input[0] == '\n', return TokenMatch('\n')
-		else, return nil
-
-
 class IdTokenDef inherits TokenDef
 	"""
 	[A-Za-z_][A-Za-z0-9_]*
@@ -1269,105 +1244,6 @@ class OpenComboTokenDef inherits TokenDef
 						# positive lookahead - (?=[,>])
 						# so don't add to sb
 						return TokenMatch('OPEN_GENERIC', input.substring(0, i))
-					else
-						return nil
-		return nil
-
-class OpenCallTokenDef inherits TokenDef
-	"""
-	[A-Za-z_][A-Za-z0-9_]*\(
-	25 X faster
-	"""
-
-	test
-		tokDef = OpenCallTokenDef('OPEN_CALL', '')
-		assert tokDef.match('x(')
-		assert tokDef.match('foo(')
-		assert tokDef.match('Foo(')
-		assert tokDef.match('Foo<of ') is nil
-		assert tokDef.match('(') is nil
-
-	cue init(which as String, definition as String)
-		base.init(which)
-	
-	get length as int is override
-		throw Exception('ordered token')
-	
-	get firstChars as List<of char> is override
-		t = List<of char>()
-		for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_', t.add(c)
-		return t
-	
-	def _match(input as String) as TokenMatch? is override
-		state = 0
-		for i in input.length
-			c = input[i]
-			branch state
-				on 0  # [A-Za-z_]
-					if (c >= c'A' and c <= c'Z') or (c >= c'a' and c <= c'z') or (c == c'_'), state = 1
-					else, return nil
-				on 1  # [A-Za-z0-9_]*
-					if (c >= c'A' and c <= c'Z') or (c >= c'a' and c <= c'z') or (c == c'_') _
-						or (c >= c'0' and c <= c'9'), pass
-					else if c == c'(', return TokenMatch(input.substring(0, i+1))
-					else, return nil
-		return nil
-
-	
-class OpenGenericTokenDef inherits TokenDef
-	"""
-	[A-Za-z_][A-Za-z0-9_]*<of([ \n\r\t]|(?=[,>]))
-	52 X faster than regex
-	"""
-
-	test
-		tokDef = OpenGenericTokenDef('OPEN_GENERIC', '')
-		assert tokDef.match('Foo<of ')
-		assert tokDef.match('Foo<of>')
-		assert tokDef.match('Foo<of,>')
-		assert tokDef.match('Foo<fo') is nil
-
-	cue init(which as String, definition as String)
-		base.init(which)
-	
-	get length as int is override
-		throw Exception('ordered token')
-	
-	get firstChars as List<of char> is override
-		t = List<of char>()
-		for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_', t.add(c)
-		return t
-	
-	shared
-	
-		var _spaces = @[c' ', c'\n', c'\r', c'\t']
-
-	def _match(input as String) as TokenMatch? is override
-		state = 0
-		for i in input.length
-			c = input[i]
-			branch state
-				on 0  # [A-Za-z_]
-					if (c >= c'A' and c <= c'Z') or (c >= c'a' and c <= c'z') or (c == c'_'), state = 1
-					else, return nil
-				on 1  # [A-Za-z0-9_]*
-					if (c >= c'A' and c <= c'Z') or (c >= c'a' and c <= c'z') or (c == c'_') _
-						or (c >= c'0' and c <= c'9'), pass
-					else if c == c'<', state = 2
-					else, return nil
-				on 2  # o - <of
-					if c == c'o', state = 3
-					else, return nil
-				on 3  # f - <of
-					if c == c'f', state = 4
-					else, return nil
-				on 4  # ([ \n\r\t]|(?=[,>]))'
-					if c in _spaces
-						return TokenMatch(input.substring(0, i+1))
-					else if c == c',' or c == c'>' or i == input.length-1
-						# positive lookahead - (?=[,>])
-						# so don't add to sb
-						return TokenMatch(input.substring(0, i))
 					else
 						return nil
 		return nil
