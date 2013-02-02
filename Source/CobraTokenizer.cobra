@@ -173,8 +173,8 @@ class CobraTokenizer inherits Tokenizer
 			r"STRING_NOSUB_SINGLE	r	ns'(?:\\.?|[^'\n])*'",
 			r'STRING_NOSUB_DOUBLE	r	ns"(?:\\.?|[^"\n])*"',
 
-			r"STRING_SINGLE			r	'(?:\\.?|[^'\n])*'",
-			r'STRING_DOUBLE			r	"(?:\\.?|[^"\n])*"',
+			StringLiteralTokenDef('STRING_SINGLE', c"'"),			
+			StringLiteralTokenDef('STRING_DOUBLE', c'"'),
 
 			r'TOQ					s	to?',
 			IdTokenDef('ID', r'[A-Za-z_][A-Za-z0-9_]*'),
@@ -1364,7 +1364,66 @@ class SpaceTokenDef inherits TokenDef
 		return if(i==0, nil, TokenMatch(input.substring(0, i)))
 
 
-class StringLiteralTokenDef inherits TokenDef is abstract
+class StringLiteralTokenDef inherits TokenDef
+	"""
+	STRING_SINGLE	'(?:\\.?|[^'\n])*'
+	STRING_DOUBLE	"(?:\\.?|[^"\n])*"
+	"
+	"""
+
+	test			
+		cases = [
+			r'foo',
+			r'',
+			r'foo\n',
+			r'foo\nbar',
+			r'...',
+		]
+		for delimeter in ['"', "'"]
+			tokDef = StringLiteralTokenDef('STRING_FOO', delimeter[0])
+			for case in cases
+				if case.length, assert tokDef.match(case) is nil  # no delimeters have been added to the case yet
+				case = delimeter + case + delimeter
+				match = tokDef.match(case)
+				assert match, {'case': case, 'tokDef': tokDef}
+				assert match.text.startsWith(delimeter) and match.text.endsWith(delimeter)
+				assert match.text.length == case.length
+
+	cue init(which as String, delimiter as char)
+		require delimiter in [c'"', c"'"]
+		base.init(which)
+		_delimiter = delimiter
+	
+	get delimiter from var as char
+
+	def _innerToString as String is override
+		return base._innerToString + ', [.delimiter.toTechString]'
+
+	get length as int is override
+		throw Exception('ordered token')
+
+	get firstChars as List<of char> is override
+		return [_delimiter]
+	
+	def _match(input as String) as TokenMatch? is override
+		state = 0
+		for i in input.length
+			c = input[i]
+			branch state
+				on 0
+					if c == _delimiter, state = 1
+					else, return nil
+				on 1  # inside string
+					if c == _delimiter, return TokenMatch(input.substring(0, i+1))
+					else if c == c'\\', state = 2
+					else if c <> '\n' and c <> _delimiter, pass
+					else, return nil
+				on 2  # \x
+					state = 1
+		return nil
+
+
+class AbstractStringThingTokenDef inherits TokenDef is abstract
 	"""
 	Regexes were:
 		r"STRING_START_SINGLE	'[^'\n\[]*\[",
@@ -1418,7 +1477,7 @@ class StringLiteralTokenDef inherits TokenDef is abstract
 		return '[.getType.name]([CobraCore.toTechString(_quote)])'
 
 
-class StringStartTokenDef inherits StringLiteralTokenDef
+class StringStartTokenDef inherits AbstractStringThingTokenDef
 	
 	cue init(which as String, quote as char)
 		base.init(which, quote)
@@ -1449,7 +1508,7 @@ class StringStartTokenDef inherits StringLiteralTokenDef
 			return _matchBetween(input, _quote, c'[', _quote)
 
 
-class StringPartTokenDef inherits StringLiteralTokenDef
+class StringPartTokenDef inherits AbstractStringThingTokenDef
 	
 	cue init(which as String, quote as char)
 		base.init(which, quote)
@@ -1480,7 +1539,7 @@ class StringPartTokenDef inherits StringLiteralTokenDef
 			return _matchBetween(input, c']', c'[', _quote)
 
 
-class StringStopTokenDef inherits StringLiteralTokenDef
+class StringStopTokenDef inherits AbstractStringThingTokenDef
 	
 	cue init(which as String, quote as char)
 		base.init(which, quote)
