@@ -30,21 +30,29 @@ use System.Diagnostics
 
 class CustomBackEnd inherits ClrBackEnd
 
-	def makePhases(phases as IList<of Phase>) is override
-		# don't generate .exe or .dll
-		# this is for benchmarking wrt IDE parsing and autocompletion
+	def makePhases(phases as IList<of Phase>)
+		base.makePhases(phases)
+		v = false
+		if v, for phase in phases, print phase
+		# .stopAt(phases, Cobra.Compiler.ParsePhase)
+		.stopAt(phases, Cobra.Compiler.GenerateSharpCodePhase)
+		if v
+			print '--'
+			for phase in phases, print phase
+
+	def stopAt(phases as IList<of Phase>, phaseType as Type)		
 		newPhases = List<of Phase>()
 		for phase in phases
 			newPhases.add(phase)
-			if phase inherits ParsePhase, break
+			if phase.typeOf == phaseType, break
 		phases.clear
 		phases.addRange(newPhases)
 
 
 class P
 
-	const reps = 2
-	var verbosity = 0
+	const reps = 1
+	var verbosity = 1
 	
 	def main
 		print 'Starting'
@@ -96,7 +104,7 @@ class P
 	def compileCompiler
 		options = .defaultOptions
 		options['embed-run-time'] = true
-		# options['timeit'] = true
+		options['timeit'] = true  # needs verbosity = 1 or more further up
 		paths = ['cobra.cobra']
 		paths.addRange(.readFilesFile('files-to-compile.text'))
 		.compile(options, paths)
@@ -121,7 +129,7 @@ class P
 #		argParser.parseArgs(paths.clone, out ov, out paths)
 		compiler.commandLineArgParser = argParser
 
-		compiler.initBackEnd  # (CustomBackEnd(compiler))
+		compiler.initBackEnd(CustomBackEnd(compiler))
 		
 		print 'Compiling'
 		try

@@ -4,22 +4,20 @@ enum CurlyLineNumberTreatment
 	Comment
 
 
-class CurlyWriter inherits IndentedWriter
+
+class CurlyWriter inherits TextWriter implements IDisposable is abstract
+
+	var _innerWriter as TextWriter
 
 	var _cobraLineNum as int
 	var _curlyLineNum as int
 	var _curlyToCobraLineNum as Dictionary<of int, int>
-	var _curlyLineNumberTreatment as CurlyLineNumberTreatment
-	var _needToOutputCobraLineNum as bool
 
-	cue init(tw as TextWriter, treatment as CurlyLineNumberTreatment)
-		base.init(tw)
-		_cobraLineNum = 1
-		_curlyLineNum = 1
+	cue init(tw as TextWriter)
+		base.init
+		_innerWriter = tw
+		_cobraLineNum = _curlyLineNum = 1
 		_curlyToCobraLineNum = {1 : 1}
-		_curlyLineNumberTreatment = treatment
-
-	pro curlyLineNumberTreatment from var
 
 	get curlyToCobraLineNum from var
 
@@ -33,39 +31,115 @@ class CurlyWriter inherits IndentedWriter
 			# assert lineNum >= _cobraLineNum, '[lineNum], [_cobraLineNum]'
 			# ^ Can't assert that because of post while statements, helper methods, etc.
 			_cobraLineNum = lineNum
-			_needToOutputCobraLineNum = true
 
-	def start(fileName as String)
-		if _curlyLineNumberTreatment == CurlyLineNumberTreatment.PoundLine
-			_innerWriter.writeLine('#line 1 "[fileName]"')
+	def start(fileName as String) is abstract
 
-	def write(value as char) is override
-		branch _curlyLineNumberTreatment
-			on CurlyLineNumberTreatment.None
-				base.write(value)
-			on CurlyLineNumberTreatment.PoundLine
-				if _isNewLine(_lastChar)
-					# maintain the correct line number even when one Cobra statement is creating multiple lines in the generated C#
-					_innerWriter.writeLine('#line [_cobraLineNum]')
-				base.write(value)
-			on CurlyLineNumberTreatment.Comment
-				if _needToOutputCobraLineNum and _isNewLine(value)
-					_innerWriter.write('  // [_cobraLineNum]')
-					_needToOutputCobraLineNum = false
-				base.write(value)
-		if _isNewLine(_lastChar)
-			_curlyToCobraLineNum[_curlyLineNum] = _cobraLineNum + if(_curlyLineNumberTreatment == CurlyLineNumberTreatment.PoundLine, 1, 0)
-			_curlyLineNum += 1
-
-	def _isNewLine(value as char) as bool
-		return value == _innerWriter.newLine or value == .newLine2
-
-	def _isNewLine(value as String) as bool
-		return value == _innerWriter.newLine or value == .newLine2
+	def _writeLineNum is abstract
 
 	def bumpLineNum
 		_cobraLineNum += 1
+
+
+	## Indentation
 	
-	# CC: shouldn't need the following
-	def write(value as String?) is override
-		base.write(value)
+	var _indentLevel = 0
+	var _totalIndentString = ''
+	var _atBOL = true
+
+	def indent
+		_indentLevel += 1
+		_setTotalIndentString
+
+	def dedent
+		_indentLevel -= 1
+		_setTotalIndentString
+
+	pro indentString from var = '\t'
+		"""
+		Returns the string used for one level of indentation.
+		Default value is "\t".
+		"""
+
+	def indentAndWrite(s as String)
+		.indent
+		.write(s)
+
+	def writeAndIndent(s as String)
+		.write(s)
+		.indent
+
+	def dedentAndWrite(s as String)
+		.dedent
+		.write(s)
+
+
+	## Being a TextWriter
+
+	def write(value as char) is override
+		.write(value.toString)
+
+	def write(s as String?) is override
+		# performance sensitive code
+		if s is nil, return
+		start = 0
+		length = s.length
+		for i in length
+			if s[i] == c'\n'
+				if i > start
+					if _atBOL
+						_writeLineNum
+						_innerWriter.write(_totalIndentString)
+					_innerWriter.write(s.substring(start, i-start))
+				_innerWriter.write(c'\n')
+				_atBOL = true
+				start = i + 1
+		if start < length
+			if _atBOL
+				_writeLineNum
+				_innerWriter.write(_totalIndentString)
+			_innerWriter.write(s.substring(start, length-start))
+			_atBOL = false
+
+	def writeLine(s as String?) is override
+		.write(s)
+		_innerWriter.write(c'\n')
+		_atBOL = true
+
+	get encoding as Encoding? is override
+		return _innerWriter.encoding
+
+	def toString as String is override
+		return _innerWriter.toString
+
+	def flush is override
+		_innerWriter.flush
+
+	def dispose is new
+		_innerWriter.dispose
+
+
+	## Self util
+
+	def _setTotalIndentString
+		# to-do: speed up with _indentChar
+		sb = StringBuilder(_indentLevel * _indentString.length)
+		for i in _indentLevel, sb.append(_indentString)
+		_totalIndentString = sb.toString
+
+
+class CodePoundLineWriter inherits CurlyWriter
+
+	def start(fileName as String) is override
+		_innerWriter.writeLine('#line 1 "[fileName]"')
+
+	def _writeLineNum is override
+		_innerWriter.writeLine('#line [_cobraLineNum]')
+
+
+class CodeCommentLineWriter inherits CurlyWriter
+
+	def start(fileName as String) is override
+		_innerWriter.writeLine('// #line 1 "[fileName]"')
+
+	def _writeLineNum is override
+		_innerWriter.writeLine('// #line [_cobraLineNum]')
