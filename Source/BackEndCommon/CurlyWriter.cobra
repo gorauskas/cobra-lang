@@ -44,17 +44,27 @@ class CurlyWriter inherits TextWriter implements IDisposable is abstract
 	
 	var _indentLevel = 0
 	var _totalIndentString = ''
+	const _maxTotalIndentStrings = 32
+	var _totalIndentStrings = String[](_maxTotalIndentStrings)  # CC: String?[]
 	var _atBOL = true
 
 	def indent
 		_indentLevel += 1
-		_setTotalIndentString
+		_computeTotalIndentString
 
 	def dedent
 		_indentLevel -= 1
-		_setTotalIndentString
+		_computeTotalIndentString
 
-	pro indentString from var = '\t'
+	def _computeTotalIndentString
+		if _indentLevel < _maxTotalIndentStrings
+			if sharp'_totalIndentStrings[_indentLevel] == null'  # _totalIndentStrings[_indentLevel] is nil
+				_totalIndentStrings[_indentLevel] = String(_indentChar, _indentLevel)
+			_totalIndentString = _totalIndentStrings[_indentLevel]
+		else
+			_totalIndentString = String(_indentChar, _indentLevel)
+
+	pro indentChar from var = c'\t'
 		"""
 		Returns the string used for one level of indentation.
 		Default value is "\t".
@@ -118,22 +128,13 @@ class CurlyWriter inherits TextWriter implements IDisposable is abstract
 		_innerWriter.dispose
 
 
-	## Self util
-
-	def _setTotalIndentString
-		# to-do: speed up with _indentChar
-		sb = StringBuilder(_indentLevel * _indentString.length)
-		for i in _indentLevel, sb.append(_indentString)
-		_totalIndentString = sb.toString
-
-
 class CodePoundLineWriter inherits CurlyWriter
 
 	def start(fileName as String) is override
 		_innerWriter.writeLine('#line 1 "[fileName]"')
 
 	def _writeLineNum is override
-		_innerWriter.writeLine('#line [_cobraLineNum]')
+		_innerWriter.writeLine('#line ' + _cobraLineNum.toString)
 
 
 class CodeCommentLineWriter inherits CurlyWriter
