@@ -5,17 +5,25 @@ enum CurlyLineNumberTreatment
 
 
 
-class CurlyWriter inherits TextWriter implements IDisposable is abstract
+class CurlyWriter is abstract
 
-	var _innerWriter as TextWriter
+	var _sb as StringBuilder
 
 	var _cobraLineNum as int
 	var _curlyLineNum as int
 	var _curlyToCobraLineNum as Dictionary<of int, int>
 
-	cue init(tw as TextWriter)
+	shared
+	
+		var _initialBufferSize as int?
+
+	cue init
 		base.init
-		_innerWriter = tw
+		if _initialBufferSize is nil
+			s = Environment.getEnvironmentVariable('COBRA_INTERNAL_GENCODEINITIALBUFFERSIZE')
+			if s is nil or s.trim == '', _initialBufferSize = 128 * 1024
+			else, _initialBufferSize = int.parse(s)
+		_sb = StringBuilder(_initialBufferSize to !)
 		_cobraLineNum = _curlyLineNum = 1
 		_curlyToCobraLineNum = {1 : 1}
 
@@ -85,10 +93,10 @@ class CurlyWriter inherits TextWriter implements IDisposable is abstract
 
 	## Being a TextWriter
 
-	def write(value as char) is override
+	def write(value as char)
 		.write(value.toString)
 
-	def write(s as String?) is override
+	def write(s as String?)
 		# performance sensitive code
 		if s is nil, return
 		start = 0
@@ -98,49 +106,51 @@ class CurlyWriter inherits TextWriter implements IDisposable is abstract
 				if i > start
 					if _atBOL
 						_writeLineNum
-						_innerWriter.write(_totalIndentString)
-					_innerWriter.write(s.substring(start, i-start))
-				_innerWriter.write(c'\n')
+						_sb.append(_totalIndentString)
+					_sb.append(s.substring(start, i-start))
+				_sb.append(c'\n')
 				_atBOL = true
 				start = i + 1
 		if start < length
 			if _atBOL
 				_writeLineNum
-				_innerWriter.write(_totalIndentString)
-			_innerWriter.write(s.substring(start, length-start))
+				_sb.append(_totalIndentString)
+			_sb.append(s.substring(start, length-start))
 			_atBOL = false
 
-	def writeLine(s as String?) is override
+	def write(obj as Object?)
+		if obj, .write(obj.toString)
+
+	def writeLine(s as String?)
 		.write(s)
-		_innerWriter.write(c'\n')
+		_sb.append(c'\n')
 		_atBOL = true
 
-	get encoding as Encoding? is override
-		return _innerWriter.encoding
-
-	def toString as String is override
-		return _innerWriter.toString
-
-	def flush is override
-		_innerWriter.flush
-
-	def dispose is new
-		_innerWriter.dispose
+	def writeLine
+		_sb.append(c'\n')
+		_atBOL = true
+	
+	def output as String
+		return _sb.toString
 
 
 class CodePoundLineWriter inherits CurlyWriter
 
 	def start(fileName as String) is override
-		_innerWriter.writeLine('#line 1 "[fileName]"')
+		_sb.append('#line 1 "[fileName]"')
+		_sb.append(c'\n')
 
 	def _writeLineNum is override
-		_innerWriter.writeLine('#line ' + _cobraLineNum.toString)
-
+		_sb.append('#line ' + _cobraLineNum.toString)
+		_sb.append(c'\n')
+		
 
 class CodeCommentLineWriter inherits CurlyWriter
 
 	def start(fileName as String) is override
-		_innerWriter.writeLine('// #line 1 "[fileName]"')
+		_sb.append('// #line 1 "[fileName]"')
+		_sb.append(c'\n')
 
 	def _writeLineNum is override
-		_innerWriter.writeLine('// #line [_cobraLineNum]')
+		_sb.append('// #line [_cobraLineNum]')
+		_sb.append(c'\n')
