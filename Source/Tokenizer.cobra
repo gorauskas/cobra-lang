@@ -623,81 +623,81 @@ class Tokenizer
 		This is the core brain of the tokenizer.
 		The primary logic for matching tokens is here.
 		"""
-		count, didCheckTokenDefs = 0, false
+		if _tokenQueue.count
+			# eat up queue first
+			return _tokenQueue.dequeue
+		if not _sourceLine or not _sourceLine.length
+			if not _obtainSource()
+				return nil
+#		count, didCheckTokenDefs = 0, false
+#		try
 		try
-			if _tokenQueue.count
-				# eat up queue first
-				return _tokenQueue.dequeue
-			if not _sourceLine or not _sourceLine.length
-				if not _obtainSource()
-					return nil
-			try
-				assert _tokenDefs
-				tokenDefs = _getCandidateTokenDefs(_sourceLine)
-				didCheckTokenDefs = true
-				for tokenDef in tokenDefs
-					count += 1
-					if _skipMatchAttempt(tokenDef, _sourceLineIndex), continue
-					#print '<> Trying to match [tokenDef]'
-					sourceLine = _sourceLine to !
-					#print '_sourceLineIndex=[_sourceLineIndex]'
-					match = tokenDef.match(sourceLine)
-					if not match
-						#print '<> No match on [tokenDef] for [_sourceLine[_sourceLineIndex]]'
-						continue
-					_lastTokenDef = _curTokenDef
-					_curTokenDef = tokenDef  # this enables .onTOKENWHICH methods to access the current tokenDef
-					text = match.text
-					#print '<> Match! [CobraCore.toTechString(text)] - [tokenDef]'
-					which = match.which ? tokenDef.which
-					tok as IToken? = Token(_fileName, _lineNum, _colNum, _charNum, which, text, text)
-					len = text.length
-					_curToken = tok
-					_colNum += len
-					_charNum += len
-					_sourceLineIndex += len
-					_sourceLine = _sourceLine.substring(len)
+			assert _tokenDefs
+			tokenDefs = _getCandidateTokenDefs(_sourceLine)
+#			didCheckTokenDefs = true
+			for tokenDef in tokenDefs
+#				count += 1
+				if _skipMatchAttempt(tokenDef, _sourceLineIndex), continue
+				#print '<> Trying to match [tokenDef]'
+				sourceLine = _sourceLine to !
+				#print '_sourceLineIndex=[_sourceLineIndex]'
+				match = tokenDef.match(sourceLine)
+				if not match
+					#print '<> No match on [tokenDef] for [_sourceLine[_sourceLineIndex]]'
+					continue
+				_lastTokenDef = _curTokenDef
+				_curTokenDef = tokenDef  # this enables .onTOKENWHICH methods to access the current tokenDef
+				text = match.text
+				#print '<> Match! [CobraCore.toTechString(text)] - [tokenDef]'
+				which = match.which ? tokenDef.which
+				tok = Token(_fileName, _lineNum, _colNum, _charNum, which, text, text) to IToken?
+				len = text.length
+				_curToken = tok
+				_colNum += len
+				_charNum += len
+				_sourceLineIndex += len
+				_sourceLine = _sourceLine.substring(len)
 
-					# enable methods to customize handling of tokens
-					reinvoke = false
-					meth = _getTokenMethod(tok.which)
-					if meth
-						tok = _tokenPostProcess(meth, tok)
-						# nil indicates skipped token - will re call this method
-						if not tok 
-							reinvoke = true  # to pick up next token after skipped
+				# enable methods to customize handling of tokens
+				reinvoke = false
+				meth = _getTokenMethod(tok.which)
+				if meth
+					tok = _tokenPostProcess(meth, tok)
+					# nil indicates skipped token - will re call this method
+					if not tok 
+						reinvoke = true  # to pick up next token after skipped
 
-					# finished with current line?
-					if _sourceLine.length==0
-						_sourceLine = nil
-						_sourceLineIndex = -1
-						_originalSourceLine = nil
+				# finished with current line?
+				if _sourceLine.length == 0
+					_sourceLine = nil
+					_sourceLineIndex = -1
+					_originalSourceLine = nil
 
-					# handle token skipping
-					if reinvoke
-						tok = _nextToken
+				# handle token skipping
+				if reinvoke
+					tok = _nextToken
 
-					# yay!
-					return tok
-			finally
-				_curTokenDef = nil
-
-			# no match
-			if false
-				trace all
-				trace _lineNum, _colNum, _charNum
-				trace _sourceLine[0], _sourceLine[0] to int
-				trace _sourceLine
-				trace _sourceLineIndex
-				trace _originalSourceLine
-			.throwError('Lexical error: "[_originalSourceLine[_sourceLineIndex]]" ([_originalSourceLine[_sourceLineIndex] to int])')
-			# ^ no source location information is included in the error message as that should be pulled
-			#   from TokenizerError.tokenzier.curToken or .lastToken
-			return nil
+				# yay!
+				return tok
 		finally
-			if didCheckTokenDefs
-				_avgCount += count
-				_avgCountNum += 1
+			_curTokenDef = nil
+
+		# no match
+		if false
+			trace all
+			trace _lineNum, _colNum, _charNum
+			trace _sourceLine[0], _sourceLine[0] to int
+			trace _sourceLine
+			trace _sourceLineIndex
+			trace _originalSourceLine
+		.throwError('Lexical error: "[_originalSourceLine[_sourceLineIndex]]" ([_originalSourceLine[_sourceLineIndex] to int])')
+		# ^ no source location information is included in the error message as that should be pulled
+		#   from TokenizerError.tokenzier.curToken or .lastToken
+		return nil
+#		finally
+#			if didCheckTokenDefs
+#				_avgCount += count
+#				_avgCountNum += 1
 
 	def _getCandidateTokenDefs(sourceLine as String?) as List<of TokenDef>
 		if _narrowTokenDefs and _tokenDefs.count >= _minNumTokenDefsToNarrow
