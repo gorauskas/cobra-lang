@@ -218,11 +218,19 @@ static public class CobraImp {
 	}
 
 	static public bool Equals(char c, string s) {
-		if (s==null)
-			return false;
-		if (s.Length==1 && c==s[0])
-			return true;
-		return new string(c, 1) == s;
+		if (s == null) return false;
+		if (s.Length == 1 && c == s[0]) return true;
+		return false;
+		// 2013-02-03 CE: what was the following for?
+		// return new string(c, 1) == s;
+	}
+
+	static public bool Equals(string s, char c) {
+		if (s == null) return false;
+		if (s.Length == 1 && c == s[0]) return true;
+		return false;
+		// 2013-02-03 CE: what was the following for?
+		// return new string(c, 1) == s;
 	}
 
 	static public bool Equals(String a, String b) {
