@@ -218,11 +218,19 @@ static public class CobraImp {
 	}
 
 	static public bool Equals(char c, string s) {
-		if (s==null)
-			return false;
-		if (s.Length==1 && c==s[0])
-			return true;
-		return new string(c, 1) == s;
+		if (s == null) return false;
+		if (s.Length == 1 && c == s[0]) return true;
+		return false;
+		// 2013-02-03 CE: what was the following for?
+		// return new string(c, 1) == s;
+	}
+
+	static public bool Equals(string s, char c) {
+		if (s == null) return false;
+		if (s.Length == 1 && c == s[0]) return true;
+		return false;
+		// 2013-02-03 CE: what was the following for?
+		// return new string(c, 1) == s;
 	}
 
 	static public bool Equals(String a, String b) {
@@ -313,6 +321,18 @@ static public class CobraImp {
 	static public bool In(char? a, string b) {
 		return a.HasValue && b.IndexOf(a.Value)!=-1;
 	}
+
+	static public bool In(int a, int[] b) {
+		// improves speed
+		return Array.IndexOf(b, a) != -1;
+	}
+
+/*
+	// doesn't improve things
+	static public bool In(string a, string[] b) {
+		return Array.IndexOf(b, a) != -1;
+	}
+*/
 
 	static public bool In(object a, IList b) {
 		return b.Contains(a);
@@ -1121,7 +1141,7 @@ static public class CobraImp {
 //		Console.WriteLine(" <> (   type specs) {7}, op={0}, value1={1}, type1={2}, value2={3}, type2={4}, type={5}, mi={6}, promote={8}",
 //			opMethodName, value1, value1.GetType(), value2, value2.GetType(), type, mi, __dynamicOpCount, promote);
 //		__dynamicOpCount++;
-		if (mi!=null) {
+		if (mi != null) {
 			return mi.Invoke(value1, new object[] { value1, value2 });
 		} else {
 			String name = opMethodName + '_' + value1.GetType().Name + '_' + value2.GetType().Name;
@@ -1134,8 +1154,15 @@ static public class CobraImp {
 				return typeof(CobraImp).InvokeMember(name, BindingFlags.Public|BindingFlags.Static|BindingFlags.InvokeMethod, null, null, new object[] { value1, value2 });
 			} catch (MissingMethodException) {
 			}
-			if (promote && PromoteNumerics != null && PromoteNumerics(ref value1, ref value2))
-				return DynamicOp(opMethodName, value1, value2, false);
+			if (promote) {
+				if (type == types[1]) {
+					NumericTypeInfo ti = new NumericTypeInfo(type);
+					if (ti.IsInt && ti.Size < 32)
+						return DynamicOp(opMethodName, Convert.ToInt32(value1), Convert.ToInt32(value2), false);						
+				}
+			 	if (PromoteNumerics != null && PromoteNumerics(ref value1, ref value2))
+					return DynamicOp(opMethodName, value1, value2, false);
+			}
 			throw new UnknownMemberException(value1, opMethodName + " or " + name, type);
 		}
 	}
