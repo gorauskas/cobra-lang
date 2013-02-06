@@ -941,9 +941,6 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 
 	def printConsoleMessages
 		willColor = .options.boolValue('color')
-		savedColor = Console.foregroundColor
-		if CobraCore.isRunningOnMono  # bug on mono: the initial Console.foregroundColor is not necessarily accurate (at least in bash on Terminal.app on Mac OS X 10.4.10 on Mono 1.2.4)
-			savedColor = ConsoleColor.Black  # this is really just a guess and possibly a bad one. should be controllable via a cmd line option or argument
 		dest = if(Console.error, Console.error, Console.out) to !  # some IDEs prefer errors and warnings to go to stderr
 		for obj in _messages
 			if willColor and obj.isError
@@ -951,12 +948,12 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 				restoreColor = true
 			print to dest, obj.consoleString
 			if restoreColor
-				Console.foregroundColor = savedColor
+				Console.resetColor
 				restoreColor = false
 		if _errors.count
 			if willColor, Console.foregroundColor = ConsoleColor.Red
 			print _compilationFailedMessage()  # CC: axe ()s
-			if willColor, Console.foregroundColor = savedColor
+			if willColor, Console.resetColor
 		else
 			didPrint = false
 			if willColor, Console.foregroundColor = ConsoleColor.Blue
@@ -967,7 +964,7 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 				print ' - [_warnings.count] warning[if(_warnings.count==1,'','s')]'
 			else
 				if didPrint, print
-			if willColor, Console.foregroundColor = savedColor
+			if willColor, Console.resetColor
 
 	def _compilationFailedMessage as String
 		return 'Compilation failed - [_errors.count] error[if(_errors.count==1,'','s')], [_warnings.count] warning[if(_warnings.count==1,'','s')]'
