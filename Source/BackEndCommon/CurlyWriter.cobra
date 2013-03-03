@@ -12,6 +12,7 @@ class CurlyWriter is abstract
 	var _cobraLineNum as int
 	var _curlyLineNum as int
 	var _curlyToCobraLineNum as Dictionary<of int, int>
+	var _frozen as int
 
 	shared
 	
@@ -29,13 +30,20 @@ class CurlyWriter is abstract
 
 	get curlyToCobraLineNum from var
 
+	def freezeLineNumber
+		_frozen += 1
+
+	def unfreezeLineNumber
+		_frozen -= 1
+		assert _frozen >= 0
+
 	def node(node as SyntaxNode)
 		"""
 		As C# code is generated, each of the nodes should invoke this method so that the
 		CurlyWriter can manage line numbers.
 		"""
 		lineNum = node.token.lineNum
-		if lineNum > 0
+		if lineNum > 0 and _frozen < 1
 			# assert lineNum >= _cobraLineNum, '[lineNum], [_cobraLineNum]'
 			# ^ Can't assert that because of post while statements, helper methods, etc.
 			_cobraLineNum = lineNum
@@ -45,7 +53,7 @@ class CurlyWriter is abstract
 	def _writeLineNum is abstract
 
 	def bumpLineNum
-		_cobraLineNum += 1
+		if _frozen < 1, _cobraLineNum += 1
 
 
 	## Indentation
