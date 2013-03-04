@@ -12,7 +12,7 @@ class CurlyWriter is abstract
 	var _cobraLineNum as int
 	var _curlyLineNum as int
 	var _curlyToCobraLineNum as Dictionary<of int, int>
-	var _frozen as int
+	var _hideLineNumbers as int
 
 	shared
 	
@@ -30,12 +30,12 @@ class CurlyWriter is abstract
 
 	get curlyToCobraLineNum from var
 
-	def freezeLineNumber
-		_frozen += 1
+	def hideLineNumbers
+		_hideLineNumbers += 1
 
-	def unfreezeLineNumber
-		_frozen -= 1
-		assert _frozen >= 0
+	def unhideLineNumbers
+		_hideLineNumbers -= 1
+		assert _hideLineNumbers >= 0
 
 	def node(node as SyntaxNode)
 		"""
@@ -43,7 +43,7 @@ class CurlyWriter is abstract
 		CurlyWriter can manage line numbers.
 		"""
 		lineNum = node.token.lineNum
-		if lineNum > 0 and _frozen < 1
+		if lineNum > 0 and _hideLineNumbers < 1
 			# assert lineNum >= _cobraLineNum, '[lineNum], [_cobraLineNum]'
 			# ^ Can't assert that because of post while statements, helper methods, etc.
 			_cobraLineNum = lineNum
@@ -53,7 +53,7 @@ class CurlyWriter is abstract
 	def _writeLineNum is abstract
 
 	def bumpLineNum
-		if _frozen < 1, _cobraLineNum += 1
+		_cobraLineNum += 1
 
 
 	## Indentation
@@ -148,9 +148,15 @@ class CodePoundLineWriter inherits CurlyWriter
 		_sb.append('#line 1 "[fileName]"')
 		_sb.append(c'\n')
 
-	def _writeLineNum is override
-		_sb.append('#line ' + _cobraLineNum.toString)
+	def hideLineNumbers
+		base.hideLineNumbers
+		_sb.append('#line hidden')
 		_sb.append(c'\n')
+
+	def _writeLineNum is override
+		if not _hideLineNumbers
+			_sb.append('#line ' + _cobraLineNum.toString)
+			_sb.append(c'\n')
 		
 
 class CodeCommentLineWriter inherits CurlyWriter
