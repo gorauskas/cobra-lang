@@ -727,7 +727,10 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 							#/
 						else
 							type = definition.resultType
-							if not _didVariArgs(definition)
+							if _didVariArgs(definition)
+								params = definition.params
+								_checkArgsAssignable(definition, args, params)
+							else
 								definition = _checkGenerics(definition, inout type)
 								if not definition.hasParams
 									_checkNoArgs(definition, args)
@@ -736,6 +739,7 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 									if _checkParamsCount(definition, args, params)
 										if needInferOutArgs, _inferOutArgs(args, params, false)	
 										_checkArgsAssignable(definition, args, params)
+								
 						_checkInOutArguments
 						_checkVisibility(definition, dotNode.left)
 				else
@@ -896,11 +900,13 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 		for i in args.count
 			arg = args[i]
 			param = params[i]
-			if param.type inherits VariType, break  # to-do: vari args not checked yet
 			if arg.hasError
 				break
 			if arg inherits AssignExpr  # assignments in arguments have special treatment
 				break
+			if param.type inherits VariType 
+				_checkVariArgsAssignable(args, params, i, arg, param)
+				break	
 			assert arg.didBindImp
 			assert param.didBindInt
 			# check any in/out/inout expectations are matched
@@ -929,6 +935,38 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 				else
 					arg.recordError('Argument [i+1] of method "[_name]" expects type [param.type.name], but the call is supplying type [arg.type.name].')
 
+	def	_checkVariArgsAssignable(args as IList<of Expr>, params as IList<of Param>, offset as int, arg as Expr, param as Param)
+		require param.type inherits VariType 
+		innerType = param.type.innerType to !
+		if innerType == .typeProvider.objectType or innerType == .typeProvider.dynamicType, return
+		if innerType == .typeProvider.arrayType(.typeProvider.objectType), return
+		argPos = offset + 1
+		if args.count == argPos and arg.canBeAssignedTo(innerType)  # single arg for last vari param
+			return
+		if innerType inherits ArrayType    # library innerType is Array
+			variArrayType = innerType.innerType to !
+			if arg.canBeAssignedTo(variArrayType)
+				return
+		if arg.canBeAssignedTo(param.type) # innerType and array
+			arg.contextType = param.type
+			return
+		if args.count <> params.count # innerType and arg list
+			t = arg.type
+			for i in offset+1 : args.count
+				t = t.greatestCommonDenominatorWith(args[i].type to !)
+			if t.isAssignableTo(innerType), return
+			arg.recordError(_variArgsErrorMsg(t to !, param.type, argPos, true))		
+			return
+		arg.recordError(_variArgsErrorMsg(arg.type to !, param.type, argPos, false))		
+					
+	def _variArgsErrorMsg(argType as IType, paramType as IType, argPos as int, withArgList as bool) as String		
+		targetMsg = if(withArgList, ' an arglist resolving to', '')
+		if argType inherits NilableType and not paramType inherits NilableType
+			msg = 'Vari argument [argPos] of method "[_name]" expects a non-nilable type ([paramType.name]), but the call is supplying[targetMsg] a nilable type ([argType.name]).'
+		else
+			msg = 'Vari argument [argPos] of method "[_name]" expects type [paramType.name], but the call is supplying [targetMsg] type [argType.name].'
+		return msg
+		
 	def _toErrorPhrase(d as Direction) as String
 		branch d
 			on Direction.In, return 'a regular'
