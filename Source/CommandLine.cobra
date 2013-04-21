@@ -254,6 +254,13 @@ class CommandLineOptionSpecs
 			'description': 'Embed the Cobra run-time support code in the assembly so that no reference to an external Cobra.Core.dll is required. Approximately 85KB - 130KB overhead depending on other options such as -include-asserts or -turbo.',
 		},
 		{
+			'name': 'embed-version',
+			'type': 'string',
+			'description': 'Embed a version string in the generated assembly. If version is not explicitly given, embed the current Cobra compiler version',
+			'example': ['1.0.0', 'compiler-version'],
+			'default': 'compiler-version'
+		},
+		{
 			'name': 'exception-report',
 			'synonyms': ['exc-rpt', 'er'],
 			'type': 'bool',
@@ -723,18 +730,10 @@ class CommandLine
 
 	def doCompile(paths as List<of String>, willPrintSuccessMsg as bool, 
 					writeTestInvocation as bool, stopCompilation as Predicate<of Compiler>?) as Compiler
-		sep = Path.directorySeparatorChar.toString
-		oldPaths = for path in paths get path.replace('\\', sep).replace('/', sep)
-		paths.clear
-		for path in oldPaths
-			if File.exists(path)
-				paths.add(path)
-			else if Directory.exists(path)
-				.error('Cannot process directories in general ("[path]").')
-			else
-				.error('Cannot find file "[path]".')
-		if paths.count == 0 and not .options.buildStandardLibrary
-			.error('No files to process.')
+
+		if _options.isSpecified('embed-version'), .embedVersion( _options['embed-version'] to String)
+
+		_fixupPaths(paths)
 		_compiler = c = Compiler(.verbosity)
 		c.commandLineArgParser = _argParser
 		c.options = _options
@@ -747,45 +746,56 @@ class CommandLine
 			# Each phase of the compiler may throw an exception to stop compilation.
 			# Before doing so, it prints its errors.
 			assert c.errors.count>0
-			if _options.containsKey('editor')
-				spec = _options['editor'] to String?
-			else
-				spec = Environment.getEnvironmentVariable('COBRA_EDITOR')
-			if spec and spec <> ''
-				if spec.indexOf('FILE')==-1
-					.error('Missing FILE from editor spec.')
-				if spec.indexOf('LINE')==-1
-					.error('Missing LINE from editor spec.')
-				i = spec.indexOf('_')
-				if i == -1
-					i = spec.indexOf(' ')
-					if i == -1
-						.error('Missing underscore or space from editor spec.')
-				exeName = spec.substring(0, i)
-				args = spec.substring(i+1)
-				for error in c.errors
-					if error.isError and error.hasSourceSite
-						if error.fileName.trim <> ''
-							# trace error.fileName, error.lineNum
-							args = args.replace('FILE', error.fileName)
-							args = args.replace('LINE', error.lineNum.toString)
-							p = System.Diagnostics.Process()
-							p.startInfo.fileName = exeName
-							p.startInfo.arguments = args
-							p.startInfo.useShellExecute = false
-							if _verbosity >= 3
-								print 'Running: [p.startInfo.fileName] [p.startInfo.arguments]'
-							try
-								p.start
-								p.waitForExit  # TODO: is this really needed?
-							catch exc as Exception
-								print 'Cannot invoke editor:'
-								print '    Command: [p.startInfo.fileName] [p.startInfo.arguments]'
-								print '    Exception: [exc]'
-							break
+			_invokeEditor(c.errors)
 		CobraMain.compiler = c
 		return c
 
+	def _fixupPaths(paths as List<of String>)
+		sep = Path.directorySeparatorChar.toString
+		oldPaths = for path in paths get path.replace('\\', sep).replace('/', sep)
+		paths.clear
+		for path in oldPaths
+			if File.exists(path)
+				paths.add(path)
+			else if Directory.exists(path)
+				.error('Cannot process directories in general ("[path]").')
+			else
+				.error('Cannot find file "[path]".')
+		if paths.count == 0 and not .options.buildStandardLibrary
+			.error('No files to process.')
+
+	def _invokeEditor(compilerErrors as IList<of SourceException>)
+		spec = if(_options.containsKey('editor'), _options['editor'] to String?, Environment.getEnvironmentVariable('COBRA_EDITOR'))
+		if spec is nil or spec.trim == '', return
+		if spec.indexOf('FILE')==-1, .error('Missing FILE from editor spec.')
+		if spec.indexOf('LINE')==-1, .error('Missing LINE from editor spec.')
+		i = spec.indexOf('_')
+		if i == -1
+			i = spec.indexOf(' ')
+			if i == -1, .error('Missing underscore or space from editor spec.')
+		exeName = spec.substring(0, i)
+		args = spec.substring(i+1)
+		for error in compilerErrors #c.errors
+			if error.isError and error.hasSourceSite
+				if error.fileName.trim <> ''
+					# trace error.fileName, error.lineNum
+					args = args.replace('FILE', error.fileName)
+					args = args.replace('LINE', error.lineNum.toString)
+					p = System.Diagnostics.Process()
+					p.startInfo.fileName = exeName
+					p.startInfo.arguments = args
+					p.startInfo.useShellExecute = false
+					if _verbosity >= 3
+						print 'Running: [p.startInfo.fileName] [p.startInfo.arguments]'
+					try
+						p.start
+						p.waitForExit  # TODO: is this really needed?
+					catch exc as Exception
+						print 'Cannot invoke editor:'
+						print '    Command: [p.startInfo.fileName] [p.startInfo.arguments]'
+						print '    Exception: [exc]'
+					break
+		
 	def doDocument(paths as List<of String>) as Compiler
 		comp = .doCompile(paths, false, false, do(c as Compiler)=c.lastPhase inherits BindInterfacePhase)
 		GenerateHtmlDocVisitor(do(module)=module inherits CobraModule).gen(comp)
@@ -1063,8 +1073,20 @@ class CommandLine
 		_options['target'] = 'lib'
 		_options['include-tests'] = false
 		_options['embed-run-time'] = true  # because the runtime is what we're building!
-
-		# embed the version
+		if not _options.isSpecified('embed-version')
+			_options['embed-version'] = 'compiler-version'
+			_options.didSpecify('embed-version')
+		.doCompile(List<of String>(), true, false, nil)
+		
+	def embedVersion(version as String)
+		# to-do: why does the value come in as 'on' instead of the default value in the spec: 'compiler-version' ?
+		if version == 'compiler-version' or version == 'on', version = _embeddedCompilerVersion
+		# to-do: push into backend - platform specific
+		_options.addExtraUse('use System.Reflection')
+		_options.addExtraSource("assembly\n\thas AssemblyVersion('[version]')\n")
+		if _verbosity >= 1, print 'Embed version: [version]'
+		
+	def _embeddedCompilerVersion as String
 		reMatch = Regex(r'^\d+\.\d+\.\d+\b').match(.versionString)
 		if reMatch.success
 			version = reMatch.value to !
@@ -1081,10 +1103,7 @@ class CommandLine
 			# 'post' versions have a fourth version component of 1, as opposed to 0
 			version += '.1'
 			assert version.count(c'.') == 3
-		_options.addExtraUse('use System.Reflection')
-		_options.addExtraSource("assembly\n\thas AssemblyVersion('[version]')\n")
-		.doCompile(List<of String>(), true, false, nil)
-
+		return version
 
 	## Testify
 
