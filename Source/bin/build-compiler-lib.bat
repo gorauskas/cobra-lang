@@ -1,2 +1,2 @@
-call bin\build -t:lib -namespace:Cobra.Compiler -out:Cobra.Compiler.dll %*
+call bin\build -t:lib -embed-version -namespace:Cobra.Compiler -out:Cobra.Compiler.dll %*
 dir Cobra.Compiler.*
