@@ -11,6 +11,7 @@ class TestifyRunner
 
 	var _startTime as DateTime
 	var _cl as CommandLine
+	var _testCaseFullPath = ''
 	var _pathList as List<of String>
 	var _extraTestifyArgs as String?
 
@@ -24,6 +25,8 @@ class TestifyRunner
 	var _firstAttempt as bool
 
 	var _cachedTestifyModules as IList<of Module>?
+
+	var _failureLogFileName = 'r-testify-failures.text'
 
 	# two writers. status goes to console and results goes to a file.
 	var _statusWriter as IndentedWriter?
@@ -178,6 +181,12 @@ class TestifyRunner
 		_statusWriter.indentString = '    '
 		try
 			resultsFileName = .options['testify-results'] to String
+			if Path.directorySeparatorChar not in _failureLogFileName
+				_failureLogFileName = Path.getFullPath(_failureLogFileName)
+				# The following doesn't work on linux and mac where the testify script
+				# invokes this program once per directory found in Tests/
+				# So clearing the file has to be done in the testify script.
+				# File.writeAllText(_failureLogFileName, '')
 			using resultsWriter = File.createText(resultsFileName)
 				_resultsWriter = IndentedWriter(AutoFlushWriter(resultsWriter))
 				print to _resultsWriter to !
@@ -412,18 +421,19 @@ class TestifyRunner
 		assert File.exists(baseName)
 		source = File.readAllText(baseName)
 
+		_testCaseFullPath = Utils.combinePaths(Environment.currentDirectory, baseName)
 		print
 		print
 		print
 		print 'RUN [baseName]'
-		print '    [Utils.combinePaths(Environment.currentDirectory, baseName)]'
+		print '    [_testCaseFullPath]'
 		print '    Test #[_testifyCount+1]'
 		print .bar
 		print .bar
 		if verbose
 			Utils.printSource(source)
 			print .bar
-		lines = List<of String>(source.split(c'\n'))  # CC: axe list wrapper
+		lines = source.split(c'\n').toList
 
 		fileNames = [baseName]
 		options = .testifyOptions
@@ -800,6 +810,12 @@ class TestifyRunner
 		but does not throw an exception or exit.
 		"""
 		if _firstAttempt
+			pathForLog = _testCaseFullPath
+			sep = Path.directorySeparatorChar
+			if '[sep]Tests[sep]' in pathForLog
+				pathForLog = pathForLog.split('[sep]Tests[sep]', 2)[1]
+			nl = Environment.newLine
+			File.appendAllText(_failureLogFileName, '[pathForLog][nl]')
 			_statusWriter.writeLine('FAILURE ----------------------------------------------------------------------')
 			_failureCount += 1
 			print
