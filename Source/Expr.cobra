@@ -281,6 +281,39 @@ class Expr inherits Stmt implements IExpr is abstract, partial
 		"""
 		return ' whose type is "[.receiverType.name]"'
 	
+	def _paramsCountMsg(defnName as String, params as IList<of Param>, args as IList<of Expr>) as String
+		item = if(defnName == r'[]', 'indexer', 'method')
+		countStr = if(args.count == 0, 'no arguments', '[args.count]') 
+		countStr += if(args.count == 1,  ' is', ' are')	
+		detail = _paramsVsArgsString(defnName, params, args)
+		msg = 'The [item] "[defnName]" is expecting [params.count] argument[Utils.plural(params)], but [countStr] being supplied in this call. [detail]'
+		return msg
+
+	def _paramsVsArgsString(defnName as String, params as IList<of Param>, args as IList<of Expr>) as String	
+		""" 
+		Generate a string augmenting error messages for calls with mismatched parameters and args.
+		List the declared arglist signature and calling Types.
+		"""
+		item = ''
+		if defnName == r'[]'
+			defnName = ''
+			item = 'indexer arglist '	
+		sb = StringBuilder('The [item]declaration is "[defnName](')
+		sep = ''
+		for param in params
+			sb.append('[sep][param.name] as [param.type.name]')
+			sep = ', '
+		sb.append(')"')
+		# to-do: append definition return Type (if any)?
+		if args.count
+			sb.append(', the call is supplying an arglist of type[Utils.plural(args)] "(')
+			sep = ''
+			for arg in args
+				sb.append('[sep][arg.type.name]')
+				sep=', '
+			sb.append(')".')
+		return sb.toString
+		
 	def throwCannotFindMemberError(receiverExpr as Expr, memberName as String)
 		__throwOrRecordCannotFindMemberError(receiverExpr, memberName, 1)
 
@@ -716,8 +749,8 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 							winner = definition.computeBestOverload(.args, .genericArgTypes, true)
 							sharp'definition = winner'
 							type = winner.resultType
-							/#
-							to-do: 2012-07-01 CE: the following just isn't ready
+							/# #/
+							#to-do: 2012-07-01 CE: the following just isn't ready
 							if winner inherits BoxMember # .no-warnings.
 								if winner.name not in ['format', 'invoke', 'split', 'sort']  # to-do: hack
 									params = winner.params
@@ -879,9 +912,9 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 			if _name=='toString'  # to-do: hack: because many structs like Decimal have a toString() overload which cannot currently be expressed in SystemInterfaces.cobra
 				return false
 			else
-				.throwError('The method "[definition.name]" is expecting [params.count] argument[Utils.plural(params)], but [args.count] are being supplied in this call.')
+				.throwError(_paramsCountMsg(definition.name, params, args)) #'The method "[definition.name]" is expecting [params.count] argument[Utils.plural(params)], but [countStr] being supplied in this call.'
 		return true
-
+		
 	def _inferOutArgs(args as IList<of Expr>, params as IList<of Param>, warn as bool) 
 		for num, arg in args.numbered
 			if _undefinedOutArg(arg)
@@ -931,9 +964,11 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 					print '<> param.type =', param.type
 					print '<> param.ifInheritsStack.count =', param.ifInheritsStack.count
 				if arg.type inherits NilableType and not param.type inherits NilableType and arg.type.nonNil.isAssignableTo(param.type)
-					arg.recordError('Argument [i+1] of method "[_name]" expects a non-nilable type ([param.type.name]), but the call is supplying a nilable type ([arg.type.name]).')
+					detail = _paramsVsArgsString(_name, params, args)
+					arg.recordError('Argument [i+1] of method "[_name]" expects a non-nilable type ([param.type.name]), but the call is supplying a nilable type ([arg.type.name]). [detail]')
 				else
-					arg.recordError('Argument [i+1] of method "[_name]" expects type [param.type.name], but the call is supplying type [arg.type.name].')
+					detail = _paramsVsArgsString(_name, params, args)
+					arg.recordError('Argument [i+1] of method "[_name]" expects type [param.type.name], but the call is supplying type [arg.type.name]. [detail]')
 
 	def	_checkVariArgsAssignable(args as IList<of Expr>, params as IList<of Param>, offset as int, arg as Expr, param as Param)
 		require param.type inherits VariType 
@@ -1540,7 +1575,7 @@ class IndexExpr inherits Expr is partial
 			return
 			
 		if not hasVari and args.count <> params.count
-			.throwError('The indexer is expecting [params.count] argument[Utils.plural(params)], but [args.count] are being supplied in this call.')
+			.throwError(_paramsCountMsg(r'[]', params, args))  # 'The indexer is expecting [params.count] argument[Utils.plural(params)], but [countStr] being supplied in this call.[msg]'
 		for i in 0 : args.count
 			arg = args[i]
 			param = params[i]
@@ -1556,9 +1591,11 @@ class IndexExpr inherits Expr is partial
 					print '<> param = ' stop
 					param.writeDeepString
 				if arg.type inherits NilableType and not param.type inherits NilableType and arg.type.nonNil.isAssignableTo(param.type)
-					.throwError('Argument [i+1] of indexer expects a non-nilable type ([param.type.name]), but the call is supplying a nilable type ([arg.type.name]).')
+					detail = _paramsVsArgsString(r'[]', params, args)
+					.throwError('Argument [i+1] of indexer expects a non-nilable type ([param.type.name]), but the call is supplying a nilable type ([arg.type.name]). [detail]')
 				else
-					.throwError('Argument [i+1] of indexer expects type [param.type.name], but the call is supplying type [arg.type.name].')
+					detail = _paramsVsArgsString(r'[]', params, args)
+					.throwError('Argument [i+1] of indexer expects type [param.type.name], but the call is supplying type [arg.type.name]. [detail]')
 						
 	def toCobraSource as String is override
 		sb = StringBuilder()
@@ -1756,7 +1793,7 @@ class MemberExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 			else if defn inherits AbstractMethod
 				params = defn.params
 				if params.count <> 0 and not (params.count == 1 and params[0].type inherits VariType)
-					.throwError('The method "[defn.name]" is expecting [params.count] argument[Utils.plural(params)], but no arguments are being supplied in this call.')
+					.throwError(_paramsCountMsg(defn.name, params, List<of Expr>()))	# 'The method "[defn.name]" is expecting [params.count] argument[Utils.plural(params)], but no arguments are being supplied in this call.'
 				else if .name <> 'getType'  # ug, more special handling for getType
 					box = .binarySuperNode.left.type to? Box
 					if box
