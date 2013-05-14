@@ -45,7 +45,7 @@ class Compiler is partial
 
 	def writeSharpTestInvocation
 		dt = DateTime.now
-		fileName = 'test-[dt.year][dt.month][dt.day][dt.hour][dt.minute].cs'  # TODO: format the numbers to have leading zeros
+		fileName = 'test-[dt.year][dt.month][dt.day][dt.hour][dt.minute].cs'  # to-do: format the numbers to have leading zeros
 		w = CodePoundLineWriter()
 		w.writeLine('using CobraCoreInternal = Cobra.Core[.embedRunTimeSuffix];')
 		w.writeLine('')
@@ -100,6 +100,7 @@ class Compiler is partial
 		_baseExeFileName = outName
 
 		target = .options.getDefault('target', '') to String
+		if .options.boolValue('test') and target == 'lib', target = 'exe'
 		if target.length
 			# TODO: what is the output for a module?
 			branch target
@@ -129,8 +130,13 @@ class Compiler is partial
 			backEndOptions = List<of String>()
 			target = options.getDefault('target', '') to String
 			if target.length
-				if target=='lib', target = 'library'
-				backEndOptions.add('[optChar]target:[target]')
+				if options.boolValue('test') and target == 'lib'
+					# C# doesn't allow a .main method designation on libraries,
+					# so don't respect the -target in this situation
+					pass
+				else
+					if target=='lib', target = 'library'
+					backEndOptions.add('[optChar]target:[target]')
 				
 			delaySign = options.boolValue('delay-sign')
 			if delaySign, backEndOptions.add('[optChar]delaysign+')
@@ -356,7 +362,7 @@ class Compiler is partial
 		cp = System.CodeDom.Compiler.CompilerParameters()
 		cp.compilerOptions = backEndOptions
 		cp.referencedAssemblies.add('System.dll')
-		cp.generateExecutable = .options.getDefault('target', 'exe') in ['exe', 'winexe']
+		cp.generateExecutable = .options.boolValue('test') or .options.getDefault('target', 'exe') in ['exe', 'winexe']
 		cp.outputAssembly = _fullExeFileName
 		if _verbosity >= 2
 			print 'Code Provider =', provider
