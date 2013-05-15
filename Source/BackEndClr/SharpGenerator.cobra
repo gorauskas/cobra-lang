@@ -3642,28 +3642,14 @@ class PostCallExpr
 			if expr inherits TypeExpr
 				if expr.containedType inherits ArrayType
 					# arrays
-					sw.write('new ')
-					sw.write((expr.containedType to ArrayType).theWrappedType.sharpRef)
-					sw.write(r'[')
-					.writeSharpArgs(sw)
-					sw.write(r']')
+					_writeNewCall(sw, nil, (expr.containedType to ArrayType).theWrappedType.sharpRef, false) 
 				else
-					sw.write('new ')
-					expr.writeSharpDef(sw)
-					sw.write('(')
-					.writeSharpArgs(sw)
-					sw.write(')')
+					_writeNewCall(sw, expr, '', true) 
 			else if expr inherits IdentifierExpr
 				if expr.isTypeReference
-					sw.write('new ')
-					expr.writeSharpDef(sw)
-					sw.write('(')
-					.writeSharpArgs(sw)
-					sw.write(')')
+					_writeNewCall(sw, expr, '', true) 
 				else if expr.receiverType inherits GenericParam # TODO: shouldn't expr.isTypeReference above have caught this?
-					sw.write('new [expr.receiverType.sharpRef](')
-					.writeSharpArgs(sw)
-					sw.write(')')
+					_writeNewCall(sw, nil, expr.receiverType.sharpRef, true) 
 				else if expr.type.nonNil.isDescendantOf(.compiler.delegateType)
 					isMethodSig = true
 				else if expr.type.isSystemTypeClass or _type.isDynamic
@@ -3692,11 +3678,25 @@ class PostCallExpr
 					if defi.type.isDynamic
 						what = '(System.Type)' + what
 				# TODO: could speed this up. see http://ayende.com/Blog/archive/2008/02/27/Creating-objects--Perf-implications.aspx
-				sw.write('System.Activator.CreateInstance([what]')
+				sw.write('System.Activator.CreateInstance(')
+				if what == r'[]'  # indexer - something like myList[idx]()
+					expr.writeSharpDef(sw)
+				else
+					sw.write(what)
 				.writeSharpArgs(sw, ', ')
 				sw.write(')')
 			if parens, sw.write(')')
-
+				
+	def _writeNewCall(sw as CurlyWriter, expr as Expr?, exprStr as String, isInvocation as bool)
+		require expr or exprStr.length >0
+		delimeters = if(isInvocation, '()', r'[]')  # invocation or index deref
+		sw.write('new ')
+		if expr, expr.writeSharpDef(sw)
+		else, sw.write(exprStr)
+		sw.write(delimeters[0])
+		.writeSharpArgs(sw)
+		sw.write(delimeters[1])
+				
 	def writeSharpArgs(sw as CurlyWriter)
 		.writeSharpArgs(sw, '')
 
