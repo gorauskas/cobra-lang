@@ -1,0 +1,228 @@
+"""
+Typical usage:
+
+	cobra = CobraCommand.find
+	if cobra
+		result = cobra.run('-c foo.cobra')
+		trace result.output, result.exitCode
+	else
+		print 'Cannot find Cobra.'
+
+Or for a quick and dirty program:
+
+	r = CobraCommand.find.run('-c foo.cobra')
+	trace r.output, r.exitCode
+
+.find may return a shell script which is normally okay, but if you prefer getting to the cobra.exe,
+use .findExe instead:
+
+	result = CobraCommand.findExe.run('-c foo.cobra')
+	trace result.output, result.exitCode
+"""
+
+
+use System.Diagnostics
+
+
+/#
+The following test code could go in a `test` section, but even then I would
+comment it out, since there is no guarantee that the environment provides a
+Cobra command.
+
+class Test
+
+	def main
+		cc = CobraCommand.find to !
+		.check(cc)
+		
+		cc = CobraCommand.findExe to !
+		.check(cc)
+		assert cc.path.endsWith('.exe'), cc.path
+		
+	def check(cc as CobraCommand)
+		r = cc.run('-about')
+#		trace r, r.output, r.exitCode
+		assert 'cobra' in r.output
+		assert r.exitCode == 0
+		assert 'http://cobra-language.com' in r.output
+#/
+
+
+namespace Cobra.Core
+
+
+class CobraCommandRunResult
+	"""
+	Stores the result of running a CobraCommand instance
+	as well as the inputs (path to Cobra and arguments passed).
+	"""
+
+	cue init(cobraPath as String, args as String, process as Process, output as String) is internal
+		base.init
+		_path, _args, _process, _output = cobraPath, args, process, output
+		# to-do: capture stdout and stderr separately?
+		
+	pro path from var as String
+	
+	pro args from var as String
+	
+	get output from var as String
+
+	get exitCode as int
+		return .process.exitCode
+
+	pro process from var as Process
+	
+	def toString as String is override
+		return '[.typeOf.name]([.path.toTechString], [.args.toTechString], [.exitCode], [.output.toTechString.limitLength(50, "...")])'
+
+
+class CobraCommand
+
+	shared
+	
+		def find as CobraCommand?
+			return .find(nil)
+
+		def find(extraPaths as IList<of String>?) as CobraCommand?
+			"""
+			Finds "cobra" script or "cobra.exe" on the current system by looking in various places:
+				* the current directory
+				* the directory where the current executable resides
+				* the path of the COBRA environment variable
+				* the system PATH
+				* the path of the cobra.exe that produced the current executable
+				* educated guesses like \WINDOWS\Program Files\Cobra\bin and /usr/local/bin
+				* the extraPaths argument
+			Returns nil if Cobra could not be found.
+			"""
+			path = _findCobraCommand(extraPaths)
+			if path, return CobraCommand(path)
+			else, return nil
+
+		def findExe as CobraCommand?
+			return .findExe(nil)
+	
+		def findExe(extraPaths as IList<of String>?) as CobraCommand?
+			path = Environment.getEnvironmentVariable('COBRA_EXE_PATH') ? ''
+			if path <> '', return CobraCommand(path)
+			cc = .find(extraPaths)
+			if cc.path.endsWith('.exe') or cc.path.endsWith('.EXE'), return cc
+			r = cc.run('-path')
+			return CobraCommand(r.output.trim)
+	
+		def clearCache
+			"""
+			The `findCobraCommand` method caches its results for subsequent speed.
+			This method clears the cache in the event you need to do so.
+			"""
+			_findCobraCache = nil
+
+	var _path as String
+
+	cue init(path as String)
+		require path.trim.length
+		base.init
+		if not File.exists(path), throw IOException('Cobra does not exist at: [path]')
+		_path = path
+
+	def toString as String is override
+		return '[.typeOf.name]([.path.toString])'
+
+	get path from var
+
+	def run(args as String) as CobraCommandRunResult
+		"""
+		Runs cobra.exe with the given args and returns the result which can be examined for .output, .exitCode, etc.
+		In addition to examining the output, you should be interested in the .exitCode which will be zero if there were no problems.
+		"""
+		path = .path
+		if not File.exists(path), throw IOException('Cobra does not exist at: [path]')
+		p = Process()
+		if path.toLower.endsWith('.exe') and CobraCore.isRunningOnMono
+			p.startInfo.fileName = 'mono'
+			p.startInfo.arguments = path + ' ' + args
+		else
+			p.startInfo.fileName = path
+			p.startInfo.arguments = args
+		# print '[p.startInfo.fileName] [p.startInfo.arguments]'
+		output = p.runAndCaptureAllOutput
+		return CobraCommandRunResult(path, args, p, output)
+
+	shared
+
+		def _findCobraCommand as String?
+			return _findCobraCommand(nil)
+
+		def _findCobraCommand(extraPaths as IList<of String>?) as String?
+			# check previous cached result first
+			if _findCobraCache, return _findCobraCache
+			# check the current directory
+			path = _find(Environment.currentDirectory)
+			if path, return path
+			# check the directory where the current executable resides
+			path = _find(Path.getDirectoryName(CobraCore.exePath) to !)
+			if path, return path
+			# check COBRA_COMMAND_PATH environment variable
+			path = Environment.getEnvironmentVariable('COBRA_COMMAND_PATH') ? ''
+			if path <> ''
+				path = _find(path to !)
+				if path, return path
+			# check the PATH
+			paths = (Environment.getEnvironmentVariable('PATH') ? '').split(Path.pathSeparator)
+			for sysPath in paths
+				path = _find(sysPath)
+				if path, return path
+			# check for the cobra that created the current executable
+			if File.exists(CompileTimeInfo.cobraPath), return CompileTimeInfo.cobraPath
+			# check common locations and extraPaths
+			morePaths = [
+				r'\WINDOWS\Program Files\Cobra\bin',
+				r'\WINDOWS\Program Files (x86)\Cobra\bin',
+				r'\Cobra\bin',
+				r'/usr/local/cobra/bin',
+				r'/usr/local/bin',
+				r'/usr/bin',
+				r'/bin',
+			]
+			if extraPaths, morePaths.addRange(extraPaths)
+			for morePath in morePaths
+				foundPath = _find(morePath)
+				if foundPath, return foundPath
+			# cannot find cobra.exe
+			return nil
+
+		var _findCobraCache as String?
+
+		def _find(path as String) as String?
+			_findCobraCache = _find(path, true)
+			return _findCobraCache
+
+		def _find(path as String, firstTime as bool) as String?
+			path = _expandTilde(path)
+			if path <> CobraCore.exePath and path.endsWith('cobra.exe')
+				# ^ first condition guards against test cases like "invoke-cobra.exe" from endlessly invoking themselves
+				if File.exists(path), return path
+				else, return nil
+			else if Directory.exists(path)
+				exts = ['', '.cmd', '.bat', '.exe']
+				for ext in exts
+					filePath = Path.combine(path, 'cobra' + ext)
+					if File.exists(filePath), return filePath
+				for ext in exts
+					filePath = Path.combine(Path.combine(path, 'bin'), 'cobra' + ext)
+					if File.exists(filePath), return filePath
+				if firstTime
+					# check for a 'Cobra' subdirectory
+					return _find(Path.combine(path, 'Cobra'), false)
+				else
+					return nil
+			else
+				return nil
+
+		def _expandTilde(path as String) as String
+			if path.startsWith('~/')
+				home = Environment.getEnvironmentVariable('HOME')  # works well with sudo
+				if home is nil, home = Environment.getFolderPath(Environment.SpecialFolder.Personal)
+				if home, path = home + path[1:]
+			return path
