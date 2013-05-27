@@ -13,3 +13,8 @@ echo.
 type NUL > r-testify-failures.text
 cobra -testify %*
 @rem e r-testify
+
+echo.
+echo Failures:
+echo.
+type r-testify-failures.text
