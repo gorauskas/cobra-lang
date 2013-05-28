@@ -128,7 +128,6 @@ class InstallFromWorkspace
 	var _cobraCommandPath as String?  # ex: 'C:\Cobra\bin\cobra.bat', '/usr/local/cobra/bin/cobra'
 	var _args = List<of String>()
 	var _skipStdLib = false
-	var _willForceDotNet4 = false
 	var _platformArg as String?
 
 	def run
@@ -143,7 +142,6 @@ class InstallFromWorkspace
 		.verifyElevatedPermissions
 		.verifyInstallDirectory
 		.verifyInWorkspace
-		.askNet4
 		.verifyVirtualMachineVersion
 		.locateSnapshotCompiler
 		.buildCobraCompiler
@@ -200,7 +198,7 @@ class InstallFromWorkspace
 			if arg == '-skip-std-lib'
 				_skipStdLib = true
 			else if arg in ['-net4', '-dotnet4']
-				_willForceDotNet4 = true
+				pass  # old option. this is implicit now
 			else if arg.startsWith('-platform:')
 				_platformArg = arg
 			else if arg == '-x86'
@@ -208,53 +206,6 @@ class InstallFromWorkspace
 			else
 				remainingArgs.add(arg)
 		return remainingArgs
-
-	def setUpCLR4(args as List<of String>)
-		# locate the external C# .NET 4 compiler
-		if CobraCore.isRunningOnMono
-			.setUpCLR4InMono(args)
-		else if .isRunningOnUnix
-			# does not compute. hmmm maybe DotGNU?
-			.error('Running on UNIX, but not running Mono. Cannot support -net4.')
-		else
-			.setUpCLR4InDotNet4(args)
-		args.add('-turbo')
-
-	def setUpCLR4InMono(args as List<of String>)
-		# look for dmcs - the Mono C# .NET 4 compiler
-		found = false
-		for path in .envVar('PATH').split(c':')
-			dmcs = Path.combine(path, 'dmcs')
-			if File.exists(dmcs)
-				found = true
-				break
-		if not found
-			.error('Cannot find the Mono dmcs compiler required by -net4. Make sure you have Mono 2.10+ installed and that dmcs is on your path.')
-		args.add('-native-compiler:' + dmcs)
-
-	def setUpCLR4InDotNet4(args as List<of String>)
-		# should be on Windows and Microsoft.NET at this point
-		# look for the Microsoft .NET 4.0 compiler
-		# Unfortunately, it's mere existance can be a red herring--
-		# a Windows 7 Ult 32-bit user for example, will have this file, but will still need to
-		# install either .NET 4.0 or one of the Microsoft Visual 2010 products.
-		
-		# the 'Windows' enum is only in .NET 4:
-		# windowsPath = Environment.getFolderPath(Environment.SpecialFolder.Windows)  # typically C:\Windows
-
-		# btw .NET 4.5 is an "in place" install over .NET 4 with no change in version info
-		# see http://blogs.msdn.com/b/dotnet/archive/2011/09/26/compatibility-of-net-framework-4-5.aspx
-
-		for envVarName in ['windir', 'WINDIR', 'systemroot', 'SYSTEMROOT']
-			windowsPath = .envVar(envVarName)
-			if windowsPath and windowsPath <> ''
-				break
-		if windowsPath is nil or windowsPath == ''
-			.error('Cannot locate the Windows system directory required by -net4.')
-		csc = Path.combine(windowsPath, r'Microsoft.NET\Framework\v4.0.30319\csc.exe')
-		if not File.exists(csc)
-			.error('Cannot find the Microsoft csc compiler required by -net4. Try installing MS .NET 4.0, or the 4.0+SDK or one of the Visual 2010 products (the Express ones are free).')
-		args.add('-native-compiler:' + csc)
 
 	def error(msg)
 		print '** ERROR:', msg
@@ -530,42 +481,10 @@ class InstallFromWorkspace
 		print 'Verified.'
 		print
 
-	def askNet4
-		.startStage('.NET 4.0/4.5 Prompt')
-		if _willForceDotNet4
-			print '-net4 was passed on the command line'
-			answer = 'y'
-		else
-			print 'Cobra can be installed for .NET 2.0/3.0/3.5 or .NET 4.0/4.5.'
-			default = 'n'
-			if CobraCore.isRunningOnMono
-				mono = CobraCore.monoVersionString
-				if mono and mono.length >= 'x.y'.length
-					if mono.startsWith('3.')
-						default = 'y'
-					else if mono.startsWith('2.') and mono.split(c'.')[1] in ['10', '11', '12']
-						default = 'y'
-			else if .isRunningOnWindows
-				# windowsPath = Environment.getFolderPath(Environment.SpecialFolder.Windows) # .NET 4 only
-				windowsPath = .envVar('WINDIR') ? .envVar('SYSTEMROOT')
-				if windowsPath
-					net4Path = Path.combine(windowsPath, r'Microsoft.NET\Framework\v4.0.30319\csc.exe')
-					if File.exists(net4Path), default = 'y'
-			while true
-				print 'Do you want to install for .NET 4.0/4.5? \[[default]] ' stop
-				answer = Console.readLine.trim
-				if answer == '', answer = default
-				answer = answer[0].toString.toLower
-				if answer in 'yn', break
-		print
-		if answer == 'y'
-			_willForceDotNet4 = true
-			.setUpCLR4(_args)
-
 	def verifyVirtualMachineVersion
 		if CobraCore.isRunningOnMono
 			.startStage('Verify Novell Mono version')
-			minMonoVersion = if(_willForceDotNet4, '2.10', '2.6')
+			minMonoVersion = '2.6'
 			vers = CobraCore.monoVersionString
 			if vers is nil or vers.trim == ''
 				.error('Cannot determine Mono version. Please install Mono [minMonoVersion] or higher.')
@@ -594,37 +513,6 @@ class InstallFromWorkspace
 		if _gacutil, return
 		.startStage('Locate gacutil.exe')
 		errorMsg = 'Cannot locate a gacutil. Maybe you can try again using the "Visual Studio Command Prompt" or ".NET SDK Command Prompt".'
-		if _willForceDotNet4 and .isRunningOnCLR2 and .isRunningOnWindows
-			prefixes = List<of String>()
-			for varName in ['PROGRAMFILES', 'ProgramFiles(x86)', 'ProgramW6432']
-				pfiles = .envVar(varName)
-				if pfiles and pfiles.length and pfiles not in prefixes, prefixes.add(pfiles)
-			if prefixes.count == 0
-				pfiles = Environment.getFolderPath(Environment.SpecialFolder.ProgramFiles)
-				if pfiles, prefixes.add(pfiles)
-			if prefixes.count == 0, .error('Cannot find a "Program Files" directory.')
-			for prefix in prefixes
-				# gacutil must be run externally and must come from .NET 4:
-				dirs = [
-					r'Microsoft SDKs\Windows\v8.0A\bin\NETFX 4.0 Tools',
-					r'Microsoft SDKs\Windows\v7.1\Bin\NETFX 4.0 Tools',
-					r'Microsoft SDKs\Windows\v7.0A\Bin\NETFX 4.0 Tools',
-					r'Microsoft SDKs\Windows\v8.0A\bin\NETFX 4.0 Tools',
-					r'Microsoft SDKs\Windows\v7.1\Bin\NETFX 4.0 Tools',
-					r'Microsoft SDKs\Windows\v7.0A\Bin\NETFX 4.0 Tools',
-					# note the following is wrong as it will be gacutil 3.5:
-					# r'Microsoft SDKs\Windows\v7.0A\Bin'
-				]
-				for dir in dirs
-					gacutil = Path.combine(Path.combine(prefix, dir), r'gacutil.exe')
-					if File.exists(gacutil)
-						# to-do: verify version number is 4.x
-						_gacutil = gacutil
-						print 'Found:', _gacutil
-						print
-						return
-			errorMsg += '\r\nYou may need to install the Windows SDK (https://www.google.com/search?q=windows+sdk+.net+4)'
-			.error(errorMsg)
 		slash = .slash
 		gacutil = 'gacutil'
 		p = Process()
@@ -744,32 +632,23 @@ class InstallFromWorkspace
 	def installLibraryToGAC(name as String)
 		.startStage('Install [name] library to the GAC')
 		dllName = name + '.dll'
-		if _willForceDotNet4 and .isRunningOnCLR2 and .isRunningOnWindows
-			# have to run gacutil command line
+		try
+			print 'Invoking Publish.GacInstall...'
+			Publish().gacInstall(dllName)
+			print 'Done.'
+			print
+		catch NotImplementedException
+			print 'Not implemented exception.'
+			print 'Will attempt to use gacutil.exe.'
 			.locateGacUtil
 			.runCommand(_gacutil to !, '-i [dllName] -f')
-		else
-			try
-				print 'Invoking Publish.GacInstall...'
-				Publish().gacInstall(dllName)
-				print 'Done.'
-				print
-			catch NotImplementedException
-				print 'Not implemented exception.'
-				print 'Will attempt to use gacutil.exe.'
-				.locateGacUtil
-				.runCommand(_gacutil to !, '-i [dllName] -f')
-			catch e as Exception
-				print '[e.getType] e.message'
+		catch e as Exception
+			print '[e.getType] e.message'
 
 	def verifyGacInstallation(name as String)
 		# TODO: verify the version number: Cobra.Core, Version=0.0.1.0
 		dllName = name + '.dll'
 		.startStage('Verifying [dllName] installed to the GAC')
-		if _willForceDotNet4 and .isRunningOnCLR2
-			print 'Skipping due to running on .NET 2, but installed for .NET 4.'
-			print
-			return
 		try 
 			# temporarily rename the standard library to ensure that assembly
 			# loading is attempted from the GAC.
