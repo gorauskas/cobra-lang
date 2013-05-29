@@ -750,17 +750,17 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 							sharp'definition = winner'
 							type = winner.resultType
 							if winner inherits BoxMember # .no-warnings.
-								# to-do: 2012-07-01 CE: the following just isn't ready
-								if winner.name not in ['format', 'invoke', 'split', 'sort']  # to-do: hack
+								# to-do: 2012-07-01 CE: the following isn't fully ready due defn.computeBestOverload deficiencies
+								if winner.name not in ['format', 'invoke', 'split', 'sort']  # to-do: hack  
 									params = winner.params
 									if _checkParamsCount(winner, args, params)
 										if needInferOutArgs, _inferOutArgs(args, params, false)	
-										_checkArgsAssignable(winner, args, params)
+										_checkArgsAssignable(winner, true, args, params)
 						else
 							type = definition.resultType
 							if _didVariArgs(definition)
 								params = definition.params
-								_checkArgsAssignable(definition, args, params)
+								_checkArgsAssignable(definition, false, args, params)
 							else
 								definition = _checkGenerics(definition, inout type)
 								if not definition.hasParams
@@ -769,7 +769,7 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 									params = definition.params
 									if _checkParamsCount(definition, args, params)
 										if needInferOutArgs, _inferOutArgs(args, params, false)	
-										_checkArgsAssignable(definition, args, params)
+										_checkArgsAssignable(definition, false, args, params)
 								
 						_checkInOutArguments
 						_checkVisibility(definition, dotNode.left)
@@ -927,7 +927,7 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 					sugg = 'You may want to disambiguate this by declaring the variable explicitly.'
 					.compiler.warning(this, 'Cobra has implicitly declared a variable "[newDefn.name] as [newDefn.type.name]" for an undefined out parameter variable but the type inferred may not be correct as the method called is overloaded. [sugg]')
 
-	def _checkArgsAssignable(definition as BoxMember, args as IList<of Expr>, params as IList<of Param>) 
+	def _checkArgsAssignable(definition as BoxMember, defnIsOverload as bool, args as IList<of Expr>, params as IList<of Param>) 
 		for i in args.count
 			arg = args[i]
 			param = params[i]
@@ -944,7 +944,13 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 			if param.direction <> arg.direction				
 				arg.recordError('Argument [i+1] of method "[_name]" expects [_toErrorPhrase(param.direction)] parameter, but the call is supplying [_toErrorPhrase(arg.direction)] one.')
 			if arg.canBeAssignedTo(param.type)
-				arg.contextType = param.type
+				# condition below is workaround for ticket:323
+				# - wrong choice of overload definition and (bad) cast of dynamic arg to wrong type
+				# to-do: review and possibly remove condition check when ticket:130 addressed
+				if defnIsOverload and arg.type.nonNil inherits DynamicType
+					pass
+				else
+					arg.contextType = param.type
 			else if param.type inherits GenericParam
 				# ..\Tests\240-generics\400-generic-methods\100-generic-method.cobra
 				# HACK for generic method args which need proper type checking like anything else
