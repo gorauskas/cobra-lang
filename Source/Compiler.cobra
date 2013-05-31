@@ -2,8 +2,7 @@ use System.Reflection
 use System.Diagnostics
 
 
-class StopCompilation
-	inherits Exception
+class StopCompilation inherits Exception
 	"""
 	Thrown by the compiler when it must stop compilation due to errors. This can happen at the end
 	of the phases:
@@ -20,8 +19,7 @@ class StopCompilation
 		_comp = comp
 
 
-class UnexpectedInvocationException
-	inherits SystemException
+class UnexpectedInvocationException inherits SystemException
 	"""
 	Throw this when a class is not expecting a particular method to be invoked at runtime
 	(even though it inherits it or must implement it for an interface).
@@ -53,6 +51,26 @@ class LoadReferenceException inherits Exception
 enum PlatformEnum
 	Microsoft
 	Novell
+
+
+class CompileParams
+	"""
+	If the .phases are empty, then the Compiler instance will make them.
+	The .files cannot be empty.
+	"""
+
+	cue init
+		base.init
+		_files = List<of FileSpec>()
+		_phases = List<of Phase>()
+
+	pro files from var as IList<of FileSpec>
+
+	pro writeTestInvocation from var as bool
+	
+	pro stopCompilation from var as Predicate<of Compiler>?
+
+	pro phases from var as IList<of Phase>
 
 
 class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, ICompilerForNodes is partial
@@ -112,7 +130,7 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		_verbosity = verbosity
 		_modules = List<of Module>()
 		_options = OptionValues()
-		_pathsToCompile = List<of String>()
+		_filesToCompile = List<of FileSpec>()
 		_globalNS = NameSpace(Token.empty, '(global)')
 		_nodeStack = Stack<of INode>()
 		_nameSpaceStack = Stack<of NameSpace>()
@@ -169,7 +187,7 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 
 	pro options from var
 
-	get pathsToCompile from var as IList<of String>
+	get filesToCompile from var as IList<of FileSpec>
 		"""
 		Phases are free to modify this list (usually by adding new paths to include in compilation).
 		"""
@@ -340,35 +358,38 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 
 
 	## Compiler
-	
-	def compileFilesNamed(paths as IList<of String>)
-		.compileFilesNamed(paths, false, nil)
+
 
 	var _parallelGuard as bool is shared
 	
-	def compileFilesNamed(paths as IList<of String>, writeTestInvocation as bool, stopCompilation as Predicate<of Compiler>?)
+	def compile(params as CompileParams)
 		if _parallelGuard, throw InvalidOperationException('Cannot run parser in parallel threads.')
 		_parallelGuard = true
 		try
-			_compileFilesNamed1(paths, writeTestInvocation, stopCompilation)
+			_compile1(params)
 		finally
 			_parallelGuard = false
 			
-	def _compileFilesNamed1(paths as IList<of String>, writeTestInvocation as bool, stopCompilation as Predicate<of Compiler>?)
+	def _compile1(params as CompileParams)
 		.initBackEnd
-		.defaultOutName = if(.options.buildStandardLibrary, 'Cobra.Core.dll', paths[0])
+		# if necessary, name the files 'noname.cobra', 'noname1.cobra', 'noname2.cobra', ...
+		for i, file in params.files.numbered
+			if file.path is nil
+				if i == 0, file.path = 'noname.cobra'
+				else, file.path = 'noname[i].cobra'
+		.defaultOutName = if(.options.buildStandardLibrary, 'Cobra.Core.dll', params.files[0].path)
 		if .options.boolValue('compile-if-needed')
 			outName = .backEnd.computeOutName	
-			if not .isCompilationNeeded(outName, paths)
+			if not .isCompilationNeeded(outName, params.files)
 				return
 				
 		if .options.boolValue('reveal-internal-exceptions')
-			_compileFilesNamed2(paths, writeTestInvocation, stopCompilation)
+			_compile2(params)
 			.printMessages
 			return
 
 		try
-			_compileFilesNamed2(paths, writeTestInvocation, stopCompilation)
+			_compile2(params)
 		catch StopCompilation
 			throw
 		catch exc as Exception
@@ -395,16 +416,18 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		success
 			.printMessages
 
-	def _compileFilesNamed2(paths as IList<of String>, writeTestInvocation as bool, stopCompilation as Predicate<of Compiler>?)
+	def _compile2(params as CompileParams)
 		timeit = .options.boolValue('timeit') and .verbosity
 		timings, totalElapsed = [], 0.0f
-		.willWriteTestInvocation = writeTestInvocation
-		_pathsToCompile = paths
+		.willWriteTestInvocation = params.writeTestInvocation
+		_filesToCompile = params.files
 		# now, essentially, do this:
 		#     for phase in .makePhases, runPhase(phase)
 		# but pay attention to things like errors and stopCompilation
 		hasErrors = false
-		for phase in .makePhases
+		stopCompilation = params.stopCompilation
+		if params.phases.count == 0, params.phases = .makePhases
+		for phase in params.phases
 			if stopCompilation and stopCompilation(this), break
 			if not hasErrors or phase.willRunWithErrors
 				sw = System.Diagnostics.Stopwatch()
@@ -431,7 +454,7 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 
 		if hasErrors, _exitFromErrors
 
-	def testifyFilesNamed(fileNames as IList<of String>, options as OptionValues, resultsWriter as IndentedWriter, verbose as bool)
+	def testifyFiles(files as IList<of FileSpec>, options as OptionValues, resultsWriter as IndentedWriter, verbose as bool)
 		"""
 		Compiles the given fileNames in support of "testify".
 		Sets .options to the options arg.
@@ -443,8 +466,8 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 			.options = options
 			bar = '----------------------------------------------------------------------------------------------------'
 			.initBackEnd
-			.defaultOutName = if(.options.buildStandardLibrary, 'Cobra.Core.dll', fileNames[0])
-			_pathsToCompile = fileNames
+			.defaultOutName = if(.options.buildStandardLibrary, 'Cobra.Core.dll', files[0].path)
+			_filesToCompile = files
 			hasErrors = false
 			for phase in .makePhases
 				if verbose, print 'Testify phase:', phase.description
@@ -464,7 +487,7 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		finally
 			Console.setError(saveError)
 
-	def isCompilationNeeded(outName as String, paths as IList<of String>) as bool
+	def isCompilationNeeded(outName as String, files as IList<of FileSpec>) as bool
 		"""
 		Returns true if compilation is needed because the output file does not exist
 		or a source file is newer than it.
@@ -476,11 +499,14 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 			return true
 		targetTime = File.getLastWriteTime(outName)
 		if v >= 2, print '    "[outName]" last write time: [targetTime].'
-		for path in paths
-			srcTime = File.getLastWriteTime(path)
-			if v >= 2, print '    "[path]" last write time: [srcTime].'
+		for file in files
+			# -compile-if-needed is not supported if source is passed in memory:
+			if file.source, return true
+
+			srcTime = File.getLastWriteTime(file.path)
+			if v >= 2, print '    "[file.path]" last write time: [srcTime].'
 			if srcTime.compareTo(targetTime) >= 0
-				if v, print '    "[path]" is newer than "[outName]"; will compile.'
+				if v, print '    "[file.path]" is newer than "[outName]"; will compile.'
 				return true
 		if v, print '    No source file is newer than "[outName]"; skipping compile.'
 		return false

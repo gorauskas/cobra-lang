@@ -67,7 +67,7 @@ class CobraParser inherits Parser
 		p.globalNS = NameSpace(Token.empty, '(global)')
 		p.typeProvider = FakeTypeProvider()
 		p.backEnd = FakeBackEnd(c)
-		module = p.parseSource('test1', 'class SomeClass\n\tpass\n')
+		module = p.parse('test1', 'class SomeClass\n\tpass\n')
 		decls = (module to dynamic).topNameSpace.declsInOrder
 		decl = decls[decls.count-1]
 		if decl inherits Class
@@ -79,15 +79,15 @@ class CobraParser inherits Parser
 		p.globalNS = NameSpace(Token.empty, '(global)')
 		p.typeProvider = FakeTypeProvider()
 		p.backEnd = FakeBackEnd(c)
-		p.parseSource('test2', 'class Test\n\tdef main is shared\n\t\treturn\n')
+		p.parse('test2', 'class Test\n\tdef main is shared\n\t\treturn\n')
 		
 		c = TestCompiler() # to default backend to something on init
 		p = CobraParser(typeProvider=c, warningRecorder=c, errorRecorder=c, globalNS=c.globalNS, backEnd=c.backEnd)
-		p.parseSource('test3', '')
+		p.parse('test3', '')
 		
 		c = TestCompiler()
 		p = CobraParser(typeProvider=c, warningRecorder=c, errorRecorder=c, globalNS=c.globalNS, backEnd=c.backEnd)
-		p.parseSource('test4', '    ')
+		p.parse('test4', '    ')
 
 	shared
 		
@@ -184,20 +184,16 @@ class CobraParser inherits Parser
 
 	get module from var as CobraModule?
 	
-	def parseFileNamed(fileName as String) as CobraModule
+	def parse(file as FileSpec) as CobraModule
 		require .typeProvider and .backEnd
-		if .verbosity >= 2, print 'Parsing [fileName]'
-		_fileName = fileName
-		source = File.readAllText(_fileName to !)
-		return .parseSource(fileName, source)
-
-	def parseSource(source as String) as CobraModule
-		require .typeProvider and .backEnd
-		return .parseSource('(no file name)', source)
+		if .verbosity >= 2, print 'Parsing [file.path]'
+		fileName = file.path ? 'noname.cobra'
+		source = file.source ? File.readAllText(fileName)
+		return .parse(fileName, source)
 
 	var _parallelGuard as bool is shared
 
-	def parseSource(fileName as String, source as String) as CobraModule
+	def parse(fileName as String, source as String) as CobraModule
 		"""
 		Parses module source code and returns resulting Cobra module.
 		The fileName is recorded, but the file is not physically accessed.

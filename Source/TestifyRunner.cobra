@@ -435,13 +435,13 @@ class TestifyRunner
 			print .bar
 		lines = source.split(c'\n').toList
 
-		fileNames = [baseName]
+		files = [FileSpec(baseName, nil)]
 		options = .testifyOptions
 		options['willRunExe'] = _willRunExes # internal, specific to testify
 
 		firstLine = ''
 		count0 = lines.count
-		rc = _processFirstlineDirectives(baseName, fileNames, inout lines, inout options, out firstLine)
+		rc = _processFirstlineDirectives(baseName, files, inout lines, inout options, out firstLine)
 		if rc == 0, return 0
 		firstLineInsensitive = firstLine.trim.replace(' ', '')
 		nRemovedLines = count0 - lines.count
@@ -453,8 +453,8 @@ class TestifyRunner
 		expectingError = false
 		inLineMessages = _getInlineMessages(lines, nRemovedLines, out expectingError)
 		if inLineMessages.count > 0 #  hasInlineMessages
-			return _testifyInlineMessages(inLineMessages, expectingError, 
-											compilerVerbosity, [baseName], options, verbose )
+			return _testifyInlineMessages(inLineMessages, expectingError, compilerVerbosity,
+											[FileSpec(baseName, nil)], options, verbose)
 											
 		if firstLineInsensitive.startsWith('#.error.')
 			# deprecated: put errors on the lines where they occur. the "hasInlineMessages" code above will detect them.
@@ -463,24 +463,24 @@ class TestifyRunner
 			# error = firstLine.split('.error.',1)[1].trim.toLower
 			index = firstLine.indexOf('.error.')
 			error = firstLine.substring(index+7).trim.toLower
-			return _testifyHeadError(error, compilerVerbosity, fileNames, options, verbose) 
+			return _testifyHeadError(error, compilerVerbosity, files, options, verbose) 
 
 		if firstLineInsensitive.startsWith('#.warning.')
 			# deprecated: put warnings on the lines where they occur. the "hasInlineMessages" code above will detect them.
 			index = firstLine.indexOf('.warning.')
 			warning = firstLine.substring(index+9).trim.toLower
-			return _testifyHeadWarning(warning, false, compilerVerbosity, fileNames, options, verbose) 
+			return _testifyHeadWarning(warning, false, compilerVerbosity, files, options, verbose) 
 
 		if firstLineInsensitive.startsWith('#.warning-lax.')
 			# deprecated: put warnings on the lines where they occur. the "hasInlineMessages" code above will detect them.
 			index = firstLine.indexOf('.warning-lax.')
 			warning = firstLine.substring(index+13).trim.toLower
-			return _testifyHeadWarning(warning, true, compilerVerbosity, fileNames, options, verbose) 
+			return _testifyHeadWarning(warning, true, compilerVerbosity, files, options, verbose) 
 
-		return _testifyStd(compilerVerbosity, fileNames, options, verbose)
+		return _testifyStd(compilerVerbosity, files, options, verbose)
 
 
-	def _processFirstlineDirectives(baseName as String, fileNames as List<of String>, lines as inout List<of String>,
+	def _processFirstlineDirectives(baseName as String, files as List<of FileSpec>, lines as inout List<of String>,
 									options as inout OptionValues, firstLine as out String) as int
 		"""
 		Check first few lines for Testify directives (start with '#.')	and process or setup
@@ -494,8 +494,8 @@ class TestifyRunner
 				print 'Running multiple files.'
 				for fileName in firstLine.substring(firstLine.indexOf('.multi.')+8).split
 					if fileName.length
-						fileNames.add(Utils.combinePaths(Path.getDirectoryName(baseName) to !, fileName))
-				print 'Multiple filenames:', fileNames.join(', ')
+						files.add(FileSpec(Utils.combinePaths(Path.getDirectoryName(baseName) to !, fileName), nil))
+				print 'Multiple filenames:', (for f in files get f.path).join(', ')
 				# enable having another directive on the next line, such as .error.
 				lines = lines[1:]
 				firstLine = lines[0]
@@ -606,12 +606,12 @@ class TestifyRunner
 	def _testifyInlineMessages(inLineMessages as Dictionary<of int, String>, 
 								expectingError as bool, 
 								compilerVerbosity as int, 
-								fileNames as IList<of String>,
+								files as IList<of FileSpec>,
 								options as OptionValues, verbose as bool) as int 
 		"""Testify on files that have inline checks for compiler errors and warnings"""						
 		try
 			c = Compiler(compilerVerbosity, _cachedTestifyModules, commandLineArgParser=_cl.argParser)
-			c.testifyFilesNamed(fileNames, options, _resultsWriter to !, verbose)
+			c.testifyFiles(files, options, _resultsWriter to !, verbose)
 		catch StopCompilation
 			pass
 		catch exc as Exception
@@ -666,11 +666,11 @@ class TestifyRunner
 			return _testifyRun(c)
 		return 1
 
-	def _testifyHeadError(error as String, compilerVerbosity as int, fileNames as IList<of String>,
+	def _testifyHeadError(error as String, compilerVerbosity as int, files as IList<of FileSpec>,
 							options as OptionValues, verbose as bool) as int 
 		try
 			c = Compiler(compilerVerbosity, _cachedTestifyModules, commandLineArgParser=_cl.argParser)
-			c.testifyFilesNamed(fileNames, options, _resultsWriter to !, verbose)
+			c.testifyFiles(files, options, _resultsWriter to !, verbose)
 			print 'Expecting error(s): [error]'
 			print 'No error at all.'
 			if c.errors.count > 0
@@ -705,12 +705,12 @@ class TestifyRunner
 			return 0
 		return 1
 
-	def _testifyHeadWarning(warning as String, lax as bool, compilerVerbosity as int, fileNames as IList<of String>,
+	def _testifyHeadWarning(warning as String, lax as bool, compilerVerbosity as int, files as IList<of FileSpec>,
 							options as OptionValues, verbose as bool) as int 
 		# TODO: the following code both checks for warnings to be thrown as well as going through a list of warnings. Seems like it should just need to do one or the other.
 		try
 			c = Compiler(compilerVerbosity, _cachedTestifyModules, commandLineArgParser=_cl.argParser)
-			c.testifyFilesNamed(fileNames, options, _resultsWriter to !, verbose)
+			c.testifyFiles(files, options, _resultsWriter to !, verbose)
 		catch StopCompilation
 			if not lax
 				print 'Expecting warning substring: "[warning]"'
@@ -744,11 +744,11 @@ class TestifyRunner
 			return 0
 		return 1
 			
-	def _testifyStd(compilerVerbosity as int, fileNames as IList<of String>,
+	def _testifyStd(compilerVerbosity as int, files as IList<of FileSpec>,
 							options as OptionValues, verbose as bool) as int		
 		try
 			c = Compiler(compilerVerbosity, _cachedTestifyModules, commandLineArgParser=_cl.argParser)
-			c.testifyFilesNamed(fileNames, options, _resultsWriter to !, verbose)
+			c.testifyFiles(files, options, _resultsWriter to !, verbose)
 		catch StopCompilation
 			.failed
 			return 0
