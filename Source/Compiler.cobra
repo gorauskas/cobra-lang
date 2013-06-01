@@ -144,6 +144,10 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		_warnings = List<of SourceException>()
 		_intermediateFileNames = List<of String>()
 		_loadedReferences = List<of String>()
+
+		if .isProgramBased
+			.willPrintMessages, .willSetExitCode = true, true
+		
 		if initialModules
 			if false # TODO: not working yet
 				for mod in initialModules
@@ -161,8 +165,15 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 
 	pro defaultOutName from var as String?
 
+	get isProgramBased
+		return System.Reflection.Assembly.getEntryAssembly == .typeOf.assembly
+
 	pro verbosity from var
 
+	pro willPrintMessages from var as bool
+
+	pro willSetExitCode from var as bool
+	
 	get includeTests as bool
 		return .options.boolValue('include-tests')
 
@@ -946,11 +957,13 @@ class Compiler implements ITypeProvider, IWarningRecorder, IErrorRecorder, IComp
 		throw StopCompilation(this)
 
 	def printMessages
-		if .htmlWriter
-			.printHtmlMessages
-		else
-			.printConsoleMessages
-		Environment.exitCode = if(.errors.count, 1, 0)
+		if .willPrintMessages
+			if .htmlWriter
+				.printHtmlMessages
+			else
+				.printConsoleMessages
+		if .willSetExitCode
+			Environment.exitCode = if(.errors.count, 1, 0)
 
 	def printHtmlMessages
 		require .htmlWriter
