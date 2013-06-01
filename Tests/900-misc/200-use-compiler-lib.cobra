@@ -1,0 +1,61 @@
+# created in an earlier test
+@ref 'Test.Cobra.Compiler'
+
+use Cobra.Compiler
+
+class CompilerApiTesting
+
+	const verbosity = 0
+
+	var _phaseTypes = @[
+		BindRunTimeLibraryPhase,
+		ReadLibrariesPhase,
+		ParsePhase,
+		BindUsePhase,
+		BindInheritancePhase,
+		BindInterfacePhase,
+		ComputeMatchingBaseMembersPhase,
+		BindImplementationPhase
+	]
+
+	def main
+		fileName = 'InMemory.cobra'
+		sourceCode = 'class Foo\n\tdef main\n\t\tprint "Hola, mundo!"'
+		testFile = FileSpec(fileName, sourceCode)
+		params = CompileParams()
+		params.files.add(testFile)
+		
+		compiler = .createCompiler
+		
+		params.phases = for t in _phaseTypes get t(compiler) to Phase
+		
+		compiler.compile(params)
+		
+		for m in compiler.modules
+			if m.fileName == fileName
+				mod = m to CobraModule
+				break
+				
+		fooClass = mod.topNameSpace.memberForName('Foo') to Class
+		assert fooClass.memberForName('main') <> nil
+		assert fooClass.memberForName('getHashCode') <> nil
+		assert fooClass.memberForName('getType') <> nil
+		assert fooClass.memberForName('toString') <> nil  # crashes here
+		
+	def createCompiler as Compiler
+		compiler = Compiler(.verbosity)
+		
+		options = OptionValues()
+		options.add('compile', true)
+		options.add('back-end', 'clr')
+		options.add('turbo', true)
+		options.add('number', 'decimal')
+		
+		compiler.options = options
+		compiler.initBackEnd
+		
+		# Set some shared information which gets reset everytime we instantiate a compiler.
+		Node.setCompiler(compiler)
+		Node.typeProvider = compiler
+		
+		return compiler
