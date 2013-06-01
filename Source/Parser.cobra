@@ -67,6 +67,8 @@ class Parser
 	var _tokens as List<of IToken>?
 	var _nextTokenIndex as int
 
+	var _numErrors as int
+
 	pro verbosity from var
 
 	##
@@ -201,15 +203,20 @@ class Parser
 		return .recordError(.last, msg)
 
 	def recordError(token as IToken?, msg as String) as ParserException
-		err = _makeError(token, msg)
-		_errorRecorder.recordError(err)
-		return err
+		error = _makeError(token, msg)
+		.recordError(error)
+		return error
+	
+	def recordError(error as ParserException) as ParserException
+		_errorRecorder.recordError(error)
+		_numErrors += 1
+		return error
 		
 	def throwError(msg as String)
 		.throwError(.last, msg)
 
 	def throwError(token as IToken?, msg as String)
-		throw _makeError(token, msg)  # will get recorded in .parseSource if the exception actually "makes it out" (some parser logic catches errors)
+		throw _makeError(token, msg)  # will get recorded in .parse if the exception actually "makes it out" (some parser logic catches errors)
 
 	def _makeError(token as IToken?, msg as String) as ParserException
 		if _verbosity >= 2
