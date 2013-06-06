@@ -7,7 +7,8 @@ use System.Reflection
 
 class TestCompilerBuild
 
-	var fileNames = 'Test.Cobra.Compiler.dll Test.Cobra.Compiler.dll.pdb Test.Cobra.Compiler.dll.mdb'.split
+	var compilerLibFileNames = 'Test.Cobra.Compiler.dll Test.Cobra.Compiler.dll.pdb Test.Cobra.Compiler.dll.mdb'.split to !
+	var helloProgramFileNames = 'hello.cobra hello.exe hello.pdb hello.exe.mdb'.split to !
 
 	def main
 		testDir = Environment.currentDirectory
@@ -19,7 +20,8 @@ class TestCompilerBuild
 		cobraDir = Path.getDirectoryName(cobraPath)
 		Environment.currentDirectory = cobraDir to !
 		
-		.removeFiles
+		.removeFiles(.compilerLibFileNames)
+		.removeFiles(.helloProgramFileNames)
 
 		p = System.Diagnostics.Process()
 		p.startInfo.fileName = cobraPath
@@ -43,7 +45,11 @@ class TestCompilerBuild
 		# whereas Mono will load from the current directory
 		fullPath = Path.combine(Environment.currentDirectory, 'Test.Cobra.Compiler.dll')
 		assert File.exists(fullPath)
-		assembly = Assembly.loadFrom(fullPath)
+		# keeps ref to file in CLR so file delete below fails
+		# assembly = Assembly.loadFrom(fullPath)
+		# use byte load instead
+		# see http://social.msdn.microsoft.com/forums/en-US/clr/thread/999cca57-bd8b-4c5f-ba9e-bc5463c2aa94
+		assembly = Assembly.load(File.readAllBytes(fullPath))
 
 		assert assembly
 		assert assembly.getName.name == 'Test.Cobra.Compiler'
@@ -67,17 +73,21 @@ class TestCompilerBuild
 			cl = cmdLineClass()
 			cl.run(['-c', '-ert:yes', 'hello.cobra'])
 
-		for fileName in .fileNames
+		# move the resulting compiler lib over
+		for fileName in .compilerLibFileNames
 			try
-				File.move(fileName, Path.combine(testDir, fileName))
+				target = Path.combine(testDir, fileName)
+				if File.exists(target), File.delete(target)
+				File.move(fileName, target)
 			catch FileNotFoundException
 				pass
-
-		.removeFiles
-
+				
+		# remove src files copied into cwd and built artifacts
+		.removeFiles(.helloProgramFileNames)		
+		.removeFiles(.compilerLibFileNames)
 		
-	def removeFiles
-		for fileName in .fileNames
+	def removeFiles(fileNames as String*)
+		for fileName in fileNames
 			try
 				File.delete(fileName)
 			catch UnauthorizedAccessException
