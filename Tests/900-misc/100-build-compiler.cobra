@@ -7,10 +7,15 @@ use System.Reflection
 
 class TestCompilerBuild
 
-	var compilerLibFileNames = 'Test.Cobra.Compiler.dll Test.Cobra.Compiler.dll.pdb Test.Cobra.Compiler.dll.mdb'.split to !
+	var compilerLibFileNames = 'Test.Cobra.Compiler.dll Test.Cobra.Compiler.dll.xdb'.split to !
 	var helloProgramFileNames = 'hello.cobra hello.exe hello.pdb hello.exe.mdb'.split to !
 
 	def main
+		# choose the correct debugging symbols extension for the platform
+		ext = if(CobraCore.isRunningOnMono, '.mdb', '.pdb')
+		for i, fileName in .compilerLibFileNames.numbered
+			.compilerLibFileNames[i] = .compilerLibFileNames[i].replace('.xdb', ext)
+		
 		testDir = Environment.currentDirectory
 		
 		sep = Path.directorySeparatorChar
@@ -75,12 +80,9 @@ class TestCompilerBuild
 
 		# move the resulting compiler lib over
 		for fileName in .compilerLibFileNames
-			try
-				target = Path.combine(testDir, fileName)
-				if File.exists(target), File.delete(target)
-				File.move(fileName, target)
-			catch FileNotFoundException
-				pass
+			target = Path.combine(testDir, fileName)
+			if File.exists(target), File.delete(target)
+			File.move(fileName, target)
 				
 		# remove src files copied into cwd and built artifacts
 		.removeFiles(.helloProgramFileNames)		
