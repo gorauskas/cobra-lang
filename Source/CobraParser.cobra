@@ -100,7 +100,7 @@ class CobraParser inherits Parser
 	var _lowercaseLetters = 'abcdefghijklmnopqrstuvwxyz'
 	var _uppercaseLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
-	var _isNamesStack as Stack<of String>?
+	var _modifierNamesStack as Stack<of String>?
 		""" Stack for recording modifier for items in modifier sections (e.g.shared). """
 
 	var _boxStack as Stack<of Box>?
@@ -231,7 +231,7 @@ class CobraParser inherits Parser
 		tokVerbosity = _verbosity - 4  # in order words, tokenizer does not spew unless our verbosity is 5 or greater
 		if tokVerbosity < 0, tokVerbosity = 0
 
-		_isNamesStack = Stack<of String>()  # for `shared` for example
+		_modifierNamesStack = Stack<of String>()  # for `shared` for example
 		_leftStack = Stack<of Expr>()
 		_opStackStack = Stack<of Stack<of String>>()
 		.newOpStack
@@ -697,7 +697,7 @@ class CobraParser inherits Parser
 				.throwError('Cannot nest a type underneath a [parentBox.englishName]')  # TODO: needs a test case
 
 		_boxStack.push(theClass)
-#		.isNamesStack = Stack<of String>()
+#		.modifierNamesStack = Stack<of String>()
 		.bodiedBoxMemberDecls(theClass)
 		_boxStack.pop
 
@@ -780,11 +780,20 @@ class CobraParser inherits Parser
 
 	def _isDeclNamesNoEOL(hasIsNames as out bool) as List<of String>
 		""" Parse for possible stream of isNames without terminating EOL. """
-		names = List<of String>(_isNamesStack)
+		names = List<of String>(_modifierNamesStack)
 		hasIsNames = false
 		if .optional('IS') is nil
 			return names
 		hasIsNames = true
+		return _commaSepDeclNames(names)
+
+	def _commaSepDeclNames(names as List<of String>) as List<of String>
+		"""
+		Grab one or a comma separated sequence of declNames/isNames.
+		Verify that the modifier names are valid and internally consistant
+		Returns
+			A string list of the modifierNames/isNames
+		"""
 		while true
 			what = .grab.text
 			if what in .validIsNames
@@ -801,12 +810,16 @@ class CobraParser inherits Parser
 				if .peek.text in .validIsNames
 					.throwError(.peek, 'Multiple access modifiers should be separated by commas such as "[what], [.peek.text]".')
 				break
-		# TODO: error on virtual and shared
+		# error on virtual and shared
+		if 'virtual' in names and 'shared' in names
+			.recordError(.last, 'Cannot specify both "virtual" and "shared".')
 		# to-do: move these to _bindInt
 		# error on non virtual and override
 		if 'nonvirtual' in names and 'override' in names
 			.recordError(.last, 'Cannot specify both "nonvirtual" and "override".')
-		# to-do: cannot specify 'new' and 'override'
+		# Cannot specify 'new' and 'override'
+		if 'new' in names and 'override' in names
+			.recordError(.last, 'Cannot specify both "new" and "override".')
 		# error if 2 or more of 'public', 'protected', 'private', 'internal'
 		accessModifierCount = 0
 		for vam in _validAccessModifiers
@@ -819,6 +832,10 @@ class CobraParser inherits Parser
 	var	_validAccessModifiers = ['public', 'protected', 'private', 'internal']
 
 	get validIsNames as List<of String>
+		"""
+		All the valid isNames/DeclNames or modifiers.
+		Some of these are specific to clauses - i.e partial on Types/Class..., readonly on vars
+		"""
 		if _validIsNames is nil
 			_validIsNames = [
 				'fake', 'extern', 'shared', 'virtual', 'nonvirtual', 'override', 'new',
@@ -897,7 +914,7 @@ class CobraParser inherits Parser
 
 		# TODO when supporting nested classes, look at the _boxStack and set a back pointer here
 		_boxStack.push(theMixin)
-#		.isNamesStack = Stack<of String>()
+#		.modifierNamesStack = Stack<of String>()
 		.bodiedBoxMemberDecls(theMixin)
 		_boxStack.pop
 
@@ -936,7 +953,7 @@ class CobraParser inherits Parser
 		theInterface = Interface(wordToken, idToken, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, typeSpecs.inheritsProxies, docString)
 
 		_boxStack.push(theInterface)
-#		.isNamesStack = Stack<of String>()
+#		.modifierNamesStack = Stack<of String>()
 		.bodiedBoxMemberDecls(theInterface)  # TODO: this shouldn't be bodiedBoxMemberDecls, right?
 		_boxStack.pop
 
@@ -974,7 +991,7 @@ class CobraParser inherits Parser
 				.throwError('Cannot nest a type underneath a [parentBox.englishName]')  # TODO: needs a test case
 
 		_boxStack.push(theStruct)
-#		.isNamesStack = Stack<of String>()
+#		.modifierNamesStack = Stack<of String>()
 		.bodiedBoxMemberDecls(theStruct)
 		_boxStack.pop
 
@@ -988,7 +1005,7 @@ class CobraParser inherits Parser
 		handlerType = .typeId
 		# ahem, duplicated from .boxVarDecl
 		docString = '' to ?
-		isNames = List<of String>(_isNamesStack)
+		isNames = List<of String>(_modifierNamesStack)
 		if .peek.which=='IS'
 			isNames = .isDeclNames
 			attribs = .hasAttribs
@@ -1219,6 +1236,9 @@ class CobraParser inherits Parser
 			breakLoop = false  # cannot use 'break' to stop a 'while' loop in a branch statement. CC?
 			while not breakLoop
 				_isTraceOn = true
+				if .peek.text in .validIsNames  # shared, protected, etc
+					.bodiedBoxMemberDeclNames(box)
+					continue
 				branch .peek.which
 					on 'PASS'
 						.classPass
@@ -1232,21 +1252,19 @@ class CobraParser inherits Parser
 					on 'VAR', .addDecl(box, .boxFieldDecl(true))
 					on 'CONST', .addDecl(box, .boxFieldDecl(false))
 					on 'INVARIANT', .declareInvariant
-					on 'EOL', .endOfLine
+					on 'EOL',  .endOfLine
 					on 'ENUM', .addDecl(box, .enumDecl)
-					on 'EVENT', .addDecl(box, .eventDecl)
-					on 'SIG', .addDecl(box, .declareMethodSig)
-					on 'SHARED', .bodiedBoxMemberDeclsShared(box)
-					on 'TEST', .testSection(box)
+					on 'EVENT',.addDecl(box, .eventDecl)
+					on 'SIG',  .addDecl(box, .declareMethodSig)
+					on 'TEST',   .testSection(box)
 					on 'CLASS',  .addDecl(box, .classDecl)  # nested types
 					on 'STRUCT', .addDecl(box, .structDecl) # nested types
 					else
-						branch .peek.text
+						branch .peek.text 
 							on 'ensure', sugg = 'invariant'
 							on 'void', sugg = 'def'
 							else, sugg = ''
-						if sugg <> ''
-							sugg = ' Instead of "[.peek.text]", try "[sugg]".'
+						if sugg <> '', sugg = ' Instead of "[.peek.text]", try "[sugg]".'
 						.throwError('Got [.peek] when expecting class, def, enum, get, invariant, pro, set, shared, sig, struct, test or var.[sugg]')
 			.dedent
 
@@ -1258,15 +1276,18 @@ class CobraParser inherits Parser
 				# TODO: Give another error with the line number of the other definition (and then change message above)
 			box.addDecl(member)
 
-	def bodiedBoxMemberDeclsShared(box as Box)
-		.expect('SHARED')
+	def bodiedBoxMemberDeclNames(box as Box)
+		""" Section for block of common decl/modifier isnames."""
+		declModifierNames = _commaSepDeclNames(List<of String>())
+		if 'fake' in declModifierNames or 'partial' in declModifierNames
+			.recordError(.last, 'Cannot have "fake" or "partial" in a modifier block.')
+		for modName in declModifierNames, _modifierNamesStack.push(modName)
 		.indent
-		_isNamesStack.push('shared')
 		try
 			.bodiedBoxMemberDecls(box)
 		finally
-			_isNamesStack.pop
-
+			for modName in declModifierNames, _modifierNamesStack.pop
+				
 	def classPass
 		if .curBox.declsInOrder.count
 			_warning('Encountered "pass" in a class that already has declared members.')  # TODO: change to an error
@@ -1299,7 +1320,7 @@ class CobraParser inherits Parser
 			if type is nil
 				type = .typeProvider.defaultType
 		docString = '' to ?
-		isNames = List<of String>(_isNamesStack)
+		isNames = List<of String>(_modifierNamesStack)
 		if .peek.which=='IS'
 			isNames = .isDeclNames
 			attribs = .hasAttribs
@@ -1370,7 +1391,7 @@ class CobraParser inherits Parser
 		params = _methodParams(opener)
 		returnType = _methodReturnType
 
-		isNames = List<of String>(_isNamesStack)
+		isNames = List<of String>(_modifierNamesStack)
 		attribs = AttributeList()
 		implementsType = nil to ITypeProxy?
 
@@ -1551,7 +1572,7 @@ class CobraParser inherits Parser
 		if not .optional('INDENT')
 			# with no indent there can be no additional specs like attributes, contracts or body
 			if not hasIsNames
-				isNames = List<of String>(_isNamesStack)
+				isNames = List<of String>(_modifierNamesStack)
 			attribs = AttributeList()
 			docString = '' to ?
 		else
@@ -1625,7 +1646,7 @@ class CobraParser inherits Parser
 			if not isAbstract and curBox.canHaveStatements
 				.throwError('Missing body for property.')
 			if not hasIsNames
-				isNames = List<of String>(_isNamesStack)
+				isNames = List<of String>(_modifierNamesStack)
 			attribs = AttributeList()
 			docString = ''
 		if params.count
@@ -1693,7 +1714,7 @@ class CobraParser inherits Parser
 			docString = .docString
 			.dedent
 		else
-			if not hasIsNames, isNames = List<of String>(_isNamesStack)
+			if not hasIsNames, isNames = List<of String>(_modifierNamesStack)
 			attribs = AttributeList()
 			docString = ''
 		varDef = _genVarDef(declVarType, token, name, varName, initExpr)
@@ -1706,7 +1727,7 @@ class CobraParser inherits Parser
 		possibleVarDef = .curBox.declForName(varName)
 		if not possibleVarDef
 			if initExpr or declVarType
-				varDef = BoxVar(token, token, .curBox, varName, declVarType, List<of String>(_isNamesStack), initExpr, nil, 'Automatic backing var for property "[name]".')
+				varDef = BoxVar(token, token, .curBox, varName, declVarType, List<of String>(_modifierNamesStack), initExpr, nil, 'Automatic backing var for property "[name]".')
 				.curBox.addDecl(varDef)
 				return varDef
 			if not varName.startsWith('_') or varName.startsWith('__')
@@ -1782,7 +1803,7 @@ class CobraParser inherits Parser
 			if not isAbstract and curBox.canHaveStatements
 				.throwError('Missing body for property.')
 			if not hasIsNames
-				isNames = List<of String>(_isNamesStack)
+				isNames = List<of String>(_modifierNamesStack)
 			attribs = AttributeList()
 			docString = ''
 		if params.count
