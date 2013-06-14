@@ -1,8 +1,10 @@
 namespace Cobra.Core
 
 	use System.Collections
+	#use System.Collections.Generic
+	use System.Collections.ObjectModel
 	
-	interface ISet<of T> inherits ICollection<of T>, IEnumerable<of T>, ISet
+	interface ISet<of T> inherits System.Collections.Generic.ISet<of T>, ICollection<of T>, IEnumerable<of T>, ISet
 
 		## Collection type operations
 
@@ -11,8 +13,6 @@ namespace Cobra.Core
 		
 		## Set operations
 	
-		def isSubsetOf(s as ISet<of T>) as bool
-		def isSupersetOf(s as ISet<of T>) as bool
 		def intersection(s as ISet<of T>) as ISet<of T>
 		def union(s as ISet<of T>) as ISet<of T>
 		def difference(s as ISet<of T>) as ISet<of T>
@@ -20,9 +20,9 @@ namespace Cobra.Core
 		def toList as List<of T>
 
 		
-	class Set<of T> implements ISet<of T>, ICollection<of T>, IEnumerable<of T>
+	class Set<of T> inherits HashSet<of T> implements ISet<of T>, ICollection<of T>, IEnumerable<of T>, ISet
 		"""
-		A Set holds a hashed, unordered collections of items.
+		A Set holds a hashed, unordered collections of items. 
 		Membership testing and set operations (intersection, union, etc.) are faster than with lists, but order is not preserved.
 		Set implements ICollection, so it has the usual collection operations such as `add`, `count` and `contains`.
 		It also has set specific operations including `union`, `intersection` and `isSubsetOf`.
@@ -30,6 +30,9 @@ namespace Cobra.Core
 		As with other collections, to create a copy of a set, create a new one passing the original to the initializer:
 			s = Set<of int>(s)
 
+		This one is now based on .NET 4.0 System.Collections.Generic.HashSet<of T> augmented to support same
+		API as the original Cobra implemented version running on .NET 2.0.
+	
 		TODO:
 			[-] List style items
 			[ ] Can the methods use .getType instead of hardcoding Set? Then subclasses would get created for example .intersection
@@ -41,48 +44,34 @@ namespace Cobra.Core
 			[ ] Move some method implementations up to ISet extension
 		"""
 	
-		const defaultCapacity = 8
-
-		var _data as Dictionary<of T, T>
-
 		## Initialization
 	
 		cue init
-			.init(.defaultCapacity, nil, nil)
+			base.init
 
+		# Just for backward compatibility
 		cue init(capacity as int)
-			.init(capacity, nil, nil)
+			base.init
 
 		cue init(items as IEnumerable<of T>)
 			# CC: ensure for item in items assert .contains(item)    or,
 			# CC: ensure for item in items get .contains(item)
-			.init(.defaultCapacity, items, nil)
+			base.init(items)
 
 		cue init(comparer as IEqualityComparer<of T>)
-			.init(.defaultCapacity, nil, comparer)
+			base.init(comparer)
 			
 		cue init(items as IEnumerable<of T>?, comparer as IEqualityComparer<of T>?)
-			.init(.defaultCapacity, items, comparer)
+			base.init(items, comparer)
 
+		# also for backwards compatibility
 		cue init(capacity as int, items as IEnumerable<of T>?, comparer as IEqualityComparer<of T>?)
-			base.init
-			_data = Dictionary<of T, T>(capacity, comparer)
-			if items, for item in items, _data[item] = item
+			base.init(items, comparer)
 
 
-		## IEnumerable
-	
-		def getEnumerator as IEnumerator<of T>
-			return _data.keys.getEnumerator
-
-		def getEnumerator as System.Collections.IEnumerator
-			implements System.Collections.IEnumerable
-			return .getEnumerator to System.Collections.IEnumerator
-	
-	
 		## Object
-	
-		def equals(other as Object?) as bool is override
+
+		def equals(other as Object?) as bool is override 
 			# TODO: could this be more efficient?
 			if other inherits Set<of T>
 				if .count <> other.count
@@ -102,7 +91,7 @@ namespace Cobra.Core
 					if not other.contains(item)
 						return false
 				for item2 in other
-					if not sharp'item2 is T'
+					if not item2 inherits T
 						return false
 					if not .contains(item2 to T)
 						return false
@@ -116,76 +105,41 @@ namespace Cobra.Core
 				code ^= item.getHashCode
 			return code
 
-
-		## ICollection
-	
-		def add(item as T)
-			ensure .contains(item)
-			_data[item] = item
-
-		def clear
-			ensure .count == 0
-			_data.clear
-
-		def copyTo(array as T[], arrayIndex as int)
-			_data.keys.copyTo(array, arrayIndex)
-
-		get count as int
-			ensure result >= 0
-			return _data.count
-		
-		def contains(item as T) as bool
-			return _data.containsKey(item)
-
-		get isReadOnly as bool
-			return false
-
-		def remove(item as T) as bool
-			ensure
-				not .contains(item)
-				# .contains(item) implies result  TODO: How to say "old this"?
-			body
-				return _data.remove(item)
-
-
 		# ISet
-		
-		get countOfISet as int
-			return _data.count
 
-		def contains(item as Object) as bool
+		get countOfISet as int
+			return base.count
+
+		def contains(item as Object) as bool 
 			implements ISet
-			return if(sharp'item is T', .contains(item to T), false)
+			return if(sharp'item is T', base.contains(item to T), false)
 
 
 		## Set operations
 	
-		def isSubsetOf(s as ISet<of T>) as bool
-			for item in this
-				if not s.contains(item)
-					return false
-			return true
-
-		def isSupersetOf(s as ISet<of T>) as bool
-			return s.isSubsetOf(this)
-
 		def intersection(s as ISet<of T>) as ISet<of T>
 			"""
 			Returns a new set containing only the elements that are in this set and `s`. (AND)
+			See also: .intersectionWith which modifies the set in place
 			"""
-			r = Set<of T>()
-			for item in this
-				if s.contains(item)
-					r.add(item)
+			#r = Set<of T>()
+			#for item in this
+			#	if s.contains(item)
+			#		r.add(item)
+			#return r
+			# to-do: which is faster, the above or this:
+			r = Set<of T>(this)
+			r.intersectWith(s)
 			return r
 
 		def union(s as ISet<of T>) as ISet<of T>
 			"""
 			Returns a new set containing the elements of that are in this set or `s`. (OR)
+			See also: .unionWith which modifies the set in place
 			"""
 			r = Set<of T>(this)
-			r.addRange(s)
-			return r
+			r.unionWith(s)
+			return r			
 	
 		def difference(s as ISet<of T>) as ISet<of T>
 			"""
@@ -200,15 +154,19 @@ namespace Cobra.Core
 		def symmetricDifference(s as ISet<of T>) as ISet<of T>
 			"""
 			Returns a new set with elements in either s or t but not both. (XOR)
+			base.symmetricExceptWith modifies this set.
 			"""
-			r = Set<of T>()
-			for item in this
-				if not s.contains(item)
-					r.add(item)
-			for item in s
-				if not .contains(item)
-					r.add(item)
+			r = Set<of T>(this)
+			r.symmetricExceptWith(s)
 			return r
+			#r = Set<of T>()
+			#for item in this
+			#	if not s.contains(item)
+			#		r.add(item)
+			#for item in s
+			#	if not .contains(item)
+			#		r.add(item)
+			#return r
 
 
 		## List<of T>-inspired Members
@@ -222,9 +180,9 @@ namespace Cobra.Core
 			for item in items
 				.add(item)
 
-		#def asReadOnly as ReadOnlyCollection<of T>
-			# TODO
-
+		def asReadOnly as ReadOnlyCollection<of T>
+			return ReadOnlyCollection<of T>(.toList)
+			
 		# TODO
 		#def convertAll<of TOutput>(converter as Converter<of T, TOutput>) as Set<of TOutput>
 		#	newSet = Set<of TOutput>()
@@ -232,12 +190,11 @@ namespace Cobra.Core
 		#		newSet.add(converter(item))
 		#	return newSet
 
-		# TODO
-		#def exists(predicate as Predicate<of T>) as bool
-		#	for item in this
-		#		if predicate(item)
-		#			return true
-		#	return false
+		def exists(predicate as Predicate<of T>) as bool
+			for item in this
+				if predicate(item)
+					return true
+			return false
 		
 		# TODO: find
 		# TODO: findAll
@@ -258,14 +215,12 @@ namespace Cobra.Core
 				result.count == .count
 				result.typeOf is .typeOf
 			body
-				type = .typeOf
-				newList = type(this)
-				return newList
+				return .memberwiseClone to ISet<of T>
 
 		def toList as List<of T>
 			return List<of T>(this)
 
-	interface ISet inherits IEnumerable
+	interface ISet inherits System.Collections.IEnumerable
 		"""
 		This interface is to facilitate Set<of>.equals when the generic types are different (which
 		does not necessarily restrict the two sets from having the same contents).
@@ -278,6 +233,14 @@ namespace Cobra.Core
 	class TestSet
 
 		test
+			s = Set<of int>()
+			assert s.count == 0
+			s1 = Set<of int>()
+			assert s1.count == 0
+			assert s is not s1
+			assert s == s1
+			assert s.getHashCode <> s1.getHashCode
+			
 			s = Set<of int>()
 			assert s.count == 0
 			t = Set<of int>() to ISet<of int>
@@ -354,4 +317,12 @@ namespace Cobra.Core
 
 			r = Set<of int>([1, 2]).symmetricDifference(Set<of int>([2, 3]))
 			assert r.toList == [1, 3] or r.toList == [3, 1]
-
+			
+			p = Set<of int>([1,2,3,4]).exists(do(i as int))
+				return  i % 2 == 0 
+			assert p	
+			
+			p = Set<of int>([1,2,3,4]).exists(do(i as int))
+				return  i >5 
+			assert not p	
+			
