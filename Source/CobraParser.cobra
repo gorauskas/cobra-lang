@@ -1874,6 +1874,7 @@ class CobraParser inherits Parser
 			foo as List<of int>
 			foo   # default type (dynamic?)
 			foo as Type has Attribute(arg1, arg2)
+			foo [as Type] = optionalValue [has Attribute]
 			foo has Attribute(arg1, arg2)
 		"""
 		if .peek.which == 'OPEN_GENERIC'
@@ -1921,13 +1922,21 @@ class CobraParser inherits Parser
 		else
 			type = TypeProxy(_typeProvider.defaultType)
 			isMissingType = true
+				
+		if .optional('ASSIGN')	# default value for optional param
+			optExpr = .expression to ?  # a constant, value, Type or default(Type)
+		else
+			optExpr = nil
+			type = type ? .typeProvider.defaultType
+			
 		attribs = AttributeList()
 		if .optional('HAS')
 			# TODO: multiple attribs like: x as Type has (Attrib1, Attrib2)
 			attribs.add(AttributeDecl(.attribExpr(0)))
 		# note: isMissingType is currently used to generate a warning in .paramDecls above
 		# and may be used for anonymous method parameter type inference at some point
-		return Param(token, type, isMissingType=isMissingType, direction=dir, isDeclaredAsUnused=declaredAsUnused, attributes=attribs)
+		return Param(token, type, isMissingType=isMissingType, direction=dir,
+			isDeclaredAsUnused=declaredAsUnused, optionalValue=optExpr, attributes=attribs)
 
 
 	##

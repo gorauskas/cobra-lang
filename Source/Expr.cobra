@@ -281,12 +281,15 @@ class Expr inherits Stmt implements IExpr is abstract, partial
 		"""
 		return ' whose type is "[.receiverType.name]"'
 	
-	def _paramsCountMsg(defnName as String, params as IList<of Param>, args as IList<of Expr>) as String
+	def _paramsCountMsg(defnName as String, params as IList<of Param>, nOptParams as int, args as IList<of Expr>) as String
 		item = if(defnName == r'[]', 'indexer', 'method')
 		countStr = if(args.count == 0, 'no arguments', '[args.count]') 
 		countStr += if(args.count == 1,  ' is', ' are')	
 		detail = _paramsVsArgsString(defnName, params, args)
-		msg = 'The [item] "[defnName]" is expecting [params.count] argument[Utils.plural(params)], but [countStr] being supplied in this call. [detail]'
+		optPart = if(nOptParams, ' ([nOptParams] optional)','')
+		expectingPart = 'is expecting [params.count] argument[Utils.plural(params)][optPart]'
+		suppliedPart = 'but [countStr] being supplied in this call'
+		msg = 'The [item] "[defnName]" [expectingPart], [suppliedPart]. [detail]'
 		return msg
 
 	def _paramsVsArgsString(defnName as String, params as IList<of Param>, args as IList<of Expr>) as String	
@@ -301,7 +304,8 @@ class Expr inherits Stmt implements IExpr is abstract, partial
 		sb = StringBuilder('The [item]declaration is "[defnName](')
 		sep = ''
 		for param in params
-			sb.append('[sep][param.name] as [param.type.name]')
+			optInit = if(param.optionalValue, ' = [param.optionalValue.toCobraSource]', '')
+			sb.append('[sep][param.name] as [param.type.name][optInit]')
 			sep = ', '
 		sb.append(')"')
 		# to-do: append definition return Type (if any)?
@@ -907,10 +911,16 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 
 	def _checkParamsCount(definition as BoxMember, args as IList<of Expr>, params as IList<of Param>) as bool
 		if args.count <> params.count and not (definition inherits AbstractMethod and (definition to AbstractMethod).hasVariParams)
-			if _name=='toString'  # to-do: hack: because many structs like Decimal have a toString() overload which cannot currently be expressed in SystemInterfaces.cobra
+			if _name == 'toString'  # to-do: hack: because many structs like Decimal have a toString() overload which cannot currently be expressed in SystemInterfaces.cobra
 				return false
 			else
-				.throwError(_paramsCountMsg(definition.name, params, args)) #'The method "[definition.name]" is expecting [params.count] argument[Utils.plural(params)], but [countStr] being supplied in this call.'
+				haveError = args.count > params.count 
+				if not haveError
+					numOptionalParams = 0
+					for p in params, if p.optionalValue, numOptionalParams += 1
+					haveError = args.count < params.count - numOptionalParams
+				if haveError
+					.throwError(_paramsCountMsg(definition.name, params, numOptionalParams, args))  # 'The method "[definition.name]" is expecting [params.count] argument[Utils.plural(params)], but [countStr] being supplied in this call.'
 		return true
 		
 	def _inferOutArgs(args as IList<of Expr>, params as IList<of Param>, warn as bool) 
@@ -1579,7 +1589,7 @@ class IndexExpr inherits Expr is partial
 			return
 			
 		if not hasVari and args.count <> params.count
-			.throwError(_paramsCountMsg(r'[]', params, args))  # 'The indexer is expecting [params.count] argument[Utils.plural(params)], but [countStr] being supplied in this call.[msg]'
+			.throwError(_paramsCountMsg(r'[]', params, 0, args))  # 'The indexer is expecting [params.count] argument[Utils.plural(params)], but [countStr] being supplied in this call.[msg]'
 		for i in 0 : args.count
 			arg = args[i]
 			param = params[i]
@@ -1796,8 +1806,9 @@ class MemberExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 					.throwError('Could not find an overload for "[.name]" with zero arguments.')
 			else if defn inherits AbstractMethod
 				params = defn.params
-				if params.count <> 0 and not (params.count == 1 and params[0].type inherits VariType)
-					.throwError(_paramsCountMsg(defn.name, params, List<of Expr>()))	# 'The method "[defn.name]" is expecting [params.count] argument[Utils.plural(params)], but no arguments are being supplied in this call.'
+				numOptionalParams = 0
+				if params.count <> 0 and not _allParamsOptional(params, out numOptionalParams)
+					.throwError(_paramsCountMsg(defn.name, params, numOptionalParams, List<of Expr>()))	 # 'The method "[defn.name]" is expecting [params.count] argument[Utils.plural(params)], but no arguments are being supplied in this call.'
 				else if .name <> 'getType'  # ug, more special handling for getType
 					box = .binarySuperNode.left.type to? Box
 					if box
@@ -1814,6 +1825,13 @@ class MemberExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 									_type = mbr.resultType
 									break
 
+	def _allParamsOptional(params as IList<of Param>, numOptParams as out int) as bool
+		""" Returns true if there is a single `vari` parameter or all params are optional. """
+		numOptParams = 0
+		if params.count == 1 and params[0].type inherits VariType, return true
+		for p in params, if p.optionalValue, numOptParams += 1
+		return numOptParams == params.count
+		
 	def toCobraSource as String is override
 		return _name
 

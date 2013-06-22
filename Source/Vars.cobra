@@ -172,7 +172,10 @@ enum Direction
 
 
 class Param inherits AbstractLocalVar is partial
-
+	
+	var _optionalValue as Expr? 
+		""" Default value for an optional parameter. """
+	
 	cue init(token as IToken, type as IType)
 		base.init(token, type)
 
@@ -205,8 +208,14 @@ class Param inherits AbstractLocalVar is partial
 
 	pro isAnonymousParam from var as bool
 
+	get isOptional as bool 
+		return _optionalValue <> nil 
+
 	pro direction from var as Direction
 
+	pro optionalValue from var 
+		""" Value for optional param. Marks param as optional. """
+	
 	get isInOut as bool
 		return .direction == Direction.InOut
 
@@ -239,6 +248,11 @@ class Param inherits AbstractLocalVar is partial
 
 	def _bindInt
 		base._bindInt
+		if _optionalValue
+			# to-do: check optValue is constant, valueType ctor or 'default(valueType')
+			_optionalValue.bindImp  # that's bindImp intentionally
+			if not _optionalValue.canBeAssignedTo(_type to !)
+				.throwError('Incompatible types. Cannot assign value of type [_optionalValue.type.name] on the right to [_type.name] on the left.')
 		for attrib in .attributes
 			try
 				attrib.bindInt
@@ -247,6 +261,10 @@ class Param inherits AbstractLocalVar is partial
 
 	def _bindImp
 		base._bindImp
+		if .isMissingType and _optionalValue and _optionalValue.type and not _optionalValue inherits NilLiteral
+			# infer param type from optional param default value
+			# if NilLiteral just leave it alone
+			_type = _optionalValue.type
 		for attrib in .attributes
 			try
 				attrib.bindImp
