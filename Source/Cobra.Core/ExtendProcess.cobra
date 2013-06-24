@@ -4,65 +4,64 @@ use System.Diagnostics
 namespace Cobra.Core
 
 
-	extend Process
+extend Process
 
-		def runAndCaptureAllOutput as String
-			"""
-			Example:
-				p = System.Diagnostics.Process()
-				p.startInfo.fileName = 'some-program'
-				p.startInfo.arguments = 'foo bar baz'
-				output = p.runAndCaptureAllOutput
-				trace p, p.exitCode, output
-			"""
-			return .runAndCaptureAllOutput(false)
-
-		def runAndCaptureAllOutput(verbose as bool) as String
-			# Reference: http://msdn2.microsoft.com/en-us/library/system.diagnostics.process.beginoutputreadline(VS.80).aspx
-			if verbose
-				print 'command   : "[.startInfo.fileName]"'
-				print 'arguments : "[.startInfo.arguments]"'
-			collector = ProcessOutputCollector(this)
-			.start
-			.beginOutputReadLine
-			.beginErrorReadLine
-			.waitForExit		
-			s = collector.toString
-			if verbose
-				bar = '----------------------------------------'
-				print 'output:'
-				print bar
-				print s
-				print bar
-			return s
-
-
-	class ProcessOutputCollector is internal
+	def runAndCaptureAllOutput as String
 		"""
-		A utility class for use by Process extension methods.
+		Example:
+			p = System.Diagnostics.Process()
+			p.startInfo.fileName = 'some-program'
+			p.startInfo.arguments = 'foo bar baz'
+			output = p.runAndCaptureAllOutput
+			trace p, p.exitCode, output
 		"""
+		return .runAndCaptureAllOutput(false)
 
-		var _buffer as StringBuilder
+	def runAndCaptureAllOutput(verbose as bool) as String
+		# Reference: http://msdn2.microsoft.com/en-us/library/system.diagnostics.process.beginoutputreadline(VS.80).aspx
+		if verbose
+			print 'command   : "[.startInfo.fileName]"'
+			print 'arguments : "[.startInfo.arguments]"'
+		collector = ProcessOutputCollector(this)
+		.start
+		.beginOutputReadLine
+		.beginErrorReadLine
+		.waitForExit		
+		s = collector.toString
+		if verbose
+			bar = '----------------------------------------'
+			print 'output:'
+			print bar
+			print s
+			print bar
+		return s
 
-		cue init(p as Process)
-			base.init
-			_buffer = StringBuilder()
-			info = p.startInfo
-			info.redirectStandardOutput = true
-			info.redirectStandardError = true
-			info.useShellExecute = false  # otherwise: System.InvalidOperationException: UseShellExecute must be false when redirecting I/O.
-			info.createNoWindow = true # otherwise: Console window is briefly displayed when run from a winexe program
-			listen p.outputDataReceived, DataReceivedEventHandler(ref _outputLineReceived)
-			listen p.errorDataReceived,  DataReceivedEventHandler(ref _errorLineReceived)
 
-		def _outputLineReceived(sender as Object?, line as DataReceivedEventArgs?)
-			_buffer.append(line.data)
-			_buffer.append(Environment.newLine)
+class ProcessOutputCollector is internal
+	"""
+	A utility class for use by Process extension methods.
+	"""
 
-		def _errorLineReceived(sender as Object?, line as DataReceivedEventArgs?)
-			_buffer.append(line.data)
-			_buffer.append(Environment.newLine)
+	var _buffer as StringBuilder
 
-		def toString as String is override
-			return _buffer.toString
+	cue init(p as Process)
+		base.init
+		_buffer = StringBuilder()
+		info = p.startInfo
+		info.redirectStandardOutput = true
+		info.redirectStandardError = true
+		info.useShellExecute = false  # otherwise: System.InvalidOperationException: UseShellExecute must be false when redirecting I/O.
+		info.createNoWindow = true # otherwise: Console window is briefly displayed when run from a winexe program
+		listen p.outputDataReceived, DataReceivedEventHandler(ref _outputLineReceived)
+		listen p.errorDataReceived,  DataReceivedEventHandler(ref _errorLineReceived)
 
+	def _outputLineReceived(sender as Object?, line as DataReceivedEventArgs?)
+		_buffer.append(line.data)
+		_buffer.append(Environment.newLine)
+
+	def _errorLineReceived(sender as Object?, line as DataReceivedEventArgs?)
+		_buffer.append(line.data)
+		_buffer.append(Environment.newLine)
+
+	def toString as String is override
+		return _buffer.toString
