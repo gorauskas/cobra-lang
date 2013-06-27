@@ -483,6 +483,8 @@ class Tokenizer
 			t = .nextToken
 			if t, tokens.add(t)
 			else, break
+		# eof
+		tokens.add(Token(_fileName, 1.max(_lineNum), _colNum, _charNum, 'EOF', '', '') to IToken?)
 		# determine timings for various Tokenizer lexing changes
 /#
 		duration = DateTime.now.subtract(start)
@@ -832,7 +834,7 @@ class Tokenizer
 	def addNoWarning(token as IToken)
 		_noWarningLines.add('[token.fileName]:[token.lineNum]')
 		
-	def checkTokens(tokens as List<of IToken>, expected as String)
+	def checkTokens(tokens as IList<of IToken>, expected as String)
 		is shared
 		"""
 		Returns true if the list of tokens "matches" the string.
@@ -845,7 +847,7 @@ class Tokenizer
 			sb.append(t.which)
 			sep = ' '
 		tokensStr = sb.toString
-		assert tokensStr==expected
+		assert tokensStr == expected + ' EOF'
 
 
 class TokenDef implements IComparable is abstract
@@ -1220,10 +1222,8 @@ class TestTokenizer inherits Tokenizer
 		tt.restart
 		tt.startSource('hello\nthere\n you\n ')
 		tokens = for tok in tt.allTokens where tok.which <> 'NEWLINE'
-		assert tokens.count==3
-		hello = tokens[0]  # CC:  hello, there, you = tokens
-		there = tokens[1]
-		you = tokens[2]
+		assert tokens.count == 4
+		hello, there, you, eof = tokens
 
 		assert hello.lineNum==1
 		assert hello.colNum==1
@@ -1234,3 +1234,4 @@ class TestTokenizer inherits Tokenizer
 		assert you.lineNum==3
 		assert you.colNum==2
 		assert you.length==3
+		assert eof.lineNum == 4

@@ -285,14 +285,14 @@ class CobraParser inherits Parser
 			textParts = List<of String>()
 			keepGoing = true
 			while keepGoing
-				tok = .grab
-				if tok is nil
+				if .isEOF
 					msg = 'Unexpected end of file inside doc string.'
 					if quoteToken
 						msg += ' Maybe line [quoteToken.lineNum] was intended to end the doc string. Use exactly three quotes.'
 					else
 						msg += ' Use exactly three quotes to end the doc string.'
 					.throwError(msg)
+				tok = .grab
 				branch tok.which
 					on 'DOC_STRING_STOP'
 						# TODO: check that indentation level is correct
@@ -368,7 +368,7 @@ class CobraParser inherits Parser
 			topNS = _module.topNameSpace
 			if not _fileName.endsWith('SystemInterfaces.cobra')
 				.backEnd.setDefaultUseDirectives(topNS)
-			while .peek, .parseTopLevel
+			while not .isEOF, .parseTopLevel
 		finally
 			_nameSpaceStack.pop
 		return _module to !
@@ -380,6 +380,8 @@ class CobraParser inherits Parser
 		if tok is nil, return nil
 		isGood = true
 		branch tok.which
+			on 'EOF'
+				return nil
 			on 'AT_ID'
 				.compilerDirective
 			on 'PERCENTPERCENT'  # deprecated
@@ -1152,11 +1154,10 @@ class CobraParser inherits Parser
 			curNameSpace.addDocString(.docString)
 			.zeroOrMore('EOL')
 			while true
-				peek = .peek
-				if peek is nil
+				if .isEOF
 					if indented, .throwError('Expecting a namespace member, but source code ended.')
 					else, break
-				tok = peek to !
+				tok = .peek to !
 				if tok.which == 'DEDENT', break
 				if not indented and tok.which == 'NAMESPACE', break
 				branch tok.which
@@ -3229,10 +3230,8 @@ class CobraParser inherits Parser
 				break
 			.newOpStack
 			try
-				if expectingArguments
-					exprs.add(.argument)
-				else
-					exprs.add(.expression)
+				if expectingArguments, exprs.add(.argument)
+				else, exprs.add(.expression)
 			finally
 				.delOpStack
 			expectSep = true
