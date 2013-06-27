@@ -331,10 +331,10 @@ class CobraTokenizer inherits Tokenizer
 			return _inSubstStringSingle
 		return true
 
-	def _nextToken as IToken? is override
+	def _nextToken as IToken is override
 		# overridden to deliver the final DEDENTS to close out indentation
 		tok = base._nextToken
-		if tok is nil
+		if tok.isEOF
 			colNum = 0
 			while _indentCount > 0
 				if colNum == 0, colNum = .lastToken.colNum + 1
@@ -342,12 +342,8 @@ class CobraTokenizer inherits Tokenizer
 				_tokenQueue.enqueue(t)
 				_indentCount -= 1
 				colNum += 1
-			if _tokenQueue.count
-				return _nextToken
-			else
-				return nil
-		else
-			return tok
+			if _tokenQueue.count, return _nextToken
+		return tok
 
 	def onWHITESPACE_LINE(tok as IToken) as IToken?
 		# Eat these.
@@ -479,10 +475,10 @@ class CobraTokenizer inherits Tokenizer
 	var _didLineContinuation as bool  # only meaningful after an EOL
 
 	get justDidLineContinuation as bool
-		return .lastToken and .lastToken.which == 'EOL' and _didLineContinuation
+		return .lastToken.which == 'EOL' and _didLineContinuation
 
 	def onEOL(tok as IToken) as IToken?
-		_didLineContinuation = .lastToken and .lastToken.text == '_' and .lastToken.which == 'ID'
+		_didLineContinuation = .lastToken.text == '_' and .lastToken.which == 'ID'
 		return tok
 
 	def onSINGLE_LINE_COMMENT_BLOCK(tok as IToken) as IToken?
