@@ -57,14 +57,18 @@ interface IErrorRecorder
 	def recordError(error as SourceException)
 
 
-class Parser
-	is abstract
+class Parser is abstract
+	"""
+	The various methods for working with the token stream, such as .grab and .peek,
+	presume that _tokens is non-empty and ends in _token.last.isEOF. This enables
+	them to avoid returning nil which can be inconvenient in parsing logic.
+	"""
 
 	var _fileName as String?
 	var _willShowTokens = false
 	var _verbosity = 0
 
-	var _tokens as List<of IToken>?
+	var _tokens = List<of IToken>()
 	var _nextTokenIndex as int
 
 	var _numErrors as int
@@ -76,16 +80,16 @@ class Parser
 	##
 
 	def isEOF as bool
-		peek = .peek
-		return peek is nil or peek.which == 'EOF'
+		return .peek.isEOF
 
-	def grab as IToken?
+	def grab as IToken
 		"""
 		Returns the next token or nil if there are none left.
 		"""
-		if _nextTokenIndex >= _tokens.count, return nil
+		assert _tokens.count > 0 and _tokens.last.isEOF
+		if _nextTokenIndex >= _tokens.count, _nextTokenIndex = _tokens.count-1
 		token = _tokens[_nextTokenIndex]
-		_nextTokenIndex += 1
+		if not token.isEOF, _nextTokenIndex += 1
 		if _willShowTokens, print 'grab    --> [token]'
 		return token
 
@@ -94,20 +98,20 @@ class Parser
 		Undoes the last .grab call. Often called "push" in parser examples.
 		"""
 		require _nextTokenIndex > 0
-		_nextTokenIndex -= 1
+		if not .peek.isEOF, _nextTokenIndex -= 1
 		if _willShowTokens, print 'undo'
 
-	def peek as IToken?
+	def peek as IToken
 		return .peek(0)
 
-	def peek(offset as int) as IToken?
+	def peek(offset as int) as IToken
 		"""
-		Returns a token without changing the current token, or nil if none left past the range.
+		Returns a token without changing the current token, or EOF if none left past the range.
 		An offset of 0 looks one ahead, 1 looks two ahead, etc.
 		"""
 		i = _nextTokenIndex + offset
-		if i < _tokens.count, token = _tokens[i] to ?
-		else, token = nil
+		if i >= _tokens.count, i = _tokens.count-1
+		token = _tokens[i]
 		if _willShowTokens, print 'peek([offset]) --> [token]'
 		return token
 
@@ -115,10 +119,10 @@ class Parser
 		"""
 		Replaces the current token in the token stream with the given argument.
 		"""
-		require .peek
+		require not .peek.isEOF
 		ensure .peek == token
 		_tokens[_nextTokenIndex] = token
-		
+
 	def last as IToken?
 		return .last(0)
 
@@ -164,11 +168,11 @@ class Parser
 		t = .grab
 		if _willShowTokens
 			print 'expect([whatTypes]) --> [t]'
-		if t is nil
+		if t.isEOF
 			.throwError('Expecting [List<of String>(whatTypes).join(" or ")], but source ended suddenly.')  # CC: shouldn't need to wrap a 'vari String' in a list to use extensions on IEnumerable
 		if t.which not in whatTypes
 			.throwError('Expecting [List<of String>(whatTypes).join(" or ")], but got [t] instead.')
-		return t to !
+		return t
 
 	def optional(whatTypes as vari String) as IToken?
 		"""
@@ -177,7 +181,7 @@ class Parser
 		"""
 		t = .peek
 		if _willShowTokens, print 'optional([whatTypes]) --> [t]'
-		if t is nil, return nil
+		if t.isEOF, return nil
 		else if t.which in whatTypes, return .grab
 		else, return nil
 
@@ -187,8 +191,9 @@ class Parser
 		Returns nothing.
 		Example:  .oneOrMore('EOL')
 		"""
+		require which <> 'EOF'
 		.expect(which)
-		while .peek and .peek.which == which, .grab
+		while .peek.which == which, .grab
 
 	def zeroOrMore(which as String)
 		"""
@@ -196,7 +201,8 @@ class Parser
 		Returns nothing.
 		Example:  .zeroOrMore('EOL')
 		"""
-		while .peek and .peek.which == which, .grab
+		require which <> 'EOF'
+		while .peek.which == which, .grab
 
 
 	##

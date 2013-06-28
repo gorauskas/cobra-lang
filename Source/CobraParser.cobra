@@ -236,15 +236,15 @@ class CobraParser inherits Parser
 		_opStackStack = Stack<of Stack<of String>>()
 		.newOpStack
 
-		_tokens = nil
+		_tokens.clear
 		if _tokenizer is nil, _tokenizer = CobraTokenizer(tokVerbosity)
 		else, _tokenizer.reuse
-		_tokenizer.typeProvider = .typeProvider 
-		tokenizer = _tokenizer
+		_tokenizer.typeProvider = .typeProvider
 		try
-			tokens = tokenizer.startSource(_fileName to !, source).allTokens
+			tokens = _tokenizer.startSource(_fileName to !, source).allTokens
+			assert tokens.count > 0 and tokens.last.isEOF
 			_tokens = List<of IToken>(tokens.count)
-			for i = 0 .. tokens.count
+			for i in tokens.count
 				if tokens[i].text == '_' and tokens[i].which == 'ID'
 					if i < tokens.count-1 and tokens[i+1].which == 'EOL'
 						i += 1
@@ -257,12 +257,12 @@ class CobraParser inherits Parser
 			return false
 
 		compiler = .backEnd.compiler
-		compiler.noWarningLines.addRange(tokenizer.noWarningLines)
-		compiler.linesCompiled += tokenizer.linesCompiled
+		compiler.noWarningLines.addRange(_tokenizer.noWarningLines)
+		compiler.linesCompiled += _tokenizer.linesCompiled
 		compiler.tokensCompiled += tokens.count
 
-		if tokenizer.errors.count
-			for error in tokenizer.errors
+		if _tokenizer.errors.count
+			for error in _tokenizer.errors
 				.recordError(error.token, error.message)
 			return false
 
@@ -320,10 +320,8 @@ class CobraParser inherits Parser
 
 	def idOrKeyword as IToken
 		token = .grab
-		if token is nil
-			.throwError('Expecting an identifier or keyword.')
-		else if token.isKeyword or token.which=='ID'
-			return token to !
+		if token.isKeyword or token.which=='ID'
+			return token
 		else
 			.throwError('Expecting an identifier or keyword, but got [token] instead.')
 		throw FallThroughException(token)  # CC: axe when throwError() can be marked as always throwing (well if C# can figure that out! (solution: Cobra can generate a "dummy" throw statement))
@@ -377,7 +375,7 @@ class CobraParser inherits Parser
 		""" Returns the node that was parsed, but will return nil for EOL, EOF and compiler directives. """
 		what as ISyntaxNode?
 		tok = .peek
-		if tok is nil, return nil
+		if tok.isEOF, return nil
 		isGood = true
 		branch tok.which
 			on 'EOF'
@@ -434,7 +432,7 @@ class CobraParser inherits Parser
 			_warning(pp, 'Use "@[token.text]" instead of "%% [token.text]" for compiler directives.')
 		branch token.value to String
 			on 'help'
-				if .peek is nil, .throwError(ErrorMessages.unexpectedEndOfFile)
+				if .peek.isEOF, .throwError(ErrorMessages.unexpectedEndOfFile)
 				node = .parseTopLevel
 				if node is nil, _warning(token, '@help is not implemented for this element.')
 				else, node.isHelpRequested = true
@@ -552,15 +550,14 @@ class CobraParser inherits Parser
 		token = .expect('ID')
 		assert token.text == 'assembly'
 		.indent
-		if .peek and .peek.which == 'PASS'
+		if .peek.which == 'PASS'
 			.grab
 			.endOfLine
 			attribs = AttributeList()
 		else
 			attribs = .hasAttribs
 			# assembly can have multiple "has" lines in case you want to stack your attributes vertically
-			while .peek and .peek.which == 'HAS'
-				attribs.addRange(.hasAttribs)
+			while .peek.which == 'HAS', attribs.addRange(.hasAttribs)
 		.dedent
 		return AssemblyDecl(token, attribs)
 
@@ -595,7 +592,7 @@ class CobraParser inherits Parser
 		isDone = false
 		while true
 			peek = .peek
-			if peek is nil, .throwError('Unexpected end of source.')
+			if peek.isEOF, .throwError('Unexpected end of source.')
 			last = .peek.which
 			branch last
 				on 'EOL'
@@ -651,9 +648,7 @@ class CobraParser inherits Parser
 		"""
 		if .optional('COLON')
 			_warning('Colons are not used to start indented blocks. You can remove the colon.')
-		if .peek is nil
-			.throwError('Unexpected end of source.')
-		else if .peek.which == 'EOL'
+		if .peek.which == 'EOL'
 			.endOfLine
 		else if .peek.isKeyword
 			pass
@@ -673,7 +668,7 @@ class CobraParser inherits Parser
 			.throwError(_syntaxForClassInheritanceMsg)
 		else
 			.throwError('Expecting a class name.')
-		if .peek.which=='COLON' and .peek(1)<>nil and .peek(1).which=='ID'
+		if .peek.which == 'COLON' and .peek(1).which == 'ID'
 			.throwError(_syntaxForClassInheritanceMsg)
 		if name[0] not in _uppercaseLetters
 			.throwError('Class names must start with an uppercase letter in order to avoid collisions with other identifiers such as arguments and local variables.')
@@ -942,7 +937,7 @@ class CobraParser inherits Parser
 		# too draconian
 		#if not name.startsWith('I')
 		#	.throwError('Interfaces must start with a capital "I".')
-		if .peek.which=='COLON' and .peek(1)<>nil and .peek(1).which=='ID'
+		if .peek.which == 'COLON' and .peek(1).which == 'ID'
 			.throwError(_syntaxForInterfaceInheritanceMsg)
 
 		genericParams = .declGenericParams(idToken)
@@ -1157,7 +1152,7 @@ class CobraParser inherits Parser
 				if .isEOF
 					if indented, .throwError('Expecting a namespace member, but source code ended.')
 					else, break
-				tok = .peek to !
+				tok = .peek
 				if tok.which == 'DEDENT', break
 				if not indented and tok.which == 'NAMESPACE', break
 				branch tok.which
@@ -1170,7 +1165,7 @@ class CobraParser inherits Parser
 					on 'ENUM',		_nameSpaceAddDecl(curNameSpace, .enumDecl)
 					on 'SIG',		_nameSpaceAddDecl(curNameSpace, .declareMethodSig)
 					on 'NAMESPACE',	.nameSpaceDecl
-					else, .throwError('Expecting a namespace member but got [tok].')
+					else, .throwError('Expecting a namespace member, but got [tok].')
 			if indented, .dedent
 		finally
 			for tok in idTokens, _nameSpaceStack.pop
@@ -1379,7 +1374,7 @@ class CobraParser inherits Parser
 	def declareMethod as AbstractMethod?
 		require _typeProvider
 		token = .expect('DEF', 'CUE')
-		opener = .grab to !
+		opener = .grab
 		if not opener.which.isOneOf('ID.OPEN_CALL.OPEN_GENERIC.') and not opener.isKeyword
 			.throwError('Encountered [opener.which] when expecting an identifier.')
 		genericParams = _methodGenericParams(opener)
@@ -1408,10 +1403,10 @@ class CobraParser inherits Parser
 		didIndent = false
 		isDone = false
 		while true
-			peek = .peek
-			if peek is nil, .throwError('Unexpected end of source.')
-			last = .peek.which
-			branch last
+			which = .peek.which
+			branch which
+				on 'EOF'
+					.throwError('Unexpected end of source.')					
 				on 'EOL'
 					.grab
 				on 'INDENT'
@@ -1433,11 +1428,11 @@ class CobraParser inherits Parser
 					implementsType = .typeId
 				else
 					isDone = true
-			if last.isOneOf('EOL.INDENT.'), continue
+			if which.isOneOf('EOL.INDENT.'), continue
 			if isDone, break
-			if last in encountered and last <> 'WHERE'
-				.throwError('Encountered "[last]" twice.')
-			encountered.add(last)
+			if which in encountered and which <> 'WHERE'
+				.throwError('Encountered "[which]" twice.')
+			encountered.add(which)
 		assert .last.which.isOneOf('EOL.INDENT.')
 
 		nothingMore = _endMethodDecl(didIndent)
@@ -1853,7 +1848,7 @@ class CobraParser inherits Parser
 		expectComma = false
 		while true
 			if isSpaceAgnostic, _spaceAgnostic
-			if .peek is nil, .throwError(ErrorMessages.unexpectedEndOfFile)
+			if .peek.isEOF, .throwError(ErrorMessages.unexpectedEndOfFile)
 			if .peek.which == rightParen
 				.grab
 				break
@@ -1897,7 +1892,7 @@ class CobraParser inherits Parser
 		if .optional('AS')
 
 			# unused (virtual keyword)
-			if .peek and .peek.which == 'ID' and .peek.text == 'unused'
+			if .peek.which == 'ID' and .peek.text == 'unused'
 				.grab
 				declaredAsUnused = true
 					
@@ -2905,17 +2900,17 @@ class CobraParser inherits Parser
 					# ex: x to !
 					# ex: x to ?
 					getTypeExprForRightHandSide = false
-					rightTok = .grab to !
+					rightTok = .grab
 					branch rightTok.which
-						on 'QUESTION', left = ToNilableExpr(opToken to !, rightTok, left to !)
-						on 'BANG', left = ToNonNilableExpr(opToken to !, rightTok, left to !)
+						on 'QUESTION', left = ToNilableExpr(opToken, rightTok, left to !)
+						on 'BANG', left = ToNonNilableExpr(opToken, rightTok, left to !)
 						else, throw FallThroughException(rightTok.which)
 				else
 					if getTypeExprForRightHandSide
 						# support to expression. Ex: x to int  Ex: x to? Shape
 						right = .typeExpr to Expr
 						getTypeExprForRightHandSide = false
-					else if op == 'DOT' and .peek and .peek.isKeyword
+					else if op == 'DOT' and .peek.isKeyword
 						# support foo.bar where bar is a keyword. Ex: foo.this
 						right = MemberExpr(.grab) to Expr
 					else if op == 'DOT' and _isHelpDirective(.peek)
@@ -2924,14 +2919,14 @@ class CobraParser inherits Parser
 						op = ''  # cancel the creation of a new binary op expr
 						.grab
 					else
-						right = _continuedExpression(prec, opToken to !)
+						right = _continuedExpression(prec, opToken)
 					if op == 'DOT' and not right inherits IDotRightExpr
 						if left inherits StringLit or right inherits StringLit
 							sugg = ' Use plus "+", not dot ".", for string concatenation.'
 						else
 							sugg = ''
 						.throwError(ErrorMessages.syntaxErrorAfterDot + sugg)
-					if op.length, left = BinaryOpExpr.make(opToken to !, op to !, left to !, right)
+					if op.length, left = BinaryOpExpr.make(opToken, op to !, left to !, right)
 			finally
 				.opStack.pop
 				_leftStack.pop
@@ -2941,7 +2936,7 @@ class CobraParser inherits Parser
 	def expression2 as Expr
 		if _spaceAgnosticExprLevel > 0, _spaceAgnostic
 		peekToken = .peek
-		if peekToken is nil, .throwError(ErrorMessages.unexpectedEndOfFile)
+		if peekToken.isEOF, .throwError(ErrorMessages.unexpectedEndOfFile)
 		peek = peekToken.which
 		if _unaryOpPrec.containsKey(peek)
 			token = .grab
@@ -2989,7 +2984,7 @@ class CobraParser inherits Parser
 						.throwError(ErrorMessages.syntaxErrorAfterDot)
 				finally
 					.opStack.pop
-				return BinaryOpExpr.make(token to !, 'DOT', ThisLit(token, isImplicit=true), expr)
+				return BinaryOpExpr.make(token, 'DOT', ThisLit(token, isImplicit=true), expr)
 			on 'NIL'
 				return NilLiteral(.grab)
 			on 'TRUE'
@@ -3059,7 +3054,7 @@ class CobraParser inherits Parser
 					try
 						return TypeExpr(.nonqualifiedTypeId)
 					catch pe as ParserException
-						if .allowKeywordAssignment and peekToken.isKeyword and .peek is not nil and .peek.which == 'ASSIGN'
+						if .allowKeywordAssignment and peekToken.isKeyword and .peek.which == 'ASSIGN'
 							# example: f = Foo(where=3)  # note that 'where' is a keyword
 							assert .last is peekToken
 							word, op = .last, .grab
@@ -3155,13 +3150,9 @@ class CobraParser inherits Parser
 		"""
 		In support of .callExpr and others, for when it's legal to write `out x` and such.
 		"""
-		if .peek
-			branch .peek.which
-				on 'OUT', label = Direction.Out
-				on 'INOUT', label = Direction.InOut
-				else, label = Direction.In
-				# TODO? on 'VARI': ...
-			if label <> Direction.In, .grab
+		if .optional('OUT'), label = Direction.Out
+		else if .optional('INOUT'), label = Direction.InOut
+		else, label = Direction.In
 		_allowKeywordAssignment = true
 		try
 			expr = .expression
@@ -3211,7 +3202,7 @@ class CobraParser inherits Parser
 		while true
 			if isSpaceAgnostic
 				_spaceAgnostic
-			if .peek is nil
+			if .peek.isEOF
 				literal = {'RPAREN': ')', 'RBRACKET': ']'}
 				what = (for t in terminators.split(c'.') where t.trim<>'' get '"[if(literal.containsKey(t), literal[t], t)]"').join(' or ')
 				.throwError('Expecting "," or [what].')
@@ -3591,11 +3582,8 @@ class CobraParser inherits Parser
 	var _validFloatSizes = [32, 64]
 
 	def nonqualifiedTypeId as AbstractTypeIdentifier
-		token = .grab
-		assert token
-
 		t as AbstractTypeIdentifier?
-
+		token = .grab
 		branch token.text
 			on 'int', t = TypeIdentifier(token, .typeProvider.intType)
 			on 'uint', t = TypeIdentifier(token, .typeProvider.uintType)
@@ -3625,9 +3613,9 @@ class CobraParser inherits Parser
 						t = TypeIdentifier(token, .typeProvider.floatType(size))
 					on 'ID'
 						t = TypeIdentifier(token)
-						if not _inExpression and .peek and .peek.which == 'LT'
+						if not _inExpression and .peek.which == 'LT'
 							.throwError('Unexpected "<" after type name. If you are naming a generic, use "of " right after "<" as in "[token.text]<of ...".')
-					on 'OPEN_GENERIC', t = .genericTypeId(token to !)
+					on 'OPEN_GENERIC', t = .genericTypeId(token)
 					else
 						.throwError('Unrecognized type: [token]')
 						return nil to passthrough  # CC: remove
@@ -3776,7 +3764,7 @@ class CobraParser inherits Parser
 
 	def looksLikeVarNameIsNext(peekAhead as int) as bool
 		token = .peek(peekAhead)
-		return token is not nil and token.which=='ID' and token.text.startsWithLowerLetter
+		return token.which=='ID' and token.text.startsWithLowerLetter
 		
 	def isOneOfKeywords(nToken as IToken?, keywords as List<of String>) as bool
 		token = nToken to !
@@ -3825,20 +3813,18 @@ class CobraParser inherits Parser
 		Call _finishSpaceAgnostic afterwards to eat up subsequent INDENTs and DEDENTs.
 		"""
 		while true
-			peek = .peek
-			if peek
-				branch .peek.which
-					on 'EOL'
-						.grab
-						continue
-					on 'INDENT'
-						.grab
-						_spaceAgnosticIndentLevel += 1
-						continue
-					on 'DEDENT'
-						.grab
-						_spaceAgnosticIndentLevel -= 1
-						continue
+			branch .peek.which
+				on 'EOL'
+					.grab
+					continue
+				on 'INDENT'
+					.grab
+					_spaceAgnosticIndentLevel += 1
+					continue
+				on 'DEDENT'
+					.grab
+					_spaceAgnosticIndentLevel -= 1
+					continue
 			break
 		if _verbosity >= 5
 			print '<> spaceAgnostic level=[_spaceAgnosticIndentLevel]'
