@@ -1,6 +1,4 @@
-class Stmt
-	is abstract, partial
-	inherits SyntaxNode
+class Stmt inherits SyntaxNode is abstract, partial
 
 	var _parent as INode?
 	
@@ -14,9 +12,6 @@ class Stmt
 		The common place to set a node's `parent` is in the `_bindImp` of the parent 
 		"""
 		
-	get lastToken as IToken
-		return .token
-
 	def afterParserRecognizesStatement
 		pass
 
@@ -304,8 +299,8 @@ class BlockStmt
 		base.init(token)
 		_stmts = stmts
 
-	get lastToken as IToken
-		return if(_stmts.count, _stmts[_stmts.count-1].lastToken, base.lastToken)
+	get endToken as IToken
+		return if(_stmts.count, _stmts[_stmts.count-1].endToken, base.endToken)
 
 	def addSubFields
 		base.addSubFields
@@ -377,8 +372,8 @@ class ExpectStmt inherits Stmt is partial
 		_exceptionTypeNode = exceptionTypeNode
 		_block = block
 
-	get lastToken as IToken is override
-		return _block.lastToken
+	get endToken as IToken is override
+		return _block.endToken
 
 	def addSubFields
 		base.addSubFields
@@ -419,8 +414,8 @@ class ForStmt inherits Stmt is partial
 	
 	get block from var as BlockStmt
 	
-	get lastToken as IToken is override
-		return _block.lastToken
+	get endToken as IToken is override
+		return _block.endToken
 
 	def addSubFields
 		base.addSubFields
@@ -735,11 +730,11 @@ class IfStmt
 	
 	get falseStmts from var
 	
-	get lastToken as IToken is override
+	get endToken as IToken is override
 		if _falseStmts
-			return _falseStmts.lastToken
+			return _falseStmts.endToken
 		else
-			return _trueStmts.lastToken
+			return _trueStmts.endToken
 
 	def addSubFields
 		base.addSubFields
@@ -926,8 +921,8 @@ class LockStmt inherits Stmt is partial
 	
 	get block from var as BlockStmt
 	
-	get lastToken as IToken is override
-		return _block.lastToken
+	get endToken as IToken is override
+		return _block.endToken
 
 	def addSubFields
 		base.addSubFields
@@ -1025,8 +1020,8 @@ class PrintRedirectStmt inherits AbstractPrintStmt is partial
 
 	get block from var
 
-	get lastToken as IToken is override
-		return _block.lastToken
+	get endToken as IToken is override
+		return _block.endToken
 
 	def _innerClone
 		base._innerClone
@@ -1280,11 +1275,11 @@ class TryStmt
 		_successBlock = successBlock
 		_finallyBlock = finallyBlock
 
-	get lastToken as IToken is override
-		if _finallyBlock, return _finallyBlock.lastToken
-		if _successBlock, return _successBlock.lastToken
-		if _catchBlocks.count, return _catchBlocks[_catchBlocks.count-1].lastToken
-		return _tryBlock.lastToken
+	get endToken as IToken is override
+		if _finallyBlock, return _finallyBlock.endToken
+		if _successBlock, return _successBlock.endToken
+		if _catchBlocks.count, return _catchBlocks[_catchBlocks.count-1].endToken
+		return _tryBlock.endToken
 
 	def addSubFields
 		base.addSubFields
@@ -1377,8 +1372,8 @@ class CatchBlock
 
 	get varName from var
 
-	get lastToken as IToken
-		return _block.lastToken
+	get endToken as IToken is override
+		return _block.endToken
 
 	def _innerClone
 		base._innerClone
@@ -1478,8 +1473,8 @@ class UsingStmt
 		_initExpr = initExpr
 		_block = block
 
-	get lastToken as IToken is override
-		return _block.lastToken
+	get endToken as IToken is override
+		return _block.endToken
 		
 	get initExpr from var
 
@@ -1510,8 +1505,8 @@ class AbstractWhileStmt inherits Stmt is partial
 		base.init(token)
 		_expr, _block = expr, block
 
-	get lastToken as IToken is override
-		return _block.lastToken
+	get endToken as IToken is override
+		return _block.endToken
 
 	get expr from var as Expr
 		
@@ -1771,11 +1766,11 @@ class MultiTargetAssignStatement inherits Stmt is partial
 		"""
 		assert _targets.count == _rvals.count
 		stmts = List<of Stmt>()
-		assignTok = .lastToken  # the one we stored in .init
+		assignTok = .endToken  # the one we stored in .init
 		for i, id in _targets.numbered
 			expr = _rvals[i]
 			stmts.add(AssignExpr(assignTok, assignTok.which, id, expr))
-		_block = BlockStmt(.lastToken.copy('INDENT', ''), stmts)
+		_block = BlockStmt(.endToken.copy('INDENT', ''), stmts)
 		
 	def _makeBlockForSource
 		"""
@@ -1795,10 +1790,10 @@ class MultiTargetAssignStatement inherits Stmt is partial
 		assert _targets.count >= 2
 
 		stmts = List<of Stmt>()
-		assignTok = .lastToken  # the one we stored in init
+		assignTok = .endToken  # the one we stored in init
 		serialNum = .compiler.curBox.makeNextPrivateSerialNumber
 		sourceTmpName = 'lh_mt_[serialNum]'  # lh=local handler, mt = multiTarget
-		ttoken = .lastToken.copy('XXX', 'xxx', nil)  # invalid template token for copying
+		ttoken = .endToken.copy('XXX', 'xxx', nil)  # invalid template token for copying
 		sourceIdToken = ttoken.copy('ID', sourceTmpName)
 		
 		stmts.add(
