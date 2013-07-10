@@ -1,0 +1,135 @@
+"""
+to-do: not tested on Windows
+
+== Set up
+
+Mac, Linux:
+bin/build-compiler-lib
+
+Windows:
+bin\build-compiler-lib
+
+
+== Notes
+
+On Mono 3.0.12 on Mac 10.8.4,
+	Environment.workingSet is 0
+	Process.getCurrentProcess.privateprintProcessInfo64 is a huge number that never seems to change
+		13,314,797,571 MB -- probably the virtual memory space
+	... so call out to ps instead
+
+"""
+
+use System.Diagnostics
+use Cobra.Compiler
+
+
+class CustomBackEnd inherits ClrBackEnd
+
+	def makePhases(phases as IList<of Phase>)
+		base.makePhases(phases)
+		v = false
+		if v, for phase in phases, print phase
+		.stopBefore(phases, Cobra.Compiler.GenerateSharpCodePhase)
+		if v
+			print '--'
+			for phase in phases, print phase
+
+	def stopBefore(phases as IList<of Phase>, phaseType as Type)		
+		newPhases = List<of Phase>()
+		for phase in phases
+			if phase.typeOf == phaseType, break
+			newPhases.add(phase)
+		phases.clear
+		phases.addRange(newPhases)
+
+
+class StressCompilerLib
+
+	const compilerVerbosity = 0
+
+	def main
+		print 'How many minutes to repeatedly run the compiler? ' stop
+		mins = Console.readLine to !
+		start = DateTime.now
+		duration = TimeSpan(0, int.parse(mins), 0)
+		print 'Will run for [duration]...'
+		firstProcessInfo = .printProcessInfo
+		memoryInterval = 5
+		reps = 0
+		while DateTime.now.subtract(start) <= duration
+			# to-do: show a % complete
+			print 'rep: [reps]  duration: [DateTime.now.subtract(start)]'
+			.compile
+			reps += 1
+			if reps % memoryInterval == 0, .printProcessInfo
+		print
+		print 'start:', start
+		print 'elapsed:', DateTime.now.subtract(start)
+		print 'reps:', reps
+		print 'first process info:'
+		print firstProcessInfo
+		print 'last process info:'
+		.printProcessInfo
+
+	def printProcessInfo as String
+		if not File.exists('/bin/ps'), return ''
+		id = Process.getCurrentProcess.id
+		p = Process()
+		p.startInfo.fileName = '/bin/ps'
+		# the following arguments only tested on Mac. are they the same on linux, cygwin, mingw, bsd?
+		p.startInfo.arguments = '-p [id] -o vsz,rss,%mem,%cpu,state,start,time,pid'
+		output = p.runAndCaptureOutput
+		if p.exitCode
+			print 'ps error:'
+			print output.errorOutput
+		print output.standardOutput
+		return output.standardOutput
+
+	def compile
+		fileName = 'InMemory.cobra'
+		source = StringWriter()
+		print to source
+			print 'class Foo'
+			print '    def main'
+			print '        stuff = \[1, 2, 3]'
+			print '        for item in stuff, trace item'
+			print '        trace .getHashCode'
+			print '        print "Hola, mundo!"'
+		testFile = FileSpec(fileName, source.toString)
+		params = CompileParams()
+		params.files.add(testFile)
+		
+		compiler = .createCompiler		
+		compiler.compile(params)
+		assert compiler.messages.count == 0
+		
+		for m in compiler.modules
+			if m.fileName == fileName
+				mod = m to CobraModule
+				break
+				
+		fooClass = mod.topNameSpace.memberForName('Foo') to Class
+		assert fooClass.memberForName('main') <> nil
+		assert fooClass.memberForName('getHashCode') <> nil
+		assert fooClass.memberForName('getType') <> nil
+		assert fooClass.memberForName('toString') <> nil
+
+
+	def createCompiler as Compiler
+		compiler = Compiler(.compilerVerbosity)
+		
+		options = OptionValues()
+		options.add('compile', true)
+		# options.add('back-end', 'clr')
+		options.add('turbo', true)
+		options.add('number', 'decimal')
+		
+		compiler.options = options
+		compiler.initBackEnd(CustomBackEnd(compiler))
+		
+		# Set some shared information which gets reset everytime we instantiate a compiler.
+		Node.setCompiler(compiler)
+		Node.typeProvider = compiler
+		
+		return compiler
