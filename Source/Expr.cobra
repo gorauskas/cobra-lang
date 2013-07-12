@@ -579,12 +579,22 @@ class AsExpr
 
 class CallOrMemberExpr inherits Expr is abstract, partial
 
+	var _definition as IMember?
+
 	cue init(token as IToken, name as String)
 		base.init(token)
 		_name = name
 
+	get definition is override
+		return _definition
+
+	get memberDefinition from _definition
+
 	get name from var as String
-	
+
+	def goToDefinitionLocation as GoToLocation? is override
+		return if(_definition, _definition.goToDefinitionLocation, nil)
+
 	def _mangleName(name as String) as String
 		if .compiler.boxMemberStack.count > 0 and .binarySuperNode.left inherits ThisOrBaseLit
 			return .compiler.curBoxMember.mangleName(name)
@@ -643,7 +653,6 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 	var _genericArgTypes as List<of IType>?
 	var _args as List<of Expr>
 	var _hasParens as bool
-	var _definition as IMember?
 
 	cue init(token as IToken, name as String, args as List<of Expr>, hasParens as bool)
 		.init(token, name, nil, args, hasParens as bool)
@@ -687,11 +696,6 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 
 	get args from var
 		has Subnodes
-
-	get definition is override
-		return _definition
-
-	get memberDefinition from _definition
 
 	def _innerClone
 		assert _definition is nil
@@ -1283,7 +1287,8 @@ class TryCatchExpr inherits Expr is partial
 
 		_getExpr.bindImp
 		_type = _getExpr.type to !
-	
+
+
 class IdentifierExpr
 	is partial
 	inherits NameExpr
@@ -1301,6 +1306,9 @@ class IdentifierExpr
 		_name = definition.name
 		_definition = definition
 
+	def goToDefinitionLocation as GoToLocation? is override
+		return if(.definition, .definition.goToDefinitionLocation, nil)
+		
 	def setDefinition(value as INamedNode?)
 		# cannot override definition with a set, because base does not do a set
 		_definition = value
@@ -1525,6 +1533,9 @@ class IndexExpr inherits Expr is partial
 	get definition is override
 		return _definition
 
+	def goToDefinitionLocation as GoToLocation? is override
+		return if(_definition, _definition.goToDefinitionLocation, nil)
+
 	get memberDefinition from _definition
 
 	get target from var
@@ -1697,7 +1708,6 @@ class MemberExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 	Note that DotExpr will do some transformations such as Foo.Bar to a TypeExpr if Bar is a type.
 	"""
 
-	var _definition as IMember?
 	var _isReference as bool
 
 	cue init(token as IToken)
@@ -1713,11 +1723,6 @@ class MemberExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 
 	get args as List<of Expr>
 		return List<of Expr>()
-
-	get definition is override
-		return _definition
-
-	get memberDefinition from _definition
 
 	pro isReference from var
 		"""
@@ -1942,6 +1947,9 @@ class PostCallExpr
 
 	get args from var
 		has Subnodes
+
+	def goToDefinitionLocation as GoToLocation? is override
+		return .expr.goToDefinitionLocation
 
 	get hasKeywordArg from var
 

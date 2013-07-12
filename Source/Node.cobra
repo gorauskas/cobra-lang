@@ -191,11 +191,35 @@ interface INode
 		can use to store data related to the node.
 		"""
 
-	pro superNode as INode?
+	def goToDefinitionLocation as GoToLocation?
+		"""
+		Returns the location for the "Go to definition..." context menu command found in IDEs.
+
+		Typical usage is:
+
+			loc = node.goToDefinitionLocation
+			if loc
+			        if loc.token
+			                trace loc.token.fileName, loc.token.lineNum
+			        else if loc.clrNativeType
+			                clrType = loc.clrNativeType.clrType
+			                assembly = clrType.assembly
+			                trace clrType, assembly
+					else
+						throw FallThroughException(loc.token)
+
+		If the return value is not nil, then there are two major cases:
+			1. A source based definition with file name and line number
+			2. A library definition with CLR type and CLR assembly.
+
+		Where there are "trace" statements above, you would tell the IDE to go to that place.
+		"""
 
 	get hasError as bool
 
 	pro isImplicit as bool
+
+	pro superNode as INode?
 
 	##
 	## Binding
@@ -402,6 +426,9 @@ class Node
 			_nextNodeSerialNum += 1
 
 	get serialNum from var
+
+	def goToDefinitionLocation as GoToLocation?
+		return nil
 
 	pro isImplicit from var
 		"""
@@ -1036,6 +1063,9 @@ class SyntaxNode
 		base.addMinFields
 		.addField('token', .token.toTechString)
 
+	def goToDefinitionLocation as GoToLocation? is override
+		return GoToLocation(.token)
+
 	def throwError(msg as String) is override
 		.throwError(SyntaxNodeException(this, msg))
 
@@ -1257,3 +1287,27 @@ interface ICompilerForNodes inherits ITypeProvider, IWarningRecorder, IErrorReco
 
 	def addIntermediateFile(path as String)
 	def loadReference(reference as String, addExtn as bool) as String?
+
+
+class GoToLocation
+
+	cue init(token as IToken)
+		base.init
+		_token = token
+
+	cue init(nativeType as NativeType)
+		base.init
+		_nativeType = nativeType
+
+	get token from var as IToken?
+	
+	get nativeType from var as NativeType?
+
+	# to-do: push out to partial in ClrType.cobra file?
+	get clrNativeType as ClrNativeType?
+		if _nativeType inherits ClrNativeType, return _nativeType
+		return nil
+
+	def toString as String is override
+		if _token, return '[.typeOf]([_token])'
+		else, return '[.typeOf]([_nativeType])'
