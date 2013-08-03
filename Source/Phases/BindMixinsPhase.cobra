@@ -1,0 +1,67 @@
+class BindMixinsPhase inherits Phase
+	"""
+	"""
+
+	cue init(c as Compiler)
+		base.init(c)
+
+	get description as String is override
+		return 'Binding mixins'
+
+	def innerRun is override
+		c = .compiler
+		for mod in c.modules
+			c.curModule = mod
+			try
+				mod.bindMixins
+			catch se as SourceException
+				c.recordError(se)
+
+
+interface INode is partial
+
+	def bindMixins
+
+
+class Node is partial
+
+	def bindMixins
+		_stackPush
+		try
+			_bindMixins
+		finally
+			_stackPop
+	
+	def _bindMixins
+		pass
+
+
+class CobraModule is partial
+
+	def _bindMixins
+		base._bindMixins
+		.topNameSpace.bindMixins
+		
+
+class NameSpace is partial
+
+	def _bindMixins
+		base._bindMixins
+		for decl in .declsInOrder
+			decl.bindMixins
+
+
+class FakeLibraryType is partial
+
+	def bindMixins
+		pass
+
+
+class ClassOrStruct is partial
+
+	def _bindMixins
+		base._bindMixins
+		# inject mixins
+		for interf in _baseInterfaces
+			if interf inherits Mixin
+				interf.injectInto(this)
