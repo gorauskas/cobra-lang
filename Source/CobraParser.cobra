@@ -2926,6 +2926,15 @@ class CobraParser inherits Parser
 						else
 							sugg = ''
 						.throwError(ErrorMessages.syntaxErrorAfterDot + sugg)
+					# trap '< TYPE,' and '<TYPE>' as malformed generic specs
+					if op == 'LT' and left inherits DotExpr and right inherits TypeExpr 
+						sugg = 'If you are calling a generic that syntax should be "<of [right.token.text]..."'
+						.throwError('Invalid comparison to a type. [sugg]')
+					if left inherits CompareExpr
+						if left.op == 'LT' and op == 'GT' and left.left inherits DotExpr and left.right inherits IdentifierExpr 
+							if ((left.left to DotExpr).right inherits MemberExpr) and (left.right to IdentifierExpr).name.isCapitalized 
+								sugg = 'If you are calling a generic that syntax should be "<of [left.right.token.text]..."'
+								.recordError('Invalid comparison to a type. [sugg]')
 					if op.length, left = BinaryOpExpr.make(opToken, op to !, left to !, right)
 			finally
 				.opStack.pop
