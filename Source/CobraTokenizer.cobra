@@ -858,6 +858,7 @@ class CobraTokenizer inherits Tokenizer
 		# TODO: cache the tokens below
 		t = List<of TokenDef>()
 		t.add(TokenRegexDef('DOC_STRING_STOP', r'[ \t]*"""[ \t]*\n'))
+		t.add(TokenRegexDef('DOC_STRING_BAD_STOP', r'[ \t]*"""(.+)\n'))
 		t.add(TokenRegexDef('DOC_STRING_BODY_TEXT', '.*\n'))
 		.pushTokenDefs(t)
 		_inDocString = true
@@ -867,6 +868,14 @@ class CobraTokenizer inherits Tokenizer
 		assert _inDocString, tok
 		_inDocString = false
 		.popTokenDefs
+		return tok
+
+	def onDOC_STRING_BAD_STOP(tok as IToken) as IToken
+		assert _inDocString, tok
+		_inDocString = false
+		.popTokenDefs
+		.recordError('Incorrectly finished multi-line comment.')
+		tok.which = 'DOC_STRING_STOP'
 		return tok
 
 	def onDOC_STRING_BODY_TEXT(tok as IToken) as IToken
