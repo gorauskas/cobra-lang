@@ -313,11 +313,12 @@ class Expr inherits Stmt implements IExpr is abstract, partial
 			sb.append(', the call is supplying an arglist of type[Utils.plural(args)] "(')
 			sep = ''
 			for arg in args
-				sb.append('[sep][arg.type.name]')
+				typeName = if(not arg.type , "(unknownType)", arg.type.name)				
+				sb.append('[sep][typeName]')
 				sep=', '
 			sb.append(')".')
 		return sb.toString
-		
+	
 	def throwCannotFindMemberError(receiverExpr as Expr, memberName as String)
 		__throwOrRecordCannotFindMemberError(receiverExpr, memberName, 1)
 
@@ -332,6 +333,20 @@ class Expr inherits Stmt implements IExpr is abstract, partial
 			on 1, .throwError(errorMsg)
 			on 2, .recordError(errorMsg)
 			else, throw FallThroughException(throwOrRecord)
+
+	def recordCannotFindParamNamed(defn as IBoxCodeMember, name as String)
+		paramNames = (for p in defn.params get p.name).join('", "', '" and "')
+		detail = ' Names for this parameter list are "[paramNames]".'
+		.recordError('There is no parameter named "[name]".[detail]') 
+		
+	def recordCannotFindParamNamedOrMember(expr as Expr, defn as IBoxCodeMember, name as String)
+		paramDetail = ''
+		if defn.params.count
+			paramNames = (for p in defn.params get p.name).join('", "', '" and "')
+			paramDetail = 'Names for this parameter list are "[paramNames]".'
+		memberSuggs = _suggestionsMessage(expr.suggestionsForBadMemberName(name))
+		err = 'There is no parameter named "[name]" and no definition for "[name]" in "[expr.toCobraSource]"[expr.whoseTypeIsMessage].[paramDetail][memberSuggs]' 
+		.recordError(err)
 
 
 interface IPotentialTypeExpr inherits IExpr
@@ -794,11 +809,23 @@ class CallExpr inherits CallOrMemberExpr implements IDotRightExpr is partial
 			# if .definition inherits BoxMember and .definition.isMethod and not dotNode.isImplicit
 			if (.definition inherits AbstractMethod or .definition inherits MemberOverload) and not dotNode.isImplicit
 				.compiler.warning(this, 'Unnecessary parentheses. You can remove them.')
-		else
+		else if not hasErrors
 			for arg in _args
-				if arg inherits AssignExpr
-					.recordError('Cannot make assignments in arguments. This syntax is reserved in the future for keyword arguments.')
-
+				if arg inherits AssignExpr	# named arg in paramList
+					hasKeywordArg = true
+					if not arg.left inherits IdentifierExpr
+						.recordError('General purpose assignments are not allowed as arguments. Assignment syntax can only be used for keyword arguments.')
+					else
+						paramName = (arg.left to IdentifierExpr).name
+						defn = _definition to IBoxCodeMember
+						param = defn.paramNamed(paramName)
+						if not param, .recordCannotFindParamNamed(defn, paramName)
+						arg.right.bindImp # 'x=y' has special treatment in arguments
+				else
+					if hasKeywordArg
+						.throwError('Cannot have a non-keyword argument ("[arg.toCobraSource]") after a keyword argument. All positional arguments must come before all keyword arguments.')
+					#arg.bindImp  -- to-do: what's this? came in with ticket:326
+			
 	## _bindImp support
 
 	def _checkNoArgs(definition as BoxMember, args as IList<of Expr>)
@@ -1928,7 +1955,6 @@ class PostCallExpr
 		base.addSubFields
 		.addField('expr', _expr)
 		.addField('args', _args)
-		.addField('hasKeywordArg', .hasKeywordArg)
 		.addField('isForAttribute', .isForAttribute)
 
 	get allExprs as Expr*
@@ -1950,8 +1976,6 @@ class PostCallExpr
 
 	def goToDefinitionLocation as GoToLocation? is override
 		return .expr.goToDefinitionLocation
-
-	get hasKeywordArg from var
 
 	pro isForAttribute from var
 
@@ -1997,13 +2021,31 @@ class PostCallExpr
 				return
 		
 		expr = expr.bindImp
-
 		if expr.definition inherits EnumDecl
 			enumCall = EnumCallExpr(.token, expr.toCobraSource, .args, expr.definition).bindImp
 			_type = enumCall.type to IType
 			_transformTo(enumCall)
 			return
 
+		numPropertyInits = _verifyAndBindArgs(expr)
+		_chkTypes(expr)
+		_type ?= _hoistType(expr)  # if _type not set in _chkTypes
+
+		# to-do: try and checkout initializer call
+
+		if _hasKeywordArg and numPropertyInits > 0 and not .isForAttribute and not .hasError				
+			_makeHelperMethod
+
+	def _verifyAndBindArgs(expr as Expr) as int	
+		"""
+		Check that the various argtypes are ordered correctly (positional, named and property-initialising) and 
+		where named refer to valid items (named params or properties). Bind the args for the argtypes
+		"""
+		gotInitCall = false
+		numPropInits = numNamedParams = 0
+		badOrder = 'Incorrect arg ordering.'
+		detail2 = 'all named parameter keyword arguments must be before all extendedInit (property initialising) keyword arguments'
+		detail =  'All positional arguments must come before all keyword arguments, [detail2]'
 		for arg in .args
 			try
 				if arg inherits AssignExpr
@@ -2012,16 +2054,75 @@ class PostCallExpr
 						.recordError('General purpose assignments are not allowed as arguments. Assignment syntax can only be used for keyword arguments.')
 					else if not expr.receiverType.isDynamicOrPassThrough
 						propertyName = (arg.left to IdentifierExpr).name
-						if expr.memberForName(propertyName) is nil
-							.recordCannotFindMemberError(expr, propertyName)
+						if expr.memberForName(propertyName)  # assign to property name post initialization (extended init)
+							numPropInits += 1
+						else
+							if not gotInitCall  # lazy best initializer determination
+								initCall = _bestInitializer
+								gotInitCall = true
+							defn = initCall to? IBoxCodeMember
+							if defn
+								if defn.paramNamed(propertyName)  # actually a named parameter
+									numNamedParams += 1
+									if numPropInits
+										.recordError('[badOrder] Cannot have a named parameter argument ("[arg.toCobraSource]") after a keyword property initialising argument. [detail]')
+								else	
+									.recordCannotFindParamNamedOrMember(expr, defn, propertyName)
+
 					arg.right.bindImp  # 'x=y' has special treatment in arguments
 				else
 					if _hasKeywordArg
-						.throwError('Cannot have a non-keyword argument ("[arg.toCobraSource]") after a keyword argument. All positional arguments must come before all keyword arguments.')
+						.throwError('[badOrder] Cannot have a positional non-keyword argument ("[arg.toCobraSource]") after a keyword argument. [detail]')
 					arg.bindImp
 			catch ne as NodeException
 				.compiler.recordError(ne)
-
+		return numPropInits
+			
+	def _bestInitializer as Initializer?
+		# Since this is determining best initializer choice from the provided args list we can still get 
+		# a bad result if the args include named params and the order is different from that in the decl.
+		# OTOH using named params and default params should mean that there is only a single (well defaulted)
+		# initializer anyway...
+		initCall = nil
+		if _expr.definition inherits ClassOrStruct  # Class/Struct(o) MethodSig(?), Interface/Mixin(x)
+			initdefn = _expr.memberForName('cue.init') to BoxMember?
+			if initdefn
+				args = _argsToCallArgs
+				if initdefn inherits MemberOverload
+					initCall = initdefn.computeBestOverload( args, nil, false) to Initializer?
+					# isOverload = true
+				else if initdefn inherits Initializer
+					initCall = initdefn
+				# to-do: verify args and params match exactly re count, assignability
+				# maybe adjust inheritance tree to use code from CallExpr...
+				/# 
+				params = initCall.params
+				print params
+				if initCall inherits BoxMember # .no-warnings.
+					if not initdefn.hasParams
+						_checkNoArgs(initCall, args)
+					else
+						params = initCall.params
+						if _checkParamsCount(initCall, args, params)
+							_checkArgsAssignable(initCall, isOverload, args, params)
+								
+				_checkVisibility(definition, expr)
+				#/
+		return initCall			
+	
+	def _argsToCallArgs as List<of Expr>
+		""" Get positional and named args only - AssignExpr whose Identifier names are not property names. """
+		cleanArgs = List<of Expr>()
+		for arg in .args
+			if arg inherits AssignExpr 
+				if arg.left inherits IdentifierExpr
+					member = _expr.memberForName((arg.left to IdentifierExpr).name)
+				if member, continue  # extended init property assignment
+			cleanArgs.add(arg)  # positional arg or named (paramName=value) arg
+		return cleanArgs
+		
+	def _chkTypes(expr as Expr)
+		""" Make sure expr is one of supported grabbag of Types for a PostCallExpr or complain bitterly. """
 		if expr inherits TypeExpr
 			# instantiation
 			assert expr.containedType
@@ -2045,66 +2146,76 @@ class PostCallExpr
 			# which yielded: PostCallExpr(expr=ToExpr(...))
 			# TODO: can probably make this an error now
 			assert false, _expr
-
-		if _type is nil
-			assert expr.type is not nil
-			exprType = expr.type.nonNil
-			if exprType inherits MethodSig
-				_type = exprType.returnType
-			else if exprType.isDescendantOf(.compiler.delegateType)
-				member = exprType.memberForName('invoke')
-				if member inherits Method
-					_type = member.resultType
-				else
-					.throwError('Cannot find a single "invoke" method for "_eventType.name".')
-			else if expr.receiverType and expr.receiverType.nonNil.isSystemTypeClass
-				_type = .compiler.dynamicType
-			else if exprType inherits Box
-				_type = expr.receiverType  # for example, an IdentifierExpr of 'SomeClass' has a .receiverType of that class
-				_handleClassInitializer
-			else if exprType.isDynamic
-				_type = .compiler.nilableDynamicType
-			else if expr.definition inherits NameSpace
-				.throwError('Cannot instantiate the namespace "[(expr.definition to NameSpace).fullName]".')
-			else if exprType == .typeProvider.passThroughType
-				_type = .typeProvider.passThroughType
+		
+	def _hoistType(expr as Expr) as IType?
+		""" Obtain supported-expression type for the postCallExpr's type. """
+		assert expr.type is not nil
+		exprType = expr.type.nonNil
+		if exprType inherits MethodSig
+			type = exprType.returnType
+		else if exprType.isDescendantOf(.compiler.delegateType)
+			member = exprType.memberForName('invoke')
+			if member inherits Method
+				type = member.resultType
 			else
-				trace .idString, expr.idString, exprType.idString
-				trace this, expr
-				assert false, expr
+				.throwError('Cannot find a single "invoke" method for "_eventType.name".')
+		else if expr.receiverType and expr.receiverType.nonNil.isSystemTypeClass
+			type = .compiler.dynamicType
+		else if exprType inherits Box
+			type = expr.receiverType  # for example, an IdentifierExpr of 'SomeClass' has a .receiverType of that class
+			_handleClassInitializer
+		else if exprType.isDynamic
+			type = .compiler.nilableDynamicType
+		else if expr.definition inherits NameSpace
+			.throwError('Cannot instantiate the namespace "[(expr.definition to NameSpace).fullName]".')
+		else if exprType == .typeProvider.passThroughType
+			type = .typeProvider.passThroughType
+		else
+			trace .idString, expr.idString, exprType.idString
+			trace this, expr
+			assert false, expr
 
-		if .hasKeywordArg and not .isForAttribute and not .hasError
-			_makeHelperMethod
+		return type
 			
 	def _makeHelperMethod
 		"""
 		Add a private helper method to the current box to support extended initializer.
-
-		Foo(expr0, expr1, bar=expr2) -->
+		Pass through any named parameter args.
+		
+		Foo(expr0, expr1, paramName=expr2, bar=expr3) -->
 			call:
-				_ch_ext_init_1207(expr0, expr1, expr2)
+				_ch_ext_init_1207(expr0, expr1, expr2, expr3)
 			def:
-				def _ch_ext_init_1207(arg0 as int, arg1 as int, /#bar=#/arg2 as int)
-					obj = Foo(arg0, arg1)
-					obj.bar = arg2
+				def _ch_ext_init_1207(arg0 as int, arg1 as int, arg2 as int, /#bar=#/arg3 as int)
+					obj = Foo(arg0, arg1, paramName=arg2)
+					obj.bar = arg3
 					return obj
 		"""
 		box, token = .compiler.curBox, box.token.copy
-		paramsForDecl = List<of Param>()
-		argsForInitCall = List<of Expr>()  # args to pass to `Foo(arg0, arg1)`
-		propsToSet = List<of AssignExpr>()  # props to set as `obj.bar = arg2` etc.
+		paramsForDecl = List<of Param>()   # parameters for helper method
+		argsForInitCall = List<of Expr>()  # args to pass in call to `Foo(arg0, arg1)`
+		propsToSet = List<of AssignExpr>() # Extended init props to set as `obj.bar = arg2` etc.
 		firstPropArg = -1
 		for i, arg in .args.numbered
+			helperParamName = 'arg[i]'
 			if arg inherits AssignExpr
-				propsToSet.add(arg)
-				if firstPropArg == -1, firstPropArg = i
 				propertyName = (arg.left to IdentifierExpr).name
-				argType = _expr.memberForName(propertyName).resultType
-				arg = arg.right
+				member = _expr.memberForName(propertyName)
+				if member # ext Init property set
+					propsToSet.add(arg)
+					if firstPropArg == -1, firstPropArg = i
+					argType = member.resultType
+					#arg = arg.right
+				else # named arg
+					helperParam = IdentifierExpr(token.copy('ID', helperParamName))
+					helperNamedArg = AssignExpr(token.copy('ASSIGN', '='), 'ASSIGN', arg.left, helperParam)
+					argsForInitCall.add(helperNamedArg)
+					argType = arg.right.type to !
+					#arg = arg.right
 			else
-				argsForInitCall.add(if(arg inherits NilLiteral, arg, IdentifierExpr(token.copy('ID', 'arg[i]'))))
+				argsForInitCall.add(if(arg inherits NilLiteral, arg, IdentifierExpr(token.copy('ID', helperParamName))))
 				argType = arg.type to !
-			paramsForDecl.add(Param(box.token.copy('ID', 'arg[i]'), argType))
+			paramsForDecl.add(Param(box.token.copy('ID', helperParamName), argType))
 		name = '_ch_ext_init_[.serialNum]'  # ch = class helper, ext = extended, init = initializer
 		if .compiler.codeMemberStack.count
 			curMember = .compiler.curCodeMember

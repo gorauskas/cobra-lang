@@ -1324,9 +1324,10 @@ class Param is partial
 			on Direction.InOut, sw.write('/*inOut*/') 	# default
 			on Direction.Out, sw.write('/*out*/')   	# TODO
 		sw.write('[.type.javaParamRef] [.javaName]')
-#		if .optionalValue
-#			detail = 'For java at the moment you will need to recode the optional parameter method as a set of overloaded (possibly cascaded) methods with the desired number of parameters.'
-#			.compiler.warning(this, 'Java does not support optional parameters. Default parameter value setting is ignored. [detail]')
+		if .optionalValue
+			detail = 'For java at the moment you will need to recode the optional parameter method as a set of overloaded (possibly cascaded) methods with the desired number of parameters.'
+			.compiler.warning(this, 'Java does not support optional parameters. Default parameter value setting is ignored. [detail]')
+			# TODO: higher up write variant method that calls full param set method with default value curried in
 #			#sw.write('=')
 #			#_optValue.writeSharpDef(sw)
 
@@ -3034,7 +3035,16 @@ class CallExpr is partial
 		sep = ''
 		for arg in _args
 			sw.write(sep)
-			arg.writeJavaDefInContext(sw)
+			if arg inherits AssignExpr  # 	 Named parameter
+				detail = 'For java at the moment you will need to recode the named parameter call to a call using positional arguments.'
+				.compiler.warning(this, 'Java does not support named parameters in calls so these are not available with this backend. [detail]')
+				# TODO: Rewrite call to positional parameter form using name(s) given
+				## cant do arg.left.writeSharpDef as binding invariants are incomplete
+				#sw.write((arg.left to IdentifierExpr).name) 
+				#sw.write(':')				# C# form is name:value
+				arg.right.writeJavaDef(sw)
+			else	
+				arg.writeJavaDefInContext(sw)
 			sep = ', '
 		sw.write(')')
 
@@ -4627,7 +4637,16 @@ class PostCallExpr
 	def writeJavaArgs(sw as CurlyWriter, sep as String)
 		for arg in _args
 			sw.write(sep)
-			arg.writeJavaDefInContext(sw, false)
+			if arg inherits AssignExpr  # 	 Named parameter
+				detail = 'For java at the moment you will need to recode the named parameter call to a call using positional arguments.'
+				.compiler.warning(this, 'Java does not support named parameters in calls so these are are not available with this backend. [detail]')
+				# TODO: Rewrite call to positional parameter form using name(s) given
+				## cant do arg.left.writeSharpDef as binding invariants are incomplete
+				#sw.write((arg.left to IdentifierExpr).name) 
+				#sw.write(':')				# C# form is name:value
+				arg.right.writeJavaDef(sw)
+			else	
+				arg.writeJavaDefInContext(sw, false)
 			sep = ','
 		
 	def writeJavaBreakdownItems(sw as CurlyWriter)

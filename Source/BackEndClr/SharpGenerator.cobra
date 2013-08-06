@@ -544,6 +544,7 @@ class CobraModule is partial
 		d = writer.curlyToCobraLineNum
 
 		# Output
+		#print 'Output: ', writer.output
 		(.compiler to Compiler).createSharpFile(.sharpFileName, writer.output)
 
 		return d
@@ -3280,7 +3281,14 @@ class CallExpr is partial
 		sep = ''
 		for arg in _args
 			sw.write(sep)
-			arg.writeSharpDefInContext(sw)
+			if arg inherits AssignExpr  # named parameter
+				# can't do arg.left.writeSharpDef as binding invariants are incomplete
+				# C# form is:  name:value
+				sw.write((arg.left to IdentifierExpr).name) 
+				sw.write(':')
+				arg.right.writeSharpDef(sw)
+			else	
+				arg.writeSharpDefInContext(sw)
 			sep = ', '
 		sw.write(')')
 
@@ -3707,7 +3715,13 @@ class PostCallExpr
 	def writeSharpArgs(sw as CurlyWriter, sep as String)
 		for arg in _args
 			sw.write(sep)
-			arg.writeSharpDefInContext(sw, false)
+			if arg inherits AssignExpr  # named parameter
+				# cant do arg.left.writeSharpDef as binding invariants are incomplete
+				sw.write((arg.left to IdentifierExpr).name) 
+				sw.write(':')				# C# form is name:value
+				arg.right.writeSharpDef(sw)
+			else	
+				arg.writeSharpDefInContext(sw, false)
 			sep = ','
 		
 	def writeSharpBreakdownItems(sw as CurlyWriter)
