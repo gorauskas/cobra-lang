@@ -1,0 +1,53 @@
+@ref 'Test.Cobra.Compiler'
+use Cobra.Compiler
+
+class MixinEndTokenTest
+	
+	def main
+		
+		code = _
+		'interface IFoo\n' +
+		'    get bar as int\n' +
+		'\n' +
+		'mixin FooBehavior\n' +
+		'    get bar as int\n' +
+		'        return 1\n' + # line 6
+		'\n' +
+		'class Foo\n' +
+		'    adds FooBehavior\n' +
+		'    implements IFoo\n' +
+		'\n' +
+		'    var baz = 2\n' + # line 12
+		'\n' +
+		'class Program\n' +
+		'    def main\n' + _
+		'        f = Foo()\n' + _
+		'        print f.bar'
+		
+		phases = @[
+			BindRunTimeLibraryPhase,
+			ReadLibrariesPhase,
+			ParsePhase,
+			BindUsePhase,
+			BindInheritancePhase,
+			BindInterfacePhase,
+			BindMixinsPhase,
+		]
+		
+		c = Compiler(0)
+		c.options = OptionValues()
+		c.options.add('compile', true)
+		c.options.add('back-end', 'clr')
+		c.options.add('number', 'decimal')
+		c.initBackEnd
+		Node.setCompiler(c)
+		Node.typeProvider = c
+		
+		params = CompileParams()
+		params.files.add(FileSpec('test.cobra', code))
+		params.phases = for t in phases get t(c) to Phase
+		
+		c.compile(params)
+		ns = c.globalNS
+		fooDecl = ns.memberForName('Foo') to Class
+		assert fooDecl.endToken.lineNum == 12
