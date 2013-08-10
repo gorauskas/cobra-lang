@@ -1698,11 +1698,18 @@ class MemberOverload inherits BoxMember is partial
 			member.unNilReturnType
 
 	def computeBestOverload(args as List<of Expr>, genericArgTypes as List<of IType>?, strictBindChecking as bool) as IOverloadable
-		# to-do: can this take a list of types instead of args? args seems like more info than it needs
+		require
+			not any for arg in args get arg.hasError
+			all for arg in args where not arg inherits AssignExpr get arg.type
+		body
+			types = for arg in args where not arg inherits AssignExpr get arg.type to !
+			return .computeBestOverload(types, genericArgTypes, strictBindChecking)
+
+	def computeBestOverload(argTypes as List<of IType>, genericArgTypes as List<of IType>?, strictBindChecking as bool) as IOverloadable
 		verbose = false
 		if verbose
 			print '-------------------------'
-			trace .idString, args, genericArgTypes, strictBindChecking
+			trace .idString, argTypes, genericArgTypes, strictBindChecking
 		# References:
 		# http://blogs.msdn.com/ericlippert/archive/2007/11/05/c-3-0-return-type-inference-does-not-work-on-member-groups.aspx
 
@@ -1728,7 +1735,7 @@ class MemberOverload inherits BoxMember is partial
 			trace .members.count
 			for i, m in members.numbered, trace i, m, m.params, m.cobraSourceSignature(true)
 
-		_calcMembersScore(members, args, strictBindChecking, candidates)
+		_calcMembersScore(members, argTypes, strictBindChecking, candidates)
 			
 		maxScore = -10_000
 		winner = nil to IOverloadable?
@@ -1759,8 +1766,8 @@ class MemberOverload inherits BoxMember is partial
 			print
 			trace .token.fileName
 			trace maxScore, _name, .token.toTechString, winner, winner.params.count, winner.params
-			print 'args:'
-			for arg in args, print '   [arg]'
+			print 'argTypes:'
+			for argType in argTypes, print '   [argType]'
 			print 'params:'
 			for param in winner.params, print '   [param]'
 			print 'overloads:'
@@ -1769,34 +1776,35 @@ class MemberOverload inherits BoxMember is partial
 		assert winner
 		return winner to !
 	
-	def _calcMembersScore(members as IList<of IOverloadable>, args as List<of Expr>, strictBindChecking as bool, candidates)
+	def _calcMembersScore(members as IList<of IOverloadable>, argTypes as List<of IType>, strictBindChecking as bool, candidates)
+		"""
+		argTypes is a List of IType instead of IType? because this deep into compiling,
+		all the arguments should have types, even if they are `passthrough` or `dynamic?`.
+		"""
 		for member in members
 			score = -1000
-			if member.params.count == args.count
+			if member.params.count == argTypes.count
 				score = 0
 				if member inherits Method and (member to Method).genericParams.count > 0, score += 1
 				for i, param in member.params.numbered
-					arg = args[i]
-					if strictBindChecking and not arg.didBindImp
-						trace arg
-						trace arg.hasError
-					if strictBindChecking and (arg.type == param.type or arg.type == param.type.nonNil)
+					argType = argTypes[i]
+					if strictBindChecking and (argType == param.type or argType == param.type.nonNil)
 						score += 20
-					else if strictBindChecking and arg.canBeAssignedTo(param.type)
+					else if strictBindChecking and argType.isAssignableTo(param.type)
 						score += 10
-					else if strictBindChecking and arg.type.nonNil.isAssignableTo(param.type) 
+					else if strictBindChecking and argType.nonNil.isAssignableTo(param.type) 
 						# Cobra's code and data flow analysis sometimes leaves us with a nilable type that's not actually nil anymore
 						# due to an assignment, possibly wrapped in an if statement. Eventually this will be corrected, but for now
 						# compensate here.
 						score += 1
 					else if not strictBindChecking
-						if arg.type is not nil
-							if arg.type == param.type
-								score += 20
-							else if arg.type.isDynamic
-								score += 10
-						else
+						if argType == .typeProvider.passThroughType
 							score -= 100
+						else
+							if argType == param.type
+								score += 20
+							else if argType.isDynamic
+								score += 10
 					else
 						score -= 100
 			# print 'candidate:', score, member.name, member.serialNum, Utils.join(', ', (for param in member.params get param.type.name))
