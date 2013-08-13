@@ -1270,6 +1270,20 @@ class ForExpr inherits Expr is partial
 		assert _what.type
 		return if(_what.type inherits AnyIntType, _what.type, _what.type.innerType)
 
+	def toCobraSource as String is override
+		sb = StringBuilder('for ')
+		sb.append(_nameExpr.toCobraSource)
+		sb.append(' in ')
+		sb.append(_what.toCobraSource)
+		if _whereExpr, sb.append(' where [_whereExpr.toCobraSource]')
+		sb.append(' get [_getExpr.toCobraSource]')
+		# to-do: start, stop, step
+		if _start
+			sb.append(' start=[_start]')
+			sb.append(' stop=[_stop]')
+			sb.append(' step=[_step]')
+		return sb.toString
+
 
 class TryCatchExpr inherits Expr is partial
 	"""
@@ -2028,8 +2042,8 @@ class PostCallExpr
 			return
 
 		numPropertyInits = _verifyAndBindArgs(expr)
-		_chkTypes(expr)
-		_type ?= _hoistType(expr)  # if _type not set in _chkTypes
+		_checkTypes(expr)
+		_type ?= _hoistType(expr)  # if _type not set in _checkTypes
 
 		# to-do: try and checkout initializer call
 
@@ -2046,7 +2060,8 @@ class PostCallExpr
 		badOrder = 'Incorrect arg ordering.'
 		detail2 = 'all named parameter keyword arguments must be before all extendedInit (property initialising) keyword arguments'
 		detail =  'All positional arguments must come before all keyword arguments, [detail2]'
-		for arg in .args
+		for i in .args.count
+			arg = .args[i]
 			try
 				if arg inherits AssignExpr
 					_hasKeywordArg = true
@@ -2073,7 +2088,7 @@ class PostCallExpr
 				else
 					if _hasKeywordArg
 						.throwError('[badOrder] Cannot have a positional non-keyword argument ("[arg.toCobraSource]") after a keyword argument. [detail]')
-					arg.bindImp
+					.args[i] = arg.bindImp
 			catch ne as NodeException
 				.compiler.recordError(ne)
 		return numPropInits
@@ -2121,7 +2136,7 @@ class PostCallExpr
 			cleanArgs.add(arg)  # positional arg or named (paramName=value) arg
 		return cleanArgs
 		
-	def _chkTypes(expr as Expr)
+	def _checkTypes(expr as Expr)
 		""" Make sure expr is one of supported grabbag of Types for a PostCallExpr or complain bitterly. """
 		if expr inherits TypeExpr
 			# instantiation
