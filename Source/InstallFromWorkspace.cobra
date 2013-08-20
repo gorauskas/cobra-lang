@@ -106,12 +106,14 @@ class InstallFromWorkspace
 			'name': 'Cobra.Core',
 			'flags': '-build-standard-library',
 			'files': 'Cobra.Core/AssemblyAttrs.cobra',
+			'requiresGacVerification': true,
 		},
 		{
 			'name': 'Cobra.Compiler',
 			'flags': '-c -t:lib -embed-version -ert:yes -namespace:Cobra.Compiler -files:files-to-compile.text',
 #			'files': 'Cobra.Core/Compiler.Attributes.cobra',  # to-do
 			'files': 'cobra.cobra',
+			'requiresGacVerification': false,
 		},
 	]
 
@@ -152,7 +154,7 @@ class InstallFromWorkspace
 				# keys: name, flags
 				libName = lib['name']
 				assert not libName.endsWith('.dll')
-				.installLibrary(libName, lib['flags'], lib['files'].replace('/', .slash.toString))
+				.installLibrary(libName, lib['flags'], lib['files'].replace('/', .slash.toString), lib['requiresGacVerification'])
 		.verifyNewlyBuiltCobra
 		.copyFilesToInstallDirectory
 		.verifyNewlyInstalledCobra
@@ -365,6 +367,7 @@ class InstallFromWorkspace
 		return output
 
 	def runSourceCobra(args as String, process as out Process?) as String
+		if _platformArg and _platformArg not in args, args += ' -sharp-args:\"[_platformArg]\"'
 		return .runCommand('cobra.exe', args, out process)
 
 
@@ -610,10 +613,10 @@ class InstallFromWorkspace
 		print 'base version: [_baseVersion]'
 		print
 
-	def installLibrary(name as String, flags as String, files as String)
+	def installLibrary(name as String, flags as String, files as String, requiresGacVerification)
 		.buildLibrary(name, flags, files as String)
 		.installLibraryToGAC(name)
-		.verifyGacInstallation(name)
+		.verifyGacInstallation(name, requiresGacVerification)
 
 	def buildLibrary(name as String, flags as String, files as String)
 		"""
@@ -645,7 +648,7 @@ class InstallFromWorkspace
 		catch e as Exception
 			print '[e.getType] e.message'
 
-	def verifyGacInstallation(name as String)
+	def verifyGacInstallation(name as String, required as bool)
 		# TODO: verify the version number: Cobra.Core, Version=0.0.1.0
 		dllName = name + '.dll'
 		.startStage('Verifying [dllName] installed to the GAC')
@@ -654,18 +657,31 @@ class InstallFromWorkspace
 			# loading is attempted from the GAC.
 			tmpFileName = 'temp-[Process.getCurrentProcess.id]-[dllName]'
 			File.move(dllName, tmpFileName)
-			# avoid warning: "System.Reflection.Assembly.LoadWithPartialName(string)" is obsolete
-			# a = Assembly.loadWithPartialName(name)
-			# with dynamic binding:
-			assemblyType = Assembly to dynamic
-			a = assemblyType.loadWithPartialName(name)
-			if a is nil
-				.error('After installing the library "[name]", it cannot be loaded.')
-			if a.globalAssemblyCache
-				print '[dllName] has been successfully installed to the GAC.'
-			else
-				.warning('After installing the library "[name]", it can be loaded, but does not report that it is in the GAC.')
-			File.move(tmpFileName, dllName)
+			try
+				# avoid warning: "System.Reflection.Assembly.LoadWithPartialName(string)" is obsolete
+				# a = Assembly.loadWithPartialName(name)
+				# with dynamic binding:
+				assemblyType = Assembly to dynamic
+				a as Assembly?
+				try
+					a = assemblyType.loadWithPartialName(name)
+				catch exc as Exception
+					bar = String(c'-', 80)
+					print bar
+					print exc
+					print bar
+					# .error is reported below for `a` being nil
+				if a is nil
+					msg = 'After installing the library "[name]", it cannot be loaded.'
+					if required, .error(msg)
+					else, .warning(msg)
+				if a  # `a` could be nil due to issuing a warning, rather than an error, above
+					if a.globalAssemblyCache
+						print '[dllName] has been successfully installed to the GAC.'
+					else
+						.warning('After installing the library "[name]", it can be loaded, but does not report that it is in the GAC.')
+			finally
+				File.move(tmpFileName, dllName)
 		catch NotImplementedException
 			print 'Attempting to use gacutil.'
 			if not _gacutil, .locateGacUtil
@@ -676,6 +692,7 @@ class InstallFromWorkspace
 				.error('Installing the library "[name]" to the GAC was unsuccessful.')
 		print		
 
+# uu
 	def verifyNewlyBuiltCobra
 		.startStage('Verify newly built Cobra compiler')
 		.runSourceCobra('-about')
