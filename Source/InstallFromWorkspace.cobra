@@ -113,7 +113,7 @@ class InstallFromWorkspace
 			'flags': '-c -t:lib -embed-version -ert:yes -namespace:Cobra.Compiler -files:files-to-compile.text',
 #			'files': 'Cobra.Core/Compiler.Attributes.cobra',  # to-do
 			'files': 'cobra.cobra',
-			'requiresGacVerification': false,
+			'requiresGacVerification': true,
 		},
 	]
 
@@ -653,9 +653,48 @@ class InstallFromWorkspace
 			print '[e.getType] e.message'
 
 	def verifyGacInstallation(libName as String, required as bool)
-		# TODO: verify the version number: Cobra.Core, Version=0.0.1.0
+		.startStage('Verifying [libName].dll installed to the GAC')
+		if _platformArg
+			if _gacutil
+				_verifyGacInstallationViaGacUtil(libName, required)
+			else
+				.warning('Cannot verify [libName] due to [_platformArg] and `gacutil` cannot be found.')
+		else
+			if _gacutil
+				_verifyGacInstallationViaGacUtil(libName, required)
+			else
+				_verifyGacInstallationViaAssemblyLoad(libName, required)
+		print
+
+	def _verifyGacInstallationViaGacUtil(libName as String, required as bool)
+		ver = _baseVersion
+		if 'svn-' in ver, ver = '0.0.' + ver[4:]
+		ver = '=' + ver
+
+		arch as String?
+		if _platformArg, arch = 'processorArchitecture=[_platformArg.split(":")[1]]'
+
+		output = .runCommand(_gacutil to !, '-l [libName]')
+
+		found = false
+		for line in output.splitLines
+			if arch
+				if arch in line and ver in line
+					found = true
+					break
+			else if ver in line
+				found = true
+				break
+		
+		if found
+			print '[libName].dll has been successfully installed to the GAC.'
+		else
+			msg = 'After installing the library "[libName]", it cannot be loaded.'
+			if required, .error(msg)
+			else, .warning(msg)
+				
+	def _verifyGacInstallationViaAssemblyLoad(libName as String, required as bool)
 		dllName = libName + '.dll'
-		.startStage('Verifying [dllName] installed to the GAC')
 		try 
 			# temporarily rename the standard library to ensure that assembly
 			# loading is attempted from the GAC.
@@ -680,8 +719,7 @@ class InstallFromWorkspace
 					if required, .error(msg)
 					else, .warning(msg)
 				if a  # `a` could be nil due to issuing a warning, rather than an error, above
-					# uu
-					trace a.fullName, a.getName, a.imageRuntimeVersion
+					# to-do: verify that a.getName.version is the correct
 					if a.globalAssemblyCache
 						print '[dllName] has been successfully installed to the GAC.'
 					else
@@ -696,7 +734,6 @@ class InstallFromWorkspace
 				print '[dllName] has been successfully installed to the GAC.'
 			else
 				.error('Installing the library "[libName]" to the GAC was unsuccessful.')
-		print
 
 	def verifyNewlyBuiltCobra
 		.startStage('Verify newly built Cobra compiler')
