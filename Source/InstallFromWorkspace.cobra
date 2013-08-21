@@ -652,9 +652,9 @@ class InstallFromWorkspace
 		catch e as Exception
 			print '[e.getType] e.message'
 
-	def verifyGacInstallation(name as String, required as bool)
+	def verifyGacInstallation(libName as String, required as bool)
 		# TODO: verify the version number: Cobra.Core, Version=0.0.1.0
-		dllName = name + '.dll'
+		dllName = libName + '.dll'
 		.startStage('Verifying [dllName] installed to the GAC')
 		try 
 			# temporarily rename the standard library to ensure that assembly
@@ -663,12 +663,12 @@ class InstallFromWorkspace
 			File.move(dllName, tmpFileName)
 			try
 				# avoid warning: "System.Reflection.Assembly.LoadWithPartialName(string)" is obsolete
-				# a = Assembly.loadWithPartialName(name)
+				# a = Assembly.loadWithPartialName(libName)
 				# with dynamic binding:
 				assemblyType = Assembly to dynamic
 				a as Assembly?
 				try
-					a = assemblyType.loadWithPartialName(name)
+					a = assemblyType.loadWithPartialName(libName)
 				catch exc as Exception
 					bar = String(c'-', 80)
 					print bar
@@ -676,14 +676,16 @@ class InstallFromWorkspace
 					print bar
 					# .error is reported below for `a` being nil
 				if a is nil
-					msg = 'After installing the library "[name]", it cannot be loaded.'
+					msg = 'After installing the library "[libName]", it cannot be loaded.'
 					if required, .error(msg)
 					else, .warning(msg)
 				if a  # `a` could be nil due to issuing a warning, rather than an error, above
+					# uu
+					trace a.fullName, a.getName, a.imageRuntimeVersion
 					if a.globalAssemblyCache
 						print '[dllName] has been successfully installed to the GAC.'
 					else
-						.warning('After installing the library "[name]", it can be loaded, but does not report that it is in the GAC.')
+						.warning('After installing the library "[libName]", it can be loaded, but does not report that it is in the GAC.')
 			finally
 				File.move(tmpFileName, dllName)
 		catch NotImplementedException
@@ -693,10 +695,9 @@ class InstallFromWorkspace
 			if '[dllName], Version=' in output
 				print '[dllName] has been successfully installed to the GAC.'
 			else
-				.error('Installing the library "[name]" to the GAC was unsuccessful.')
-		print		
+				.error('Installing the library "[libName]" to the GAC was unsuccessful.')
+		print
 
-# uu
 	def verifyNewlyBuiltCobra
 		.startStage('Verify newly built Cobra compiler')
 		.runSourceCobra('-about')
