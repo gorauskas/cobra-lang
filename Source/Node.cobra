@@ -521,23 +521,15 @@ class Node
 			.compiler
 			not .compiler.isBindingInh
 		body
-			v = .compiler.verbosity
-			v = 0
-			if v > 3
-				print
-			if v > 3 and _isBindingInt
-				print '<> currently in bind int. this = [this]'
+			v = .compiler.verbosityLevel('bindint') > 0
+			if v, print
 			if not _didBindInt and not _isBindingInt
+				if v, print '>> Node.bindInt', .idString
 				_didStartBindInt = true
 				_isBindingInt = true
 				_stackPush
 				try
 					_didBindIntBase = false
-					if v > 3
-						if .toString.startsWith('Class')
-							print Environment.stackTrace
-						print '<> will _bindInt on ' stop
-						#.writeDeepString
 					_bindInt
 					assert _didBindIntBase
 					_didBindInt = true
@@ -545,9 +537,11 @@ class Node
 					_finishChildReplacements
 					_stackPop
 					_isBindingInt = false
-					if v > 3
+					if v
 						print
-						print '<< did _bindInt() on [this]'
+						print '<< Node.bindInt', .idString
+			else
+				if v, print '<> Node.bindInt, already .didBindInt=[.didBindInt], .isBindingInt=[.isBindingInt],', .idString
 			return this
 
 	def _bindInt
@@ -586,7 +580,10 @@ class Node
 		ensure
 			true # CC: result implements INode
 		body
+			v = .compiler.verbosityLevel('bindimp') > 0
+			if v, print
 			if not _didBindImp and not _isBindingImp
+				if v, print '>> Node.bindImp', .idString
 				_didStartBindImp = true
 				_isBindingImp = true
 				_superNode = if(.compiler.nodeStack.count > 0, .compiler.nodeStack.peek, _superNode ? nil)
@@ -603,6 +600,11 @@ class Node
 					_finishChildReplacements
 					_stackPop
 					_isBindingImp = false
+					if v
+						print
+						print '<< Node.bindInt', .idString
+			else
+				if v, print '<> Node.bindInt, already .didBindInt=[.didBindInt], .isBindingInt=[.isBindingInt],', .idString
 			return .bindImpResult
 
 	def bindImpResult as dynamic is nonvirtual  # CC: as same
@@ -1194,6 +1196,7 @@ interface ICompilerForNodes inherits ITypeProvider, IWarningRecorder, IErrorReco
 	def isBindingImp as bool
 
 	pro verbosity as int
+	def verbosityLevel(name as String) as int
 
 	get willTrackLocals as bool
 		# the box stack can be empty because of assembly; has SomeAttr
