@@ -703,7 +703,18 @@ class Box is partial
 			if fieldInfo.isInitOnly or fieldInfo.isLiteral
 				# to-do: technically this is picking up 'readonly' as well
 				isNames.add('nonvirtual')
-				value = if(_clrType.assembly.reflectionOnly, nil, if(fieldInfo.isStatic, fieldInfo.getValue(nil), nil))
+				value = nil
+				try
+					if not _clrType.assembly.reflectionOnly _
+					and fieldInfo.isStatic _
+					and not fieldInfo.fieldType.containsGenericParameters
+						# then
+						value = fieldInfo.getValue(nil)
+				catch InvalidOperationException
+					# Unhandled Exception: System.InvalidOperationException:
+					# Late bound operations cannot be performed on fields with types for which Type.ContainsGenericParameters is true.
+					# ICSharpCode.AvalonEdit.Utils.ImmutableStack`1[T] Empty (RtFieldInfo)
+					pass
 				initExpr = SharpExpr(TokenFix.empty, if(value, .toString, 'nil'))  # DocGenerator.cobra uses this
 				boxConst = BoxConst(TokenFix.empty, TokenFix.empty, this, name, type, isNames, initExpr, attrs, '')
 				boxConst.binaryName = fieldInfo.name
