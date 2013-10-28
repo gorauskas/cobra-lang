@@ -2045,8 +2045,11 @@ class PostCallExpr
 		_checkTypes(expr)
 		_type ?= _hoistType(expr)  # if _type not set in _checkTypes
 
-		# to-do: try and checkout initializer call
-
+		# try and checkout initializer call
+		if .args.count-numPropertyInits > 0 and expr inherits IdentifierExpr and expr.definition inherits ClassOrStruct and not .hasError
+			# we skip checks on 0 arg calls here for a more detailed message later from _paramsCountMsg
+			_checkInitializer(expr, numPropertyInits)
+			
 		if _hasKeywordArg and numPropertyInits > 0 and not .isForAttribute and not .hasError				
 			_makeHelperMethod
 
@@ -2110,7 +2113,7 @@ class PostCallExpr
 					initCall = initdefn
 				# to-do: verify args and params match exactly re count, assignability
 				# maybe adjust inheritance tree to use code from CallExpr...
-				/# 
+				/#
 				params = initCall.params
 				print params
 				if initCall inherits BoxMember # .no-warnings.
@@ -2123,6 +2126,8 @@ class PostCallExpr
 								
 				_checkVisibility(definition, expr)
 				#/
+			else
+				throw FallThroughException(initdefn)
 		return initCall			
 	
 	def _argsToCallArgs as List<of Expr>
@@ -2192,6 +2197,33 @@ class PostCallExpr
 
 		return type
 			
+	def _checkInitializer(expr as Expr, numPropertyInits as int)
+		assert expr inherits IdentifierExpr and expr.definition inherits ClassOrStruct
+		# skip passthrough in arg
+		if .args.count == 1 and	.args[0].type == .typeProvider.passThroughType 
+			return
+		initCall = _bestInitializer
+		if not initCall
+			return
+		# skip paramlist vari Type	
+		if initCall.hasParams and initCall.params.count == 1 and initCall.params[0].type inherits VariType
+			return
+		# augment to check vari arg type same as vari param type
+		numDefaultedParams = 0
+		if initCall.hasParams
+			for p in initCall.params, if p.isOptional, numDefaultedParams += 1
+		paramsCount = initCall.params.count
+		argCount = .args.count - numPropertyInits
+		if not (argCount >= paramsCount - numDefaultedParams and argCount <= paramsCount)
+			wherePos ='(declared at [initCall.token.fileName]:[initCall.token.lineNum])'
+			dfltParams = if(numDefaultedParams, ' (with up to [numDefaultedParams] defaulted)', '')
+			paramStr = '[paramsCount] parameter' + if(paramsCount==1, '', 's')	
+			sugg = 'Best choice has [paramStr][dfltParams] [wherePos].'
+			args = if(numPropertyInits == 0, .args, _argsToCallArgs)
+			decl = _paramsVsArgsString(initCall.name, initCall.params, args)
+			paramStr = '[argCount] parameter' + if(argCount==1, '', 's')	
+			.throwError('No initializer in [expr.type.englishName] "[expr.toCobraSource]" with [paramStr]. [sugg][decl]')
+
 	def _makeHelperMethod
 		"""
 		Add a private helper method to the current box to support extended initializer.
