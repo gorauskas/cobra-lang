@@ -1,0 +1,669 @@
+use System.Text.RegularExpressions
+
+use Microsoft.Build.Framework
+use Microsoft.Build.Utilities from "Microsoft.Build.Utilities.v4.0"
+
+namespace Cobra.MSBuild
+
+extend StringBuilder
+	def appendNilableArg(switch as String, arg as String?)
+		"""
+		Appends the provided swith and argument value if the value is not nil.
+		"""
+		if arg == nil, return
+		if .length <> 0, .append(" ")
+		.append(switch)
+		if arg.contains(" "), arg = '"[arg]"'
+		.append(arg)
+	
+	def appendBooleanArg(switch as String, arg as bool)
+		"""
+		Appends the provided switch and boolean argument.
+		"""
+		val = if(arg, "yes", "no")
+		.appendNilableArg(switch, val)
+	
+	def appendArgs(switch as String, args as String[]?)
+		"""
+		If args is not nil, each argument in the array will be appended with the provided switch.
+		"""
+		if args == nil, return
+		for a in args
+			.appendNilableArg(switch, a)
+	
+	def appendResources(switch as String, args as ITaskItem[]?)
+		"""
+		If args is not nil, each resource in the array will be appended with the provided switch.
+		"""
+		if args == nil, return
+		for resource in args
+			path = resource.getMetadata("FullPath")
+			name = resource.getMetadata("LogicalName")
+			name ?= resource.getMetadata("FileName")
+			
+			if name <> nil and name.length <> 0
+				arg = '\\"[path]\\",[name]'
+			else
+				arg = '\\"[path]\\"'
+			.appendNativeCompilerArg(switch, arg)
+
+	def appendNativeCompilerArg(switch as String, arg as String?)
+		"""
+		Appends the given switch as an argument to the native back-end C# compiler.
+		"""
+		if arg == nil, return
+		if .length <> 0, .append(" ")
+
+		if arg.contains(" ") and not arg.startsWith('\\"')
+		    # surround argument with "quotes"
+			arg = '\\"[arg]\\"'
+		
+		.append('-native-compiler-arg:"[switch][arg]"')
+
+
+class CobraCompiler inherits ToolTask
+	"""
+	An MSBuild task for invoking the Cobra compiler.
+	"""
+	
+	var _toolPath as String?
+	
+	#region ToolTask overrides
+	get toolName as String is protected, override
+		"""
+		Gets the name of the executable file to run.
+		
+		http://msdn.microsoft.com/en-us/library/microsoft.build.utilities.tooltask.toolname(v=vs.100).aspx
+		"""
+		if CobraCore.isRunningOnMono
+			return "cobra"
+		else
+			return "cobra.exe"
+	
+	def generateFullPathToTool as String? is protected, override
+		"""
+		Returns the fully qualified path to the Cobra executable file unless cobra.exe is in the system path in which
+		case only "cobra.exe" is returned.
+		
+		http://msdn.microsoft.com/en-us/library/microsoft.build.utilities.tooltask.generatefullpathtotool(v=vs.100).aspx
+		"""
+		if .toolPath <> nil
+			_toolPath = .toolPath
+			if not _toolPath.endsWith(.toolName)
+				_toolPath = Path.combine(_toolPath, .toolName)
+			if not File.exists(_toolPath)
+				_toolPath = nil
+
+		if _toolPath == nil
+			if CobraCore.isRunningOnUnix
+				_toolPath = '/usr/local/cobra/bin/cobra'
+				if not File.exists(_toolPath)
+					_toolPath = CobraCommand.find.path
+			else
+				_toolPath = r'C:\Cobra\cobra.exe'
+				if not File.exists(_toolPath)
+					_toolPath = CobraCommand.findExe.path
+		
+		systemPath = Environment.getEnvironmentVariable("PATH")
+		toolDir = Path.getDirectoryName(_toolPath)
+		
+		if toolDir in systemPath
+			return .toolName
+		
+		return _toolPath
+	
+	def generateCommandLineCommands as String is protected, override
+		"""
+		Returns a string value containing the command line arguments to pass directly to the executable file.
+		
+		http://msdn.microsoft.com/en-us/library/microsoft.build.utilities.tooltask.generatecommandlinecommands(v=vs.100).aspx
+		"""
+		
+		args = StringBuilder("-compile")
+		args.appendNilableArg("-back-end:", .backEnd)
+		args.appendNilableArg("-clr-platform:", .platform)
+		args.appendNilableArg("-clr-profile:", .clrProfile)
+		args.appendBooleanArg("-copy-core:", .copyCore)
+		args.appendNilableArg("-correct-source:", .correctSource)
+		args.appendNilableArg("-debug:", .debug)
+		args.appendBooleanArg("-delay-sign:", .delaySign)
+		args.appendBooleanArg("-embed-run-time:", .embedRunTime)
+		args.appendNilableArg("-embed-version:", .embedVersion)
+		args.appendBooleanArg("-include-traces:", .includeTraces)
+		args.appendBooleanArg("-keep-intermediate-files:", .keepIntermediateFiles)
+		args.appendNilableArg("-key-container:", .keyContainer)
+		args.appendNilableArg("-key-file:", .keyFile)
+		args.appendArgs("-library-directory:", .libraryDirectories)
+		args.appendNilableArg("-main:", .main)
+		args.appendNilableArg("-namespace:", .rootNamespace)
+		
+		args.appendNilableArg("-native-compiler:", .nativeCompiler)
+		args.appendNilableArg("-number:", .number)
+		args.appendNilableArg("-out:", .outputAssembly.getMetadata("FullPath"))
+		args.appendNilableArg("-target:", .target.toLower)
+		
+		# handle -turbo, -include-tests, -contracts, -optimize, etc.
+		_generatePerformanceQualityArguments(args)
+		
+		# Remove explicit references to some standard .NET libraries and Cobra.Core, otherwise when Cobra tries to load
+		# these we get the following error:
+		#
+		# error: CS1703: An assembly with the same identity "<AssemblyIdentity>" has already been imported. Try
+		# removing one of the duplicate references.
+		#
+		# I am not sure why this happens or if this is the "right" fix.
+		
+		if CobraCore.isRunningOnMono
+			implicitLibs = {"mscorlib", "Cobra.Core", "System", "System.Core", "System.Xml", "Microsoft.CSharp"}
+		else
+			implicitLibs = {"mscorlib", "Cobra.Core", "System", "System.Core"}
+		
+		# TODO: What about explicit references to non-standard versions of these libs?
+		refs = List<of ITaskItem>(.references)
+		for r in .references
+			refName = r.getMetadata("FileName")
+			if refName <> nil
+				if refName in implicitLibs
+					refs.remove(r)
+		.references = refs.toArray
+		for r in .references
+			args.appendNilableArg("-reference:", r.getMetadata("FullPath"))
+		
+		if .cobraArgs
+			args.append(" [.cobraArgs] ")
+		
+		# some compiler options can go straight to the back end
+		args.appendNativeCompilerArg("/appConfig:", .applicationConfiguration)
+		args.appendNativeCompilerArg("/baseaddress:", .baseAddress)
+		args.appendNativeCompilerArg("/checked", .checkForOverflowUnderflow) # /checked+ or /checked-
+		args.appendNativeCompilerArg("/doc:", .documentationFile)
+		args.appendResources("/resource:", .embeddedResources)
+		args.appendNativeCompilerArg("/filealign:", .fileAlignment)
+		args.appendResources("/linkresource:", .linkedResources)
+		args.appendNativeCompilerArg("/errorreport:", .errorReport)
+		if .generateFullPaths, args.appendNativeCompilerArg("/fullpaths", "")
+		
+		if .modules <> nil
+			modBuilder = StringBuilder()
+			for m in .modules
+				if modBuilder.length <> 0, modBuilder.append(";")
+				modBuilder.append(m)
+			args.appendNativeCompilerArg("/addmodule:", modBuilder.toString)
+		
+		args.appendNativeCompilerArg("/moduleassemblyname:", .moduleAssemblyName)
+		args.appendNativeCompilerArg("/win32icon:", .win32Icon)
+		
+		# TODO: some of these manifest options are mutually exclusive.  Do we care in this task?
+		if .noWin32Manifest, args.appendNativeCompilerArg("/nowin32manifest", "")
+		args.appendNativeCompilerArg("/win32manifest:", .win32Manifest)
+		args.appendNativeCompilerArg("/win32res:", .win32Resource)
+		
+		args.appendNativeCompilerArg("", .nativeCompilerArgs)
+		
+		for s in .sources
+			sourcePath = s.getMetadata("FullPath")
+			if sourcePath.contains(" ")
+				sourcePath = '"[sourcePath]"'
+			args.append(" [sourcePath]")
+		
+		return args.toString
+	
+    shared
+        var _compilerOutputRegex = Regex( _
+                r"(?<fileName>[^\(]+)\((?<lineNum>\d+)(,(?<columnNum>\d+))?\):(\s)+(?<msgType>error|warning)(\s)*:(\s)*(?<msg>[^\r]+)", _
+                RegexOptions.Compiled)
+
+	def logEventsFromTextOutput(singleLine as String?, msgImportance as MessageImportance) is protected, override
+		"""
+		Parse error and warning messages from the Cobra compiler and log them with the correct
+		line and column number (if applicable).
+		"""
+		if singleLine == nil
+			return
+		
+		match = _compilerOutputRegex.match(singleLine)
+		if match.success
+			groups = match.groups
+			fileName = groups["fileName"].toString
+			if "Skipping duplicate message:" not in fileName
+				lineNum = int.parse(groups["lineNum"].toString)
+				columnNum = 0
+				if not int.tryParse(groups["columnNum"].toString, out columnNum)
+					columnNum = 0
+				msgType = groups["msgType"].toString
+				msg = groups["msg"].toString
+				
+				if msgType == "error"
+					.log.logError(nil, nil, nil, fileName, lineNum, columnNum, 0, 0, msg, nil)
+				else
+					.log.logWarning(nil, nil, nil, fileName, lineNum, columnNum, 0, 0, msg, nil)
+
+		else if "error:" in singleLine or "error :" in singleLine
+			.log.logError(singleLine, nil)
+
+		else if "warning:" in singleLine or "warning: " in singleLine
+			.log.logWarning(singleLine, nil)
+
+	#endregion
+	
+	def _generatePerformanceQualityArguments(args as StringBuilder)
+		"""
+		Handles all the Cobra options for contracts, asserts, tests, etc.
+		"""
+		if .performanceQualityOption <> nil
+			perfQual = .performanceQualityOption.toLower
+			if perfQual == "turbo"
+				args.append(" -turbo")
+			else if perfQual <> "default"
+				args.appendNilableArg("-contracts:", .contracts)
+				args.appendBooleanArg("-include-asserts:", .includeAsserts)
+				args.appendBooleanArg("-include-nil-checks:", .includeNilChecks)
+				args.appendBooleanArg("-include-tests:", .includeTests)
+				args.appendBooleanArg("-optimize:", .optimize)
+	
+	
+	#region Psuedo-parameters
+	pro performanceQualityOption from var as String?
+		"""
+		Set via GUI, should be either "turbo", "default", or "custom".
+		
+		Allows the user to set individual options to contracts, asserts, tests, etc.
+		"""
+	
+	pro cobraArgs from var as String?
+		"""
+		Other misc. arguments to pass to the Cobra compiler such as "-verbosity:1"
+		"""
+	
+	pro sources from var as ITaskItem[]?
+		"""
+		The files to compile.
+		"""
+	#endregion
+	
+	#region C# compiler parameters
+	# http://msdn.microsoft.com/en-us/library/6ds95cz0.aspx
+	pro applicationConfiguration from var as String?
+		"""
+		/appConfig
+		
+		Specifies the location of app.config at assembly binding time.
+		
+		http://msdn.microsoft.com/en-us/library/ee523958.aspx
+		"""
+	
+	pro baseAddress from var as String?
+		"""
+		/baseAddress
+		
+		Specifies the base address for the library to be built.
+		
+		http://msdn.microsoft.com/en-us/library/b1awdekb.aspx
+		"""
+	
+	pro checkForOverflowUnderflow from var as String?
+		"""
+		/checked
+		
+		Causes the compiler to generate overflow checks.
+		
+		http://msdn.microsoft.com/en-us/library/h25wtyxf.aspx
+		"""
+	
+	pro documentationFile from var as String?
+		"""
+		/doc
+		
+		Specifies an XML Documentation file to generate.
+		
+		http://msdn.microsoft.com/en-us/library/3260k4x7.aspx
+		"""
+	
+	pro errorReport from var as String? = "none"
+		"""
+		/errorreport
+		
+		Specifies how to handle internal C# compiler errors: prompt, send, or none. The default is none.
+		
+		http://msdn.microsoft.com/en-us/library/404y0x34.aspx
+		"""
+	
+	pro fileAlignment from var as String?
+		"""
+		/filealign
+		
+		Each section will be aligned on a boundary that is a multiple of the /filealign value. There is no fixed
+		default. If /filealign is not specified, the common language runtime picks a default at compile time.
+		
+		By specifying the section size, you affect the size of the output file. Modifying section size may be useful
+		for programs that will run on smaller devices.
+		
+		Valid values are 512, 1024, 2048, 4096, and 8192. These values are in bytes.
+		
+		http://msdn.microsoft.com/en-us/library/0s4tzdf2.aspx
+		"""
+	
+	pro generateFullPaths from var as bool
+		"""
+		/fullpaths
+		
+		Causes the compiler to specify the full path to the file when listing compilation errors and warnings.
+		
+		http://msdn.microsoft.com/en-us/library/d315xc66.aspx
+		"""
+	
+	pro moduleAssemblyName from var as String?
+		"""
+		/moduleassemblyname
+		
+		Specifies an assembly whose non-public types a .netmodule can access.
+		
+		http://msdn.microsoft.com/en-us/library/ms228624.aspx
+		"""
+	
+	pro noWin32Manifest from var as bool
+		"""
+		/nowin32manifest
+		
+		Instructs the compiler not to embed an application manifest in the executable file.
+		
+		http://msdn.microsoft.com/en-us/library/bb513864.aspx
+		"""
+	
+	pro pdbFile from var as String?
+		"""
+		/pdb
+		
+		Specifies the file name and location of the .pdb file.
+		
+		http://msdn.microsoft.com/en-us/library/ms228625.aspx
+		"""
+	
+	pro embeddedResources from var as ITaskItem[]?
+		"""
+		/resource
+		
+		Embeds the specified resource.
+		
+		http://msdn.microsoft.com/en-us/library/c0tyye07.aspx
+		"""
+	
+	pro linkedResources from var as ITaskItem[]?
+		"""
+		/linkresource
+		
+		Links the specified resource to this assembly.
+		
+		http://msdn.microsoft.com/en-us/library/xawyf94k.aspx
+		"""
+	
+	pro modules from var as String[]?
+		"""
+		/addmodule
+		
+		This option adds a module that was created with the target:module switch to the current compilation.
+		
+		http://msdn.microsoft.com/en-us/library/1s46f83c.aspx
+		"""	
+	
+	pro win32Icon from var as String?
+		"""
+		/win32icon
+		
+		The /win32icon option inserts an .ico file in the output file, which is visible in the File Explorer.
+		
+		http://msdn.microsoft.com/en-us/library/2aaxe43f.aspx
+		"""
+	
+	pro win32Manifest from var as String?
+		"""
+		/win32manifest
+		
+		Use the /win32manifest option to specify a user-defined Win32 application manifest file to be embedded into a
+		project's portable executable (PE) file.
+		
+		http://msdn.microsoft.com/en-us/library/bb545961.aspx
+		"""
+	
+	pro win32Resource from var as String?
+		"""
+		/win32res
+		
+		The /win32res option inserts a Win32 resource in the output file.
+		
+		http://msdn.microsoft.com/en-us/library/8f2f5x2e.aspx
+		"""
+	#endregion
+		
+	#region Cobra compiler parameters
+	pro backEnd from var as String? = "none"
+		"""
+		-back-end[:none|clr|jvm|objc]  default is none
+		
+		Specify the back-end of the compiler, possibly different than the build platform. Used for cross-compilation.
+		"""
+	
+	pro platform from var as String?
+		"""
+		-clr-platform:PLATFORM
+		
+		Target a CLR binary to a platform such as x86, x64 or anycpu.
+		"""
+	
+	pro clrProfile from var as String?
+		"""
+		-clr-profile:/PATH/TO/PROFILE
+		
+		Builds against a different CLR profile than the one the compiler was installed for.
+		"""
+	
+	pro contracts from var as String? = "inline"
+		"""
+		-contracts[:none|inline|methods]  default is inline
+        
+        Control treatment of code generation for contracts.
+        """
+	
+	pro copyCore from var = false
+		"""
+		-copy-core[:no|yes]  default is no
+		-cc
+		
+		Copy the Cobra.Core library to the same location as the resulting executable which will insulate the executable
+		from newer Cobra installations.
+		"""
+	
+	pro correctSource from var as String? = "none"
+		"""
+		-correct-source[:none|case|all]  default is none
+		-cs
+		
+		Rewrite source files with corrections, only when unambiguous. For example, "string" --> "String". If possible,
+		you should set your editor to automatically reload files when using this option.
+		"""
+	
+	pro debug from var as String? = "1"
+		"""
+		-debug[:0|1|pdbonly|full]  default is 1
+		-d
+		
+		Turn on system debugging information. The value 1 implies full, which enables attaching a debugger to a running
+		program. Turning this on explicitly implies -debugging-tips:no.
+		"""
+	
+	pro delaySign from var = false
+		"""
+		-delay-sign[:no|yes]
+		
+		Delay-sign the assembly using only the public portion of the strong name key.
+		"""
+	
+	pro embedRunTime from var = false
+		"""
+		-embed-run-time[:no|yes]  default is no
+		-ert
+		
+		Embed the Cobra run-time support code in the assembly so that no reference to an external Cobra.Core.dll is
+		required. Approximately 85KB - 130KB overhead depending on other options such as -include-asserts or -turbo.
+		"""
+	
+	pro embedVersion from var as String?
+		"""
+		-embed-version  default is compiler-version
+		
+		Embed a version string in the generated assembly. If version is not explicitly given, embed the current Cobra
+		compiler version
+		
+		Examples:
+			-embed-version:1.0.0
+			-embed-version:compiler-version
+		"""
+	
+	pro includeAsserts from var = true
+		"""
+		-include-asserts[:no|yes]  default is yes
+		
+		Include assert statements in the program.
+		"""
+	
+	pro includeNilChecks from var = true
+		"""
+		-include-nil-checks[:no|yes]  default is yes
+		
+		Include checks on non-nilable class variables, method arguments and "to !" casts.
+		"""
+	
+	pro includeTests from var = true
+		"""
+		-include-tests[:no|yes]  default is yes
+	
+		Includes unit tests for classes and members in the output assembly.
+		"""
+	
+	pro includeTraces from var = true
+		"""
+		-include-traces[:no|yes]  default is yes
+		
+		Includes trace statements in the output assembly.
+		"""
+	
+	pro keepIntermediateFiles from var = false
+		"""
+		-keep-intermediate-files[:no|yes]
+		-kif
+		
+		Keeps any intermediate files that Cobra generates, which are normally deleted. Example intermediate files are
+		*.cobra.cs.
+		"""
+	
+	pro keyContainer from var as String?
+		"""
+		-key-container:FILE
+		
+		Specify a strong name key container used to strongname the output assembly.
+		"""
+	
+	pro keyFile from var as String?
+		"""
+		-key-file:FILE
+		
+		Specify a strong name key file used to sign the output assembly.
+		"""
+	
+	pro libraryDirectories from var as String[]? = nil
+		"""
+		-library-directory:PATH
+		-lib
+		
+		Specify additional directories to search in for references. Maps to -lib: on .NET and -classpath on JVM.
+		"""
+	
+	pro main from var as String?
+		"""
+		-main:TYPENAME
+		
+		Specify the type containing the "main" method, particularly when more than one type declaration has a "main"
+		method.
+		"""
+	
+	pro rootNamespace from var as String?
+		"""
+		-namespace
+		-name-space, -ns
+		
+		Set the namespace for all Cobra source files as if each one started with "namespace <name>". Can be a qualified
+		name.
+		
+		Example: -namespace:Foo.Bar
+		"""
+	
+	pro nativeCompiler from var as String? = "auto"
+		"""
+		-native-compiler[:file-system-path]  default is auto
+		-sharp-compiler
+		
+		Specify the path to the back-end native compiler. This can be an executable (such as csc.exe or javac), a
+		library (such as Cobra.Sharp.dll), "auto" or "provider".
+		"""
+	
+	pro nativeCompilerArgs from var as String?
+		"""
+		-native-compiler-args:"arg1 arg2"
+		-sharp-args
+		
+		Pass additional arguments to the native back-end compiler (such as C# or Java).
+		"""
+	
+	pro number from var as String? = "decimal"
+		"""
+		-number[:decimal|float|float32|float64]  default is decimal
+		
+		Set the real numeric type for both the "number" type and fractional literals such as "1.0".
+		"""
+	
+	pro optimize from var = false
+		"""
+		-optimize[:no|yes]
+		-o
+		
+		Enable optimizations.
+		"""
+	
+	pro outputAssembly from var as ITaskItem?
+		"""
+		-out:FILENAME
+		
+		Specify output file name (default: base name of first file). -test overrides this with a temporary program that
+		runs only the unit tests and is then removed afterwards.
+		"""
+	
+	pro references from var as ITaskItem[]?
+		"""
+		-reference:Some.dll
+		-ref
+		
+		Add a DLL reference.
+		
+		-pkg:NAME
+		
+		References package via "pkg-config --libs". (Mono only.)
+		"""
+	
+	var _target as String? = "exe"
+	pro target as String?
+		"""
+		-target:exe|winexe|lib|module
+		-t
+			Build a specific target.
+		"""
+		get
+			if _target <> nil
+				if _target == "library", _target = "lib"
+			return _target
+		set
+			_target = value.toLower
+
+
+	#endregion
+	
+	

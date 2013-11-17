@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+	<UsingTask TaskName="CobraCompiler" AssemblyFile="$(MSBuildExtensionsPath)\Cobra\Cobra.MSBuild.dll" />
+
+	<PropertyGroup>
+		<DefaultLanguageSourceExtension>.cobra</DefaultLanguageSourceExtension>
+		<Language>Cobra</Language>
+		<TargetRuntime>Managed</TargetRuntime>
+		<TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
+		<ErrorReport>none</ErrorReport>
+	</PropertyGroup>
+	
+	<!--
+	The CreateManifestResourceNames target creates the manifest resource names from .RESX files.
+	
+		[IN]
+		@(EmbeddedResource) - The list of EmbeddedResource items that have been
+		pre-processed to add metadata about resource type.
+		
+		Expected Metadata "Type" can either be "Resx" or "Non-Resx"
+		
+		[OUT]
+		@(EmbeddedResource) - EmbeddedResource items with metadata
+	
+	For Cobra applications, the transformation is the same as the C# transformation:
+	
+		Resources1.resx => RootNamespace.Resources1 => Build into main assembly
+		SubFolder\Resources1.resx => RootNamespace.SubFolder.Resources1 => Build into main assembly
+		Resources1.fr.resx => RootNamespace.Resources1.fr => Build into satellite assembly
+		Resources1.notaculture.resx => RootNamespace.Resources1.notaculture => Build into main assembly
+
+	At least, that is the goal.  Right now, RESX files aren't supported.  Note that this target
+	only works on Windows.
+	-->
+	<PropertyGroup>
+		<CreateManifestResourceNamesDependsOn></CreateManifestResourceNamesDependsOn>
+	</PropertyGroup>
+	<Target
+		Name="CreateManifestResourceNames"
+		Condition="'@(EmbeddedResource)' != '' and '$(OS)' == 'Windows_NT'"
+		DependsOnTargets="$(CreateManifestResourceNamesDependsOn)"
+		>
+
+		<ItemGroup>
+			<_Temporary Remove="@(_Temporary)" />
+		</ItemGroup>
+		
+		<!-- Create manifest names for culture and non-culture Resx files, and for non-culture Non-Resx resources -->
+		<CreateCSharpManifestResourceName
+			ResourceFiles="@(EmbeddedResource)"
+			RootNamespace="$(RootNamespace)"			
+			Condition="'%(EmbeddedResource.ManifestResourceName)' == '' and ('%(EmbeddedResource.WithCulture)' == 'false' or '%(EmbeddedResource.Type)' == 'Resx')">
+
+			<Output TaskParameter="ResourceFilesWithManifestResourceNames" ItemName="_Temporary" />
+
+		</CreateCSharpManifestResourceName>
+		
+		<!-- Create manifest names for all culture non-resx resources -->
+		<CreateCSharpManifestResourceName
+			ResourceFiles="@(EmbeddedResource)"
+			RootNamespace="$(RootNamespace)"
+			PrependCultureAsDirectory="false"
+			Condition="'%(EmbeddedResource.ManifestResourceName)' == '' and '%(EmbeddedResource.WithCulture)' == 'true' and '%(EmbeddedResource.Type)' == 'Non-Resx'">
+
+			<Output TaskParameter="ResourceFilesWithManifestResourceNames" ItemName="_Temporary" />
+
+		</CreateCSharpManifestResourceName>
+
+		<ItemGroup>
+			<EmbeddedResource Remove="@(EmbeddedResource)" Condition="'%(EmbeddedResource.ManifestResourceName)' == ''"/>
+			<EmbeddedResource Include="@(_Temporary)" />
+			<_Temporary Remove="@(_Temporary)" />
+		</ItemGroup>
+			
+	</Target>
+	
+	<!--
+	According to Microsoft.Common.targets from .NET, ManifestResourceWithNoCulture is
+	only emitted for compatibility reasons.  However, Mono Microsoft.Common.targets still
+	expects these to have valid values.  This target only runs when not on Windows.
+	-->
+	<Target Name="CreateManifestResourceNames"
+		Condition="'$(OS)' != 'Windows_NT'">
+
+		<CreateCSharpManifestResourceName
+			Condition="'@(ResxWithNoCulture)' != ''"
+			ResourceFiles="@(ResxWithNoCulture)"
+			RootNamespace="$(RootNamespace)">
+			<Output TaskParameter = "ManifestResourceNames" ItemName = "ManifestResourceWithNoCultureName" />
+		</CreateCSharpManifestResourceName>
+
+		<CreateCSharpManifestResourceName Condition="'@(NonResxWithNoCulture)' != ''"
+			ResourceFiles="@(NonResxWithNoCulture)"
+			RootNamespace="$(RootNamespace)">
+			<Output TaskParameter = "ManifestResourceNames" ItemName = "ManifestNonResxWithNoCulture" />
+		</CreateCSharpManifestResourceName>
+
+		<CreateCSharpManifestResourceName Condition="'@(ResxWithCulture)' != ''"
+			ResourceFiles="@(ResxWithCulture)"
+			RootNamespace="$(RootNamespace)">
+			<Output TaskParameter = "ManifestResourceNames" ItemName = "ManifestResourceWithCultureName" />
+		</CreateCSharpManifestResourceName>
+
+		<CreateCSharpManifestResourceName Condition="'@(NonResxWithCulture)' != ''"
+			ResourceFiles="@(NonResxWithCulture)"
+			RootNamespace="$(RootNamespace)">
+			<Output TaskParameter = "ManifestResourceNames" ItemName = "ManifestNonResxWithCulture" />
+		</CreateCSharpManifestResourceName>
+
+		<!-- Not sure if this is right... -->
+		<ItemGroup>
+			<_CoreCompileResourceInputs Include="@(ManifestNonResxWithCulture->'$(IntermediateOutputPath)%(Identity)')">
+				<Type>Non-Resx</Type>
+				<WithCulture>true</WithCulture>
+			</_CoreCompileResourceInputs>
+			<_CoreCompileResourceInputs Include="@(ManifestNonResxWithNoCulture->'$(IntermediateOutputPath)%(Identity)')">
+				<Type>Non-Resx</Type>
+				<WithCulture>false</WithCulture>
+			</_CoreCompileResourceInputs>
+		</ItemGroup>
+
+	</Target>
+
+	<Target
+		Name="CoreCompile"
+		Inputs="$(MSBuildAllProjects);
+				@(Compile);
+				@(_CoreCompileResourceInputs);
+				$(ApplicationIcon);
+				$(AssemblyOriginatorKeyFile);
+				@(ReferencePath);
+				@(CompiledLicenseFile);
+				@(LinkResource);
+				@(EmbeddedDocumentation); 
+				$(Win32Resource);
+				$(Win32Manifest);
+				@(CustomAdditionalCompileInputs)"
+		Outputs="@(DocFileItem);
+				 @(IntermediateAssembly);
+				 @(_DebugSymbolsIntermediatePath);				 
+				 $(NonExistentFile);
+				 @(CustomAdditionalCompileOutputs)"
+		Returns=""
+		DependsOnTargets="$(CoreCompileDependsOn)"
+	>
+		<!-- Condition is to filter out the _CoreCompileResourceInputs so that it doesn't pass in culture resources to the compiler -->
+		<!-- Properties are grouped by Cobra arguments, C# arguments, and then custom or psuedo-arguments -->
+		<CobraCompiler 
+			Condition=" '%(_CoreCompileResourceInputs.WithCulture)' != 'true' "
+			
+			BackEnd="$(BackEnd)"
+			Contracts="$(Contracts)"
+			Debug="$(Debug)"
+			DelaySign="$(DelaySign)"
+			EmbedRunTime="$(EmbedRunTime)"
+			EmbedVersion="$(EmbedVersion)"
+			IncludeAsserts="$(IncludeAsserts)"
+			IncludeNilChecks="$(IncludeNilChecks)"
+			IncludeTests="$(IncludeTests)"
+			IncludeTraces="$(IncludeTraces)"
+			KeepIntermediateFiles="$(KeepIntermediateFiles)"
+			KeyContainer="$(KeyContainerName)"
+			KeyFile="$(KeyOriginatorFile)"
+			LibraryDirectories="$(AdditionalLibPaths)"
+			Main="$(StartupObject)"
+			NativeCompiler="$(NativeCompiler)"
+			NativeCompilerArgs="$(NativeCompilerArgs)"
+			Number="$(Number)"
+			Optimize="$(Optimize)"
+			OutputAssembly="@(IntermediateAssembly)"
+			Platform="$(Platform)"
+			PdbFile="$(PdbFile)"
+			References="@(ReferencePath)"
+			RootNamespace="$(RootNamespace)"
+			Sources="@(Compile)"
+			Target="$(OutputType)"
+			
+			ApplicationConfiguration="$(AppConfigForCompiler)"
+			BaseAddress="$(BaseAddress)"
+			CheckForOverflowUnderflow="$(CheckForOverflowUnderflow)"
+			DocumentationFile="@(DocFileItem)"
+			EmbeddedResources="@(_CoreCompileResourceInputs);@(CompiledLicenseFile)"
+			EnvironmentVariables="$(EnvironmentVariables)"
+			ErrorReport="$(ErrorReport)"
+			FileAlignment="$(FileAlignment)"
+			GenerateFullPaths="$(GenerateFullPaths)"
+			LinkedResources="@(LinkResource)"
+			Modules="@(AddModules)"
+			ModuleAssemblyName="$(ModuleAssemblyName)"
+			NoWin32Manifest="$(NoWin32Manifest)"
+			Win32Icon="$(ApplicationIcon)"
+			Win32Manifest="$(Win32Manifest)"
+			Win32Resource="$(Win32Resource)"
+			
+			CobraArgs="$(CobraArgs)"
+			PerformanceQualityOption="$(PerformanceQualityOption)"
+			/>
+			
+			<ItemGroup>
+				<_CoreCompileResourceInputs Remove="@(_CoreCompileResourceInputs)" />
+			</ItemGroup>
+			
+			<CallTarget Targets="$(TargetsTriggeredByCompilation)" Condition="'$(TargetsTriggeredByCompilation)' != ''"/>
+	</Target>
+	
+	<!-- Prints to the console: The path where custom targets files (such as this one) should be placed -->
+	<Target Name="DisplayMSBuildExtensionsPath">
+		<Message Text="$(MSBuildExtensionsPath)" />
+	</Target>
+	
+	<Import Project="$(MSBuildToolsPath)\Microsoft.Common.targets" />
+	
+</Project>

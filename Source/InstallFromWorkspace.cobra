@@ -94,6 +94,8 @@ use System.Text.RegularExpressions
 use System.EnterpriseServices
 use System.EnterpriseServices.Internal
 
+# for locating msbuild/xbuild
+use Microsoft.Build.Utilities from 'Microsoft.Build.Utilities.v4.0'
 
 class InstallFromWorkspace
 
@@ -115,6 +117,12 @@ class InstallFromWorkspace
 			'files': 'cobra.cobra',
 			'requiresGacVerification': true,
 		},
+		{
+			'name': 'Cobra.MSBuild',
+			'flags': '-c -t:lib -embed-version',
+			'files': 'Cobra.MSBuild/CobraCompiler.cobra',
+			'requiresGacVerification': false,
+		}
 	]
 
 	def main is shared
@@ -124,6 +132,8 @@ class InstallFromWorkspace
 
 	var _snapshotCompilerPath as String?
 	var _gacutil as String?
+	var _buildTool as String?
+	var _msbuildExtPath as String?
 	var _baseVersion as String?       # ex: '0.8.0-post', '0.8.0-post-2009-03-01'
 	var _targetDir as String?         # ex: 'C:\Cobra', '/usr/local/cobra'
 	var _versionDir as String?        # ex: 'C:\Cobra\Cobra-0.8.0-post', 'C:\Cobra\Cobra-0.8.0-post-2009-03-01', '/usr/local/cobra/Cobra-0.8.1-post'
@@ -150,6 +160,7 @@ class InstallFromWorkspace
 		.getBaseVersion
 		if not _skipStdLib
 			.locateGacUtil
+			.locateBuildTool
 			for lib in .libs
 				# keys: name, flags
 				libName = lib['name']
@@ -265,6 +276,11 @@ class InstallFromWorkspace
 					if not Directory.exists(dir)  # and sometimes it goes away!
 						print spacer, 'Directory is gone.'
 				if not Directory.exists(dir), break
+
+	def moveFile(source as String, target as String)
+		# File.move does not overwrite a file if it already exists
+		File.copy(source, target, true)
+		File.delete(source)
 
 	def _unReadOnly(dirName as String)
 		_unReadOnly(DirectoryInfo(dirName))
@@ -584,6 +600,76 @@ class InstallFromWorkspace
 		_gacutil = gacutil
 		print 'Found:', _gacutil
 		print
+	
+	def locateBuildTool
+		"""
+		Finds the location of msbuild.exe when running on Windows or the location of xbuild otherwise
+		"""
+		if _buildTool, return
+		buildTool as String? = nil
+
+		errorMsg = 'Cannot locate [buildTool].'
+		if .isRunningOnWindows
+			buildTool = 'msbuild.exe'
+		else
+			buildTool = 'xbuild'
+		
+		.startStage('Locate [buildTool]')
+		found = false
+		
+		if .isRunningOnWindows
+			# ToolLocationHelper.getPathToDotNetFrameworkFile is present but not implemented on Mono
+			# and getPathToBuildToolsFile is only available in 'Microsoft.Build.Utilities.v12.0.dll'
+			if Environment.is64BitProcess and _platformArg and _platformArg.endsWith('x86')
+				# hard-coded to use the 32-bit version of MSBuild from .NET 4.0 otherwise
+				# final verification test of HelloWorld.cobraproj will not pass
+				windowsDir = Environment.getFolderPath(Environment.SpecialFolder.Windows)
+				buildTool = '[windowsDir]/Microsoft.NET/Framework/v4.0.30319/MSBuild.exe'
+			else
+				# ask .NET for the location
+				buildTool = ToolLocationHelper.getPathToDotNetFrameworkFile(buildTool, TargetDotNetFrameworkVersion.Version40)
+			found = File.exists(buildTool)
+		else
+			# rely on xbuild being in the user's PATH
+			p = Process()
+			p.startInfo.fileName = buildTool
+			p.startInfo.arguments = '/version'
+			try
+				p.runAndCaptureAllOutput
+				found = true
+				print 'found in system PATH'
+			catch FileNotFoundException
+				pass
+			catch ComponentModel.Win32Exception
+				pass
+		
+		if not found, .error(errorMsg)
+		_buildTool = buildTool
+		print 'Found:', _buildTool
+		print
+	
+	def _locateMSBuildExtensionsPath as String?
+		"""
+		Returns the location where custom .targets files should be added to.
+
+		The location is called MSBuildExtensionsPath on both xbuild and msbuild.
+		"""
+		require _buildTool is not nil
+		
+		if _msbuildExtPath, return _msbuildExtPath
+		
+		s = .slash
+		args = '/target:DisplayMSBuildExtensionsPath .[s]Cobra.MSBuild[s]Targets[s]Cobra.targets'
+		p as Process? = nil
+		output = .runCommand(_buildTool to !, args, out p, false).splitLines
+		
+		for lineNum in output.count
+			if output[lineNum].endsWith('DisplayMSBuildExtensionsPath:')
+			    # the next line contains the path we are looking for
+				_msbuildExtPath = output[lineNum + 1].trim
+				break
+		
+		return _msbuildExtPath
 
 	def buildCobraCompiler
 		.startStage('Build new Cobra compiler')
@@ -820,6 +906,25 @@ class InstallFromWorkspace
 
 		.copyContents('Cobra.Core', '[versionBinDir][slash]Cobra.Core')
 
+		msbuildExtPath = _locateMSBuildExtensionsPath
+		if msbuildExtPath is nil
+			.warning('Unable to locate MSBuildExtensionsPath. Targets file will not be installed.')
+		else
+			msbuildExtPath = Path.combine(msbuildExtPath, 'Cobra')
+			.requireDir(msbuildExtPath to !)
+			.copyContents('Cobra.MSBuild[slash]Targets', msbuildExtPath to !)
+
+			# move the assembly to be alongside the targets file
+			name = 'Cobra.MSBuild.dll'
+			source = '[versionBinDir][slash][name]'
+			target = '[msbuildExtPath][slash][name]'
+			.moveFile(source, target)
+			if File.exists('[source].mdb'), .moveFile('[source].mdb', '[target].mdb')
+			if File.exists('[source].pdb'), .moveFile('[source].pdb', '[target].pdb')
+			if .isRunningOnUnix
+				.runCommand('chmod', "a+r '[msbuildExtPath][slash]Cobra.targets'")
+				.runCommand('chmod', "a+r '[msbuildExtPath][slash][name]'")
+
 		# delete _svn or .svn from the installation directory
 		.findAndDeleteDir(versionDir, '_svn')
 		.findAndDeleteDir(versionDir, '.svn')
@@ -843,12 +948,24 @@ class InstallFromWorkspace
 
 	def verifyNewlyInstalledCobra
 		.startStage('Verify newly installed Cobra compiler')
+		slash = .slash
 		output = .runCommand(_cobraCommandPath to !, '-about', true)
 		if not output.startsWith('The Cobra Programming Language')
 			.error('Cannot run the installed Cobra with -about')
-		output = .runCommand(_cobraCommandPath to !, '-ert:yes Misc[.slash]hello.cobra', true)
+		output = .runCommand(_cobraCommandPath to !, '-ert:yes Misc[slash]hello.cobra', true)
 		if not output.startsWith('Hello')
 			.error('Cannot run the installed Cobra on "hello.cobra"')
+		
+		# only test msbuild/xbuild if a location for the targets file was found
+		if _msbuildExtPath
+			projDir = 'Cobra.MSBuild[slash]TestProjects[slash]ExampleSolution[slash]HelloWorld'
+			output = .runCommand(_buildTool to !, '[projDir][slash]HelloWorld.cobraproj /target:rebuild', false)
+			if not output.contains('Build succeeded.')
+				.error('Cannot build Cobra project file using installed Cobra.MSBuild library')
+			else
+				output = .runCommand('[projDir][slash]bin[slash]Debug[slash]HelloWorld.exe', '', true)
+				if not output.startsWith('Hello')
+					.error('"HelloWorld.exe" generated from Cobra project failed to run')
 
 	def cleanUpWorkspace
 		.startStage('Clean up workspace')
