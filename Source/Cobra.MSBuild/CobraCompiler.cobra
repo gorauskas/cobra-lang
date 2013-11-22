@@ -66,8 +66,6 @@ class CobraCompiler inherits ToolTask
 	An MSBuild task for invoking the Cobra compiler.
 	"""
 	
-	var _toolPath as String?
-	
 	#region ToolTask overrides
 	get toolName as String is protected, override
 		"""
@@ -75,42 +73,24 @@ class CobraCompiler inherits ToolTask
 		
 		http://msdn.microsoft.com/en-us/library/microsoft.build.utilities.tooltask.toolname(v=vs.100).aspx
 		"""
-		if CobraCore.isRunningOnMono
-			return "cobra"
-		else
-			return "cobra.exe"
+		cmd = CobraCommand.find
+		if cmd <> nil
+			return Path.getFileName(cmd.path) to !
+		return "cobra"
 	
 	def generateFullPathToTool as String? is protected, override
 		"""
-		Returns the fully qualified path to the Cobra executable file unless cobra.exe is in the system path in which
-		case only "cobra.exe" is returned.
+		Returns the fully qualified path to the Cobra command.
 		
 		http://msdn.microsoft.com/en-us/library/microsoft.build.utilities.tooltask.generatefullpathtotool(v=vs.100).aspx
 		"""
-		if .toolPath <> nil
-			_toolPath = .toolPath
-			if not _toolPath.endsWith(.toolName)
-				_toolPath = Path.combine(_toolPath, .toolName)
-			if not File.exists(_toolPath)
-				_toolPath = nil
-
-		if _toolPath == nil
-			if CobraCore.isRunningOnUnix
-				_toolPath = '/usr/local/cobra/bin/cobra'
-				if not File.exists(_toolPath)
-					_toolPath = CobraCommand.find.path
-			else
-				_toolPath = r'C:\Cobra\bin\cobra.bat'
-				if not File.exists(_toolPath)
-					_toolPath = CobraCommand.findExe.path
-		
-		systemPath = Environment.getEnvironmentVariable("PATH")
-		toolDir = Path.getDirectoryName(_toolPath)
-		
-		if toolDir in systemPath
-			return .toolName
-		
-		return _toolPath
+		cmd = CobraCommand.find
+		if cmd <> nil
+			return cmd.path
+		if CobraCore.isRunningOnWindows
+			return "C:\\Cobra\\bin\\cobra.bat"
+		else
+			return "/usr/local/cobra/bin/cobra"
 	
 	def generateCommandLineCommands as String is protected, override
 		"""
