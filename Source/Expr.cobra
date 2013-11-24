@@ -2196,12 +2196,16 @@ class PostCallExpr
 			assert false, expr
 
 		return type
-			
+
 	def _checkInitializer(expr as Expr, numPropertyInits as int)
 		assert expr inherits IdentifierExpr and expr.definition inherits ClassOrStruct
 		# skip passthrough in arg
 		if .args.count == 1 and	.args[0].type == .typeProvider.passThroughType 
 			return
+		if expr inherits IdentifierExpr
+			# bail on method sigs which work differently. ex: if handler, listen mi.click, RoutedEventHandler(handler)
+			isSig = expr.receiverType and expr.receiverType.nonNil.isDescendantOf(.compiler.delegateType)
+			if isSig, return
 		initCall = _bestInitializer
 		if not initCall
 			return
