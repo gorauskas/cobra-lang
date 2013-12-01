@@ -1,0 +1,154 @@
+use System.Text.RegularExpressions
+
+
+class AbstractLibPathProcessor is abstract
+	"""
+	Turns path specifications into actual paths that exist.
+	Here is an example path specification:
+		{ProgramFiles|ProgramFiles(x86)}\Reference Assemblies\Microsoft\Framework\.NETFramework\{@latest}
+	Which might come back as:
+		C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.5.1
+	Path specifications may contain environment variables in curly brackets as well as {@latest}.
+	Furthermore, multiple env vars can specified with a vertical bar and each will be checked.
+	See FakeLibPathProcessor's tests for more examples.
+	"""
+
+	shared
+	
+		var _envVarRE = Regex(r"(?<envVar>\{[\w\(\)\|]+\})", RegexOptions.Compiled)
+
+	def pathFor(pathSpec as String) as String?
+		paths = .pathsFor(pathSpec)
+		return if(paths.count, paths[0], nil)
+
+	def pathsFor(pathSpec as String) as List<of String>
+		t = List<of String>()
+		_pathsFor(pathSpec, t)
+		return t
+
+	def _pathsFor(pathSpec as String, paths as List<of String>)
+		offset = 0
+		for match in _envVarRE.matches(pathSpec)
+			if not match.success, continue
+			group = match.groups['envVar']
+			if not group, continue
+			if '|' in group.value
+				for nameBranch in group.value[1:-1].split('|')
+					pathSpecBranch = pathSpec[:group.index+offset] + '{' + nameBranch + '}' + pathSpec[group.index+group.length+offset:]
+					_pathsFor(pathSpecBranch, paths)
+				return
+			envValue = _valueForVar(group.value[1:-1] to !)
+			if envValue
+				pathSpec = pathSpec[:group.index+offset] + envValue + pathSpec[group.index+group.length+offset:]
+				offset = envValue.length - group.length
+		if pathSpec.endsWith('{@latest}')
+			pathSpec = pathSpec[:-'{@latest}'.length]
+			if _directoryExists(pathSpec)
+				latest as String?
+				for fileName in _fileNamesInDirectory(pathSpec)
+					if latest is nil or _compareVersions(latest to !, fileName) < 0, latest = fileName
+				if latest, paths.add(Path.combine(pathSpec, latest))
+		else if _directoryExists(pathSpec) or _fileExists(pathSpec)
+			paths.add(pathSpec)
+
+	def _compareVersions(a as String, b as String) as int is shared
+		test
+			cases = [
+				['v5.0', 'v5.0.0', 0],
+				['5.0', '5.0.0', 0],
+				['4.0', '4.5', -1],
+				['4.5', '4.0', 1],
+				['4.5', '4.5.1', -1],
+				['4.5.0', '4.5.1', -1],
+				['1.10', '1.2', 1],
+			]
+			for a, b, expected in cases
+				answer = _compareVersions(a, b)
+				assert answer == expected, [a, b]
+		body
+			try
+				av = Version(_norm(a))
+			catch
+				return a.toLower.compareTo(b.toLower)
+			try
+				bv = Version(_norm(b))
+			catch
+				return a.toLower.compareTo(b.toLower)
+			return av.compareTo(bv)
+
+	def _norm(version as String) as String is shared
+		count = version.count('.')
+		if count > 0
+			if version.startsWith('v'), version = version[1:]
+			if count == 1, version += '.0'  # otherwise the Version class returns -1 for '5.0' compareTo '5.0.0'
+		return version
+
+	def _valueForVar(name as String) as String? is abstract
+
+	def _directoryExists(path as String) as bool is abstract
+
+	def _fileExists(path as String) as bool is abstract
+	
+	def _fileNamesInDirectory(path as String) as String* is abstract
+
+
+class FakeLibPathProcessor inherits AbstractLibPathProcessor
+
+	test
+		v = false
+		cases = [
+			['{ProgramFiles}', 'C:\\Program Files'],
+			['{PROGRAMFILES}', 'C:\\Program Files'],
+			['{PROGRAMFILES|ProgramFiles(x86)}', 'C:\\Program Files'],
+			[r'{ProgramFiles|ProgramFiles(x86)}\Reference Assemblies\Microsoft\Framework\.NETFramework\{@latest}',
+				r'C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.5.1'],
+			['C:\\BadPath\\{@latest}', nil],
+		]
+		libPathProcessor = FakeLibPathProcessor()
+		for input, expected in cases
+			if v
+				print
+				print 'input   ', input
+				print 'expected', expected
+			answer = libPathProcessor.pathFor(input)
+			if v
+				print 'answer  ', answer
+			assert answer == expected
+
+	def _valueForVar(name as String) as String? is override
+		branch name.toLower
+			on 'programfiles', return 'C:\\Program Files'
+			on 'programfiles(x86)', return 'C:\\Program Files (x86)'
+			else, return nil
+
+	def _directoryExists(path as String) as bool is override
+		if 'Reference Assemblies' in path
+			return path.startsWith('C:\\Program Files (x86)')
+		else if path in ['C:\\Program Files', 'C:\Program Files (x86)']
+			return true
+		else
+			return false
+
+	def _fileExists(path as String) as bool is override
+		return path.startsWith('v4.')
+
+	def _fileNamesInDirectory(path as String) as String* is override
+		yield 'v4.0'
+		yield 'v4.5'
+		yield 'v4.5.1'
+
+
+class LibPathProcessor inherits AbstractLibPathProcessor
+
+	def _valueForVar(name as String) as String? is override
+		return Environment.getEnvironmentVariable(name)
+
+	def _directoryExists(path as String) as bool is override
+		return Directory.exists(path)
+
+	def _fileExists(path as String) as bool is override
+		return File.exists(path)
+
+	def _fileNamesInDirectory(path as String) as String* is override
+		for fileInfo in DirectoryInfo(path).getDirectories
+			yield fileInfo.name

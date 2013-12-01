@@ -352,7 +352,7 @@ class CommandLineOptionSpecs
 			'synonyms': ['lib'],
 			'type': 'string',
 			'isAccumulator': true,
-			'description': 'Specify additional directories to search in for references. Maps to -lib: on .NET and -classpath on JVM.',
+			'description': 'Specify additional directories to search in for references. Can include {EnvironmentVariables} and {@latest} to choose the latest version directory. Maps to -lib: on .NET and -classpath on JVM.',
 			'args': 'PATH',
 		},
 		{
@@ -1466,7 +1466,17 @@ class ArgParser
 			options['include-nil-checks'] = false
 			options['include-tests'] = false
 			options['optimize'] = true
-			
+		# run the library directories through LibPathProcessor
+		libPaths = options.getDefault('library-directory', List<of String>()) to List<of String>
+		finalPaths, pathProcessor = List<of String>(), LibPathProcessor()
+		for libPath in libPaths
+			finalPath = pathProcessor.pathFor(libPath)
+			if finalPath is nil
+				_error('Cannot find library directory: [libPath]')  # throws
+			else
+				finalPaths.add(finalPath)
+		options.set('library-directory', finalPaths)
+	
 	def _interpretValue(valueStr as String, spec as OptionSpec) as dynamic?
 		value as dynamic?
 		branch spec.type
@@ -1606,6 +1616,9 @@ class OptionValues inherits Dictionary<of String, Object>
 			return List<of String>()
 
 	# CC: def getDefault<of T>(key as String, value as T) as T ...
+
+	def set(key as String, value)
+		this[key] = value
 
 	def setValue(key as String) as Set<of String>
 		""" Returns an empty string if no such set exists. """
