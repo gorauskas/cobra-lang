@@ -80,13 +80,12 @@ static public class CobraImp {
 	}
 
 	static public string TypeName(Type t) {
-		if (t==null)
-			return "nil";
+		if (t == null) return "nil";
 		if (t.IsGenericType) {
-			StringBuilder sb = new StringBuilder();
-			string[] parts = t.GetGenericTypeDefinition().Name.Split(new char[] {'`'}, 2);
+			var sb = new StringBuilder();
+			var parts = t.GetGenericTypeDefinition().Name.Split(new char[] {'`'}, 2);
 			sb.AppendFormat("{0}<of ", parts[0]);
-			string sep = "";
+			var sep = "";
 			foreach(Type genArg in t.GetGenericArguments()) {
 				sb.AppendFormat("{0}{1}", sep, TypeName(genArg));
 				sep = ", ";
@@ -94,27 +93,22 @@ static public class CobraImp {
 			sb.Append(">");
 			return sb.ToString();
 		}
-		if (t==typeof(int))
-			return "int";
-		if (t==typeof(double))
-			return "float";
-		if (t==typeof(decimal))
-			return "decimal";
-		if (t==typeof(bool))
-			return "bool";
-		if (t==typeof(char))
-			return "char";
+		if (t == typeof(int)) return "int";
+		if (t == typeof(double)) return "float";
+		if (t == typeof(decimal)) return "decimal";
+		if (t == typeof(bool)) return "bool";
+		if (t == typeof(char)) return "char";
 		return t.Name;
 	}
 
 	static public string ToTechString(object x) {
-		if (x==null)
+		if (x == null)
 			return "nil";
 		if (x is bool)
 			return (bool)x ? "true" : "false";
 		if (x is string) {
 			// TODO: handle double backslash
-			string s = (string)x;
+			var s = (string)x;
 			s = s.Replace("\n", "\\n");
 			s = s.Replace("\r", "\\r");
 			s = s.Replace("\t", "\\t");
@@ -123,9 +117,9 @@ static public class CobraImp {
 		}
 		if (x is System.Collections.IList) {
 			// TODO: should not go into infinite loop for circular references
-			StringBuilder sb = new StringBuilder();
+			var sb = new StringBuilder();
 			sb.AppendFormat("{0}[", TypeName(x.GetType()));
-			string sep = "";
+			var sep = "";
 			foreach (object item in (System.Collections.IList)x) {
 				sb.AppendFormat("{0}{1}", sep, ToTechString(item));
 				sep = ", ";
@@ -135,10 +129,10 @@ static public class CobraImp {
 		}
 		if (x is System.Collections.IDictionary) {
 			// TODO: should not go into infinite loop for circular references
-			System.Collections.IDictionary idict = (System.Collections.IDictionary)x;
-			StringBuilder sb = new StringBuilder();
+			var idict = (System.Collections.IDictionary)x;
+			var sb = new StringBuilder();
 			sb.AppendFormat("{0}{1}", TypeName(x.GetType()), "{");
-			string sep = "";
+			var sep = "";
 			foreach (object key in idict.Keys) {
 				sb.AppendFormat("{0}{1}: {2}", sep, ToTechString(key), ToTechString(idict[key]));
 				sep = ", ";
@@ -148,10 +142,10 @@ static public class CobraImp {
 		}
 		if (x is System.Collections.IEnumerable) {
 			// TODO: should not go into infinite loop for circular references
-			System.Collections.IEnumerable ienum = (System.Collections.IEnumerable)x;
-			StringBuilder sb = new StringBuilder();
+			var ienum = (System.Collections.IEnumerable)x;
+			var sb = new StringBuilder();
 			sb.AppendFormat("{0}{1}", TypeName(x.GetType()), "[");
-			string sep = "";
+			var sep = "";
 			foreach (object item in ienum) {
 				sb.AppendFormat("{0}{1}", sep, ToTechString(item));
 				sep = ", ";
@@ -163,9 +157,9 @@ static public class CobraImp {
 			return x.GetType().Name + "." + x.ToString() + " enum";
 		}
 		// TODO: For StringBuilder, return StringBuilder'aoeu'
-		string tts = x.ToString();
+		var tts = x.ToString();
 		if (IsInterestingType(x.GetType())) {
-			string typeName = x.GetType().Name;
+			var typeName = x.GetType().Name;
 			if (!tts.Contains(typeName) && !(x is CobraDirectString))
 				tts = string.Format("{0} ({1})", tts, typeName);
 		}
@@ -173,12 +167,9 @@ static public class CobraImp {
 	}
 
 	static bool IsInterestingType(Type t) {
-		if (t == typeof(System.Int32))
-			return false;
-		if (t == typeof(System.Char))
-			return false;
-		if (t == typeof(System.Boolean))
-			return false;
+		if (t == typeof(System.Int32)) return false;
+		if (t == typeof(System.Char)) return false;
+		if (t == typeof(System.Boolean)) return false;
 		return true;
 	}
 
@@ -241,11 +232,10 @@ static public class CobraImp {
 		if (a == null) {
 			if (b == null) return true;
 			else return false;
-		} else if (b==null) return false;
-		if (a.Count!=b.Count)
-			return false;
+		} else if (b == null) return false;
+		if (a.Count != b.Count) return false;
 		int count = a.Count;
-		for (int i=0; i<count; i++) {
+		for (int i = 0; i < count; i++) {
 			if (!CobraImp.Equals(a[i], b[i]))
 				return false;
 		}
@@ -256,18 +246,15 @@ static public class CobraImp {
 		if (a == null) {
 			if (b == null) return true;
 			else return false;
-		} else if (b==null) return false;
-		if (a.Count!=b.Count)
+		} else if (b == null) return false;
+		if (a.Count != b.Count)
 			return false;
 		foreach (object key in a.Keys) {
-			if (!b.Contains(key))
-				return false;
-			if (!CobraImp.Equals(a[key], b[key]))
-				return false;
+			if (!b.Contains(key)) return false;
+			if (!CobraImp.Equals(a[key], b[key])) return false;
 		}
 		foreach (object key in b.Keys) {
-			if (!a.Contains(key))
-				return false;
+			if (!a.Contains(key)) return false;
 		}
 		return true;
 	}
@@ -277,49 +264,41 @@ static public class CobraImp {
 	}
 
 	static public bool All<T>(IEnumerable<T> items) {
-		foreach (T item in items)
-			if (!IsTrue(item))
-				return false;
+		foreach (T item in items) if (!IsTrue(item)) return false;
 		return true;
 	}
 
 	static public bool All(IEnumerable items) {
-		foreach (object item in items)
-			if (!IsTrue(item))
-				return false;
+		foreach (object item in items) if (!IsTrue(item)) return false;
 		return true;
 	}
 
 	static public bool Any<T>(IEnumerable<T> items) {
-		foreach (T item in items)
-			if (IsTrue(item))
-				return true;
+		foreach (T item in items) if (IsTrue(item)) return true;
 		return false;
 	}
 
 	static public bool Any(IEnumerable items) {
-		foreach (object item in items)
-			if (IsTrue(item))
-				return true;
+		foreach (object item in items) if (IsTrue(item)) return true;
 		return false;
 	}
 
 	static public IList<T> Concated<T>(IList<T> a, IEnumerable<T> b) {
-		Type t = a.GetType();
-		ConstructorInfo ctor = t.GetConstructor(System.Type.EmptyTypes);
+		var t = a.GetType();
+		var ctor = t.GetConstructor(System.Type.EmptyTypes);
 		if (ctor == null) throw new ArgumentException("No default constructor for " + t.Name, "a");
-		IList<T> newList = (IList<T>)ctor.Invoke(null);
+		var newList = (IList<T>)ctor.Invoke(null);
 		foreach (T item in a) newList.Add(item);
 		foreach (T item in b) newList.Add(item);
 		return newList;
 	}
  
 	static public bool In(char a, string b) {
-		return b.IndexOf(a)!=-1;
+		return b.IndexOf(a) != -1;
 	}
 
 	static public bool In(char? a, string b) {
-		return a.HasValue && b.IndexOf(a.Value)!=-1;
+		return a.HasValue && b.IndexOf(a.Value) != -1;
 	}
 
 	static public bool In(int a, int[] b) {
@@ -339,15 +318,12 @@ static public class CobraImp {
 	}
 
 	static public bool In(object a, IEnumerable b) {
-		foreach (object item in b) {
-			if (Equals(item, a))
-				return true;
-		}
+		foreach (object item in b) if (Equals(item, a)) return true;
 		return false;
 	}
 
 	static bool In(Object a, Enum b) {
-		Type et = b.GetType();
+		var et = b.GetType();
 		if (!Enum.IsDefined(et, a)) return false;
 		int v = Convert.ToInt32((Enum)a);
 		int v1 = Convert.ToInt32(b);
@@ -359,10 +335,7 @@ static public class CobraImp {
 	}
 
 	static public bool In<T>(T a, IEnumerable<T> b) {
-		foreach (T item in b) {
-			if (Equals(item, a))
-				return true;
-		}
+		foreach (T item in b) if (Equals(item, a)) return true;
 		return false;
 	}
 
@@ -403,77 +376,77 @@ static public class CobraImp {
 	}
 
 	static public bool IsTrue(char c) {
-		return c!='\0';
+		return c != '\0';
 	}
 
 	static public bool IsTrue(char? c) {
-		return c!=null && c.Value!='\0';
+		return c != null && c.Value!='\0';
 	}
 
 	static public bool IsTrue(int i) {
-		return i!=0;
+		return i != 0;
 	}
 
 	static public bool IsTrue(int? i) {
-		return i!=null && i.Value!=0;
+		return i != null && i.Value != 0;
 	}
 
 	static public bool IsTrue(uint i) {
-		return i!=0;
+		return i != 0;
 	}
 
 	static public bool IsTrue(uint? i) {
-		return i!=null && i.Value!=0;
+		return i != null && i.Value != 0;
 	}
 
 	static public bool IsTrue(long i) {
-		return i!=0;
+		return i != 0;
 	}
 
-	static public bool IsTrue(long? i) {
-		return i!=null && i.Value!=0;
+	static public bool IsTrue(long? i)	{
+		return i != null && i.Value != 0;
 	}
 
 	static public bool IsTrue(ulong i) {
-		return i!=0;
+		return i != 0;
 	}
 
 	static public bool IsTrue(ulong? i) {
-		return i!=null && i.Value!=0;
+		return i != null && i.Value != 0;
 	}
 
 	static public bool IsTrue(decimal d) {
-		return d!=0;
+		return d != 0;
 	}
 
 	static public bool IsTrue(decimal? d) {
-		return d!=null && d.Value!=0;
+		return d != null && d.Value != 0;
 	}
 
 	static public bool IsTrue(float f) {
-		return f!=0;
+		return f != 0;
 	}
 
 	static public bool IsTrue(float? f) {
-		return f!=null && f.Value!=0;
+		return f != null && f.Value != 0;
 	}
 
 	static public bool IsTrue(double d) {
-		return d!=0;
+		return d != 0;
 	}
 
 	static public bool IsTrue(double? d) {
-		return d!=null && d.Value!=0;
+		return d != null && d.Value != 0;
 	}
 
 	static public bool IsTrue(string s) {
-		return s!=null;
+		return s != null;
 	}
 
 	static public bool IsTrue(System.Collections.ICollection c) {
 		// TODO: does System.Collections.Generics.ICollection inherit the non-generic ICollection?
 		// TODO: if a C# file uses both System.Collections and System.Collections.Generics, then what does "ICollection" mean?
-		return c!=null;
+		return c != null;
 	}
 
 /*
@@ -486,20 +459,13 @@ static public class CobraImp {
 */
 
 	static public bool IsTrue(object x) {
-		if (x==null)
-			return false;
-		if (x is bool)
-			return (bool)x;
-		if (x.Equals(0))
-			return false;
-		if (x is char)
-			return (char)x!='\0';
-		if (x is decimal)
-			return (decimal)x!=0;  // can't believe x.Equals(0) above doesn't work for decimal. *sigh*
-		if (x is double)
-			return (double)x!=0;
-		if (x is float)
-			return (float)x!=0;
+		if (x == null) return false;
+		if (x is bool) return (bool)x;
+		if (x.Equals(0)) return false;
+		if (x is char) return (char)x != '\0';
+		if (x is decimal) return (decimal)x != 0;  // can't believe x.Equals(0) above doesn't work for decimal. *sigh*
+		if (x is double) return (double)x != 0;
+		if (x is float) return (float)x != 0;
 		return true;
 	}
 
@@ -512,8 +478,8 @@ static public class CobraImp {
 	}
 
 	static public bool Is(Enum a, Enum b) {
-		if (a==null) return b==null;
-		if (b==null) return false;
+		if (a == null) return b == null;
+		if (b == null) return false;
 		return a.Equals(b);
 		//return a==b;  this returns false when you would expect true!
 	}
@@ -522,10 +488,8 @@ static public class CobraImp {
 		where T : struct {
 		// using this method ensures that x is only evaluated once in the generated C# code for
 		// x to? type
-		if (x is T || x is T?)
-			return x;
-		else
-			return null;
+		if (x is T || x is T?) return x;
+		else return null;
 	}
 
 	public delegate TOut ForGet<TIn, TOut>(TIn value);
@@ -534,53 +498,47 @@ static public class CobraImp {
 
 	static public List<TOut> For<TIn, TOut>(IList<TIn> list, ForGet<TIn, TOut> forGet) {
 		// TODO: if possible, it might be nice to get the generic type of the list coming in and then make a constructed type from it with TOut.
-		List<TOut> results = new List<TOut>(list.Count);
-		foreach (TIn item in list)
-			results.Add(forGet(item));
+		var results = new List<TOut>(list.Count);
+		foreach (TIn item in list) results.Add(forGet(item));
 		return results;
 	}
-
+	
 	static public List<TOut> For<TIn, TOut>(IList<TIn> list, ForWhereGet<TIn, TOut> forWhereGet) {
-		List<TOut> results = new List<TOut>();
+		var results = new List<TOut>();
 		foreach (TIn item in list) {
 			TOut value;
-			if (forWhereGet(item, out value))
-				results.Add(value);
+			if (forWhereGet(item, out value)) results.Add(value);
 		}
 		return results;
 	}
 
 	static public List<TOut> For<TIn, TOut>(IEnumerable<TIn> list, ForGet<TIn, TOut> forGet) {
 		// TODO: if possible, it might be nice to get the generic type of the list coming in and then make a constructed type from it with TOut.
-		List<TOut> results = new List<TOut>();
-		foreach (TIn item in list)
-			results.Add(forGet(item));
+		var results = new List<TOut>();
+		foreach (TIn item in list) results.Add(forGet(item));
 		return results;
 	}
 
 	static public List<TOut> For<TIn, TOut>(IEnumerable<TIn> list, ForWhereGet<TIn, TOut> forWhereGet) {
-		List<TOut> results = new List<TOut>();
+		var results = new List<TOut>();
 		foreach (TIn item in list) {
 			TOut value;
-			if (forWhereGet(item, out value))
-				results.Add(value);
+			if (forWhereGet(item, out value)) results.Add(value);
 		}
 		return results;
 	}
 
 	static public List<TOut> For<TIn, TOut>(IEnumerable list, ForGet<TIn, TOut> forGet) {
-		List<TOut> results = new List<TOut>();
-		foreach (TIn item in list)
-			results.Add(forGet(item));
+		var results = new List<TOut>();
+		foreach (TIn item in list) results.Add(forGet(item));
 		return results;
 	}
 
 	static public List<TOut> For<TIn, TOut>(IEnumerable list, ForWhereGet<TIn, TOut> forWhereGet) {
-		List<TOut> results = new List<TOut>();
+		var results = new List<TOut>();
 		foreach (TIn item in list) {
 			TOut value;
-			if (forWhereGet(item, out value))
-				results.Add(value);
+			if (forWhereGet(item, out value)) results.Add(value);
 		}
 		return results;
 	}
@@ -601,7 +559,7 @@ static public class CobraImp {
 		// return (int) Math.Pow(a, b)
 		//   below is about 25x faster than calling Math.Pow
 		if (exponent < 0) {
-			string msg = string.Format("Exponent is negative for 'base ** exponent' where both are ints. Cast one to a fractional type (number, decimal, float). Exponent = {0}", exponent);
+			var msg = string.Format("Exponent is negative for 'base ** exponent' where both are ints. Cast one to a fractional type (number, decimal, float). Exponent = {0}", exponent);
 			throw new InvalidOperationException(msg);
 		}
 		if (exponent == 0) return 1;
@@ -627,8 +585,7 @@ static public class CobraImp {
 			return (decimal)Math.Pow(Decimal.ToDouble(base_), Decimal.ToDouble(exponent));
 		// case: positive exponent
 		decimal power = exponent < 0 ? Math.Abs(exponent) : exponent;
-		for (int i = 1; i < power; i++)
-			result *= base_;
+		for (int i = 1; i < power; i++) result *= base_;
 		if (exponent > 0) return result;
 		// case: negative exponent
 		return 1m / result;
@@ -645,26 +602,26 @@ static public class CobraImp {
 	// TryCatchExpr - No exception specified 
 	static public TOut RunTryCatchExpr<TOut>(TryCatchExpr<TOut> tryCatch, TryCatchExpr<TOut> tryGet) {
 		TOut r;
-			try { 
-				r = tryCatch();
-			}
-			catch { 
-				r = tryGet();
-			}
-			return r;
+		try { 
+			r = tryCatch();
+		}
+		catch { 
+			r = tryGet();
+		}
+		return r;
 	}
 
 	// TryCatchExpr TExc exception specified 
 	static public TOut RunTryCatchExpr<TOut, TExc>(TryCatchExpr<TOut> tryCatch, TryCatchExpr<TOut> tryGet) 
 		where TExc : System.Exception {
-			TOut r;
-			try { 
-				r = tryCatch();
-			}
-			catch (TExc) { 
-				r = tryGet();
-			}
-			return r;
+		TOut r;
+		try { 
+			r = tryCatch();
+		}
+		catch (TExc) { 
+			r = tryGet();
+		}
+		return r;
 	}
 
 
@@ -673,7 +630,7 @@ static public class CobraImp {
 		if ((step > 0 && start > stop) || 
 			(step < 0 && start < stop) || step == 0)
 				throw new IndexOutOfRangeException(string.Format("for expression will never terminate; start={0} stop={1} step={2}", start, stop, step));
-		List<TOut> results = new List<TOut>();
+		var results = new List<TOut>();
 		for (int item = start; 
 			(step > 0 && item < stop) || (step < 0 && item > stop);
 			item += step)
@@ -685,7 +642,7 @@ static public class CobraImp {
 		if ((step > 0 && start > stop) || 
 			(step < 0 && start < stop) || step == 0)
 				throw new IndexOutOfRangeException(string.Format("for expression will never terminate; start={0} stop={1} step={2}", start, stop, step));
-		List<TOut> results = new List<TOut>();
+		var results = new List<TOut>();
 		for (int item = start;
 			(step > 0 && item < stop) || (step < 0 && item > stop);
 			item += step) {
@@ -697,7 +654,7 @@ static public class CobraImp {
 	}
 
 	static private void ProcessGetSliceArgs(int count, ref int? start, ref int? stop, ref int? step) {
-		if (start==null)
+		if (start == null)
 			start = 0;
 		if (start < 0) {
 			start += count;
@@ -707,7 +664,7 @@ static public class CobraImp {
 		} else if (start > count) {
 			start = count;
 		}
-		if (stop==null)
+		if (stop == null)
 			stop = count;
 		if (stop < 0) {
 			stop += count;
@@ -717,7 +674,7 @@ static public class CobraImp {
 		} else if (stop>count) {
 			stop = count;
 		}
-		if (step==null)
+		if (step == null)
 			step = 1;
 		if (step==0)
 			throw new SliceException(string.Format("Cannot use a step of zero for slices."));
@@ -739,52 +696,46 @@ static public class CobraImp {
 	}
 
 	static public string GetSlice(string s, int? start, int? stop, int? step) {
-		if (s==null)
-			throw new NullReferenceException("Cannot slice null.");
+		if (s == null) throw new NullReferenceException("Cannot slice null.");
 		ProcessGetSliceArgs(s.Length, ref start, ref stop, ref step);
 		return s.Substring(start.Value, stop.Value-start.Value);
 	}
 
 	static public System.Collections.IList GetSlice(System.Collections.IList list, int? start, int? stop, int? step) {
-		if (list==null)
-			throw new NullReferenceException("Cannot slice null.");
+		if (list == null) throw new NullReferenceException("Cannot slice null.");
 		ProcessGetSliceArgs(list.Count, ref start, ref stop, ref step);
-		IList slice = (IList)Activator.CreateInstance(list.GetType());
+		var slice = (IList)Activator.CreateInstance(list.GetType());
 		for (int i=start.Value; i<stop.Value; i+=step.Value)
 			slice.Add(list[i]);
 		return slice;
 	}
 
 	static public System.Collections.ArrayList GetSlice(System.Collections.ArrayList list, int? start, int? stop, int? step) {
-		if (list==null)
-			throw new NullReferenceException("Cannot slice null.");
+		if (list == null) throw new NullReferenceException("Cannot slice null.");
 		ProcessGetSliceArgs(list.Count, ref start, ref stop, ref step);
 		return list.GetRange(start.Value, stop.Value-start.Value);
 	}
 
 	static public IList<T> GetSlice<T>(IList<T> list, int? start, int? stop, int? step) {
-		if (list==null)
-			throw new NullReferenceException("Cannot slice null.");
+		if (list == null) throw new NullReferenceException("Cannot slice null.");
 		ProcessGetSliceArgs(list.Count, ref start, ref stop, ref step);
-		IList<T> slice = (IList<T>)Activator.CreateInstance(list.GetType());
+		var slice = (IList<T>)Activator.CreateInstance(list.GetType());
 		for (int i=start.Value; i<stop.Value; i+=step.Value)
 			slice.Add(list[i]);
 		return slice;
 	}
 
 	static public List<T> GetSlice<T>(List<T> list, int? start, int? stop, int? step) {
-		if (list==null)
-			throw new NullReferenceException("Cannot slice null.");
+		if (list == null) throw new NullReferenceException("Cannot slice null.");
 		ProcessGetSliceArgs(list.Count, ref start, ref stop, ref step);
 		return list.GetRange(start.Value, stop.Value-start.Value);
 	}
 
 	static public T[] GetSlice<T>(T[] array, int? start, int? stop, int? step) {
-		if (array==null)
-			throw new NullReferenceException("Cannot slice null.");
+		if (array == null) throw new NullReferenceException("Cannot slice null.");
 		ProcessGetSliceArgs(array.Length, ref start, ref stop, ref step);
 		int count = stop.Value - start.Value;
-		T[] slice = new T[count];
+		var slice = new T[count];
 		Array.ConstrainedCopy(array, start.Value, slice, 0, count);
 		return slice;
 	}
@@ -792,10 +743,9 @@ static public class CobraImp {
 	/*
 	Favor the generic implementation above.	
 	static public Array GetSlice(System.Array array, int? start, int? stop, int? step) {
-		if (array==null)
-			throw new NullReferenceException("Cannot slice null.");
+		if (array == null) throw new NullReferenceException("Cannot slice null.");
 		ProcessGetSliceArgs(array.Length, ref start, ref stop, ref step);
-		Array slice = Array.CreateInstance(array.GetType().GetElementType(), stop.Value-start.Value); // TODO: will need enhance when other step sizes are supported
+		var slice = Array.CreateInstance(array.GetType().GetElementType(), stop.Value-start.Value); // TODO: will need enhance when other step sizes are supported
 		Array.ConstrainedCopy(array, start.Value, slice, 0, stop.Value-start.Value);
 		return slice;
 	}
@@ -803,16 +753,11 @@ static public class CobraImp {
 
 	static public Object GetSlice(Object obj, int? start, int? stop, int? step) {
 		// this is for when obj is type `dynamic`
-		if (obj==null)
-			throw new NullReferenceException("Cannot slice null.");
-		if (obj is String)
-			return GetSlice((String)obj, start, stop, step);
-		else if (obj is ArrayList)
-			return GetSlice((ArrayList)obj, start, stop, step);
-		else if (obj is IList)
-			return GetSlice((IList)obj, start, stop, step);
-		else
-			throw new CannotSliceTypeException(obj, "[::]", obj.GetType());
+		if (obj == null) throw new NullReferenceException("Cannot slice null.");
+		if (obj is String) return GetSlice((String)obj, start, stop, step);
+		else if (obj is ArrayList) return GetSlice((ArrayList)obj, start, stop, step);
+		else if (obj is IList) return GetSlice((IList)obj, start, stop, step);
+		else throw new CannotSliceTypeException(obj, "[::]", obj.GetType());
 	}
 
 
@@ -853,9 +798,8 @@ static public class CobraImp {
 	}
 
 	static public string MakeString(params string[] args) {
-		StringBuilder sb = new StringBuilder();
-		foreach (object arg in args)
-			sb.Append(arg);
+		var sb = new StringBuilder();
+		foreach (object arg in args) sb.Append(arg);
 		return sb.ToString();
 	}
 
@@ -868,8 +812,8 @@ static public class CobraImp {
 	}
 
 	static public Dictionary<keyType,valueType> MakeDict<keyType,valueType>(Type dictType, params object[] args) {
-		Dictionary<keyType,valueType> d = new Dictionary<keyType,valueType>();
-		for (int i=0; i<args.Length; i+=2)
+		var d = new Dictionary<keyType, valueType>();
+		for (int i = 0; i < args.Length; i += 2)
 			d.Add((keyType)args[i], (valueType)args[i+1]);
 		return d;
 	}
@@ -899,7 +843,7 @@ static public class CobraImp {
 
 	static public Stack<CobraFrame> DetailedStackTrace {
 		get {
-			Stack<CobraFrame> badStack = _badStackCopy!=null ? _badStackCopy : _lastBadStackCopy;
+			var badStack = _badStackCopy!=null ? _badStackCopy : _lastBadStackCopy;
 			if (badStack == null)
 				return null;
 			else
@@ -925,7 +869,7 @@ static public class CobraImp {
 			if (num < 2) num = 2;
 			Console.WriteLine("Cobra detected stack overflow:");
 			Console.WriteLine("  Last {0} frames:", num);
-			List<CobraFrame> frames = new List<CobraFrame>(_detailedStack);
+			var frames = new List<CobraFrame>(_detailedStack);
 			frames.Reverse();
 			for (int i = max-num; i < frames.Count; i++) {
 				Console.WriteLine("    {0}. {1}", i, frames[i]);
@@ -947,10 +891,9 @@ static public class CobraImp {
 	}
 
 	static public void CaughtUncaughtException() {
-		if (_badStackCopy==null) {
+		if (_badStackCopy == null) {
 			_badStackCopy = new Stack<CobraFrame>(_detailedStack.Count);
-			foreach (CobraFrame frame in _detailedStack)
-				_badStackCopy.Push(frame.Copy());
+			foreach (CobraFrame frame in _detailedStack) _badStackCopy.Push(frame.Copy());
 		}
 	}
 
@@ -984,31 +927,27 @@ static public class CobraImp {
 	}
 
 	static private IEnumerable EnumerateInt(int i) {
-		for (int j = 0; j < i; j++)
-			yield return j;
+		for (int j = 0; j < i; j++) yield return j;
 	}
 
 	static public object GetPropertyValue(Object obj, string propertyName) {
-		if (obj==null)
-			throw new ArgumentNullException("obj");
-		if (propertyName==null)
-			throw new ArgumentNullException("propertyName");
-		Type type = obj as System.Type ?? obj.GetType();
-		PropertyInfo pi = type.GetProperty(propertyName, PropertyFlags);
-		if (pi!=null) {
+		if (obj == null) throw new ArgumentNullException("obj");
+		if (propertyName == null) throw new ArgumentNullException("propertyName");
+		var type = obj as System.Type ?? obj.GetType();
+		var pi = type.GetProperty(propertyName, PropertyFlags);
+		if (pi != null) {
 			if (pi.CanRead) {
 				return pi.GetValue(obj, null);
 			} else {
 				throw new CannotReadPropertyException(obj, propertyName, type);
 			}
 		} else {
-			MethodInfo mi = type.GetMethod(propertyName, MethodFlags, null, Type.EmptyTypes, null); // example Cobra that gets here: obj.getType
-			if (mi!=null) {
+			var mi = type.GetMethod(propertyName, MethodFlags, null, Type.EmptyTypes, null); // example Cobra that gets here: obj.getType
+			if (mi != null) {
 				return mi.Invoke(obj, null);
 			} else {
-				FieldInfo fi = type.GetField(propertyName, FieldFlags);
-				if (fi!=null)
-					return fi.GetValue(obj);
+				var fi = type.GetField(propertyName, FieldFlags);
+				if (fi != null) return fi.GetValue(obj);
 				if (propertyName == "TypeOf") return GetPropertyValue(obj, "GetType");
 				throw new UnknownMemberException(obj, propertyName, type);
 			}
@@ -1016,13 +955,11 @@ static public class CobraImp {
 	}
 
 	static public object SetPropertyValue(Object obj, string propertyName, Object value) {
-		if (obj==null)
-			throw new ArgumentNullException("obj");
-		if (propertyName==null)
-			throw new ArgumentNullException("propertyName");
-		Type type = obj as System.Type ?? obj.GetType();
-		PropertyInfo pi = type.GetProperty(propertyName, PropertyFlags);
-		if (pi!=null) {
+		if (obj == null) throw new ArgumentNullException("obj");
+		if (propertyName == null) throw new ArgumentNullException("propertyName");
+		var type = obj as System.Type ?? obj.GetType();
+		var pi = type.GetProperty(propertyName, PropertyFlags);
+		if (pi != null) {
 			if (pi.CanWrite) {
 				pi.SetValue(obj, value, null);
 				return value;
@@ -1030,8 +967,8 @@ static public class CobraImp {
 				throw new CannotWritePropertyException(obj, propertyName, type);
 			}
 		} else {
-			FieldInfo fi = type.GetField(propertyName, FieldFlags);
-			if (fi!=null) {
+			var fi = type.GetField(propertyName, FieldFlags);
+			if (fi != null) {
 				fi.SetValue(obj, value);
 				return value;
 			}
@@ -1040,35 +977,31 @@ static public class CobraImp {
 	}
 
 	static public object InvokeMethod(Object obj, string methodName, params object[] args) {
-		if (obj==null)
-			throw new ArgumentNullException("obj");
-		if (methodName==null)
-			throw new ArgumentNullException("methodName");
-		Type type = obj as System.Type ?? obj.GetType();
-		Type[] argsTypes = args==null ? new Type[0] : new Type[args.Length];
-		for (int i=0; i<argsTypes.Length; i++) {
+		if (obj == null) throw new ArgumentNullException("obj");
+		if (methodName == null) throw new ArgumentNullException("methodName");
+		var type = obj as System.Type ?? obj.GetType();
+		var argsTypes = args==null ? new Type[0] : new Type[args.Length];
+		for (int i = 0; i < argsTypes.Length; i++) {
 			object arg = args[i];
 			argsTypes[i] = arg == null ? typeof(Object) : arg.GetType();
 		}
-		MethodInfo mi = type.GetMethod(methodName, MethodFlags, null, argsTypes, null);
-		if (mi!=null)
-			return mi.Invoke(obj, args);
+		var mi = type.GetMethod(methodName, MethodFlags, null, argsTypes, null);
+		if (mi != null) return mi.Invoke(obj, args);
 		// Given: obj.foo(1, nil, 3)
 		// It's impossible to infer the correct type of the 2nd parameter which could be
 		// Object?, int?, bool? or something else. The first attempt above infers as Object?
 		// (or `System.Object` in .NET), but this will fail if the declared argument type
 		// in the method is more specific such as `int?`.
 		// Check if there is exactly one method and if so, invoke it.
-		MemberInfo[] methods = type.GetMember(methodName, MemberTypes.Method, MethodFlags);
+		var methods = type.GetMember(methodName, MemberTypes.Method, MethodFlags);
 		if (methods.Length == 1) {
 			mi = methods[0] as MethodInfo;
-			if (mi != null)
-				return mi.Invoke(obj, args);
+			if (mi != null) return mi.Invoke(obj, args);
 		}
 		// HACK. TODO. This needs to be generalized where extension methods can be registered with the dynamic binder. Will/does DLR have something like this?
 		if (methodName == "Swap" && obj is System.Collections.IList) {
-			Type extension = Type.GetType("Cobra.Core.Extend_IList_ExtendList");
-			Type extendedType = typeof(System.Collections.IList); // this reference could be put with the extension using an attribute
+			var extension = Type.GetType("Cobra.Core.Extend_IList_ExtendList");
+			var extendedType = typeof(System.Collections.IList); // this reference could be put with the extension using an attribute
 			return InvokeMethodFromExtension(extension, extendedType, obj, methodName, argsTypes, args);
 		}
 		throw new UnknownMemberException(obj, methodName, type);
@@ -1076,11 +1009,11 @@ static public class CobraImp {
 
 	static public object InvokeMethodFromExtension(System.Type extension, System.Type extendedType, Object obj, string methodName, Type[] argTypes, object[] args) {
 		// Utility method for InvokeMethod and eventually InvokeProperty which gets "obj.foo" calls where "foo" could be a method.
-		Type[] argTypes2 = new Type[argTypes.Length+1];
+		var argTypes2 = new Type[argTypes.Length+1];
 		argTypes2[0] = extendedType;
 		argTypes.CopyTo(argTypes2, 1);
 
-		MethodInfo mi = extension.GetMethod(methodName, argTypes2);
+		var mi = extension.GetMethod(methodName, argTypes2);
 		if (mi != null) {
 			object[] args2 = new object[args.Length+1];
 			args2[0] = obj;
@@ -1092,15 +1025,14 @@ static public class CobraImp {
 	}
 
 	static public object GetIndexerValue(Object obj, params object[] args) {
-		if (obj==null)
-			throw new ArgumentNullException("obj");
-		Type type = obj as System.Type ?? obj.GetType();
-		Type[] argsTypes = args==null ? new Type[0] : new Type[args.Length];
-		for (int i=0; i<argsTypes.Length; i++) {
+		if (obj == null) throw new ArgumentNullException("obj");
+		var type = obj as System.Type ?? obj.GetType();
+		var argsTypes = args==null ? new Type[0] : new Type[args.Length];
+		for (int i = 0; i < argsTypes.Length; i++) {
 			argsTypes[i] = args[i].GetType();
 		}
-		PropertyInfo pi = type.GetProperty("Item", PropertyFlags);
-		if (pi!=null) {
+		var pi = type.GetProperty("Item", PropertyFlags);
+		if (pi != null) {
 			return pi.GetValue(obj, args);
 		} else {
 			throw new UnknownMemberException(obj, "[]", type);
@@ -1108,15 +1040,14 @@ static public class CobraImp {
 	}
 
 	static public object SetIndexerValue(Object obj, Object value, params object[] args) {
-		if (obj==null)
-			throw new ArgumentNullException("obj");
-		Type type = obj as System.Type ?? obj.GetType();
-		Type[] argsTypes = args==null ? new Type[0] : new Type[args.Length];
-		for (int i=0; i<argsTypes.Length; i++) {
+		if (obj == null) throw new ArgumentNullException("obj");
+		var type = obj as System.Type ?? obj.GetType();
+		var argsTypes = args==null ? new Type[0] : new Type[args.Length];
+		for (int i = 0; i < argsTypes.Length; i++) {
 			argsTypes[i] = args[i].GetType();
 		}
-		PropertyInfo pi = type.GetProperty("Item", PropertyFlags);
-		if (pi!=null) {
+		var pi = type.GetProperty("Item", PropertyFlags);
+		if (pi != null) {
 			pi.SetValue(obj, value, args);
 			return value;
 		} else {
@@ -1135,16 +1066,16 @@ static public class CobraImp {
 	static public object DynamicOp(String opMethodName, Object value1, Object value2, bool promote) {
 		if (value1 == null) throw new NullReferenceException("value1");
 		if (value2 == null) throw new NullReferenceException("value2");
-		Type type = value1.GetType();
-		Type[] types = new Type[] { type, value2.GetType() };
-		MethodInfo mi = type.GetMethod(opMethodName, BindingFlags.Static|BindingFlags.Public, null, types, null);
+		var type = value1.GetType();
+		var types = new Type[] { type, value2.GetType() };
+		var mi = type.GetMethod(opMethodName, BindingFlags.Static|BindingFlags.Public, null, types, null);
 //		Console.WriteLine(" <> (   type specs) {7}, op={0}, value1={1}, type1={2}, value2={3}, type2={4}, type={5}, mi={6}, promote={8}",
 //			opMethodName, value1, value1.GetType(), value2, value2.GetType(), type, mi, __dynamicOpCount, promote);
 //		__dynamicOpCount++;
 		if (mi != null) {
 			return mi.Invoke(value1, new object[] { value1, value2 });
 		} else {
-			String name = opMethodName + '_' + value1.GetType().Name + '_' + value2.GetType().Name;
+			var name = opMethodName + '_' + value1.GetType().Name + '_' + value2.GetType().Name;
 			// whoops. GetMethod() requires that you specify the args, even though InvokeMethod() does not--weirdness. I guess that means that InvokeMethod() does not use GetMethod()
 			// mi = typeof(CobraImp).GetMethod(opMethodName, BindingFlags.Static|BindingFlags.Public);
 			// if (mi!=null) {
@@ -1156,7 +1087,7 @@ static public class CobraImp {
 			}
 			if (promote) {
 				if (type == types[1]) {
-					NumericTypeInfo ti = new NumericTypeInfo(type);
+					var ti = new NumericTypeInfo(type);
 					if (ti.IsInt && ti.Size < 32)
 						return DynamicOp(opMethodName, Convert.ToInt32(value1), Convert.ToInt32(value2), false);						
 				}
@@ -1168,9 +1099,9 @@ static public class CobraImp {
 	}
 
 	static public object DynamicOp(String opMethodName, Object value) {
-		Type type = value.GetType();
-		MethodInfo mi = type.GetMethod(opMethodName, BindingFlags.Static|BindingFlags.Public);
-		if (mi!=null) {
+		var type = value.GetType();
+		var mi = type.GetMethod(opMethodName, BindingFlags.Static|BindingFlags.Public);
+		if (mi != null) {
 			return mi.Invoke(value, new object[] { value } );
 		} else {
 			String name = opMethodName + '_' + value.GetType().Name;
