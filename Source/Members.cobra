@@ -1781,7 +1781,7 @@ class MemberOverload inherits BoxMember is partial
 			print 'winner:', maxScore, winner
 		assert winner
 		return winner to !
-	
+
 	def _calcMembersScore(members as IList<of IOverloadable>, argTypes as List<of IType>, strictBindChecking as bool, candidates)
 		"""
 		argTypes is a List of IType instead of IType? because this deep into compiling,
@@ -1789,32 +1789,63 @@ class MemberOverload inherits BoxMember is partial
 		"""
 		for member in members
 			score = -1000
-			if member.params.count == argTypes.count
-				score = 0
-				if member inherits Method and (member to Method).genericParams.count > 0, score += 1
-				for i, param in member.params.numbered
-					argType = argTypes[i]
-					if strictBindChecking and (argType == param.type or argType == param.type.nonNil)
-						score += 20
-					else if strictBindChecking and argType.isAssignableTo(param.type)
-						score += 10
-					else if strictBindChecking and argType.nonNil.isAssignableTo(param.type) 
-						# Cobra's code and data flow analysis sometimes leaves us with a nilable type that's not actually nil anymore
-						# due to an assignment, possibly wrapped in an if statement. Eventually this will be corrected, but for now
-						# compensate here.
-						score += 1
-					else if not strictBindChecking
-						if argType == .typeProvider.passThroughType
-							score -= 100
-						else
-							if argType == param.type
-								score += 20
-							else if argType.isDynamic
-								score += 10
-					else
-						score -= 100
+			if member.params.count > 0 and member.params.last.type inherits VariType
+				# vari param. zero or more args for this param
+				if argTypes.count >= member.params.count - 1
+					score = 0
+					count = member.params.count - 1
+					for i in count
+						score += _calcArgScore(argTypes[i], member.params[i], strictBindChecking)
+					# check vari args
+					innerVariType = (member.params.last.type to VariType).innerType to !
+					compatible, i = true, count
+					while i < argTypes.count
+						if not argTypes[i].isAssignableTo(innerVariType)
+							compatible = false
+							break
+						i += 1
+					# to-do: cannot do this yet:
+					# if not compatible, score = -1000
+					# because:
+					# cobra -ert hello.cobra
+					# CobraCommand.cobra(172): error: The best overloaded method match for "Cobra.Core.Extend_String_Extensions.Split(string, string)" has some invalid arguments
+					# CobraCommand.cobra(172): error: Argument 2: cannot convert from "char" to "string"
+					# HtmlExceptionReportWriter.cobra(69): error: The best overloaded method match for "Cobra.Core.Extend_String_Extensions.Split(string, string)" has some invalid arguments
+					# HtmlExceptionReportWriter.cobra(69): error: Argument 2: cannot convert from "char" to "string"
+					# Test.cobra(267): error: The best overloaded method match for "Cobra.Core.Extend_String_Extensions.Split(string, string)" has some invalid arguments
+					# Test.cobra(267): error: Argument 2: cannot convert from "char" to "string"
+			else
+				# no vari param
+				if member.params.count == argTypes.count
+					score = 0
+					if member inherits Method and (member to Method).genericParams.count > 0, score += 1
+					for i, param in member.params.numbered
+						score += _calcArgScore(argTypes[i], param, strictBindChecking)
 			# print 'candidate:', score, member.name, member.serialNum, Utils.join(', ', (for param in member.params get param.type.name))
 			candidates.add([score, member])
+
+	def _calcArgScore(argType as IType, param as Param, strictBindChecking as bool) as int
+		score = 0
+		if strictBindChecking and (argType == param.type or argType == param.type.nonNil)
+			score += 20
+		else if strictBindChecking and argType.isAssignableTo(param.type)
+			score += 10
+		else if strictBindChecking and argType.nonNil.isAssignableTo(param.type) 
+			# Cobra's code and data flow analysis sometimes leaves us with a nilable type that's not actually nil anymore
+			# due to an assignment, possibly wrapped in an if statement. Eventually this will be corrected, but for now
+			# compensate here.
+			score += 1
+		else if not strictBindChecking
+			if argType == .typeProvider.passThroughType
+				score -= 100
+			else
+				if argType == param.type
+					score += 20
+				else if argType.isDynamic
+					score += 10
+		else
+			score -= 100
+		return score
 
 	def _bindInt is override
 		base._bindInt

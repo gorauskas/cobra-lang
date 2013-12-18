@@ -2095,13 +2095,13 @@ class PostCallExpr
 			catch ne as NodeException
 				.compiler.recordError(ne)
 		return numPropInits
-			
+
 	def _bestInitializer as Initializer?
 		# Since this is determining best initializer choice from the provided args list we can still get 
 		# a bad result if the args include named params and the order is different from that in the decl.
 		# OTOH using named params and default params should mean that there is only a single (well defaulted)
 		# initializer anyway...
-		initCall = nil
+		initCall as Initializer?
 		if _expr.definition inherits ClassOrStruct  # Class/Struct(o) MethodSig(?), Interface/Mixin(x)
 			initdefn = _expr.memberForName('cue.init') to BoxMember?
 			if initdefn
@@ -2206,25 +2206,25 @@ class PostCallExpr
 			# bail on method sigs which work differently. ex: if handler, listen mi.click, RoutedEventHandler(handler)
 			isSig = expr.receiverType and expr.receiverType.nonNil.isDescendantOf(.compiler.delegateType)
 			if isSig, return
-		initCall = _bestInitializer
-		if not initCall
+		init = _bestInitializer
+		if not init
 			return
-		# skip paramlist vari Type	
-		if initCall.hasParams and initCall.params.count == 1 and initCall.params[0].type inherits VariType
+		# skip paramlist vari Type
+		if init.hasParams and init.params.count > 0 and init.params.last.type inherits VariType
 			return
-		# augment to check vari arg type same as vari param type
 		numDefaultedParams = 0
-		if initCall.hasParams
-			for p in initCall.params, if p.isOptional, numDefaultedParams += 1
-		paramsCount = initCall.params.count
+		if init.hasParams, for p in init.params, if p.isOptional, numDefaultedParams += 1
+		paramsCount = init.params.count
 		argCount = .args.count - numPropertyInits
+		if numPropertyInits == 0 and init.hasParams and init.params.last.type inherits VariType
+			return  # Tests/120-classes/956-vari-args.cobra
 		if not (argCount >= paramsCount - numDefaultedParams and argCount <= paramsCount)
-			wherePos ='(declared at [initCall.token.fileName]:[initCall.token.lineNum])'
+			wherePos ='(declared at [init.token.fileName]:[init.token.lineNum])'
 			dfltParams = if(numDefaultedParams, ' (with up to [numDefaultedParams] defaulted)', '')
 			paramStr = '[paramsCount] parameter' + if(paramsCount==1, '', 's')	
 			sugg = 'Best choice has [paramStr][dfltParams] [wherePos].'
 			args = if(numPropertyInits == 0, .args, _argsToCallArgs)
-			decl = _paramsVsArgsString(initCall.name, initCall.params, args)
+			decl = _paramsVsArgsString(init.name, init.params, args)
 			paramStr = '[argCount] parameter' + if(argCount==1, '', 's')	
 			.throwError('No initializer in [expr.type.englishName] "[expr.toCobraSource]" with [paramStr]. [sugg][decl]')
 
@@ -2310,7 +2310,7 @@ class PostCallExpr
 		return sb.toString
 
 	def _handleClassInitializer
-		initCall as Initializer?
+		init as Initializer?
 		if .args.count > 0
 			type = .compiler.symbolForName(.name, false, true) to IType?
 			if type is not nil
@@ -2319,17 +2319,17 @@ class PostCallExpr
 					pass # TODO: determine if this is an error or if support for base class init functions need to be added
 				else if possibleCalls inherits MemberOverload
 					if not any for arg in .args get arg.hasError
-						initCall = possibleCalls.computeBestOverload(.args, nil, false) to Initializer?
+						init = possibleCalls.computeBestOverload(.args, nil, false) to Initializer?
 				else if possibleCalls inherits Initializer
-					initCall = possibleCalls
+					init = possibleCalls
 				#else
 					# TODO: determine if this is an error
-		#print initCall
-		if initCall is not nil and .args.count == initCall.params.count
+		#print init
+		if init is not nil and .args.count == init.params.count
 			for i, arg in .args.numbered
 				if arg.type is not nil and arg.type.isDynamic
 					# set context type so that backend can type cast it correctly
-					arg.contextType = initCall.params[i].type
+					arg.contextType = init.params[i].type
 		#else
 			# TODO: warning or error?
 
