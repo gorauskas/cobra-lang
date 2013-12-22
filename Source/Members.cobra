@@ -1723,7 +1723,7 @@ class MemberOverload inherits BoxMember is partial
 		# implementation of um, doing nothing.
 		# But this likely needs to be rewritten.
 		candidates = []
-		# handle generic arguments to the method		
+		# handle generic arguments to the method
 		if genericArgTypes and genericArgTypes.count
 			members = List<of IOverloadable>()
 			for member as IOverloadable? in .members
@@ -1789,15 +1789,16 @@ class MemberOverload inherits BoxMember is partial
 		"""
 		for member in members
 			score = -1000
-			if member.params.count > 0 and member.params.last.type inherits VariType
+			params = member.params
+			if params.count > 0 and params.last.type inherits VariType
 				# vari param. zero or more args for this param
-				if argTypes.count >= member.params.count - 1
+				if argTypes.count >= params.count - 1
 					score = 0
-					count = member.params.count - 1
+					count = params.count - 1
 					for i in count
-						score += _calcArgScore(argTypes[i], member.params[i], strictBindChecking)
+						score += _calcArgScore(argTypes[i], params[i], strictBindChecking)
 					# check vari args
-					innerVariType = (member.params.last.type to VariType).innerType to !
+					innerVariType = (params.last.type to VariType).innerType to !
 					compatible, i = true, count
 					while i < argTypes.count
 						if not argTypes[i].isAssignableTo(innerVariType)
@@ -1817,11 +1818,16 @@ class MemberOverload inherits BoxMember is partial
 					# Test.cobra(267): error: Argument 2: cannot convert from "char" to "string"
 			else
 				# no vari param
-				if member.params.count == argTypes.count
+				minParamCount = params.count
+				for p in params
+					if p.isOptional, minParamCount -= 1
+				
+				if argTypes.count >= minParamCount and argTypes.count <= params.count
 					score = 0
 					if member inherits Method and (member to Method).genericParams.count > 0, score += 1
 					for i, param in member.params.numbered
-						score += _calcArgScore(argTypes[i], param, strictBindChecking)
+						if i < argTypes.count
+							score += _calcArgScore(argTypes[i], param, strictBindChecking)
 			# print 'candidate:', score, member.name, member.serialNum, Utils.join(', ', (for param in member.params get param.type.name))
 			candidates.add([score, member])
 
