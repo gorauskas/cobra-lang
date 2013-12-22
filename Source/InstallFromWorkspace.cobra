@@ -385,6 +385,29 @@ class InstallFromWorkspace
 	def runSourceCobra(args as String, process as out Process?) as String
 		if _platformArg and _platformArg not in args, args += ' -sharp-args:\"[_platformArg]\"'
 		return .runCommand('cobra.exe', args, out process)
+	
+	def runBuildTool(args as String) as String
+		"""
+		Runs msbuild or xbuild.
+		Sets the COBRA_COMMAND_PATH environment variable on the
+		process to ensure the correct Cobra compiler is used by
+		the Cobra.MSBuild.CobraCompiler task.
+		"""
+		require _buildTool
+		print 'run: [_buildTool] [args]'
+		_lastCommand = _buildTool + ' ' + args
+		p = Process()
+		if _cobraCommandPath
+			p.startInfo.environmentVariables['COBRA_COMMAND_PATH'] = Path.getDirectoryName(_cobraCommandPath)
+		p.startInfo.fileName = _buildTool
+		p.startInfo.arguments = args
+		
+		try
+			output = p.runAndCaptureAllOutput.trim
+		catch ex as Exception
+			.error("Failed to run build tool: [_buildTool]. ([ex.message])")
+		
+		return output
 
 
 	## Stages
@@ -662,10 +685,7 @@ class InstallFromWorkspace
 		props = '/property:Configuration="";Platform=""'
 		target = '/target:DisplayMSBuildExtensionsPath'
 		path = '.[s]Cobra.MSBuild[s]Targets[s]Cobra.targets'
-		
-		args = '[props] [target] [path]'
-		p as Process? = nil
-		output = .runCommand(_buildTool to !, args, out p, false).splitLines
+		output = .runBuildTool('[props] [target] [path]').splitLines
 		
 		for lineNum in output.count
 			if output[lineNum].endsWith('DisplayMSBuildExtensionsPath:')
@@ -963,7 +983,7 @@ class InstallFromWorkspace
 		# only test msbuild/xbuild if a location for the targets file was found
 		if _msbuildExtPath
 			projDir = 'Cobra.MSBuild[slash]TestProjects[slash]ExampleSolution[slash]HelloWorld'
-			output = .runCommand(_buildTool to !, '[projDir][slash]HelloWorld.cobraproj /target:rebuild', false)
+			output = .runBuildTool('[projDir][slash]HelloWorld.cobraproj /target:rebuild')
 			if not output.contains('Build succeeded.')
 				.error('Cannot build Cobra project file using installed Cobra.MSBuild library')
 			else
