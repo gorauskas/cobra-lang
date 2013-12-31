@@ -952,40 +952,27 @@ class AbstractToExpr
 		#	.throwError('The given expression, of type "[_left.type.name]", can never be cast to a "[_potentialTypeExpr.toCobraSource]".')
 
 
-class ToExpr
-	is partial
-	inherits AbstractToExpr
-
-	var _rightTypeExpr as IPotentialTypeExpr
-
-	cue init(opToken as IToken, op as String, left as Expr, right as Expr)
-		base.init(opToken, op, left, right)
-		assert right inherits IPotentialTypeExpr
-		_rightTypeExpr = right to IPotentialTypeExpr
-
-	def _innerClone
-		base._innerClone
-		_rightTypeExpr = .right to IPotentialTypeExpr
+class ToExpr inherits AbstractToExpr is partial
 
 	def _bindImp
 		base._bindImp
 		if _left inherits NilLiteral and not (_type inherits NilableType or _type inherits PassThroughType)
 			.throwError('Cannot cast nil to a non-nil type.')
-		rightType = _rightTypeExpr.potentialType
+		rightType = _potentialTypeExpr.potentialType
 		if rightType
 			if _left.type inherits NilableType and not rightType inherits NilableType
 				if _left.type.nonNil == rightType
-					.compiler.warning(this, 'The given expression is already a "[_rightTypeExpr.toCobraSource]", but nilable. You can just use "to !".')
+					.compiler.warning(this, 'The given expression is already a "[_potentialTypeExpr.toCobraSource]", but nilable. You can just use "to !".')
 			else if not _left.type inherits NilableType and rightType inherits NilableType
 				if rightType.nonNil == _left.type
 					.compiler.warning(this, 'The given expression is already a "[_left.type.name]", but not nilable. You can just use "to ?".')
 			else if _left.type == rightType
-				.compiler.warning(this, 'The given expression is already a "[_rightTypeExpr.toCobraSource]" so the typecast is redundant. You can remove it.')
+				.compiler.warning(this, 'The given expression is already a "[_potentialTypeExpr.toCobraSource]" so the typecast is redundant. You can remove it.')
 			else if rightType inherits AbstractNumberType and _left.type.isDescendantOf(.compiler.stringType)
 				typeName = rightType.name
 				.recordError('Cannot cast a string to a numeric type. Consider using "[typeName].parse" or "[typeName].tryParse". Use "@help [typeName]" for details.')
 		else
-			.throwError('Cannot locate a type for the type cast "to [_rightTypeExpr.toCobraSource]".')
+			.throwError('Cannot locate a type for the type cast "to [_potentialTypeExpr.toCobraSource]".')
 
 
 class ToQExpr inherits AbstractToExpr is partial
