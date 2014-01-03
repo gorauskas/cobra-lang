@@ -532,19 +532,37 @@ class BoxField inherits BoxMember is abstract, partial
 
 	get initExpr from var		
 
-	def _bindInt is override
+	def _bindInt
 		base._bindInt
 		assert _typeNode or _initExpr
 		if _type is nil and _typeNode
 			_type = _typeNode.realType
-		if _initExpr
-			_initExpr.bindImp  # that's bindImp intentionally
+		if _initExpr and _type is nil
+			try
+				_initExpr.bindImp  # that's bindImp intentionally
+			catch NodeException
+				throw
+			catch   # to-do: catching all exceptions is a poor technique. is there a better way to detect this problems?
+				.recordError('Cannot compile initialization expression at this point. Add an explicit type to the `var` ("as <type>") or move to a `cue init` or change the expression.')
+				return
 			if _type is nil
 				_type = _initExpr.type
 			else if not _initExpr.canBeAssignedTo(_type to !)
-				.throwError('Incompatible types. Cannot assign value of type [_initExpr.type.name] on the right to [_type.name] on the left.')
+				_throwIncompatibleTypesError
 		_checkForBaseDuplicate
 	
+	def _bindImp
+		base._bindImp
+		if _initExpr and not _initExpr.didBindImp
+			_initExpr.bindImp
+			if _type is nil
+				_type = _initExpr.type
+			else if not _initExpr.canBeAssignedTo(_type to !)
+				_throwIncompatibleTypesError
+			
+	def _throwIncompatibleTypesError
+		.throwError('Incompatible types. Cannot assign value of type [_initExpr.type.name] on the right to [_type.name] on the left.')
+
 	def _checkForBaseDuplicate
 		if not .parentBox.isFromBinaryLibrary and .parentBox.baseClass and .parentBox.baseClass.memberForName(.name)
 			ancestor = (.parentBox.baseClass.memberForName(.name) to IBoxMember).parentBox
