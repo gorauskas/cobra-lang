@@ -297,6 +297,10 @@ static public class CobraImp {
 		return b.IndexOf(a) != -1;
 	}
 
+	static public bool In(string a, string b) {
+		return b.Contains(a);
+	}
+
 	static public bool In(char? a, string b) {
 		return a.HasValue && b.IndexOf(a.Value) != -1;
 	}
