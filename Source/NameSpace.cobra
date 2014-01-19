@@ -169,22 +169,25 @@ class NameSpace
 
 	def adoptDefaultNameSpace as NameSpace
 		# support -namespace option
-		if .isRoot and .declForName('Cobra') is nil
-			# the above test for 'Cobra' is needed to support -embed-run-time:yes which has files with 'namespace Cobra.Core'
-			ns = .compiler.options.getDefault('namespace', '') to String
-			if ns <> ''
-				newTop = NameSpace(.unifiedNameSpace, .name)
-				newTop._useDirectives = _useDirectives
-				_name = ns
-				_unifiedNameSpace = .compiler.globalNS.getOrMakeNameSpaceNamed(.token.copy(.token.which, ns), ns)
-				assert _unifiedNameSpace.isUnified
-				for decl in .declsInOrder
-					if not decl inherits NameSpace
-						_unifiedNameSpace.addDecl(decl)
-				_superNameSpace = newTop
-				newTop.addDecl(this)
-				return newTop
-		return this
+		if not .isRoot, return this
+		# the following test for 'Cobra' is needed to support -embed-run-time:yes which has files with 'namespace Cobra.Core'
+		if .declForName('Cobra'), return this
+		ns = .compiler.options.getDefault('namespace', '') to String
+		if ns == '', return this
+		newTop = NameSpace(.unifiedNameSpace, .name)
+		newTop._useDirectives = _useDirectives
+		_name = ns
+		globalNS = .compiler.globalNS
+		existingDecl = globalNS.declForName(ns)
+		if existingDecl, globalNS.removeDecl(existingDecl)
+		_unifiedNameSpace = globalNS.getOrMakeNameSpaceNamed(.token.copy(.token.which, ns), ns)
+		assert _unifiedNameSpace.isUnified
+		for decl in .declsInOrder
+			if not decl inherits NameSpace
+				_unifiedNameSpace.addDecl(decl)
+		_superNameSpace = newTop
+		newTop.addDecl(this)
+		return newTop
 
 	def _stackPush
 		base._stackPush

@@ -694,14 +694,14 @@ class NameSpace
 		if _superNameSpace is nil
 			return 'global::'
 		else
-			return .sharpFullName
+			return 'global::' + .sharpFullName
 
 	get sharpQualifier as String
 		ensure result.endsWith('.') or result == 'global::'
 		if _superNameSpace is nil
 			return 'global::'
 		else
-			return .sharpFullName + '.'
+			return 'global::' + .sharpFullName + '.'
 	
 	def writeSharpDef(sw as CurlyWriter) is override
 		assert not .isUnified
@@ -979,13 +979,11 @@ class EnumDecl is partial
 			sw.write(' : [t]')
 		sw.write(' {\n')
 		sw.indent
-		sep = ''
-		i = 0
+		sep, i = '', 0
 		for em as EnumMember in .declsInOrder
 			sw.write(sep)
 			sw.write(em.name)
-			if em.value
-				sw.write(' = [em.value]')
+			if em.value, sw.write(' = [em.value]')
 			i += 1
 			sep = ',\n'
 		sw.write('\n')
@@ -1048,8 +1046,11 @@ class Box is partial
 			sharp = sb.toString
 		else
 			sharp = .sharpName
-		if .parentNameSpace and not .parentNameSpace.isRoot
-			sharp = .parentNameSpace.sharpQualifier + sharp
+		if .parentNameSpace
+			if .parentNameSpace.isRoot
+				sharp = 'global::' + sharp
+			else
+				sharp = .parentNameSpace.sharpQualifier + sharp
 		else if .parentBox
 			sharp = .parentBox.sharpRef + '.' + sharp
 		return sharp
@@ -3427,10 +3428,6 @@ class IdentifierExpr
 		else
 			pn = .definition.parentNameSpace
 			if pn, qual = pn.sharpQualifier
-			# handle the case of "X.X" where namespace and class are both called "X".
-			# C# chokes on it because the first "X" is considered to be the type
-			if .curBox.name + '.' in qual
-				qual = 'global::' + qual
 		return qual
 		
 	get sharpName as String
@@ -3828,10 +3825,6 @@ class TypeExpr
 
 	def writeSharpDef(sw as CurlyWriter, parens as bool) is override
 		sharpRef = _containedType.sharpRef
-		# handle the case of "X.X" where namespace and class are both called "X".
-		# C# chokes on it because the first "X" is considered to be the type
-		if .curBox.name + '.' in sharpRef
-			sharpRef = 'global::' + sharpRef
 		if _requiresTypeOf()
 			sw.write('typeof(')
 			sw.write(sharpRef)
