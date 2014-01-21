@@ -1702,17 +1702,15 @@ class MultiTargetAssignStatement inherits Stmt is partial
 		if _rvals
 			if _targets.count <> _rvals.count
 				.throwError('The number of targets ([_targets.count]) must be the same as the number of expressions ([_rvals.count]) assigned to them')
-			#If rvals are all safe to assign (no rerefs) we can do the simplest thing and turn 
+			# If rvals are all safe to assign (no rerefs) we can do the simplest thing and turn 
 			# them into a sequence of individual assignments. 	i.e a,b = 1,2  or a,b = c,d   cases
 			# If not, we need to turn the rvals list into a literal list, pinning the current values,
 			# and do the expansion on the list as a single item  i.e  a,b = b,a -> a,b = [b,a] 
-			if _isSafeToSimpleAssign()
-				_makeBlockForSimpleAssign
-			else
-				_makeBlockForSimpleAssign  # to get assignment exprs for error checking and code gen
+			_makeBlockForSimpleAssign  # to get assignment exprs for error checking and code gen
+			if not _isSafeToSimpleAssign()
 				# to signal to back-end to use RightValues approach:
 				_rightValues = _rvals
-				_rvals = nil			
+				_rvals = nil
 		if _source
 			_source.bindImp
 			#TODO: chk _source supports an int indexer  somehow...
@@ -1729,6 +1727,7 @@ class MultiTargetAssignStatement inherits Stmt is partial
 		return id inherits IdentifierExpr or id inherits DotExpr or id inherits IndexExpr
 		
 	def _isSafeToSimpleAssign as bool
+		require _rvals
 		# conservatively we just presume its safe if the rvals list is all Literals
 		if all for e in _rvals get e inherits Literal
 			return true 
@@ -1740,6 +1739,7 @@ class MultiTargetAssignStatement inherits Stmt is partial
 		return false
 
 	def _disjointIdentifierLists as bool
+		require _rvals
 		# Specifically all of targets list are IdentifierExprs and rvals are Literals, DotExprs, 
 		# MemberExprs or Indentifiers and any Identifiers are not also in target list
 		tnames = Set<of String>()
