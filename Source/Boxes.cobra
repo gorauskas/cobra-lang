@@ -687,13 +687,14 @@ class Box
 				try
 					baseWhat = interfaceProxy.realType
 					if baseWhat inherits Interface
+						bases = Stack<of Box>()
+						if baseWhat._isReachableAncestor(this, bases), _throwInheritanceCycleError(bases)
 						_baseInterfaces.add(baseWhat)
 					else
 						_badInterfaceError(baseWhat)
 				catch ne as NodeException
 					hadBaseInterfaceError = ne to ?
 					.compiler.recordError(ne)
-		_checkForInheritanceCycles(this, Stack<of Box>())
 		if _baseClass, _baseClass.bindInh
 		for interf in _baseInterfaces, interf.bindInh
 
@@ -707,15 +708,21 @@ class Box
 		if 'readonly' in .isNames
 			.recordError('The keyword "readonly" does not apply to [Utils.pluralize(.englishName)].')
 
-	def _checkForInheritanceCycles(originalBox as Box, bases as Stack<of Box>)
-		if this in bases
-			names = for aBase in Stack<of Box>(bases).toList[1:] get aBase.name
-			.throwError('Cyclical inheritance for "[.name]" with ancestor types [names.join(", ")] and back to [.name].')
-		else
-			bases.push(this)
-			if .baseClass, .baseClass._checkForInheritanceCycles(originalBox, bases)
-			for bi in .baseInterfaces, bi._checkForInheritanceCycles(originalBox, bases)
-			bases.pop
+	def _isReachableAncestor(box as Box, bases as Stack<of Box>) as bool
+		bases.push(this)
+		if this is box, return true
+		if _baseClass
+			if _baseClass is box, return true
+			if _baseClass._isReachableAncestor(box, bases), return true
+		for bi in _baseInterfaces
+			if bi is box, return true
+			if bi._isReachableAncestor(box, bases), return true
+		bases.pop
+		return false
+		
+	def _throwInheritanceCycleError(bases as Stack<of Box>)
+		names = for aBase in Stack<of Box>(bases).toList get aBase.name
+		.throwError('Cyclical inheritance for "[.name]" with ancestor types [names.join(", ")] and back to [.name].')
 
 	def bindInt as INode
 		if not .didBindInt and not .isBindingInt
@@ -1089,7 +1096,7 @@ class Box
 			assert not .didBindInt
 
 		assert .isBindingInh or _
-			(.didBindInh and _baseInterfaceProxies.count == _baseInterfaces.count)
+			((.didBindInh and _baseInterfaceProxies.count == _baseInterfaces.count) or .hasError)
 
 		_constructedTypes[key] = t = __constructTypeFor(typeArgs)
 
@@ -1402,6 +1409,8 @@ class Class
 			possible = _baseNode.realType
 			baseName = if(_baseNode inherits AbstractTypeIdentifier, (_baseNode to AbstractTypeIdentifier).name, nil)  # CC: if-inherits should work for expressions too
 			if possible inherits Class
+				bases = Stack<of Box>()
+				if possible._isReachableAncestor(this, bases), _throwInheritanceCycleError(bases)
 				_baseClass = possible
 			else if possible inherits Interface
 				assert baseName
