@@ -193,12 +193,13 @@ class Box
 		Note that returning true does not mean that the -dst option is turned on.
 		Returning true only means that this box *can* have code instrumentation for DST.
 		"""
-		if .name in @['CobraFrame', 'SourceSite']
+		name = .name
+		if name == 'CobraFrame' or name == 'SourceSite'
 			return false  # otherwise, stack overflow
 		for attribute in .attributes
 			if attribute.name == 'DetailedStackTraceAttribute'
 				return false
-		# probably don't need the following, because this method is only invoked against source code
+		# to-do: probably don't need the following, because this method is only invoked against source code
 		if .nativeType
 			for attrib in .nativeType.customAttributes
 				if attrib inherits DetailedStackTraceAttribute
@@ -482,8 +483,7 @@ class Box
 		if method.resultType <> returnType, return false
 		params = method.params
 		if params.count <> paramTypes.count, return false
-		for i in params.count
-			if params[i].type <> paramTypes[i], return false
+		for i in params.count, if params[i].type <> paramTypes[i], return false
 		return true
 		
 	def suggestionsForBadMemberName(name as String) as List<of String>
@@ -494,7 +494,7 @@ class Box
 			suggs.addRange(bi.suggestionsForBadMemberName(name))
 
 		# eliminate duplicates
-		suggs = List<of String>(Set<of String>(suggs))
+		suggs = Set<of String>(suggs).toList
 		
 		# sort
 		suggs.sort(ref _compareMemberNames)
@@ -545,10 +545,7 @@ class Box
 		for param in _genericParams, if name == param.name, return param
 		return nil
 
-	def symbolForName(name as String, haveThis as bool) as IMember?
-		return .symbolForName(name, haveThis, true)
-
-	def symbolForName(name as String, haveThis as bool, firstCall as bool) as IMember?
+	def symbolForName(name as String, haveThis as bool, firstCall = true) as IMember?
 		"""
 		Unlike the inherited .declForName, this method follows the
 		inheritance chain and provides options for haveThis.
@@ -635,7 +632,7 @@ class Box
 		r = base.isEquatableTo(t)
 		if not r and t inherits CharType and this is .compiler.stringType  # TODO: hacky? could this be determined by looking for a static == operator overload?
 			r = true
-		if not r and ('dynamic' in .name or 'dynamic' in t.name)  # TODO: hacky
+		if not r and (.isDynamic or t.isDynamicOrPassThrough)
 			r = true
 		if not r and t inherits ArrayType and (t to ArrayType).isEquatableTo(this)  # TODO: hacky
 			r = true
@@ -645,7 +642,7 @@ class Box
 		r = base.isComparableTo(t)
 		if not r and t inherits CharType and this is .compiler.stringType  # TODO: hacky? could this be determined by looking for a static == operator overload?
 			r = true
-		if not r and ('dynamic' in .name or 'dynamic' in t.name)  # TODO: hacky
+		if not r and (.isDynamic or t.isDynamicOrPassThrough)
 			r = true
 		return r
 
@@ -953,13 +950,11 @@ class Box
 				if (.isGeneric and type.isGeneric and .genericDef is type.genericDef) or (.isGenericDef and type.isGeneric and this is type.genericDef)
 					# CC?: r = all for i, gp in .genericParams.numbered get gp.isAssignableTo(type.genericParams[i])
 					# CC?: r = for i, gp in .genericParams.numbered get all gp.isAssignableTo(type.genericParams[i])
-					i = 0
 					r = true
-					for gp in .genericParams  # CC: for i, gp in .genericParams.numbered
+					for i, gp in .genericParams.numbered
 						if not gp.isAssignableTo(type.genericParams[i])
 							r = false
 							break
-						i += 1
 				else if type.isGenericDef and .isGeneric and type is .genericDef
 					r = type.isAssignableTo(this)
 		if not r
@@ -1207,8 +1202,7 @@ class Box
 			_finishOverloads
 
 	def secondaryConstructedTypeFor(box as Box, gpToType as Dictionary<of GenericParam, IType>) as IType is override
-		if _genericParams.count == 0
-			return this
+		if _genericParams.count == 0, return this
 		typeArgs = List<of IType>()
 		params = .genericParams
 		for param in params
@@ -2067,12 +2061,7 @@ class Extension inherits Box is partial
 				if constructed, return .extensionMemberFor(constructed, name)
 		return nil
 
-	def memberForName(name as String) as IMember?
-		result = base.memberForName(name)
-		if result is nil, result = .extendedBox.memberForName(name)
-		return result
-
-	def symbolForName(name as String, haveThis as bool, firstCall as bool) as IMember?
+	def symbolForName(name as String, haveThis as bool, firstCall = true) as IMember?
 		result = base.symbolForName(name, haveThis, firstCall)
 		if result is nil and .extendedBox  # may be nil during .bindInh phase
 			result = .extendedBox.symbolForName(name, haveThis, firstCall)
