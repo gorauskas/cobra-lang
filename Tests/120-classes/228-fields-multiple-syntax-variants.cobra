@@ -1,0 +1,107 @@
+# Test many/most/all of the non block syntax variants for declaring fields 
+# (new clause order, modified syntax Oct-2009)
+# Triggered by ticket34: includes commented src showing old bug in using 
+# isnames and initialAssign on field decl (var)
+
+# Modified field dcl clause order is:
+# var <variableName> [as <Type>] [is <AccessModifiers> [has <Attributes>] ] [= <initialValue>]
+#    [<DocString>]
+#   and
+# var <variableName> [as <Type>]  
+#    [is <AccessModifiers>]
+#    [has <Attributes>]
+#	 [= <initialValue>]    
+#    [<DocString>]
+
+# The executable code is just for completeness, any failure will be in the field decls (var ...)
+
+class FieldIsNameAssign
+	# simplest, most common
+	var myVal0 is shared
+	var myVal1	= 'works'
+	var myVal2 as int
+	
+	var myVal3 = 110
+		"""DocStr myVal3"""
+	var myVal4 as int is shared
+		"""DocStr myVal4"""
+	var myVal5 as int = 111
+		"""DocStr myVal5"""
+		
+# This shows original ticket:34 error
+#	var myValBroke = "now not broke" is shared 
+# 	gives: 
+#	error: Expecting an expression. "shared" is a reserved keyword that is not expected here.
+# Could not have both isnames and assignment in (simple) single line form
+# The error was due to parse collision on 'is' binaryOp in expr (from assignment) and
+# 'is' keyword for isnames (the binaryOP 'is' takes precedence from the assignment
+# expression parsing and the <AccessModifier(s)> are not handleable as an expression
+# (instead correctly recognised as keyword(s)) consequently the 'is' <accessModifiers> clause  
+# is not seen by the var/fields parse code.
+
+# This worked (below) - initial Expr and is accessModifier - (oldstyle) but is hardly obvious
+# This continues to compile	but should be deprecated
+	var myValOldStyle = "not broke"
+		is shared
+		"""docstr3"""
+	# the new form equivalent is 
+	var myValNewStyle is shared = "not broke"
+	# or
+	var myValNewStyle1 is shared = "not broke"
+		"""docstr3 newStyle"""
+		
+# The modified syntax (listed above) puts the 'is <AccessModifier>'
+#	(and 'has <Attributes>',  they're kept together for some reason) clauses
+#	before the initial Expr ( = <initialExpr>) clause which removes the 
+#  parsing collision/ambiguity.
+
+	# With modified syntax - 'single' line variant - is before assign
+	var myStr as String is shared = "OK" 
+	var myValMod0 is shared,public = "new Mod 1, no docstr" 
+	var myValMod1 is shared = "new Mod 0" 
+		"""docstrMod0"""
+	var myValMod2 is shared has System.Obsolete('NoUse') = "new Mod 2"
+		"""docstrMod2 - full clause set, 1 liner + docstr"""
+	var avar as int is shared = 99
+	var avar1 as int = 100
+
+	# Multiliner - isnames before assign
+    # This looks a bit funny with all the clauses used (initialExpr buried in lines) but
+	# it has the advantage of being ordered consistently with the single line form
+	var myValMod3 
+		is shared 
+		has System.Obsolete('NoUse') 
+		= "new Mod 3" 
+		"""docstrMod3"""
+
+	# multiliner, simpler probably more	common
+	var myValMod4 #[as String]
+		is shared
+		= "new Mod 4" 		
+		"""docstrMod4"""
+	
+	# multiliner, probably most	common use of multiline variants
+	var myValMod5 #[as String]
+		is shared
+		= "new Mod 5" 		
+
+	
+	def main is shared
+		assert not .myVal0 
+		assert .myStr == 'OK' 
+		assert .avar == 99
+		assert .myVal4 == 0
+
+		v = FieldIsNameAssign()
+		assert v.myVal1 == 'works'		
+		assert v.myVal2 == 0
+		assert v.myVal3 == 110
+		a = v
+		b = FieldIsNameAssign()
+		assert a is v
+		assert a is not b
+		assert b is not v
+		
+		assert .myValOldStyle == 'not broke'
+		assert .myValMod3 == 'new Mod 3'
+		assert .myValMod4 == 'new Mod 4'

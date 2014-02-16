@@ -650,7 +650,7 @@ class CobraParser inherits Parser
 			_warning('Colons are not used to start indented blocks. You can remove the colon.')
 		if .peek.which == 'EOL'
 			.endOfLine
-		else if .peek.isKeyword
+		else if .peek.isKeyword or .peek.which == 'ASSIGN'
 			pass
 		else
 			.throwError('Expecting end-of-line or next clause instead of "[.peek.which]".')
@@ -1293,6 +1293,42 @@ class CobraParser inherits Parser
 		token = .expect(if(isVar, 'VAR', 'CONST'))
 		idToken = .expect('ID')
 		name = idToken.text
+		_validateBoxFieldId(name, isVar)
+		type = if(.optional('AS'), .typeId, nil) to ITypeProxy?
+		isNames = List<of String>(_modifierNamesStack)  # uuu
+		attribs = initExpr = nil
+		docString = '' to ?
+		if .peek.which in ['IS', 'ASSIGN']  # one liner variant
+			isNames = .isDeclNames
+			attribs = .hasAttribs
+			if .optional('ASSIGN'), initExpr = .expression to ?
+			.optional('EOL')
+			assert .last.which=='EOL'
+			.ungrab  # need the EOL
+			if .optionalIndent
+				# special for only old form with both isnames and initValue that compiled
+				# "var id <=init> <EOL> <indent> is <isnames>
+				if .peek.which == 'IS', isNames = .isDeclNames # TODO: transition out
+				docString = .docString
+				.dedent
+		else if .peek.which == 'EOL'	
+			if .optionalIndent
+				isNames = .isDeclNames
+				attribs = .hasAttribs
+				if .optional('ASSIGN'), initExpr = .expression to ?
+				.optional('EOL')
+				docString = .docString
+				.dedent
+		if not initExpr and type is nil # no initial value and no 'as' clause
+			type = .typeProvider.defaultType
+		if isVar
+			field = BoxVar(token, idToken, .curBox, name, type, isNames, initExpr, attribs, docString) to BoxField
+		else
+			field = BoxConst(token, idToken, .curBox, name, type, isNames, initExpr, attribs, docString)
+		return field
+
+	def _validateBoxFieldId(name as String, isVar as bool)
+		"""Run various checks on name as a boxField Id and throw errors if checks fail."""  
 		other = .curBox.declForName(name)
 		if other
 			.throwError('The name "[name]" was already declared earlier.')  # TODO: show the location of the previous symbol
@@ -1307,33 +1343,6 @@ class CobraParser inherits Parser
 			sugg = String(c'_', numUnderscores) + s[0].toString.toLower + s[1:]
 			sugg = ' Try "[sugg]".'
 			.throwError('Class variables must start with lowercase letters (after the underscore(s)) to distinguish them from other types of identifiers.[sugg]')
-		type = if(.optional('AS'), .typeId, nil) to ITypeProxy?
-		if .optional('ASSIGN')
-			initExpr = .expression to ?
-		else
-			initExpr = nil
-			if type is nil
-				type = .typeProvider.defaultType
-		docString = '' to ?
-		isNames = List<of String>(_modifierNamesStack)
-		if .peek.which=='IS'
-			isNames = .isDeclNames
-			attribs = .hasAttribs
-			assert .last.which=='EOL'
-			.ungrab  # need the EOL
-			if .optionalIndent
-				docString = .docString
-				.dedent
-		else if .optionalIndent
-			isNames = .isDeclNames
-			attribs = .hasAttribs
-			docString = .docString
-			.dedent
-		if isVar
-			field = BoxVar(token, idToken, .curBox, name, type, isNames, initExpr, attribs, docString) to BoxField
-		else
-			field = BoxConst(token, idToken, .curBox, name, type, isNames, initExpr, attribs, docString)
-		return field
 				
 	def declareInvariant
 		.expect('INVARIANT')
