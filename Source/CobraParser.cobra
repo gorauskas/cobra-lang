@@ -1298,27 +1298,45 @@ class CobraParser inherits Parser
 		isNames = List<of String>(_modifierNamesStack)  # uuu
 		attribs = initExpr = nil
 		docString = '' to ?
-		if .peek.which in ['IS', 'ASSIGN']  # one liner variant
-			isNames = .isDeclNames
-			attribs = .hasAttribs
-			if .optional('ASSIGN'), initExpr = .expression to ?
-			.optional('EOL')
-			assert .last.which=='EOL'
-			.ungrab  # need the EOL
-			if .optionalIndent
-				# special for only old form with both isnames and initValue that compiled
-				# "var id <=init> <EOL> <indent> is <isnames>
-				if .peek.which == 'IS', isNames = .isDeclNames # TODO: transition out
-				docString = .docString
-				.dedent
-		else if .peek.which == 'EOL'	
-			if .optionalIndent
-				isNames = .isDeclNames
-				attribs = .hasAttribs
-				if .optional('ASSIGN'), initExpr = .expression to ?
-				.optional('EOL')
-				docString = .docString
-				.dedent
+		done = false
+		didAssign = false
+		lineNumIs, lineNumHas = 0, 0 # for reporting duplicate "is" and "has" specifications
+		
+		while not done
+			peek = .peek
+			if peek.isEOF, .throwError('Unexpected end of source.')
+			
+			branch peek.which
+				on 'ASSIGN'
+					.grab
+					initExpr = .expression to ?
+					didAssign = true
+				on 'HAS'
+					lineNumHas = peek.lineNum
+					if didAssign, .throwError(.grab, 'The "has" keyword and attributes should either precede the equals sign or be indented on the next line')
+					attribs = .hasAttribs
+				on 'IS'
+					lineNumIs = peek.lineNum
+					if didAssign, .throwError(.grab, 'The "is" keyword and modifiers should either precede the equals sign or be indented on the next line')
+					isNames = .isDeclNames
+				else
+					last = .last
+					if last is not nil and last.which == 'EOL'
+						# .hasAttribs and .isDeclNames consume the EOL but we need it for later
+						.ungrab
+					done = true
+		
+		if .optionalIndent
+			while .peek.which in ['IS', 'HAS']
+				if .peek.which == 'IS'
+					if lineNumIs > 0, .throwError(.grab, '"is" modifiers were already specified earlier on line [lineNumIs] for the field declaration: [name]')
+					isNames = .isDeclNames
+				if .peek.which == 'HAS'
+					if lineNumHas > 0, .throwError(.grab, '"has" attributes were already specified earlier on line [lineNumHas] for the field declaration: [name]')
+					attribs = .hasAttribs
+			docString = .docString
+			.dedent
+		
 		if not initExpr and type is nil # no initial value and no 'as' clause
 			type = .typeProvider.defaultType
 		if isVar
