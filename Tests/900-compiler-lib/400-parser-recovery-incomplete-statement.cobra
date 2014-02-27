@@ -1,0 +1,64 @@
+@ref 'Test.Cobra.Compiler'
+
+use Cobra.Compiler
+
+
+class P
+
+	const verbosity = 0
+	
+	def main
+		# test with good source code
+		source = '' + _
+			'class C\n' + _
+			'    def method(i as int)\n' + _
+			'        trace i\n'
+		.analyzeSource(source)
+		
+		# now with parse errors
+		.analyzeSource(source + '        x = ')
+		.analyzeSource(source + '        x = = 5')
+		
+		if .verbosity, print 'Success.'
+
+	def makeParser as CobraParser
+		# cl = CommandLine()
+		ap = ArgParser('0.9.6', nil)
+		options = ap.parseToOptions(['-c']) # without at least one option, -about is assumed
+
+		compiler = Compiler(.verbosity)
+		compiler.options = options
+		compiler.initBackEnd
+
+		Node.typeProvider = compiler
+		Node.setCompiler(compiler)
+
+		parser = CobraParser()
+		parser.typeProvider = compiler
+		parser.warningRecorder = compiler
+		parser.errorRecorder = compiler
+		parser.globalNS = compiler.globalNS
+		parser.backEnd = compiler.backEnd
+
+		return parser
+
+	def analyzeSource(source as String)
+		if .verbosity
+			print
+			print '--'
+			print source
+			print '--'
+			print 'Parsing...'
+		
+		parser = .makeParser
+		try
+			parser.parse(FileSpec('noname.cobra', source))
+		catch ParserException
+			pass
+		module = parser.module
+		ns = module.topNameSpace
+		class_ = ns.declForName('C') to Class
+		method = class_.declForName('method') to Method
+		statements = method.statements
+		assert statements.count == 1
+		assert statements[0] inherits TraceStmt

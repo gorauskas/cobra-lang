@@ -374,6 +374,7 @@ class CobraParser inherits Parser
 	def parseTopLevel as ISyntaxNode?
 		""" Returns the node that was parsed, but will return nil for EOL, EOF and compiler directives. """
 		what as ISyntaxNode?
+		add as ISyntaxNode?
 		tok = .peek
 		if tok.isEOF, return nil
 		isGood = true
@@ -395,11 +396,11 @@ class CobraParser inherits Parser
 			on 'INTERFACE'
 				what = .interfaceDecl
 			on 'SIG'
-				what = .declareMethodSig
+				add = what = .declareMethodSig
 			on 'STRUCT'
 				what = .structDecl
 			on 'ENUM'
-				what = .enumDecl
+				add = what = .enumDecl
 			on 'EXTEND'
 				what = .extendDecl
 			on 'EOL'
@@ -408,7 +409,7 @@ class CobraParser inherits Parser
 				what = .nameSpaceDecl
 			on 'ID'
 				if tok.text == 'assembly'  # pseudo keyword
-					what = .assemblyDecl
+					add = what = .assemblyDecl
 				else
 					isGood = false
 			else
@@ -417,10 +418,7 @@ class CobraParser inherits Parser
 			sugg = if(tok.text.length, Compiler.suggestionFor(tok.text), nil)
 			sugg = if(sugg, ' Try "[sugg]".', '')
 			.throwError('Expecting use, assembly, namespace, class, interface or enum, but got [tok].[sugg]')
-		if what implements INameSpaceMember and not what inherits NameSpace
-			what = _nameSpaceAddDecl(_module.topNameSpace, what to INameSpaceMember)
-			if what inherits Box
-				assert what.parentNameSpace
+		if add, _nameSpaceAddDecl(_module.topNameSpace, add to INameSpaceMember)
 		return what
 
 	def compilerDirective
@@ -693,10 +691,12 @@ class CobraParser inherits Parser
 			else
 				.throwError('Cannot nest a type underneath a [parentBox.englishName]')  # TODO: needs a test case
 
-		_boxStack.push(theClass)
-#		.modifierNamesStack = Stack<of String>()
-		.bodiedBoxMemberDecls(theClass)
-		_boxStack.pop
+		_pushBox(theClass)
+		try
+			# .modifierNamesStack = Stack<of String>()
+			.bodiedBoxMemberDecls(theClass)
+		finally
+			_popBox	
 
 		return theClass
 
@@ -909,10 +909,12 @@ class CobraParser inherits Parser
 		theMixin = Mixin(wordToken, idToken, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, inheritsProxy, typeSpecs.implementsProxies, typeSpecs.addsProxies, docString)
 
 		# TODO when supporting nested classes, look at the _boxStack and set a back pointer here
-		_boxStack.push(theMixin)
-#		.modifierNamesStack = Stack<of String>()
-		.bodiedBoxMemberDecls(theMixin)
-		_boxStack.pop
+		_pushBox(theMixin)
+		try
+			# .modifierNamesStack = Stack<of String>()
+			.bodiedBoxMemberDecls(theMixin)
+		finally
+			_popBox
 
 		return theMixin
 
@@ -948,10 +950,12 @@ class CobraParser inherits Parser
 		# TODO: can an interface be nested in another interface?
 		theInterface = Interface(wordToken, idToken, name, .makeList<of IType>(genericParams), typeSpecs.isNames, typeSpecs.attributes, typeSpecs.inheritsProxies, docString)
 
-		_boxStack.push(theInterface)
-#		.modifierNamesStack = Stack<of String>()
-		.bodiedBoxMemberDecls(theInterface)  # TODO: this shouldn't be bodiedBoxMemberDecls, right?
-		_boxStack.pop
+		_pushBox(theInterface)
+		try
+			# .modifierNamesStack = Stack<of String>()
+			.bodiedBoxMemberDecls(theInterface)  # TODO: this shouldn't be bodiedBoxMemberDecls, right?
+		finally
+			_popBox
 
 		return theInterface
 
@@ -986,10 +990,12 @@ class CobraParser inherits Parser
 			else
 				.throwError('Cannot nest a type underneath a [parentBox.englishName]')  # TODO: needs a test case
 
-		_boxStack.push(theStruct)
-#		.modifierNamesStack = Stack<of String>()
-		.bodiedBoxMemberDecls(theStruct)
-		_boxStack.pop
+		_pushBox(theStruct)
+		try
+			# .modifierNamesStack = Stack<of String>()
+			.bodiedBoxMemberDecls(theStruct)
+		finally
+			_popBox
 
 		return theStruct
 
@@ -1085,9 +1091,11 @@ class CobraParser inherits Parser
 
 		ext = Extension(wordToken, extendedTypeId.token, extendedTypeId, isNames, docString)
 
-		_boxStack.push(ext)
-		.bodiedBoxMemberDecls(ext)
-		_boxStack.pop
+		_pushBox(ext)
+		try
+			.bodiedBoxMemberDecls(ext)
+		finally
+			_popBox
 
 		return ext
 
@@ -1155,11 +1163,11 @@ class CobraParser inherits Parser
 				if tok.which == 'DEDENT', break
 				if not indented and tok.which == 'NAMESPACE', break
 				branch tok.which
-					on 'CLASS',		_nameSpaceAddDecl(curNameSpace, .classDecl)
-					on 'INTERFACE',	_nameSpaceAddDecl(curNameSpace, .interfaceDecl)
-					on 'STRUCT',	_nameSpaceAddDecl(curNameSpace, .structDecl)
-					on 'MIXIN',     _nameSpaceAddDecl(curNameSpace, .mixinDecl)
-					on 'EXTEND',    _nameSpaceAddDecl(curNameSpace, .extendDecl)
+					on 'CLASS',		.classDecl
+					on 'INTERFACE',	.interfaceDecl
+					on 'STRUCT',	.structDecl
+					on 'MIXIN',     .mixinDecl
+					on 'EXTEND',    .extendDecl
 					on 'USE',		curNameSpace.addUseDirective(.useDirective)
 					on 'ENUM',		_nameSpaceAddDecl(curNameSpace, .enumDecl)
 					on 'SIG',		_nameSpaceAddDecl(curNameSpace, .declareMethodSig)
@@ -1181,7 +1189,7 @@ class CobraParser inherits Parser
 		if 'partial' in decl.isNames
 			box = decl to? Box
 			if box is nil, .throwError(decl.token, '[decl.englishName.capitalized] cannot be "partial".')
-			if not (box inherits Class or box inherits Struct or box inherits Interface)
+			if not (box inherits Class or box inherits Struct or box inherits Interface)  # to-do: change to .canBePartial
 				.throwError(box.token, '[box.englishName.capitalized] cannot be "partial".')
 			checkForDups = false
 			otherDecl = ns.unifiedNameSpace.declForName(box.name)
@@ -1205,15 +1213,6 @@ class CobraParser inherits Parser
 						else if myDecl.baseNode is not nil
 							thisType = myDecl.baseNode to AbstractTypeIdentifier
 							.throwError(myDecl.token, 'The class "[otherBox.name]" already inherits from "[myOtherType.name]" and cannot inherit from "[thisType.name]" too.')
-				
-				for memberDecl in box.declsInOrder
-					overload = _overloadIfNeeded(memberDecl.idToken, otherBox, memberDecl.name)
-					if overload
-						(memberDecl to IOverloadable).overloadGroup = nil
-						overload.addMember(memberDecl to IOverloadable)
-					else
-						otherBox.addDecl(memberDecl)
-					memberDecl.mergedIntoPartialBox(otherBox)
 				return otherDecl
 		if checkForDups
 			if ns.declForName(decl.name)
@@ -1228,6 +1227,8 @@ class CobraParser inherits Parser
 #		require
 #			not box inherits Interface
 		body
+			# to-do: re-enable following assertion when `partial` is done right
+			# assert box is _boxStack.peek
 			breakLoop = false  # cannot use 'break' to stop a 'while' loop in a branch statement. CC?
 			while not breakLoop
 				_isTraceOn = true
@@ -1239,21 +1240,21 @@ class CobraParser inherits Parser
 						.classPass
 						breakLoop = true
 					on 'DEDENT', breakLoop = true
-					on 'CUE', .addDecl(box, .declareCue)
-					on 'DEF', .addDecl(box, .declareMethod)
-					on 'GET', .addDecl(box, .declareGetOnlyProperty)
-					on 'SET', .addDecl(box, .declareSetOnlyProperty)
-					on 'PRO', .addDecl(box, .declareProperty)
-					on 'VAR', .addDecl(box, .boxFieldDecl(true))
-					on 'CONST', .addDecl(box, .boxFieldDecl(false))
+					on 'CUE', .declareCue
+					on 'DEF', .declareMethod
+					on 'GET', .declareGetOnlyProperty
+					on 'SET', .declareSetOnlyProperty
+					on 'PRO', .declareProperty
+					on 'VAR', .addBoxMember(.boxFieldDecl(true))
+					on 'CONST', .addBoxMember(.boxFieldDecl(false))
 					on 'INVARIANT', .declareInvariant
 					on 'EOL',  .endOfLine
-					on 'ENUM', .addDecl(box, .enumDecl)
-					on 'EVENT',.addDecl(box, .eventDecl)
-					on 'SIG',  .addDecl(box, .declareMethodSig)
+					on 'ENUM', .addBoxMember(.enumDecl)
+					on 'EVENT',.addBoxMember(.eventDecl)
+					on 'SIG',  .addBoxMember(.declareMethodSig)
 					on 'TEST',   .testSection(box)
-					on 'CLASS',  .addDecl(box, .classDecl)  # nested types
-					on 'STRUCT', .addDecl(box, .structDecl) # nested types
+					on 'CLASS',  .classDecl   # nested types
+					on 'STRUCT', .structDecl  # nested types
 					else
 						branch .peek.text 
 							on 'ensure', sugg = 'invariant'
@@ -1263,13 +1264,19 @@ class CobraParser inherits Parser
 						.throwError('Got [.peek] when expecting class, def, enum, get, invariant, pro, set, shared, sig, struct, test or var.[sugg]')
 			.dedent
 
-	def addDecl(box as Box, member as IBoxMember?)
-		if member
-			other = box.declForNameCI(member.name)
-			if other and other.name <> member.name
-				.throwError('Cannot have members with the same name in different case ("[member.name]" here and "[other.name]" on line [(other to SyntaxNode).token.lineNum]).')
-				# TODO: Give another error with the line number of the other definition (and then change message above)
-			box.addDecl(member)
+	def addBoxMember(member as IBoxMember?)
+		if member is nil, return
+		box = _boxStack.peek
+		if member implements IOverloadable
+			overload = _overloadIfNeeded(member.token, box, member.name)  # also checks for various errors
+			if overload
+				overload.addMember(member)
+				return
+		other = box.declForNameCI(member.name)
+		if other and other.name <> member.name
+			.throwError('Cannot have members with the same name in different case ("[member.name]" here and "[other.name]" on line [(other to SyntaxNode).token.lineNum]).')
+			# TODO: Give another error with the line number of the other definition (and then change message above)
+		box.addDecl(member to !)
 
 	def bodiedBoxMemberDeclNames(box as Box)
 		""" Section for block of common decl/modifier isnames."""
@@ -1295,7 +1302,7 @@ class CobraParser inherits Parser
 		name = idToken.text
 		_validateBoxFieldId(name, isVar)
 		type = if(.optional('AS'), .typeId, nil) to ITypeProxy?
-		isNames = List<of String>(_modifierNamesStack)  # uuu
+		isNames = List<of String>(_modifierNamesStack)
 		attribs = initExpr = nil
 		docString = '' to ?
 		done = false
@@ -1468,15 +1475,12 @@ class CobraParser inherits Parser
 			method = Initializer(token, opener, .curBox, params, isNames, attribs, docString) to AbstractMethod
 		else
 			method = Method(token, opener, .curBox, name, .makeList<of IType>(genericParams), params, returnType, implementsType, isNames, attribs, docString)
+		.addBoxMember(method)
 		if nothingMore
 			if method.bodyExclusion is nil, .throwError('Missing method body for "[name]".')
 		else
 			.statementsFor(method)
 		_verifyMethodStatements(method, isNames, curBox)
-		overload = _overloadIfNeeded(method.token, curBox, method.name)  # also checks for various errors
-		if overload
-			overload.addMember(method)
-			return nil
 		return method
 
 	def _methodGenericParams(opener as IToken) as List<of GenericParam>
@@ -1675,6 +1679,10 @@ class CobraParser inherits Parser
 			prop = Indexer(token, idToken, curBox, name, params, returnType, isNames, attribs, docString)
 		else
 			prop = Property(token, idToken, curBox, name, returnType, isNames, attribs, docString)
+		if overload
+			overload.addMember(prop to Indexer)
+		else
+			.addBoxMember(prop)
 		if indent
 			while .peek.which == 'EOL', .grab
 			while .peek.which == 'TEST'
@@ -1708,12 +1716,7 @@ class CobraParser inherits Parser
 			prop.makeSetPart(TokenFix.empty)
 		if isAbstract and not curBox inherits Class
 			.throwError('Only properties in classes can be marked abstract.')
-		if overload
-			assert prop
-			overload.addMember(prop to Indexer)
-			return nil
-		else
-			return prop
+		return prop
 
 	def declarePropertyFrom(token as IToken, idToken as IToken, name as String, coverWhat as String) as Property
 		""" Parse the 'from ...' form of pro/get/set property decl. """
@@ -1741,7 +1744,9 @@ class CobraParser inherits Parser
 			attribs = AttributeList()
 			docString = ''
 		varDef = _genVarDef(declVarType, token, name, varName, initExpr)
-		return Property(token, idToken, .curBox, name, isNames, attribs, varDef, coverWhat, docString)
+		prop = Property(token, idToken, .curBox, name, isNames, attribs, varDef, coverWhat, docString)
+		.addBoxMember(prop)
+		return prop
 		
 	def _genVarDef(declVarType as ITypeProxy?, token as IToken, name as String, varName as String, initExpr as Expr?) as BoxVar
 		""" Find existing backing variable for property or make one and return it.""" 
@@ -1833,6 +1838,10 @@ class CobraParser inherits Parser
 			prop = Indexer(token, idToken, curBox, name, params, returnType, isNames, attribs, docString)
 		else
 			prop = Property(token, idToken, curBox, name, returnType, isNames, attribs, docString)
+		if overload
+			overload.addMember(prop to Indexer)
+		else
+			.addBoxMember(prop)
 		if indent
 			while .peek.which == 'TEST'
 				if curBox inherits Interface
@@ -1851,12 +1860,7 @@ class CobraParser inherits Parser
 				prop.makeGetPart(TokenFix.empty)
 		if isAbstract and not curBox inherits Class
 			.throwError('Only properties in classes can be marked abstract.')
-		if overload
-			assert prop
-			overload.addMember(prop to Indexer)
-			return nil
-		else
-			return prop
+		return prop
 
 
 	##
@@ -1966,10 +1970,7 @@ class CobraParser inherits Parser
 	## Top Level Statement Entry
 	##
 
-	def statementsFor(codePart as AbstractMethod)
-		.statementsFor(codePart, nil)
-
-	def statementsFor(codePart as AbstractMethod, codePartContainingTest as BoxMember?)
+	def statementsFor(codePart as AbstractMethod, codePartContainingTest as BoxMember? = nil)
 		"""
 		Example source
 			<any statement 1>
@@ -3832,6 +3833,19 @@ class CobraParser inherits Parser
 				.recordError(token, 'Method names must start with lowercase letters. ([name])')
 
 		return overload
+
+	def _pushBox(box as Box)
+		if _boxStack.count == 0
+			assert _nameSpaceStack.count > 0
+			box = _nameSpaceAddDecl(_nameSpaceStack.peek, box) to Box  # assign to box because of `partial` treatment
+			# to-do: restore when partial types are done right:
+			# assert box.parentNameSpace is _nameSpaceStack.peek
+		else
+			_boxStack.peek.addDecl(box)
+		_boxStack.push(box)
+		
+	def _popBox
+		_boxStack.pop
 
 	def _pushCodePart(codePart as AbstractMethod)
 		_codeParts.push(codePart)
