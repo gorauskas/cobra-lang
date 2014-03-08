@@ -1313,10 +1313,16 @@ class CobraParser inherits Parser
 			peek = .peek
 			if peek.isEOF, .throwError('Unexpected end of source.')
 			
-			branch peek.which
+			branch peek.which # oneliner: order here must have HAS/IS before ASSIGN
 				on 'ASSIGN'
 					.grab
-					initExpr = .expression to ?
+					try
+						initExpr = .expression to ?
+					catch pe as ParserException
+						if pe.message.contains('is a reserved keyword') and .last(1).which == 'IS'
+							.ungrab 
+							.ungrab # backup to 'is' keyword so next loop cycle throws error below
+						else, throw pe	
 					didAssign = true
 				on 'HAS'
 					lineNumHas = peek.lineNum
@@ -1332,15 +1338,19 @@ class CobraParser inherits Parser
 						# .hasAttribs and .isDeclNames consume the EOL but we need it for later
 						.ungrab
 					done = true
-		
 		if .optionalIndent
-			while .peek.which in ['IS', 'HAS']
+			while .peek.which in ['IS', 'HAS', 'ASSIGN']
 				if .peek.which == 'IS'
-					if lineNumIs > 0, .throwError(.grab, '"is" modifiers were already specified earlier on line [lineNumIs] for the field declaration: [name]')
+					if lineNumIs, .throwError(.grab, '"is" modifiers were already specified earlier on line [lineNumIs] for the field declaration: [name]')
 					isNames = .isDeclNames
 				if .peek.which == 'HAS'
-					if lineNumHas > 0, .throwError(.grab, '"has" attributes were already specified earlier on line [lineNumHas] for the field declaration: [name]')
+					if lineNumHas, .throwError(.grab, '"has" attributes were already specified earlier on line [lineNumHas] for the field declaration: [name]')
 					attribs = .hasAttribs
+				if .peek.which == 'ASSIGN'
+					if didAssign, .throwError(.grab, 'initialiser expression was already specified earlier for the field declaration: [name]')
+					.grab
+					initExpr = .expression to ?
+					.expect('EOL')
 			docString = .docString
 			.dedent
 		
