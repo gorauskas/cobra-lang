@@ -243,7 +243,7 @@ class TestifyRunner
 			paths = List<of String>()
 			for subdir in Directory.getDirectories(path)
 				fileName = Path.getFileName(subdir)
-				if not fileName.startsWith('.') and not fileName.startsWith('_')
+				if not fileName.isIgnoreName
 					paths.add(Path.getFullPath(subdir))
 			return paths
 		throw Exception('Cannot find Tests directory next door.')
@@ -285,9 +285,7 @@ class TestifyRunner
 		Returns the number tests that passed.
 		"""
 		baseName = Path.getFileName(dirName) to !  # gets rid of "." and ".." as prefix for relative dirs
-		if baseName.startsWith('.') or baseName.startsWith('_')
-			# examples: .svn, _svn. Also, _ is a nice way to temporarily exclude a directory if possible
-			return
+		if baseName.isIgnoreName, return
 		if _useConfigPath(dirName), return		
 		_testifyDir(dirName, nil)
 		
@@ -318,7 +316,7 @@ class TestifyRunner
 				paths.sort
 				for baseName in paths
 					baseName = Utils.normalizePath(baseName)
-					if baseName.startsWith('_'), continue
+					if baseName.isIgnoreName, continue
 					if baseName.endsWith('.cobra') or baseName.endsWith('.COBRA')
 						_testifyCount += .testifyFile(baseName)
 					else if Directory.exists(baseName)
@@ -845,3 +843,12 @@ class TestifyRunner
 			catch ex as Exception
 				if not fileInfo.name.startsWith('Cobra.')  # this happens regularly and I don't feel like seeing it
 					print 'warning: cannot delete [fileInfo] due to: [ex.message]'
+
+
+extend String
+
+	def isIgnoreName as bool
+		"""
+		examples: .svn, _svn. Also, _ is a nice way to temporarily exclude a directory if possible
+		"""
+		return .startsWith('.') or .startsWith('_') or .startsWith('Cobra.Core_ert_')
