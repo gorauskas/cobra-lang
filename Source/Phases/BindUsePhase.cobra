@@ -87,40 +87,70 @@ class UseDirective is partial
 			# curNS = nil # force reference attempt
 		if curNS is nil and not didAutoLoad
 			if _fileName <> ''
-				if .compiler.loadReference(_fileName, true) is nil
-					_bindUse(true)
-					if .boundNameSpace is nil
-						.throwError('Cannot find namespace "[_fullName]" in library "[_fileName]".')
+				if _loadReferenceInFile(_fileName, _fullName, ignoreError)
 					return
-				else
-					if ignoreError
-						_bindUse(true)
-						return
-					.throwError('Cannot find library file "[_fileName]".')
+				if ignoreError
+					_bindUse(true)
+					return
+				.throwError('Cannot find library file "[_fileName]".')
 			else
 				if _fullName.endsWith('.dll') or _fullName.endsWith('.jar') 
 					.throwError('Do not end a namespace name in a "use" directive with an extension (like ".dll" or ".jar").')
-				if .compiler.loadReference(_fullName, true) is nil
-					_bindUse(true)
-					if .boundNameSpace is nil
-						.throwError('Cannot find namespace "[_fullName]" in loaded library "[_fullName]".')
+				if _loadReferenceInFile(_fullName, _fullName, ignoreError)
 					return
+				# load fail, not found
+				# compute how far is valid, but only here where it's needed for the error message
+				partialName = ''
+				curNS = .compiler.globalNS to ?
+				for name in _nameParts
+					curNS = curNS.subNameSpaceForName(name)
+					if curNS is nil, break
+					partialName += '.' + name
+				if partialName == ''
+					.throwError('Cannot find namespace "[_fullName]".')
 				else
-					if ignoreError
-						_bindUse(true)
-						return
-					# compute how far is valid, but only here where it's needed for the error message
-					partialName = ''
-					curNS = .compiler.globalNS to ?
-					for name in _nameParts
-						curNS = curNS.subNameSpaceForName(name)
-						if curNS is nil, break
-						partialName += '.' + name
-					if partialName == ''
-						.throwError('Cannot find namespace "[_fullName]".')
-					else
-						.throwError('Cannot find namespace "[name]" in "[partialName[1:]]".')
+					.throwError('Cannot find namespace "[name]" in "[partialName[1:]]".')
 		if not didAutoLoad
 			assert curNS, 'last name=[name]; [_nameParts]; [_fullName]; [_fileName]'
 		_boundNameSpace = curNS
 		_didBindUse = true
+
+	def _loadReferenceInFile(filename as String, nameSpace as String, ignoreError as bool) as bool
+		if .compiler.loadReference(filename, true)
+			if ignoreError
+				_bindUse(true)
+				return true
+		else
+			_bindUse(true)
+			if .boundNameSpace is nil
+				.throwError('Cannot find namespace "[nameSpace]" in library "[filename]".')
+			return true
+		# cant find reference in filename.dll, Is it an alias to a class?
+		if _alias.length and _canReferenceLibraryAndType
+			return true
+		return false		
+
+	def _canReferenceLibraryAndType as bool
+		"""
+		Processing of an alias for item in a Namespace.
+		Try this UseDirective as an alias to a type in a namespace.
+		If the nameParts path is loadable and the final nameParts part exists in it
+		Save the reference as the _aliasSymbol.
+		"""
+		nameParts = _nameParts
+		_nameParts = nameParts[0:-1]	# nameParts path not including last part
+		possNS = _nameParts.join('.')
+		if .compiler.loadReference(possNS, true) is nil
+			_bindUse(true)
+			if .boundNameSpace 
+				# got a namespace, look for symbol in it
+				symName = nameParts[nameParts.count-1] 	# last part
+				s = .boundNameSpace.symbolForName(symName)
+				if s
+					_aliasSymbol = s
+					return true	
+				_nameParts = nameParts
+			else
+				_nameParts = nameParts
+				.throwError('Cannot find namespace "[possNS]".')
+		return false
