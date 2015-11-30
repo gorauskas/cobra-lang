@@ -50,7 +50,7 @@ namespace Cobra.Core
 						return '(Repeated [CobraCore.typeName(x.getType)])'
 					_memo.add(x)
 			try
-				isEnumerable = x inherits System.Collections.IEnumerable
+				isEnumerable = (x inherits System.Collections.IEnumerable) and not (x inherits String)
 				if isEnumerable, _level += 1
 				try
 					return _makeString(x)
@@ -157,7 +157,11 @@ namespace Cobra.Core
 			sb = StringBuilder()
 			sb.append(.collectionTypeToString(en.getType) + r'[')
 			sep = ''
+			# In cases where en is also an IEnumerator with internal .toString calls
+			# this will prevent _level from being set too high during those calls
+			level, _level = _level, 0
 			for item in en
+				_level = level
 				sb.append(sep)
 				sb.append(.makeString(item))
 				sep = ', '
@@ -282,6 +286,7 @@ namespace Cobra.Core
 					[CustomToString(), '-- to print string --'],
 					[EnumerableToString(), ns'[1, 2, 3]'],
 					[@[1, 2, 3], ns'[1, 2, 3]'],
+					[EnumeratorInternalToString.create, ns"['abc']"],
 				]
 				list = []
 				list.add(list)
@@ -307,7 +312,7 @@ namespace Cobra.Core
 			return ''
 	
 		def stringToString(s as String) as String is override
-			if .level == 1
+			if .level == 0
 				return s
 			else
 				return .stringToCobraLiteral(s)
@@ -372,6 +377,10 @@ namespace Cobra.Core
 				outerList = [innerList, innerList, innerList]
 				cases.add([outerList, ns'List<of List<of int>>[List<of int>[1], (Repeated List<of int>), (Repeated List<of int>)]'])
 				TechStringMaker().testCases(cases)
+				# special test case
+				input = EnumeratorInternalToString.create
+				answer = TechStringMaker().makeString(input)
+				assert answer in [ns"<Create>d__0['abc']", ns"<Create>c__Iterator0['abc']"]
 			body
 				return .makeString(x)
 	
